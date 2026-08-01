@@ -1,7 +1,7 @@
     <control type="grouplist">
         <visible>!String.IsEmpty(Window.Property(wl_server_availability_verbose))</visible>
         <posx>466</posx>
-        <posy>{{ vscale(223) }}</posy>
+        <posy>{{ vscale(130) }}</posy>
         <width>1360</width>
         <height>{{ vscale(34) }}</height>
         <align>left</align>

@@ -721,6 +721,13 @@ class Settings(object):
                     T(35047, "Replace the written title with the logo image your server has stored for the "
                              "item. Items without a logo keep their written title.")
                 ),
+                BoolSetting(
+                    'hide_poster_with_logo', T(35050, 'Hide poster when a title logo is shown'), True,
+                    show_cb=lambda: util.getSetting('clear_logos', True)
+                ).description(
+                    T(35051, "On detail screens, hide the poster for items that have a title logo, giving the "
+                             "logo and other details more room.")
+                ),
                 BoolUserSetting(
                     'use_watchlist', T(34007, 'Use Watchlist'), True
                 ).description(
@@ -1317,8 +1324,7 @@ class SettingsWindow(kodigui.BaseWindow, windowutils.UtilMixin):
 
             items.append(item)
 
-        self.settingsList.reset()
-        self.settingsList.addItems(items)
+        self.settingsList.replaceItems(items)
 
     def editSetting(self, from_right=False, clear=False):
         mli = self.settingsList.getSelectedItem()
@@ -1402,6 +1408,7 @@ class SettingsWindow(kodigui.BaseWindow, windowutils.UtilMixin):
     def toggleBool(self, mli, setting):
         setting.set(not setting.get())
         mli.setProperty('checkbox.checked', setting.get() and '1' or '')
+        self.showSettings(self.lastSection)
 
     def editIP(self, mli, setting):
         current = setting.get()

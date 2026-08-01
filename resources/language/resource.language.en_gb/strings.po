@@ -3356,3 +3356,11 @@ msgstr ""
 msgctxt "#35049"
 msgid "Local mode reaches your server over plain HTTP, so \"Allow Insecure Connections\" has been set to \"Always\".\n\nYour server needs the matching setting: in Plex under Settings > Network, \"Secure connections\" has to be \"Preferred\" - with \"Required\" the server refuses these connections."
 msgstr ""
+
+msgctxt "#35050"
+msgid "Hide poster when a title logo is shown"
+msgstr ""
+
+msgctxt "#35051"
+msgid "On detail screens, hide the poster for items that have a title logo, giving the logo and other details more room."
+msgstr ""

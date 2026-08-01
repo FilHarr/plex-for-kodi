@@ -102,7 +102,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
     RELATED_DIM = util.scaleResolution(268, 402)
     EXTRA_DIM = util.scaleResolution(329, 185)
     ROLES_DIM = util.scaleResolution(334, 334)
-    PREVIEW_DIM = util.scaleResolution(343, 193)
     CLEAR_LOGO_DIM = util.scaleResolution(560, 68)
 
     ROLES_LIST_ID = 400
@@ -112,7 +111,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
     COLLECTION_LIST_IDS = [404, 405, 406]
 
     OPTIONS_GROUP_ID = 200
-    PROGRESS_IMAGE_ID = 250
 
     HOME_BUTTON_ID = 201
     SEARCH_BUTTON_ID = 202
@@ -166,7 +164,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
         self.collectionListControls = [kodigui.ManagedControlList(self, lid, 5) for lid in self.COLLECTION_LIST_IDS]
         self.setBoolProperty("is_watchlisted", self.is_watchlisted)
 
-        self.progressImageControl = self.getControl(self.PROGRESS_IMAGE_ID)
         self.setup()
         self.initialized = True
 
@@ -185,7 +182,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
         self.themeMusicReinit(self.video)
         self.initialized = False
         if util.getSetting("slow_connection"):
-            self.progressImageControl.setWidth(1)
             self.setProperty('remainingTime', T(32914, "Loading"))
         self.video.reload(checkFiles=1, fromMediaChoice=self.video.mediaChoice is not None, skip_cache=True, **VIDEO_RELOAD_KW)
         removed_from_wl = False
@@ -660,14 +656,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
 
     @busy.dialog()
     def setup(self):
-        self.focusPlayButton()
         self.watchlist_setup(self.video)
 
         util.DEBUG_LOG('PrePlay: Showing video info: {0}', self.video)
-        if self.video.type == 'episode':
-            self.setProperty('preview.yes', '1')
-        elif self.video.type == 'movie':
-            self.setProperty('preview.no', '1')
 
         if self.isExternal:
             # fixme, multiple? choice?
@@ -686,6 +677,10 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
 
         self.setInfo()
         self.setBoolProperty("initialized", True)
+        # hide.poster (set in setInfo) picks which of the two duplicate-id button rows is
+        # visible; focusing before both properties are set leaves setFocusId(302) resolving
+        # to whichever copy is first in document order, which may never become visible
+        self.focusPlayButton()
         self.batch_simple([(self.fillRoles, None, None),
                            (self.fillReviews, None, None),
                            (self.fillExtras, None, None),
@@ -696,7 +691,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
         if not skip_bg:
             self.updateBackgroundFrom(self.video)
         self.setProperty('title', self.video.title)
-        self.setProperty('clear.logo', util.clearLogoFrom(self.video, *self.CLEAR_LOGO_DIM))
+        logo = util.clearLogoFrom(self.video, *self.CLEAR_LOGO_DIM)
+        self.setProperty('clear.logo', logo)
+        self.setBoolProperty('hide.poster', bool(logo) and util.getSetting('hide_poster_with_logo', True))
         self.setProperty('duration', self.video.duration and util.durationToText(self.video.duration.asInt()))
         self.setProperty('summary', self.video.summary.strip().replace('\t', ' '))
         self.setProperty('unwatched', not self.video.isWatched and '1' or '')
@@ -711,34 +708,26 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
         self.setProperty('writers',
                          writers and u'{0}{1}    {2}'.format(directors and '    ' or '', writersLabel, writers) or '')
 
-        # fixme: can this ever happen?
-        if self.video.type == 'episode':
-            self.setProperty('content.rating', '')
-            self.setProperty('thumb', self.video.defaultThumb.asTranscodedImageURL(*self.THUMB_POSTER_DIM))
-            self.setProperty('preview', self.video.thumb.asTranscodedImageURL(*self.PREVIEW_DIM))
-            self.setProperty('info', u'{0} {1}'.format(T(32303, 'Season').format(self.video.parentIndex), T(32304, 'Episode').format(self.video.index)))
-            self.setProperty('date', util.cleanLeadingZeros(self.video.originallyAvailableAt.asDatetime('%B %d, %Y')))
-            self.setProperty('related.header', T(32306, 'Related Shows'))
-        elif self.video.type == 'movie':
-            self.setProperty('title', self.video.defaultTitle)
-            self.setProperty('preview', '')
-            self.setProperty('thumb', self.video.thumb.asTranscodedImageURL(*self.THUMB_POSTER_DIM))
-            genres = u' / '.join([g.tag for g in self.video.genres()][:3])
-            self.setProperty('info', genres)
-            self.setProperty('date', self.video.year)
-            if self.fromWatchlist and not self.wl_availability:
-                self.setProperty('wl_server_availability_verbose', util.cleanLeadingZeros(self.video.originallyAvailableAt.asDatetime('%B %d, %Y')))
-            self.setProperty('content.rating', self.video.contentRating.split('/', 1)[-1])
+        self.setProperty('title', self.video.defaultTitle)
+        self.setProperty('thumb', self.video.thumb.asTranscodedImageURL(*self.THUMB_POSTER_DIM))
+        genres = u' / '.join([g.tag for g in self.video.genres()][:3])
+        self.setProperty('info', genres)
+        self.setProperty('date', self.video.year)
+        if self.fromWatchlist and not self.wl_availability:
+            self.setProperty('wl_server_availability_verbose', util.cleanLeadingZeros(self.video.originallyAvailableAt.asDatetime('%B %d, %Y')))
+        self.setProperty('content.rating', self.video.contentRating.split('/', 1)[-1])
 
-            cast = u' / '.join([r.tag for r in self.video.roles()][:5])
-            castLabel = 'CAST'
-            self.setProperty('cast', cast and u'{0}    {1}'.format(castLabel, cast) or '')
-            self.setProperty('related.header', T(32404, 'Related Movies') if not self.fromWatchlist else T(34018, 'Related Media'))
+        cast = u' / '.join([r.tag for r in self.video.roles()][:5])
+        castLabel = 'CAST'
+        self.setProperty('cast', cast and u'{0}    {1}'.format(castLabel, cast) or '')
+        self.setProperty('related.header', T(32404, 'Related Movies') if not self.fromWatchlist else T(34018, 'Related Media'))
 
         if self.fromWatchlist:
             self.setProperty('studios', u' / '.join([r.tag for r in self.video.studios()][:2]))
 
         else:
+            # single studio attribute here, vs. the joined tag list above, but both feed the same 'studios' property
+            self.setProperty('studios', self.video.studio)
             self.setProperty('video.res', self.video.resolutionString())
             self.setProperty('audio.codec', self.video.audioCodecString())
             self.setProperty('video.codec', self.video.videoCodecString())
@@ -752,12 +741,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
             self.setAudioAndSubtitleInfo()
 
             self.setProperty('unavailable', all(not v.isAccessible() for v in self.video.media()) and '1' or '')
-
-            if self.video.viewOffset.asInt():
-                width = self.video.viewOffset.asInt() and (1 + int((self.video.viewOffset.asInt() / self.video.duration.asFloat()) * self.width)) or 1
-                self.progressImageControl.setWidth(width)
-            else:
-                self.progressImageControl.setWidth(1)
 
             if self.video.viewOffset.asInt():
                 self.setProperty('remainingTime', T(33615, "{time} left").format(time=self.video.remainingTimeString))
