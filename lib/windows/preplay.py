@@ -650,6 +650,14 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
             return
         try:
             if not self.getFocusId() == self.PLAY_BUTTON_ID:
+                # id 302 is duplicated across the poster-shown/poster-hidden button rows (see
+                # xml.tpl), told apart only by <visible>. That condition is keyed off the
+                # hide.poster property we just set, but the GUI thread hasn't necessarily
+                # recalculated visibility yet - SetFocus on the still-invisible copy fails
+                # silently and focus falls through elsewhere (e.g. a hub row, which then
+                # triggers its slide-into-view animation). Wait for either copy to actually
+                # be visible first.
+                self.waitForVisibility(self.PLAY_BUTTON_ID)
                 self.setFocusId(self.PLAY_BUTTON_ID)
         except (SystemError, RuntimeError):
             util.ERROR()
@@ -680,8 +688,13 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
         self.setBoolProperty("initialized", True)
         # hide.poster (set in setInfo) picks which of the two duplicate-id button rows is
         # visible; focusing before both properties are set leaves setFocusId(302) resolving
-        # to whichever copy is first in document order, which may never become visible
-        self.focusPlayButton()
+        # to whichever copy is first in document order, which may never become visible.
+        # For watchlist items, PLAY_BUTTON_ID (302) is permanently hidden behind disable_playback
+        # - watchlistItemAvailable() above already owns focusing the dynamic wl button (2302-2305)
+        # once its availability check resolves, so waiting on 302 here would just block on a
+        # control that's never going to show up.
+        if not self.fromWatchlist:
+            self.focusPlayButton()
         self.batch_simple([(self.fillRoles, None, None),
                            (self.fillReviews, None, None),
                            (self.fillExtras, None, None),
