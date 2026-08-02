@@ -31,7 +31,12 @@ def _processSetting(setting, default, is_json=False):
         else:
             return default
     elif isinstance(default, datetime.datetime):
-        return datetime.datetime.strptime(setting, '%Y-%m-%dT%H:%M:%S.%f')
+        try:
+            return datetime.datetime.strptime(setting, '%Y-%m-%dT%H:%M:%S.%f')
+        except TypeError:
+            # workaround for a rare CPython thread race on the first-ever strptime() call
+            # (concurrent threads can observe a partially-initialized _strptime module)
+            return datetime.datetime.strptime(setting, '%Y-%m-%dT%H:%M:%S.%f')
 
     return setting
 
