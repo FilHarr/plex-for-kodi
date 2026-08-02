@@ -263,8 +263,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
     SEARCH_BUTTON_ID = 202
     PLAYER_STATUS_BUTTON_ID = 204
 
-    PROGRESS_IMAGE_ID = 250
-
     MAIN_BUTTON_GROUP_ID = 300
     PLAY_BUTTON_ID = 301
     PLAY_BUTTON_DISABLED_ID = 306
@@ -353,7 +351,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
     @busy.dialog(delay_time=2.5)
     def _onFirstInit(self):
         self.episodeListControl = kodigui.ManagedControlList(self, self.EPISODE_LIST_ID, 5)
-        self.progressImageControl = self.getControl(self.PROGRESS_IMAGE_ID)
 
         self.seasonsListControl = kodigui.ManagedControlList(self, self.SEASONS_LIST_ID, 5)
         self.rolesListControl = kodigui.ManagedControlList(self, self.ROLES_LIST_ID, 5)
@@ -1411,12 +1408,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
         self.setProperty('season.title', (self.season or self.show_).title)
 
         if self.season:
-            self.setProperty('episodes.header', u'{0} \u2022 {1}'.format(showTitle,
-                                                                         T(32303, 'Season').format(self.season.index)))
             self.setProperty('extras.header', u'{0} \u2022 {1}'.format(T(32305, 'Extras'),
                                                                        T(32303, 'Season').format(self.season.index)))
         else:
-            self.setProperty('episodes.header', u'Episodes')
             self.setProperty('extras.header', u'Extras')
 
         self.setProperty('related.header', T(32306, 'Related Shows'))
@@ -1578,11 +1572,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
     def setProgress(self, mli, view_offset=None):
         video = mli.dataSource
         view_offset = view_offset if view_offset is not None else video.viewOffset.asInt()
-        if view_offset:
-            width = view_offset and (1 + int((view_offset / video.duration.asFloat()) * self.width)) or 1
-            self.progressImageControl.setWidth(width)
-        else:
-            self.progressImageControl.setWidth(1)
 
         if view_offset:
             mli.setProperty('remainingTime', T(33615,
@@ -1591,19 +1580,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
             mli.setProperty('remainingTime', '')
 
     def createListItem(self, episode):
-        if episode.index:
-            subtitle = u'{0} \u2022 {1}'.format(T(32310, 'S').format(episode.parentIndex),
-                                                T(32311, 'E').format(episode.index))
-        else:
-            subtitle = episode.originallyAvailableAt.asDatetime('%m/%d/%y')
-
         mli = kodigui.ManagedListItem(
             '',
-            subtitle,
             data_source=episode
         )
         self.setUserItemInfo(mli, types=("title", "thumbnail"))
-        mli.setProperty('episode.number', str(episode.index) or '')
+        mli.setProperty('episode.number', episode.index and T(32311, 'E').format(episode.index) or '')
         mli.setProperty('episode.duration', util.durationToText(episode.duration.asInt()))
         mli.setProperty('unwatched', not episode.isWatched and '1' or '')
         mli.setProperty('watched', episode.isFullyWatched and '1' or '')
