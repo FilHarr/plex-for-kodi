@@ -252,7 +252,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
     LIST_OPTIONS_BUTTON_ID = 111
 
     EPISODE_LIST_ID = 400
-    SEASONS_LIST_ID = 401
+    SEASONS_LIST_ID = 205
     ROLES_LIST_ID = 402
     EXTRA_LIST_ID = 403
     RELATED_LIST_ID = 404
@@ -863,7 +863,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
                 return
             item = mli.dataSource
             if item != self.season:
-                self.openItem(self.seasonsListControl, came_from=self.season.parentRatingKey)
+                self.switchSeason(item)
             else:
                 self.setCondFocusId(self.EPISODE_LIST_ID)
         elif controlID == self.ROLES_LIST_ID:
@@ -931,13 +931,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
         y = 900
         if xbmc.getCondVisibility('Control.IsVisible(500)'):
             y += 380
-        if xbmc.getCondVisibility('Control.IsVisible(501)'):
-            y += 420
         if xbmc.getCondVisibility('!String.IsEmpty(Window.Property(on.extras))'):
             y -= 80
         if xbmc.getCondVisibility('Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500)'):
-            y -= 500
-        if xbmc.getCondVisibility('Integer.IsGreater(Window.Property(hub.focus),1) + Control.IsVisible(501)'):
             y -= 500
 
         return super(EpisodesWindow, self).getRoleItemDDPosition(y=y, container_id="402")
@@ -1018,6 +1014,14 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
             self.season = self.seasons[pos]
 
         return True
+
+    def switchSeason(self, season):
+        # reload this window in place rather than opening a new one on top of it - the season tab bar makes
+        # switching seasons frequent, and stacking a window per swap would take that many Back presses to undo
+        self.episode = None
+        self.season = season
+        self.manuallySelectedSeason = True
+        self.setup()
 
     def searchButtonClicked(self):
         section_id = self.show_.getLibrarySectionId()
@@ -1400,8 +1404,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
             self.setProperty('episodes.header', u'Episodes')
             self.setProperty('extras.header', u'Extras')
 
-        self.setProperty('seasons.header',
-                         u'{0} \u2022 {1}'.format(showTitle, T(32942, 'Seasons')))
         self.setProperty('related.header', T(32306, 'Related Shows'))
         self.genre = self.show_.genres() and self.show_.genres()[0].tag or ''
 

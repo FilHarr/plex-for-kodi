@@ -74,7 +74,7 @@
         </control>
         <control type="group">
             <visible>Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))</visible>
-            <posx>438</posx>
+            <posx>230</posx>
             <posy>0</posy>
             <control type="button" id="204">
                 <visible>Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))</visible>
@@ -83,6 +83,7 @@
                 <width>260</width>
                 <height>{{ vscale(75) }}</height>
                 <onleft>202</onleft>
+                {% block header_audiowidget_onright %}{% endblock %}
                 <ondown>50</ondown>
                 <font>font12</font>
                 <textcolor>FFFFFFFF</textcolor>
@@ -168,6 +169,7 @@
                 <info>Player.Progress</info>
             </control>
         </control>
+        {% block header_middle_add %}{% endblock %}
         <control type="label">
             <right>213</right>
             <posy>{{ vscale(35) }}</posy>

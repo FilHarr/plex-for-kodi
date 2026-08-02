@@ -63,14 +63,16 @@ class SeasonsMixin(object):
         items = []
         idx = 0
         focus = None
+        current_idx = None
         for season in seasons:
-            if selectSeason and season == selectSeason:
-                continue
-
             mli = self._createListItem(show, season)
             if mli:
+                is_current = bool(selectSeason) and season == selectSeason
                 mli.setProperty('index', str(idx))
                 mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/show.png')
+                mli.setBoolProperty('current', is_current)
+                if is_current:
+                    current_idx = idx
                 seasonWatched = season.isWatched
                 has_ondeck_progress = False
                 for v in show.onDeck:
@@ -82,7 +84,7 @@ class SeasonsMixin(object):
                 mli.setProperty('unwatched.count', not seasonWatched and str(season.unViewedLeafCount) or '')
                 mli.setBoolProperty('unwatched.count.large', not seasonWatched and season.unViewedLeafCount > 999)
                 mli.setBoolProperty('watched', seasonWatched)
-                if not seasonWatched and focus is None and season.index.asInt() > 0:
+                if not selectSeason and not seasonWatched and focus is None and season.index.asInt() > 0:
                     focus = idx
                     mli.setProperty('progress', util.getProgressImage(None, self.getSeasonProgress(show, season)))
                 items.append(mli)
@@ -95,7 +97,11 @@ class SeasonsMixin(object):
             subItemListControl.reset()
             subItemListControl.addItems(items)
 
-        if focus is not None and do_focus:
-            subItemListControl.setSelectedItemByPos(focus)
+        if do_focus:
+            if selectSeason:
+                if current_idx is not None:
+                    subItemListControl.setSelectedItemByPos(current_idx)
+            elif focus is not None:
+                subItemListControl.setSelectedItemByPos(focus)
 
         return True
