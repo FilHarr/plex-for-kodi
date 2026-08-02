@@ -1,7 +1,7 @@
     <control type="grouplist">
         <visible>{{ visible_cond }}</visible>
         <posx>{{ xoff }}</posx>
-        <posy>{{ vscale(80) }}</posy>
+        <posy>{{ (80 + yoff)|vscale }}</posy>
         <width>1360</width>
         <height>{{ vscale(30) }}</height>
         <align>left</align>

@@ -32,19 +32,22 @@
     <defaultcontrol>101</defaultcontrol>
 
     {% block buttons %}
-        {% for _posx, _vis in ((428, "String.IsEmpty(Window.Property(hide.poster))"), (22, "!String.IsEmpty(Window.Property(hide.poster))")) %}
+        {% for _posx, _vis, _posy in ((428, "String.IsEmpty(Window.Property(hide.poster))", 451), (22, "!String.IsEmpty(Window.Property(hide.poster))", 481)) %}
         <control type="grouplist" id="300">
             <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
             <visible>!String.IsEmpty(Window.Property(initialized)) + {{ _vis }}</visible>
             <defaultcontrol>302</defaultcontrol>
             <posx>{{ _posx }}</posx>
-            <!-- 441, not 397/410: the button textures are 180x145 source art stretched into a 152x121 box
+            <!-- 481, not 441: the button textures are 180x145 source art stretched into a 152x121 box
                  with no aspectratio, and the icon glyphs don't fill that box - play.png's opaque pixels only
-                 reach row 92 of 145 (~77px once stretched to 121). 518 (poster's bottom) minus that 77px puts
-                 the play icon's own bottom, not the button box's bottom, flush with the poster. Smaller icons
-                 like "more" sit higher inside the same box and won't reach 518; the box itself now bottoms out
-                 at 441+121=562, 22px into id 60's top at 540 - only tested against modern's button height. -->
-            <posy>{{ vscale(441) }}</posy>
+                 reach row 92 of 145 (~77px once stretched to 121). This group sits inside id 50 (posy 155),
+                 so the icon's visible bottom is 155+481+77=713 in window coords, a deliberate 73px perceived
+                 gap above the cast row's thumbnails (top at 786, itself 25px lower than its original
+                 position). No longer flush with the poster's bottom (518) as it was at 441. Smaller icons
+                 like "more" sit higher inside the same box and land even further above the cast row - only
+                 tested against modern's button height. With the poster shown, the whole row (along with the
+                 meta row, summary, and streams) is nudged up another 30px to 451, purely a spacing tweak. -->
+            <posy>{{ vscale(_posy) }}</posy>
             <width>1000</width>
             <height>{{ vscale(145) }}</height>
             <onup>200</onup>
@@ -98,8 +101,8 @@
             </control>
             <!-- Everything from the title down to the summary is duplicated at two x-offsets (466 with the
                  poster, 60 filling its slot when hidden) and switched with <visible>, since posx/width can't
-                 take a condition in Kodi. Both copies keep the same widths for now - only posx differs - so
-                 the poster-hidden copy doesn't yet claim the extra 406px it frees up on the right. -->
+                 take a condition in Kodi. The y position and height of the meta row, summary, and streams
+                 below now always match the poster-hidden layout in both states - only x differs. -->
             <!-- Fills the same box as the clear logo below, on the same baseline, so both variants put the
                  title in one place at one weight. No grouplist any more: nothing shares this row, and a
                  grouplist would clip the taller box. -->
@@ -124,7 +127,7 @@
                 <posx>60</posx>
                 <posy>0</posy>
                 <width>940</width>
-                <height>{{ vscale(68) }}</height>
+                <height>{{ vscale(136) }}</height>
                 <font>font45</font>
                 <align>left</align>
                 <aligny>bottom</aligny>
@@ -134,14 +137,17 @@
                 <label>$INFO[Window.Property(title)]</label>
             </control>
             <!-- Outside any grouplist on purpose: a grouplist clips its children to its own bounds and this
-                 box is taller than the row. Top sits on the artwork's baseline at 0, bottom at 68, which is
-                 as low as it can go before the meta row at 80 - the same box on all three detail screens. -->
+                 box is taller than the row. Top sits on the artwork's baseline at 0, bottom at 106, sized to
+                 leave only a 20px gap above the meta row at 126 (poster-shown yoff=46) - taller than the
+                 title's 68 box above, so the two are no longer baseline-matched. Width scaled up by the same
+                 106/68 ratio (560 -> 873) to keep the box's own aspect ratio unchanged; preplay.py's
+                 CLEAR_LOGO_DIM requests the transcoded clearlogo at this same 873x106 size. -->
             <control type="image">
                 <visible>String.IsEmpty(Window.Property(hide.poster)) + !String.IsEmpty(Window.Property(clear.logo))</visible>
                 <posx>466</posx>
                 <posy>0</posy>
-                <width>560</width>
-                <height>{{ vscale(68) }}</height>
+                <width>873</width>
+                <height>{{ vscale(106) }}</height>
                 <aspectratio align="left" aligny="bottom">keep</aspectratio>
                 <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
             </control>
@@ -149,13 +155,13 @@
                 <visible>!String.IsEmpty(Window.Property(hide.poster)) + !String.IsEmpty(Window.Property(clear.logo))</visible>
                 <posx>60</posx>
                 <posy>0</posy>
-                <width>560</width>
-                <height>{{ vscale(68) }}</height>
+                <width>760</width>
+                <height>{{ vscale(136) }}</height>
                 <aspectratio align="left" aligny="bottom">keep</aspectratio>
                 <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
             </control>
-            {% include "includes/pp_meta_row.xml.tpl" with xoff=466 & visible_cond="String.IsEmpty(Window.Property(hide.poster))" %}
-            {% include "includes/pp_meta_row.xml.tpl" with xoff=60 & visible_cond="!String.IsEmpty(Window.Property(hide.poster))" %}
+            {% include "includes/pp_meta_row.xml.tpl" with xoff=466 & visible_cond="String.IsEmpty(Window.Property(hide.poster))" & yoff=46 %}
+            {% include "includes/pp_meta_row.xml.tpl" with xoff=60 & visible_cond="!String.IsEmpty(Window.Property(hide.poster))" & yoff=76 %}
 
             <control type="grouplist">
                 <visible>!String.IsEmpty(Window.Property(rating)) | !String.IsEmpty(Window.Property(rating2))</visible>
@@ -213,9 +219,9 @@
                 <control type="textbox">
                     <visible>String.IsEmpty(Window.Property(hide.poster))</visible>
                     <posx>466</posx>
-                    <posy>{{ vscale(138) }}</posy>
-                    <width>1360</width>
-                    <height>{{ vscale(102) }}</height>
+                    <posy>{{ vscale(176) }}</posy>
+                    <width>1080</width>
+                    <height>{{ vscale(152) }}</height>
                     <font>font12</font>
                     <align>left</align>
                     <textcolor>FFFFFFFF</textcolor>
@@ -226,9 +232,9 @@
                 <control type="textbox">
                     <visible>!String.IsEmpty(Window.Property(hide.poster))</visible>
                     <posx>60</posx>
-                    <posy>{{ vscale(138) }}</posy>
-                    <width>1360</width>
-                    <height>{{ vscale(102) }}</height>
+                    <posy>{{ vscale(206) }}</posy>
+                    <width>1080</width>
+                    <height>{{ vscale(152) }}</height>
                     <font>font12</font>
                     <align>left</align>
                     <textcolor>FFFFFFFF</textcolor>
@@ -240,13 +246,15 @@
             <!-- The streams block below (audio/subtitle pills, overridden by pre_play-wl.xml.tpl for the
                  watchlist screen's availability row) stays a single instance and slides instead of
                  duplicating: Kodi/ibis blocks can only be defined once, so a subclass's override would
-                 only ever reach one of two physical copies. -->
+                 only ever reach one of two physical copies. Base posy (353) is the poster-shown position;
+                 hiding the poster slides both x (to line up at 60) and y (+30, back down to 383) since only
+                 the poster-shown row gets the 30px nudge up. -->
             <control type="group">
-                <animation effect="slide" start="0,0" end="-406,0" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
+                <animation effect="slide" start="0,0" end="-406,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
             {% block streams %}
                 <control type="grouplist">
                     <posx>466</posx>
-                    <posy>{{ vscale(273) }}</posy>
+                    <posy>{{ vscale(353) }}</posy>
                     <width>1360</width>
                     <height>{{ vscale(90) }}</height>
                     <align>left</align>
@@ -305,7 +313,7 @@
             <height>{{ vscale(446) }}</height>
             <control type="list" id="400">
                 <posx>0</posx>
-                <posy>0</posy>
+                <posy>25</posy>
                 <width>1920</width>
                 <height>{{ vscale(410) }}</height>
                 <onup>300</onup>
@@ -314,7 +322,7 @@
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
-                <itemlayout width="304">
+                <itemlayout width="260">
                     <control type="group">
                        <posx>55</posx>
                         <posy>{{ vscale(61) }}</posy>
@@ -324,26 +332,26 @@
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(244) }}</height>
+                                <width>200</width>
+                                <height>{{ vscale(200) }}</height>
                                 <texture diffuse="script.plex/masks/role.png">script.plex/thumb_fallbacks/role.png</texture>
                             </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(244) }}</height>
+                                <width>200</width>
+                                <height>{{ vscale(200) }}</height>
                                 <texture background="true" diffuse="script.plex/masks/role.png">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false" aligny="top">scale</aspectratio>
                             </control>
                             <control type="group">
                                 <posx>0</posx>
-                                <posy>{{ vscale(253) }}</posy>
+                                <posy>{{ vscale(209) }}</posy>
                                 <control type="label">
                                     <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
+                                    <width>200</width>
                                     <height>{{ vscale(60) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
@@ -354,7 +362,7 @@
                                     <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>{{ vscale(30) }}</posy>
-                                    <width>244</width>
+                                    <width>200</width>
                                     <height>{{ vscale(60) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
@@ -367,21 +375,21 @@
                 </itemlayout>
 
                 <!-- FOCUSED LAYOUT ####################################### -->
-                <focusedlayout width="304">
+                <focusedlayout width="260">
                     <control type="group">
                         <posx>55</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
-                            <animation effect="zoom" start="100" end="110" time="100" center="127,{{ vscale(127) }}" reversible="false">Focus</animation>
-                            <animation effect="zoom" start="110" end="100" time="100" center="127,{{ vscale(127) }}" reversible="false">UnFocus</animation>
+                            <animation effect="zoom" start="100" end="110" time="100" center="105,{{ vscale(105) }}" reversible="false">Focus</animation>
+                            <animation effect="zoom" start="110" end="100" time="100" center="105,{{ vscale(105) }}" reversible="false">UnFocus</animation>
                             <posx>0</posx>
                             <posy>0</posy>
                             <control type="image">
                                 <visible>Control.HasFocus(403)</visible>
                                 <posx>-40</posx>
                                 <posy>{{ vscale(-40) }}</posy>
-                                <width>334</width>
-                                <height>{{ vscale(334) }}</height>
+                                <width>290</width>
+                                <height>{{ vscale(290) }}</height>
                                 <texture border="42">script.plex/buttons/role-shadow.png</texture>
                             </control>
                             <control type="group">
@@ -390,26 +398,26 @@
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(244) }}</height>
+                                    <width>200</width>
+                                    <height>{{ vscale(200) }}</height>
                                     <texture diffuse="script.plex/masks/role.png">script.plex/thumb_fallbacks/role.png</texture>
                                 </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(244) }}</height>
+                                    <width>200</width>
+                                    <height>{{ vscale(200) }}</height>
                                     <texture background="true" diffuse="script.plex/masks/role.png">$INFO[ListItem.Thumb]</texture>
                                     <aspectratio scalediffuse="false" aligny="top">scale</aspectratio>
                                 </control>
                                 <control type="group">
                                     <posx>0</posx>
-                                    <posy>{{ vscale(253) }}</posy>
+                                    <posy>{{ vscale(209) }}</posy>
                                     <control type="label">
                                         <scroll>Control.HasFocus(400)</scroll>
                                         <posx>0</posx>
                                         <posy>0</posy>
-                                        <width>244</width>
+                                        <width>200</width>
                                         <height>{{ vscale(60) }}</height>
                                         <font>font10</font>
                                         <align>center</align>
@@ -420,7 +428,7 @@
                                         <scroll>Control.HasFocus(400)</scroll>
                                         <posx>0</posx>
                                         <posy>{{ vscale(30) }}</posy>
-                                        <width>244</width>
+                                        <width>200</width>
                                         <height>{{ vscale(60) }}</height>
                                         <font>font10</font>
                                         <align>center</align>
@@ -433,8 +441,8 @@
                                 <visible>Control.HasFocus(400)</visible>
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>254</width>
-                                <height>{{ vscale(254) }}</height>
+                                <width>210</width>
+                                <height>{{ vscale(210) }}</height>
                                 <texture>script.plex/buttons/role-selected.png</texture>
                             </control>
                         </control>
