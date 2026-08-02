@@ -1,4 +1,6 @@
 # coding=utf-8
+import traceback
+
 try:
     from importlib import reload
 except ImportError:
@@ -37,7 +39,16 @@ def main(restarting_service=False):
         while not MONITOR.abortRequested():
             # enter the update loop. if it exits positively, it wants to be reloaded
             setGlobalProperty('service.version', ku.ADDON.getAddonInfo('version'))
-            if uc.update_loop():
+            try:
+                loop_result = uc.update_loop()
+            except Exception:
+                lo.service_log("Update loop crashed unexpectedly, restarting it", realm="Service")
+                lo.service_log(traceback.format_exc(), realm="Service")
+                if MONITOR.waitForAbort(5):
+                    break
+                continue
+
+            if loop_result:
                 lo.service_log("Reloading service due to code changes", realm="Service")
                 reload(uc)
                 reload(ku)
