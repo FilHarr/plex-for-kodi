@@ -1354,8 +1354,16 @@
     </itemlayout>
 
     <!-- FOCUSED LAYOUT ####################################### -->
+    {# Kodi applies this layout to whichever item holds the list's internal cursor, independent of whether
+       control 205 itself has window focus - so without gating on Control.HasFocus(205), the cursor's item
+       (which defaults to the current season) renders in the "focused" white year-round, making the tab bar
+       look focused even when focus actually sits on the play button, and keeps showing white on whatever tab
+       was last highlighted after focus moves away. Splitting into two labels keyed off actual control focus
+       makes it fall back to the same grey as itemlayout the rest of the time; the current-season underline
+       below is unaffected since it never depended on focus. #}
     <focusedlayout width="170" height="{{ vscale(135) }}">
         <control type="label">
+            <visible>Control.HasFocus(205)</visible>
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
@@ -1363,9 +1371,21 @@
             <font>font12</font>
             <align>center</align>
             <aligny>center</aligny>
-            <scroll>Control.HasFocus(205)</scroll>
+            <scroll>true</scroll>
             <scrollspeed>25</scrollspeed>
             <textcolor>FFFFFFFF</textcolor>
+            <label>$INFO[ListItem.Label]</label>
+        </control>
+        <control type="label">
+            <visible>!Control.HasFocus(205)</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>170</width>
+            <height>{{ vscale(135) }}</height>
+            <font>font12</font>
+            <align>center</align>
+            <aligny>center</aligny>
+            <textcolor>80FFFFFF</textcolor>
             <label>$INFO[ListItem.Label]</label>
         </control>
         <control type="image">
