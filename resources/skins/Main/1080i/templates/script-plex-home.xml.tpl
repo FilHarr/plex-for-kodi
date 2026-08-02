@@ -469,7 +469,7 @@
         </control>
     </control>
     <control type="label">
-        <right>213</right>
+        <right>60</right>
         <posy>{{ vscale(35) }}</posy>
         <width>200</width>
         <height>{{ vscale(65) }}</height>
@@ -478,13 +478,6 @@
         <aligny>center</aligny>
         <textcolor>FFFFFFFF</textcolor>
         <label>$INFO[System.Time]</label>
-    </control>
-    <control type="image">
-        <posx>153r</posx>
-        <posy>{{ vscale(47.5) }}</posy>
-        <width>93</width>
-        <height>{{ vscale(43) }}</height>
-        <texture>script.plex/home/plex.png</texture>
     </control>
     <control type="group">
         <posx>576</posx>

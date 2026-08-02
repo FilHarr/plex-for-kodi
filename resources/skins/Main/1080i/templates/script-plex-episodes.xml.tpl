@@ -1306,7 +1306,9 @@
 </control>
 {% endblock content %}
 
-{% block header_audiowidget_onright %}<onright>205</onright>{% endblock %}
+{# widget now sits at the header's far right, past the tabs, so the header runs search -> tabs -> widget #}
+{% block header_search_onright %}<onright condition="Control.IsVisible(205)">205</onright><onright>204</onright>{% endblock %}
+{% block header_audiowidget_onleft %}<onleft condition="Control.IsVisible(205)">205</onleft><onleft>202</onleft>{% endblock %}
 
 {% block header_middle_add %}
 <!-- SEASON TABS -->
@@ -1317,8 +1319,8 @@
     <width>980</width>
     <height>{{ vscale(135) }}</height>
     <onup>200</onup>
-    <onleft condition="Control.IsVisible(204)">204</onleft>
     <onleft>202</onleft>
+    <onright condition="Control.IsVisible(204)">204</onright>
     <onright>noop</onright>
     <ondown condition="Control.IsVisible(300)">300</ondown>
     <ondown condition="Control.IsVisible(1300)">1300</ondown>
