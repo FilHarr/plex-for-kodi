@@ -494,7 +494,15 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
                     return
 
                 kodigui.waitForVisibility(set_focus, amount=2)
-                self.setCondFocusId(set_focus)
+                if xbmc.getCondVisibility('Control.IsVisible({0})'.format(set_focus)):
+                    self.setCondFocusId(set_focus)
+                else:
+                    # the target button never became visible in time (eg. slow reload under network
+                    # load) - forcing focus onto it anyway makes Kodi silently reject the request and
+                    # leaves the window with no focused control at all, so fall back to the episode list
+                    util.DEBUG_LOG("Episodes: Play button {} never became visible, focusing episode list "
+                                   "instead", set_focus)
+                    self.setCondFocusId(self.EPISODE_LIST_ID)
 
     @busy.dialog()
     def setup(self):
