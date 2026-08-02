@@ -657,6 +657,13 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
                 self.setProgress(mli, view_offset=0)
         elif self.season.isFullyWatched and not self.episode:
             self.episodeListControl.selectItem(mli.pos())
+
+            tries = 0
+            while self.episodeListControl.getSelectedPos() != mli.pos() and tries < util.MONITOR.waitAmount(4, interval=0.05):
+                util.MONITOR.waitFor(0.05)
+                self.episodeListControl.selectItem(mli.pos())
+                tries += 1
+
             self.episodesPaginator.setEpisode(mli.dataSource)
             self.lastItem = mli
 
