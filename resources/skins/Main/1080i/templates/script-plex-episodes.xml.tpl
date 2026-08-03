@@ -21,126 +21,27 @@
     <posy>{{ vscale(155) }}</posy>
     <!--<defaultcontrol>101</defaultcontrol>-->
 
-    {% block buttons %}
-        {% if theme.episodes.use_button_bg %}
-            <control type="image">
-                <visible>String.IsEmpty(Window.Property(disable_playback))</visible>
-                <posx>60</posx>
-                <posy>{{ vscale(369) }}</posy>
-                <width>657</width>
-                <height>{{ vscale(104) }}</height>
-                <texture>script.plex/white-square.png</texture>
-                <colordiffuse>{{ theme.episodes.button_bg_color|default(66000000) }}</colordiffuse>
-            </control>
-        {% endif %}
-        <control type="grouplist" id="300">
-            <visible allowhiddenfocus="!String.IsEmpty(Container(400).ListItem.Property(media.multiple))">String.IsEmpty(Container(400).ListItem.Property(media.multiple)) + !String.IsEmpty(Window.Property(initialized)) + String.IsEmpty(Window.Property(disable_playback))</visible>
-            <defaultcontrol always="true">301</defaultcontrol>
-            <posx>30</posx>
-            <posy>{{ theme.episodes.buttongroup.posy|vscale }}</posy>
-            <width>717</width>
-            <height>{{ vscale(200) }}</height>
-            <onup condition="Control.IsVisible(205)">205</onup>
-            <onup>200</onup>
-            <ondown>400</ondown>
-            <align>center</align>
-            <itemgap>{{ theme.episodes.buttongroup.itemgap }}</itemgap>
-            <orientation>horizontal</orientation>
-            <scrolltime tween="quadratic" easing="out">200</scrolltime>
-            <usecontrolcoords>true</usecontrolcoords>
-
-            {% with attr = theme.episodes.buttons & template = "includes/themed_button.xml.tpl" %}
-                {% include template with name="info" & id=304 %}
-                {% include template with name="play" & id=301 & onleft=304 & onright=305 &
-                    enable="!String.IsEmpty(Window.Property(current_item.loaded))" & visible="!String.IsEmpty(Window.Property(current_item.loaded))" &
-                    allowhiddenfocus=True
-                %}
-                {% include template with name="play" & id=306 & onleft=304 & onright=305 &
-                                    visible="String.IsEmpty(Window.Property(current_item.loaded))"
-                %}
-                {% include template with name="settings" & id=305 %}
-                {% include template with name="more" & id=303 %}
-                {% include template with name="shuffle" & id=302 %}
-            {% endwith %}
-        </control>
-        <control type="grouplist" id="1300">
-            <visible>!String.IsEmpty(Container(400).ListItem.Property(media.multiple)) + !String.IsEmpty(Window.Property(initialized)) + String.IsEmpty(Window.Property(disable_playback))</visible>
-            <defaultcontrol always="true">1301</defaultcontrol>
-            <posx>30</posx>
-            <posy>{{ theme.episodes.buttongroup_1300.posy|vscale }}</posy>
-            <width>717</width>
-            <height>{{ vscale(200) }}</height>
-            <onup condition="Control.IsVisible(205)">205</onup>
-            <onup>200</onup>
-            <ondown>400</ondown>
-            <align>center</align>
-            <itemgap>{{ theme.episodes.buttongroup_1300.itemgap }}</itemgap>
-            <orientation>horizontal</orientation>
-            <scrolltime tween="quadratic" easing="out">200</scrolltime>
-            <usecontrolcoords>true</usecontrolcoords>
-
-            {% with attr = theme.episodes.buttons_1300 & template = "includes/themed_button.xml.tpl" %}
-                {% include template with name="info" & id=1304 %}
-                {% include template with name="play" & id=1301 & onleft=1304 & onright=1305 &
-                    enable="!String.IsEmpty(Window.Property(current_item.loaded))" & visible="!String.IsEmpty(Window.Property(current_item.loaded))" &
-                    allowhiddenfocus=True
-                %}
-                {% include template with name="play" & id=1306 & onleft=1304 & onright=1307 &
-                                    visible="String.IsEmpty(Window.Property(current_item.loaded))"
-                %}
-                {% include template with name="media" & id=1307 %}
-                {% include template with name="settings" & id=1305 %}
-                {% include template with name="more" & id=1303 %}
-                {% include template with name="shuffle" & id=1302 %}
-            {% endwith %}
-
-        </control>
-    {% endblock %}
-
     <control type="group">
         <posx>0</posx>
         <posy>0</posy>
         <width>1920</width>
         <height>{{ vscale(600) }}</height>
-        <control type="group">
-            <control type="image">
-                <visible>false</visible>
-                <posx>60</posx>
-                <posy>0</posy>
-                <width>656</width>
-                <height>{{ vscale(369) }}</height>
-                <texture background="true">script.plex/home/background-fallback_black.png</texture>
-                <aspectratio>scale</aspectratio>
-            </control>
-            <control type="image">
-                <posx>60</posx>
-                <posy>0</posy>
-                <width>656</width>
-                <height>{{ vscale(369) }}</height>
-                <texture background="true" fallback="script.plex/thumb_fallbacks/show.png">$INFO[Container(400).ListItem.Thumb]</texture>
-                <aspectratio>scale</aspectratio>
-            </control>
-            {% include "includes/watched_indicator.xml.tpl" with itemref="Container(400).ListItem" & xoff=656+60 & uw_size=35 & scale="large" %}
-        </control>
-
         <!-- Sits one row above the meta row (which starts at 160), under whatever fills the top slot - the
              clear logo, or the show's title. Height capped at 46 so it doesn't clip into the meta row below -
-             a grouplist clips its children and owns that region. 1084 is the column's right margin:
-             776+1084 = 1860. -->
+             a grouplist clips its children and owns that region. 1800 is the column's right margin, matching
+             the rest of this panel now that it fills the space the preview image used to occupy: 60+1800 =
+             1860. -->
         <control type="grouplist">
-            <posx>776</posx>
+            <posx>60</posx>
             <posy>{{ vscale(114) }}</posy>
-            <width>1084</width>
+            <width>1800</width>
             <height>{{ vscale(46) }}</height>
             <align>left</align>
             <itemgap>0</itemgap>
             <orientation>horizontal</orientation>
             <usecontrolcoords>true</usecontrolcoords>
-            <!-- capped so a long title can't outgrow the group and get clipped instead of scrolling: 950
-                 leaves the same ~134px margin for the unavailable button that follows as before, now that
-                 the SxxEyy/date prefix that used to precede the title is gone -->
             <control type="label">
-                <width max="950">auto</width>
+                <width max="1800">auto</width>
                 <height>{{ vscale(46) }}</height>
                 <font>font13</font>
                 <align>left</align>
@@ -149,23 +50,6 @@
                 <scroll>true</scroll>
                 <scrollspeed>35</scrollspeed>
                 <label>[B]$INFO[Container(400).ListItem.Property(title)][/B]</label>
-            </control>
-            <!-- Sits in the heading row rather than its own; that freed up vertical space for the logo above -->
-            <control type="button">
-                <visible>!String.IsEmpty(Container(400).ListItem.Property(unavailable))</visible>
-                <posx>10</posx>
-                <posy>6</posy>
-                <width>auto</width>
-                <height>{{ vscale(34) }}</height>
-                <font>font12</font>
-                <align>center</align>
-                <aligny>center</aligny>
-                <focusedcolor>FFFFFFFF</focusedcolor>
-                <textcolor>FFFFFFFF</textcolor>
-                <textoffsetx>15</textoffsetx>
-                <texturefocus colordiffuse="FFAC3223" border="12">script.plex/white-square-rounded.png</texturefocus>
-                <texturenofocus colordiffuse="FFAC3223" border="12">script.plex/white-square-rounded.png</texturenofocus>
-                <label>$ADDON[script.plexmod 32312]</label>
             </control>
         </control>
         <control type="image">
@@ -181,11 +65,11 @@
              where the logo's bottom edge is. -->
         <control type="label">
             <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
-            <posx>776</posx>
+            <posx>60</posx>
             <posy>0</posy>
-            <!-- 714, not the heading's 950: this box overlaps the ratings' y range, and 776+714 stops short
+            <!-- 1500, not the heading's 1800: this box overlaps the ratings' y range, and 60+1500 stops short
                  of them at 1560. The heading below clears them and can run wider. -->
-            <width>714</width>
+            <width>1500</width>
             <height>{{ vscale(68) }}</height>
             <!-- stands in for the logo and has its whole 100px box to fill, so it takes the largest face
                  the templates use; font32_title is the step down if this crowds the box -->
@@ -197,50 +81,17 @@
             <textcolor>FFFFFFFF</textcolor>
             <label>$INFO[Container(400).ListItem.Property(show.title)]</label>
         </control>
-        <!-- Takes the watched/unwatched indicator's slot, flush to the thumb's top-right corner and using its
-             texture, which is free exactly when this is showing: isWatched is viewCount>0 OR viewOffset>0, so
-             an in-progress episode gets no unwatched dot, and isFullyWatched needs viewOffset empty, so it
-             gets no checkmark either. Right-aligned via a grouplist because the pill's width follows its text;
-             its right edge lands on xoff (656+60), the same anchor watched_indicator uses. Unconditional -
-             keeping it out of the heading is what lets that row be a single label with no width juggling. -->
-        <control type="grouplist">
-            <visible>!String.IsEmpty(Container(400).ListItem.Property(remainingTime))</visible>
-            <posx>416</posx>
-            <posy>0</posy>
-            <width>300</width>
-            <height>{{ vscale(35) }}</height>
-            <align>right</align>
-            <itemgap>0</itemgap>
-            <orientation>horizontal</orientation>
-            <control type="button">
-                <width>auto</width>
-                <height>{{ vscale(35) }}</height>
-                <font>font12</font>
-                <align>center</align>
-                <aligny>center</aligny>
-                <focusedcolor>FFE5A00D</focusedcolor>
-                <textcolor>FFE5A00D</textcolor>
-                <textoffsetx>15</textoffsetx>
-                <!-- The tight-radius twin of the _w texture the indicator uses (4px curve against its 12), and
-                     9-sliced at exactly that: without a border the 100x100 source stretches to the pill's
-                     width and the round flattens into an ellipse -->
-                <texturefocus colordiffuse="CC000000" border="4">script.plex/white-square-bl-rounded.png</texturefocus>
-                <texturenofocus colordiffuse="CC000000" border="4">script.plex/white-square-bl-rounded.png</texturenofocus>
-                <label>$INFO[Container(400).ListItem.Property(remainingTime)]</label>
-            </control>
-        </control>
-
         <!-- Sized to match pre_play's poster-shown clear logo box (873x106, itself scaled off this box's old
              560x68 by the 106/68 ratio) rather than the movie/show screens' shorter 0..68 box - the logo now
              renders larger at the cost of no longer sharing their exact slot. Width trimmed from pre_play's
-             873 to 784 (776+784=1560) so it can't run into the ratings badge, which starts at 1560 here vs
+             873 to 1500 (60+1500=1560) so it can't run into the ratings badge, which starts at 1560 here vs
              1426 there. Bottom-aligned, so the taller box draws the logo lower; heading (114) still clears it
              with an 8px gap. -->
         <control type="image">
             <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
-            <posx>776</posx>
+            <posx>60</posx>
             <posy>0</posy>
-            <width>784</width>
+            <width>1500</width>
             <height>{{ vscale(106) }}</height>
             <aspectratio align="left" aligny="bottom">keep</aspectratio>
             <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
@@ -293,16 +144,16 @@
         </control>
 
         <control type="grouplist">
-            <posx>776</posx>
+            <posx>60</posx>
             <posy>{{ vscale(160) }}</posy>
-            <width>1084</width>
+            <width>1800</width>
             <height>{{ vscale(34) }}</height>
             <align>left</align>
             <itemgap>0</itemgap>
             <orientation>horizontal</orientation>
             <usecontrolcoords>true</usecontrolcoords>
             <control type="label">
-                <width max="1084">auto</width>
+                <width max="1800">auto</width>
                 <height>{{ vscale(34) }}</height>
                 <font>font10</font>
                 <align>left</align>
@@ -311,13 +162,44 @@
                 <textcolor>FFFFFFFF</textcolor>
                 <label>$INFO[Container(400).ListItem.Property(duration)]$INFO[Container(400).ListItem.Property(genre), &#8226; ]$INFO[Container(400).ListItem.Property(date), &#8226; ]$INFO[Container(400).ListItem.Property(content.rating), &#8226; ]</label>
             </control>
+            <control type="button">
+                <visible>!String.IsEmpty(Container(400).ListItem.Property(remainingTime))</visible>
+                <posx>10</posx>
+                <width>auto</width>
+                <height>{{ vscale(34) }}</height>
+                <font>font10</font>
+                <align>center</align>
+                <aligny>top</aligny>
+                <focusedcolor>FFE5A00D</focusedcolor>
+                <textcolor>FFE5A00D</textcolor>
+                <textoffsetx>15</textoffsetx>
+                <texturefocus colordiffuse="40000000" border="8">script.plex/white-square-rounded-top-padded.png</texturefocus>
+                <texturenofocus colordiffuse="40000000" border="8">script.plex/white-square-rounded-top-padded.png</texturenofocus>
+                <label>$INFO[Container(400).ListItem.Property(remainingTime)]</label>
+            </control>
+            <control type="button">
+                <visible>!String.IsEmpty(Container(400).ListItem.Property(unavailable))</visible>
+                <posx>10</posx>
+                <width>auto</width>
+                <height>{{ vscale(34) }}</height>
+                <font>font10</font>
+                <align>center</align>
+                <aligny>top</aligny>
+                <focusedcolor>FFFFFFFF</focusedcolor>
+                <textcolor>FFFFFFFF</textcolor>
+                <textoffsetx>15</textoffsetx>
+                <texturefocus colordiffuse="FFAC3223" border="8">script.plex/white-square-rounded-top-padded.png</texturefocus>
+                <texturenofocus colordiffuse="FFAC3223" border="8">script.plex/white-square-rounded-top-padded.png</texturenofocus>
+                <label>$ADDON[script.plexmod 32312]</label>
+            </control>
         </control>
 
         <control type="textbox">
-            <posx>776</posx>
+            <posx>60</posx>
             <posy>{{ vscale(200) }}</posy>
-            <width>1084</width>
-            <height>{{ vscale(172) }}</height>
+            <!-- 1080, matching pre_play's no-poster summary box width -->
+            <width>1080</width>
+            <height>{{ vscale(152) }}</height>
             <font>font12</font>
             <align>left</align>
             <textcolor>FFFFFFFF</textcolor>
@@ -329,9 +211,9 @@
         <!-- Video/audio/subtitles, formatted like pre_play's streams block: a vertical grouplist of
              label-per-line rows (grey uppercase tag + tab + value) instead of the pill buttons used above -->
         <control type="grouplist">
-            <posx>776</posx>
-            <posy>{{ vscale(378) }}</posy>
-            <width>1084</width>
+            <posx>60</posx>
+            <posy>{{ vscale(358) }}</posy>
+            <width>1800</width>
             <height>{{ vscale(90) }}</height>
             <align>left</align>
             <orientation>vertical</orientation>
@@ -340,7 +222,7 @@
                 <visible>!String.IsEmpty(Container(400).ListItem.Property(video.res))</visible>
                 <width>auto</width>
                 <height>{{ vscale(30) }}</height>
-                <font>font10</font>
+                <font>font8</font>
                 <align>left</align>
                 <aligny>top</aligny>
                 <textcolor>FFFFFFFF</textcolor>
@@ -350,7 +232,7 @@
                 <visible>!String.IsEmpty(Container(400).ListItem.Property(audio))</visible>
                 <width>auto</width>
                 <height>{{ vscale(30) }}</height>
-                <font>font10</font>
+                <font>font8</font>
                 <align>left</align>
                 <aligny>top</aligny>
                 <textcolor>FFFFFFFF</textcolor>
@@ -360,49 +242,55 @@
                 <visible>!String.IsEmpty(Container(400).ListItem.Property(subtitles))</visible>
                 <width>auto</width>
                 <height>{{ vscale(30) }}</height>
-                <font>font10</font>
+                <font>font8</font>
                 <align>left</align>
                 <aligny>top</aligny>
                 <textcolor>FFFFFFFF</textcolor>
-                <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32396][/UPPERCASE][/COLOR][TABS]2[/TABS]$INFO[Container(400).ListItem.Property(subtitles)]</label>
+                <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32396][/UPPERCASE][/COLOR][TABS]1[/TABS]$INFO[Container(400).ListItem.Property(subtitles)]</label>
             </control>
         </control>
 
     </control>
 
     <!-- EPISODES -->
-    <control type="grouplist" id="60">
-        <visible>!String.IsEmpty(Window.Property(initialized))</visible>
+    <!-- The episode row and its play button row are core to the episode being viewed, not supplementary info
+         like Roles/Reviews/Extras below (grouplist 60, which auto-stacks by height and doesn't reliably honor
+         a child's own posy as extra gap - a nested grouplist attempt here caused Roles to overlap the episode
+         row instead of stacking after it). A plain group has none of that ambiguity: children always render
+         at exactly the posx/posy they declare, same as the title/summary panel above. This group is a sibling
+         of grouplist 60 within group 50 (matching pre_play/seasons, where grouplist 60 is likewise nested
+         inside group 50 rather than being a top-level control) - posy is relative to group 50's own origin
+         (155), not the window. 463 = 448 (streams block's own bottom: posy 358 + height 90) + 15 (gap). -->
+    <control type="group">
         <posx>0</posx>
-        <posy>{{ vscale(510) }}</posy>
+        <posy>{{ vscale(463) }}</posy>
         <width>1920</width>
-        <height>{{ vscale(1800) }}</height>
+        <!-- 452 = 307 (button row's own posy below, see its comment) + 145 (buttons) -->
+        <height>{{ vscale(452) }}</height>
 
-        <onup condition="Control.IsVisible(300)">300</onup>
-        <onup condition="Control.IsVisible(1300)">1300</onup>
-        <onup condition="!Control.IsVisible(1300) + !Control.IsVisible(300)">200</onup>
-        <itemgap>0</itemgap>
-
-        <!-- EPISODES -->
         <!-- Fixed-center carousel: 500 is a full-width (1920) clipping mask (grouplist clips its children,
-             a plain group doesn't - see the grouplist-60 comment above). Inside it, list 400 is oversized to
-             2375 (5 item-cells of 475) and shifted -227.5, so the mask's edges fall mid-cell on the outer
-             items instead of on a cell boundary - that's what turns the leftover width into a symmetric
-             247.5px peek on both sides (edge-to-edge across the full row) rather than one lopsided sliver.
-             focusposition=2 pins the true center cell (3rd of 5) as the fixed focus; items scroll under it.
-             500's own onup/ondown/onleft/onright are required here (duplicated onto the child fixedlist too):
-             a grouplist wrapper doesn't automatically forward its child's direction rules for keys outside its
-             own orientation axis - same reason the buttongroup grouplists (300/1300) above define their own
+             a plain group doesn't). Inside it, list 400 is oversized to 2375 (5 item-cells of 475) and
+             shifted -227.5, so the mask's edges fall mid-cell on the outer items instead of on a cell
+             boundary - that's what turns the leftover width into a symmetric 247.5px peek on both sides
+             (edge-to-edge across the full row) rather than one lopsided sliver. focusposition=2 pins the
+             true center cell (3rd of 5) as the fixed focus; items scroll under it. 500's own
+             onup/ondown/onleft/onright are required here (duplicated onto the child fixedlist too): a
+             grouplist wrapper doesn't automatically forward its child's direction rules for keys outside its
+             own orientation axis - same reason the buttongroup grouplists (300/1300) below define their own
              onup/ondown rather than relying on their buttons'. -->
         <control type="grouplist" id="500">
+            <posx>0</posx>
+            <posy>0</posy>
             <visible>Integer.IsGreater(Container(400).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
             <height>{{ vscale(360) }}</height>
             <width>1920</width>
             <usecontrolcoords>true</usecontrolcoords>
             <orientation>horizontal</orientation>
             <itemgap>0</itemgap>
-            <onup condition="Control.IsVisible(300)">300</onup>
-            <onup condition="Control.IsVisible(1300)">1300</onup>
+            <onup condition="Control.IsVisible(205)">205</onup>
+            <onup>200</onup>
+            <ondown condition="Control.IsVisible(300)">300</ondown>
+            <ondown condition="Control.IsVisible(1300)">1300</ondown>
             <ondown>402</ondown>
             <onleft>noop</onleft>
             <onright>noop</onright>
@@ -412,8 +300,10 @@
                 <width>2375</width>
                 <height>{{ vscale(360) }}</height>
                 <focusposition>2</focusposition>
-                <onup condition="Control.IsVisible(300)">300</onup>
-                <onup condition="Control.IsVisible(1300)">1300</onup>
+                <onup condition="Control.IsVisible(205)">205</onup>
+                <onup>200</onup>
+                <ondown condition="Control.IsVisible(300)">300</ondown>
+                <ondown condition="Control.IsVisible(1300)">1300</ondown>
                 <ondown>402</ondown>
                 <onleft>noop</onleft>
                 <onright>noop</onright>
@@ -715,6 +605,96 @@
         </control>
         <!-- EPISODES -->
 
+        <!-- Sits directly below the episode row. Like pre_play's button row (see its own posy comment),
+             these icons are 180x145 source art stretched into their box with no aspectratio, and the opaque
+             glyph is roughly centered with ~37% padding above and below it - so the box's declared top isn't
+             where the icon becomes visible. 307 (was 347, which matched pre_play's ~53px perceived gap below
+             the carousel's real content - moved up 40px on top of that per request). -->
+        {% block buttons %}
+            <control type="group">
+                <posy>{{ vscale(307) }}</posy>
+                <width>1920</width>
+                <height>{{ vscale(145) }}</height>
+                <control type="grouplist" id="300">
+                    <visible allowhiddenfocus="!String.IsEmpty(Container(400).ListItem.Property(media.multiple))">String.IsEmpty(Container(400).ListItem.Property(media.multiple)) + !String.IsEmpty(Window.Property(initialized)) + String.IsEmpty(Window.Property(disable_playback))</visible>
+                    <defaultcontrol always="true">301</defaultcontrol>
+                    <!-- 22, matching pre_play's no-poster button row x position -->
+                    <posx>22</posx>
+                    <posy>0</posy>
+                    <width>1000</width>
+                    <height>{{ vscale(200) }}</height>
+                    <onup>400</onup>
+                    <ondown>402</ondown>
+                    <itemgap>{{ theme.episodes.buttongroup.itemgap }}</itemgap>
+                    <orientation>horizontal</orientation>
+                    <scrolltime tween="quadratic" easing="out">200</scrolltime>
+                    <usecontrolcoords>true</usecontrolcoords>
+
+                    {% with attr = theme.episodes.buttons & template = "includes/themed_button.xml.tpl" %}
+                        {% include template with name="info" & id=304 %}
+                        {% include template with name="play" & id=301 & onleft=304 & onright=305 &
+                            enable="!String.IsEmpty(Window.Property(current_item.loaded))" & visible="!String.IsEmpty(Window.Property(current_item.loaded))" &
+                            allowhiddenfocus=True
+                        %}
+                        {% include template with name="play" & id=306 & onleft=304 & onright=305 &
+                                            visible="String.IsEmpty(Window.Property(current_item.loaded))"
+                        %}
+                        {% include template with name="settings" & id=305 %}
+                        {% include template with name="more" & id=303 %}
+                        {% include template with name="shuffle" & id=302 %}
+                    {% endwith %}
+                </control>
+                <control type="grouplist" id="1300">
+                    <visible>!String.IsEmpty(Container(400).ListItem.Property(media.multiple)) + !String.IsEmpty(Window.Property(initialized)) + String.IsEmpty(Window.Property(disable_playback))</visible>
+                    <defaultcontrol always="true">1301</defaultcontrol>
+                    <!-- 22, matching pre_play's no-poster button row x position -->
+                    <posx>22</posx>
+                    <posy>0</posy>
+                    <width>1000</width>
+                    <height>{{ vscale(200) }}</height>
+                    <onup>400</onup>
+                    <ondown>402</ondown>
+                    <itemgap>{{ theme.episodes.buttongroup.itemgap }}</itemgap>
+                    <orientation>horizontal</orientation>
+                    <scrolltime tween="quadratic" easing="out">200</scrolltime>
+                    <usecontrolcoords>true</usecontrolcoords>
+
+                    {% with attr = theme.episodes.buttons & template = "includes/themed_button.xml.tpl" %}
+                        {% include template with name="info" & id=1304 %}
+                        {% include template with name="play" & id=1301 & onleft=1304 & onright=1305 &
+                            enable="!String.IsEmpty(Window.Property(current_item.loaded))" & visible="!String.IsEmpty(Window.Property(current_item.loaded))" &
+                            allowhiddenfocus=True
+                        %}
+                        {% include template with name="play" & id=1306 & onleft=1304 & onright=1307 &
+                                            visible="String.IsEmpty(Window.Property(current_item.loaded))"
+                        %}
+                        {% include template with name="media" & id=1307 %}
+                        {% include template with name="settings" & id=1305 %}
+                        {% include template with name="more" & id=1303 %}
+                        {% include template with name="shuffle" & id=1302 %}
+                    {% endwith %}
+
+                </control>
+            </control>
+        {% endblock %}
+    </control>
+
+    <!-- Roles/Reviews/Extras: supplementary info, unlike the episode row and its buttons above. This
+         grouplist auto-stacks its direct children (502/503/504) purely by height and skips them entirely
+         when their <visible> condition is false, so an empty Roles section doesn't leave a gap before
+         Reviews. 915 = 463 (episode row's own start) + 452 (its height, carousel + button row); both
+         relative to group 50's origin, same as the episode row group above. -->
+    <control type="grouplist" id="60">
+        <visible>!String.IsEmpty(Window.Property(initialized))</visible>
+        <posx>0</posx>
+        <posy>{{ vscale(915) }}</posy>
+        <width>1920</width>
+        <height>{{ vscale(1800) }}</height>
+
+        <onup condition="Control.IsVisible(205)">205</onup>
+        <onup>200</onup>
+        <itemgap>0</itemgap>
+
         <!-- ROLES -->
         <control type="group" id="502">
             <visible>Integer.IsGreater(Container(402).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
@@ -737,6 +717,8 @@
                 <posy>0</posy>
                 <width>1920</width>
                 <height>{{ vscale(400) }}</height>
+                <onup condition="Control.IsVisible(300)">300</onup>
+                <onup condition="Control.IsVisible(1300)">1300</onup>
                 <onup>400</onup>
                 <ondown>403</ondown>
                 <scrolltime>200</scrolltime>
@@ -1303,9 +1285,7 @@
     <onleft>202</onleft>
     <onright condition="Control.IsVisible(204)">204</onright>
     <onright>noop</onright>
-    <ondown condition="Control.IsVisible(300)">300</ondown>
-    <ondown condition="Control.IsVisible(1300)">1300</ondown>
-    <ondown>50</ondown>
+    <ondown>400</ondown>
     <control type="fixedlist" id="205">
         <posx>-120</posx>
         <posy>0</posy>
@@ -1316,9 +1296,7 @@
         <onleft>202</onleft>
         <onright condition="Control.IsVisible(204)">204</onright>
         <onright>noop</onright>
-        <ondown condition="Control.IsVisible(300)">300</ondown>
-        <ondown condition="Control.IsVisible(1300)">1300</ondown>
-        <ondown>50</ondown>
+        <ondown>400</ondown>
         <scrolltime tween="quadratic" easing="out">200</scrolltime>
         <orientation>horizontal</orientation>
         <preloaditems>7</preloaditems>
