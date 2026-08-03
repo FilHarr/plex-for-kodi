@@ -189,7 +189,7 @@ TEMPLATE_CONTEXTS = {
             },
             "pre_play": {
                 "buttongroup": {
-                    "itemgap": -40
+                    "itemgap": -60
                 },
                 "buttons": {
                     "width": 152,
