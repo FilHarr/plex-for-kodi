@@ -683,7 +683,7 @@
                 <align>left</align>
                 <aligny>center</aligny>
                 <textcolor>FFFFFFFF</textcolor>
-                <label>[UPPERCASE]$ADDON[script.plexmod 32419][/UPPERCASE]</label>
+                <label>[UPPERCASE]$ADDON[script.plexmod 33609][/UPPERCASE]</label>
             </control>
             <control type="list" id="402">
                 <posx>0</posx>
@@ -698,7 +698,7 @@
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
-                <itemlayout width="304">
+                <itemlayout width="260">
                     <control type="group">
                         <posx>55</posx>
                         <posy>{{ vscale(61) }}</posy>
@@ -708,26 +708,26 @@
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(244) }}</height>
+                                <width>200</width>
+                                <height>{{ vscale(200) }}</height>
                                 <texture diffuse="script.plex/masks/role.png">script.plex/thumb_fallbacks/role.png</texture>
                             </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(244) }}</height>
+                                <width>200</width>
+                                <height>{{ vscale(200) }}</height>
                                 <texture background="true" diffuse="script.plex/masks/role.png">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false" aligny="top">scale</aspectratio>
                             </control>
                             <control type="group">
                                 <posx>0</posx>
-                                <posy>{{ vscale(253) }}</posy>
+                                <posy>{{ vscale(209) }}</posy>
                                 <control type="label">
                                     <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
+                                    <width>200</width>
                                     <height>{{ vscale(60) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
@@ -738,7 +738,7 @@
                                     <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>{{ vscale(30) }}</posy>
-                                    <width>244</width>
+                                    <width>200</width>
                                     <height>{{ vscale(60) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
@@ -751,21 +751,21 @@
                 </itemlayout>
 
                 <!-- FOCUSED LAYOUT ####################################### -->
-                <focusedlayout width="304">
+                <focusedlayout width="260">
                     <control type="group">
                         <posx>55</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
-                            <animation effect="zoom" start="100" end="110" time="100" center="127,{{ vscale(127) }}" reversible="false">Focus</animation>
-                            <animation effect="zoom" start="110" end="100" time="100" center="127,{{ vscale(127) }}" reversible="false">UnFocus</animation>
+                            <animation effect="zoom" start="100" end="110" time="100" center="105,{{ vscale(105) }}" reversible="false">Focus</animation>
+                            <animation effect="zoom" start="110" end="100" time="100" center="105,{{ vscale(105) }}" reversible="false">UnFocus</animation>
                             <posx>0</posx>
                             <posy>0</posy>
                             <control type="image">
                                 <visible>Control.HasFocus(402)</visible>
                                 <posx>-40</posx>
                                 <posy>{{ vscale(-40) }}</posy>
-                                <width>334</width>
-                                <height>{{ vscale(334) }}</height>
+                                <width>290</width>
+                                <height>{{ vscale(290) }}</height>
                                 <texture border="42">script.plex/buttons/role-shadow.png</texture>
                             </control>
                             <control type="group">
@@ -774,26 +774,26 @@
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(244) }}</height>
+                                    <width>200</width>
+                                    <height>{{ vscale(200) }}</height>
                                     <texture diffuse="script.plex/masks/role.png">script.plex/thumb_fallbacks/role.png</texture>
                                 </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(244) }}</height>
+                                    <width>200</width>
+                                    <height>{{ vscale(200) }}</height>
                                     <texture background="true" diffuse="script.plex/masks/role.png">$INFO[ListItem.Thumb]</texture>
                                     <aspectratio scalediffuse="false" aligny="top">scale</aspectratio>
                                 </control>
                                 <control type="group">
                                     <posx>0</posx>
-                                    <posy>{{ vscale(253) }}</posy>
+                                    <posy>{{ vscale(209) }}</posy>
                                     <control type="label">
                                         <scroll>Control.HasFocus(402)</scroll>
                                         <posx>0</posx>
                                         <posy>0</posy>
-                                        <width>244</width>
+                                        <width>200</width>
                                         <height>{{ vscale(60) }}</height>
                                         <font>font10</font>
                                         <align>center</align>
@@ -804,7 +804,7 @@
                                         <scroll>Control.HasFocus(402)</scroll>
                                         <posx>0</posx>
                                         <posy>{{ vscale(30) }}</posy>
-                                        <width>244</width>
+                                        <width>200</width>
                                         <height>{{ vscale(60) }}</height>
                                         <font>font10</font>
                                         <align>center</align>
@@ -817,8 +817,8 @@
                                 <visible>Control.HasFocus(402)</visible>
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>254</width>
-                                <height>{{ vscale(254) }}</height>
+                                <width>210</width>
+                                <height>{{ vscale(210) }}</height>
                                 <texture>script.plex/buttons/role-selected.png</texture>
                             </control>
                         </control>
