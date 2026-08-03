@@ -123,46 +123,34 @@
             {% include "includes/watched_indicator.xml.tpl" with itemref="Container(400).ListItem" & xoff=656+60 & uw_size=35 & scale="large" %}
         </control>
 
-        <!-- One row step above the meta row: the column below runs 160 -> 206, so 46, and 160-46=114. Sits
-             here in both modes, under whatever fills the top slot - the clear logo, or the show's title.
-             1084 is the column's right margin: 776+1084 = 1860. -->
+        <!-- Sits one row above the meta row (which starts at 160), under whatever fills the top slot - the
+             clear logo, or the show's title. Height capped at 46 so it doesn't clip into the meta row below -
+             a grouplist clips its children and owns that region. 1084 is the column's right margin:
+             776+1084 = 1860. -->
         <control type="grouplist">
             <posx>776</posx>
             <posy>{{ vscale(114) }}</posy>
             <width>1084</width>
-            <!-- 46, the row step: at the inherited 60 this box ran to 174 and overlapped the meta row that
-                 starts at 160, which matters because a grouplist clips its children and owns that region -->
             <height>{{ vscale(46) }}</height>
             <align>left</align>
             <itemgap>0</itemgap>
             <orientation>horizontal</orientation>
             <usecontrolcoords>true</usecontrolcoords>
-            <!-- SxxEyy and the air date, ahead of the episode title in both modes; with a logo up this is
-                 also what frees the row below for the logo's height -->
+            <!-- capped so a long title can't outgrow the group and get clipped instead of scrolling: 950
+                 leaves the same ~134px margin for the unavailable button that follows as before, now that
+                 the SxxEyy/date prefix that used to precede the title is gone -->
             <control type="label">
-                <width>auto</width>
+                <width max="950">auto</width>
                 <height>{{ vscale(46) }}</height>
-                <!-- font12 like the metadata rows this came off, not font13 like the title beside it -->
-                <font>font12</font>
-                <align>left</align>
-                <aligny>top</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>$INFO[Container(400).ListItem.Property(heading.prefix)]</label>
-            </control>
-            <!-- capped so a long title can't outgrow the group and get clipped instead of scrolling: the
-                 SxxEyy prefix ahead of it runs to about 300 -->
-            <control type="label">
-                <width max="650">auto</width>
-                <height>{{ vscale(46) }}</height>
-                <font>font12</font>
+                <font>font13</font>
                 <align>left</align>
                 <aligny>top</aligny>
                 <textcolor>FFFFFFFF</textcolor>
                 <scroll>true</scroll>
                 <scrollspeed>35</scrollspeed>
-                <label>$INFO[Container(400).ListItem.Property(title)]</label>
+                <label>[B]$INFO[Container(400).ListItem.Property(title)][/B]</label>
             </control>
-            <!-- moved up here with the merged heading; its old row was removed to free the logo's height -->
+            <!-- Sits in the heading row rather than its own; that freed up vertical space for the logo above -->
             <control type="button">
                 <visible>!String.IsEmpty(Container(400).ListItem.Property(unavailable))</visible>
                 <posx>10</posx>
@@ -242,16 +230,18 @@
             </control>
         </control>
 
-        <!-- Exactly the box the movie and show screens use, 0..68. This column could afford 102 - its next
-             row is the heading at 114, where theirs is a meta row at 80 - but the logo is bottom-aligned, so
-             a taller box draws the logo lower and it stops lining up with the other screens. Equal size or
-             equal position; position won. -->
+        <!-- Sized to match pre_play's poster-shown clear logo box (873x106, itself scaled off this box's old
+             560x68 by the 106/68 ratio) rather than the movie/show screens' shorter 0..68 box - the logo now
+             renders larger at the cost of no longer sharing their exact slot. Width trimmed from pre_play's
+             873 to 784 (776+784=1560) so it can't run into the ratings badge, which starts at 1560 here vs
+             1426 there. Bottom-aligned, so the taller box draws the logo lower; heading (114) still clears it
+             with an 8px gap. -->
         <control type="image">
             <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
             <posx>776</posx>
             <posy>0</posy>
-            <width>560</width>
-            <height>{{ vscale(68) }}</height>
+            <width>784</width>
+            <height>{{ vscale(106) }}</height>
             <aspectratio align="left" aligny="bottom">keep</aspectratio>
             <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
         </control>
@@ -314,109 +304,18 @@
             <control type="label">
                 <width max="1084">auto</width>
                 <height>{{ vscale(34) }}</height>
-                <font>font12</font>
+                <font>font10</font>
                 <align>left</align>
                 <scroll>true</scroll>
                 <scrollspeed>25</scrollspeed>
                 <textcolor>FFFFFFFF</textcolor>
-                <label>$INFO[Container(400).ListItem.Property(duration)]$INFO[Container(400).ListItem.Property(genre), &#8226; ]$INFO[Container(400).ListItem.Property(year), &#8226; ]$INFO[Container(400).ListItem.Property(content.rating), &#8226; ]</label>
-            </control>
-            <control type="button">
-                <visible>!String.IsEmpty(Container(400).ListItem.Property(video.res))</visible>
-                <posx>10</posx>
-                <width>auto</width>
-                <height>{{ vscale(34) }}</height>
-                <font>font12</font>
-                <align>center</align>
-                <aligny>top</aligny>
-                <focusedcolor>FFFFFFFF</focusedcolor>
-                <textcolor>FFFFFFFF</textcolor>
-                <textoffsetx>15</textoffsetx>
-                <texturefocus colordiffuse="40000000" border="8">script.plex/white-square-rounded-top-padded.png</texturefocus>
-                <texturenofocus colordiffuse="40000000" border="8">script.plex/white-square-rounded-top-padded.png</texturenofocus>
-                <label>$INFO[Container(400).ListItem.Property(video.res)]$INFO[Container(400).ListItem.Property(video.rendering), &#8226; ]$INFO[Container(400).ListItem.Property(video.codec), &#8226; ]$INFO[Container(400).ListItem.Property(audio.codec), &#8226; ]$INFO[Container(400).ListItem.Property(audio.channels), &#8226; ]</label>
+                <label>$INFO[Container(400).ListItem.Property(duration)]$INFO[Container(400).ListItem.Property(genre), &#8226; ]$INFO[Container(400).ListItem.Property(date), &#8226; ]$INFO[Container(400).ListItem.Property(content.rating), &#8226; ]</label>
             </control>
         </control>
 
-        <control type="label">
-            <visible>!String.IsEmpty(Container(400).ListItem.Property(directors)) | !String.IsEmpty(Container(400).ListItem.Property(writers))</visible>
-            <posx>776</posx>
-            <posy>{{ vscale(206) }}</posy>
-            <width>1084</width>
-            <height>{{ vscale(30) }}</height>
-            <font>font12</font>
-            <align>left</align>
-            <scroll>true</scroll>
-            <scrollspeed>25</scrollspeed>
-            <textcolor>99FFFFFF</textcolor>
-            <label>$INFO[Container(400).ListItem.Property(directors)]$INFO[Container(400).ListItem.Property(writers)]</label>
-        </control>
-
-        <control type="grouplist">
-            <posx>776</posx>
-            <posy>{{ vscale(275) }}</posy>
-            <width>1084</width>
-            <height>{{ vscale(34) }}</height>
-            <align>left</align>
-            <itemgap>15</itemgap>
-            <orientation>horizontal</orientation>
-            <usecontrolcoords>true</usecontrolcoords>
-            <control type="button">
-                <visible>!String.IsEmpty(Container(400).ListItem.Property(audio))</visible>
-                <width>auto</width>
-                <height>{{ vscale(34) }}</height>
-                <font>font12</font>
-                <align>center</align>
-                <aligny>top</aligny>
-                <focusedcolor>FFFFFFFF</focusedcolor>
-                <textcolor>FFFFFFFF</textcolor>
-                <textoffsetx>15</textoffsetx>
-                <texturefocus colordiffuse="40000000" border="8">script.plex/white-square-rounded-top-padded.png</texturefocus>
-                <texturenofocus colordiffuse="40000000" border="8">script.plex/white-square-rounded-top-padded.png</texturenofocus>
-                <label>[UPPERCASE]$ADDON[script.plexmod 32395][/UPPERCASE]</label>
-            </control>
-            <control type="label">
-                <width max="1084">auto</width>
-                <height>{{ vscale(34) }}</height>
-                <font>font12</font>
-                <align>left</align>
-                <scroll>true</scroll>
-                <scrollspeed>25</scrollspeed>
-                <aligny>top</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>$INFO[Container(400).ListItem.Property(audio)]</label>
-            </control>
-            <control type="button">
-                <visible>!String.IsEmpty(Container(400).ListItem.Property(subtitles))</visible>
-                <left>34</left>
-                <width>auto</width>
-                <height>{{ vscale(34) }}</height>
-                <font>font12</font>
-                <align>center</align>
-                <aligny>top</aligny>
-                <focusedcolor>FFFFFFFF</focusedcolor>
-                <textcolor>FFFFFFFF</textcolor>
-                <textoffsetx>15</textoffsetx>
-                <texturefocus colordiffuse="40000000" border="12">script.plex/white-square-rounded-top-padded.png</texturefocus>
-                <texturenofocus colordiffuse="40000000" border="12">script.plex/white-square-rounded-top-padded.png</texturenofocus>
-                <label>[UPPERCASE]$ADDON[script.plexmod 32396][/UPPERCASE]</label>
-            </control>
-            <control type="label">
-                <visible>!String.IsEmpty(Container(400).ListItem.Property(subtitles))</visible>
-                <width max="460">auto</width>
-                <height>{{ vscale(34) }}</height>
-                <font>font12</font>
-                <align>left</align>
-                <aligny>top</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <scroll>true</scroll>
-                <scrollspeed>15</scrollspeed>
-                <label>$INFO[Container(400).ListItem.Property(subtitles)]</label>
-            </control>
-        </control>
         <control type="textbox">
             <posx>776</posx>
-            <posy>{{ vscale(352) }}</posy>
+            <posy>{{ vscale(200) }}</posy>
             <width>1084</width>
             <height>{{ vscale(172) }}</height>
             <font>font12</font>
@@ -427,13 +326,55 @@
             <label>$INFO[Container(400).ListItem.Property(summary)]</label>
         </control>
 
+        <!-- Video/audio/subtitles, formatted like pre_play's streams block: a vertical grouplist of
+             label-per-line rows (grey uppercase tag + tab + value) instead of the pill buttons used above -->
+        <control type="grouplist">
+            <posx>776</posx>
+            <posy>{{ vscale(378) }}</posy>
+            <width>1084</width>
+            <height>{{ vscale(90) }}</height>
+            <align>left</align>
+            <orientation>vertical</orientation>
+            <usecontrolcoords>true</usecontrolcoords>
+            <control type="label">
+                <visible>!String.IsEmpty(Container(400).ListItem.Property(video.res))</visible>
+                <width>auto</width>
+                <height>{{ vscale(30) }}</height>
+                <font>font10</font>
+                <align>left</align>
+                <aligny>top</aligny>
+                <textcolor>FFFFFFFF</textcolor>
+                <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32053][/UPPERCASE][/COLOR][TABS]2[/TABS]$INFO[Container(400).ListItem.Property(video.res)]$INFO[Container(400).ListItem.Property(video.rendering), &#8226; ]$INFO[Container(400).ListItem.Property(video.codec), &#8226; ]</label>
+            </control>
+            <control type="label">
+                <visible>!String.IsEmpty(Container(400).ListItem.Property(audio))</visible>
+                <width>auto</width>
+                <height>{{ vscale(30) }}</height>
+                <font>font10</font>
+                <align>left</align>
+                <aligny>top</aligny>
+                <textcolor>FFFFFFFF</textcolor>
+                <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32048][/UPPERCASE][/COLOR][TABS]2[/TABS]$INFO[Container(400).ListItem.Property(audio)]</label>
+            </control>
+            <control type="label">
+                <visible>!String.IsEmpty(Container(400).ListItem.Property(subtitles))</visible>
+                <width>auto</width>
+                <height>{{ vscale(30) }}</height>
+                <font>font10</font>
+                <align>left</align>
+                <aligny>top</aligny>
+                <textcolor>FFFFFFFF</textcolor>
+                <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32396][/UPPERCASE][/COLOR][TABS]2[/TABS]$INFO[Container(400).ListItem.Property(subtitles)]</label>
+            </control>
+        </control>
+
     </control>
 
     <!-- EPISODES -->
     <control type="grouplist" id="60">
         <visible>!String.IsEmpty(Window.Property(initialized))</visible>
         <posx>0</posx>
-        <posy>{{ vscale(565) }}</posy>
+        <posy>{{ vscale(510) }}</posy>
         <width>1920</width>
         <height>{{ vscale(1800) }}</height>
 
@@ -568,7 +509,7 @@
                                 <posy>{{ vscale(257) }}</posy>
                                 <width>445</width>
                                 <height>{{ vscale(60) }}</height>
-                                <font>font12</font>
+                                <font>font10</font>
                                 <align>center</align>
                                 <textcolor>AAFFFFFF</textcolor>
                                 <label>$INFO[ListItem.Label]</label>
@@ -704,7 +645,7 @@
                                         <posy>{{ vscale(257) }}</posy>
                                         <width>445</width>
                                         <height>{{ vscale(60) }}</height>
-                                        <font>font12</font>
+                                        <font>font10</font>
                                         <align>center</align>
                                         <textcolor>AAFFFFFF</textcolor>
                                         <label>$INFO[ListItem.Label]</label>
@@ -718,7 +659,7 @@
                                         <posy>{{ vscale(257) }}</posy>
                                         <width>445</width>
                                         <height>{{ vscale(60) }}</height>
-                                        <font>font12</font>
+                                        <font>font10</font>
                                         <align>center</align>
                                         <textcolor>FFCC7B19</textcolor>
                                         <label>$INFO[ListItem.Label]</label>

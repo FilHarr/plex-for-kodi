@@ -247,7 +247,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
     RELATED_DIM = util.scaleResolution(268, 402)
     EXTRA_DIM = util.scaleResolution(329, 185)
     ROLES_DIM = util.scaleResolution(334, 334)
-    CLEAR_LOGO_DIM = util.scaleResolution(560, 68)
+    CLEAR_LOGO_DIM = util.scaleResolution(784, 106)
 
     LIST_OPTIONS_BUTTON_ID = 111
 
@@ -902,7 +902,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
             self.setProperty('hub.focus', str(controlID - 400))
             if controlID == self.RELATED_LIST_ID:
                 self.updateBackgroundFrom(self.relatedListControl.getSelectedItem().dataSource)
-        if xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + [ControlGroup(300).HasFocus(0) | ControlGroup(1300).HasFocus(0)]'):
+        # the episode row counts as "not on extras" too, now that it's the screen's default focus target -
+        # otherwise this fires the very moment the window opens instead of only once focus goes deeper,
+        # into roles/extras/related
+        if controlID == self.EPISODE_LIST_ID or xbmc.getCondVisibility(
+                'ControlGroup(50).HasFocus(0) + [ControlGroup(300).HasFocus(0) | ControlGroup(1300).HasFocus(0)]'):
             self.setProperty('on.extras', '')
         elif xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + !ControlGroup(300).HasFocus(0) + !ControlGroup(1300).HasFocus(0)'):
             self.setProperty('on.extras', '1')
@@ -1492,25 +1496,13 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
         if video.index:
             mli.setProperty('season', T(32303, 'Season').format(video.parentIndex))
             mli.setProperty('episode', T(32304, 'Episode').format(video.index))
-            # zero-padded and joined, unlike the "S1 • E3" used elsewhere: the heading it goes into already
-            # separates its fields with bullets and a third one reads as noise
-            seIndex = u'{0}{1}'.format(T(32310, 'S').format('{0:02d}'.format(video.parentIndex.asInt())),
-                                       T(32311, 'E').format('{0:02d}'.format(video.index.asInt())))
         else:
             mli.setProperty('season', '')
             mli.setProperty('episode', '')
-            seIndex = ''
 
         mli.setProperty('date', util.cleanLeadingZeros(video.originallyAvailableAt.asDatetime('%B %d, %Y')))
 
-        # SxxEyy and the air date, merged into the heading ahead of the episode title. Composed here rather
-        # than in the skin because $INFO can't drop a separator for a special with no index, or for an
-        # episode with no air date, without leaving a stray bullet behind.
-        heading = [p for p in (seIndex, video.originallyAvailableAt.asDatetime(util.shortDF)) if p]
-        mli.setProperty('heading.prefix', heading and u'{0} • '.format(u' • '.join(heading)) or '')
-
         # mli.setProperty('related.header', 'Related Shows')
-        mli.setProperty('year', video.year)
         mli.setProperty('content.rating', video.contentRating.split('/', 1)[-1])
         mli.setProperty('genre', self.genre)
         self.populateRatings(video, mli, hide_ratings=self.hideSpoilers(video) and self.noRatings)
@@ -1521,21 +1513,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
             mli.setProperty('unwatched', not video.isWatched and '1' or '')
             mli.setProperty('watched', video.isFullyWatched and '1' or '')
             mli.setProperty('video.res', video.resolutionString())
-            mli.setProperty('audio.codec', video.audioCodecString())
             mli.setProperty('video.codec', video.videoCodecString())
-            mli.setProperty('audio.channels', video.audioChannelsString(metadata.apiTranslate))
             mli.setProperty('video.rendering', video.videoCodecRendering)
             mli.setBoolProperty('unavailable', not video.available())
             mli.setBoolProperty('media.multiple', len(list(filter(lambda x: x.isAccessible(), video.media()))) > 1)
-
-        directors = u' / '.join([d.tag for d in video.directors()][:2])
-        directorsLabel = len(video.directors) > 1 and T(32401, u'DIRECTORS').upper() or T(32383,
-                                                                                          u'DIRECTOR').upper()
-        mli.setProperty('directors', directors and u'{0}    {1}'.format(directorsLabel, directors) or '')
-        writers = u' / '.join([r.tag for r in video.writers()][:2])
-        writersLabel = len(video.writers) > 1 and T(32403, u'WRITERS').upper() or T(32402, u'WRITER').upper()
-        mli.setProperty('writers',
-                        writers and u'{0}{1}    {2}'.format(directors and '    ' or '', writersLabel, writers) or '')
 
     def setItemAudioAndSubtitleInfo(self, video, mli):
         if util.getSetting('use_external_audio', False) and hasattr(type(video), 'discoverExternalAudioStreams'):
@@ -1631,7 +1612,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
             util.LOG("Episodes: There's no current item to be loaded, something's wrong.")
 
         if not self.hadUserInteraction:
-            self.selectPlayButton()
+            self.setCondFocusId(self.EPISODE_LIST_ID)
 
         fetch = []
         for mli in items:
