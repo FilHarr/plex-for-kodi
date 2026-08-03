@@ -264,7 +264,7 @@
                         <visible>!String.IsEmpty(Window.Property(video.res))</visible>
                         <width>auto</width>
                         <height>{{ vscale(30) }}</height>
-                        <font>font10</font>
+                        <font>font8</font>
                         <align>left</align>
                         <aligny>top</aligny>
                         <textcolor>FFFFFFFF</textcolor>
@@ -274,7 +274,7 @@
                         <visible>!String.IsEmpty(Window.Property(audio))</visible>
                         <width>auto</width>
                         <height>{{ vscale(30) }}</height>
-                        <font>font10</font>
+                        <font>font8</font>
                         <align>left</align>
                         <aligny>top</aligny>
                         <textcolor>FFFFFFFF</textcolor>
@@ -284,11 +284,11 @@
                         <visible>!String.IsEmpty(Window.Property(subtitles))</visible>
                         <width>auto</width>
                         <height>{{ vscale(30) }}</height>
-                        <font>font10</font>
+                        <font>font8</font>
                         <align>left</align>
                         <aligny>top</aligny>
                         <textcolor>FFFFFFFF</textcolor>
-                        <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32396][/UPPERCASE][/COLOR][TABS]2[/TABS]$INFO[Window.Property(subtitles)]</label>
+                        <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32396][/UPPERCASE][/COLOR][TABS]1[/TABS]$INFO[Window.Property(subtitles)]</label>
                     </control>
                 </control>
             {% endblock %}
