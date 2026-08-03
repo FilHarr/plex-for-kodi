@@ -246,110 +246,18 @@
             <!-- The streams block below (audio/subtitle pills, overridden by pre_play-wl.xml.tpl for the
                  watchlist screen's availability row) stays a single instance and slides instead of
                  duplicating: Kodi/ibis blocks can only be defined once, so a subclass's override would
-                 only ever reach one of two physical copies. Positioned over the backdrop's bottom-right
-                 corner (matching the Plex client) rather than the text column, so unlike the rest of this
-                 group its x never depends on poster visibility - only y nudges by the same 30px used
-                 elsewhere when the poster is hidden, to keep vertical rhythm with the row above it, and is
-                 tuned so the stack's bottom lands level with the button row's visible icons (not their
-                 much taller invisible hit-box). Stacked vertically (video/audio/subtitles, top to bottom).
-
-                 Each pill's background image and label are sized and positioned entirely from Python
-                 (PrePlayWindow.resizeInfoPill(), called wherever video.res/audio/subtitles are set) rather
-                 than fixed here - Kodi has no way to size a background image to a label's rendered width
-                 in XML, but Control.setWidth()/setPosition() let the addon itself resize a control at
-                 runtime (already used elsewhere in this codebase - see seekdialog.py's seek bar and
-                 selection indicator). An earlier version worked around the XML limitation instead, with
-                 three fixed sm/md/lg pill variants per field chosen via a Window.Property and Kodi's
-                 built-in "invisible grouplist items don't reserve space" behavior (the same behavior the
-                 button row above still relies on for its own conditional buttons) - dropped in favor of
-                 this because three fixed sizes per field either wasted space on short values or clipped
-                 long ones, and reusing the same static controls across a value change meant the marquee
-                 scroll only restarted when the bucket itself changed, not on every new selection. Dynamic
-                 sizing here still can't measure real text width either - Kodi doesn't expose that to
-                 Python any more than to XML - so it's the same estimated px-per-character approach, just
-                 continuous instead of three steps; PILL_PX_PER_CHAR in preplay.py is the one constant to
-                 retune if pills consistently run too tight or too loose. The ids below (310-315) just need
-                 to be unique within this window - resizeInfoPill() looks them up once in onFirstInit and
-                 reuses those references from then on, matching the pattern in that same onFirstInit for
-                 the roles/reviews/extras/related lists. -->
+                 only ever reach one of two physical copies. Now laid out horizontally (see
+                 includes/media_info_pills.xml.tpl for how/why the pills themselves are sized - position is
+                 the only thing pre_play-specific left here). posx=1155 is 1920 (screen width) minus the
+                 row's own 765 width (200 + 295 + 260 + 2*5 itemgap), so its right edge sits flush with the
+                 screen's right edge. posy=498 puts it where the subtitle pill (the last of the three) used
+                 to sit back when this was a vertical stack starting at posy=426 (426 + 30 + 6 + 30 + 6 =
+                 498) - only y nudges by the same 30px used elsewhere when the poster is hidden, to keep
+                 vertical rhythm with the row above it. -->
             <control type="group">
                 <animation effect="slide" start="0,0" end="0,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
             {% block streams %}
-                <control type="grouplist">
-                    <posx>860</posx>
-                    <posy>{{ vscale(426) }}</posy>
-                    <width>1000</width>
-                    <height>{{ vscale(102) }}</height>
-                    <orientation>vertical</orientation>
-                    <itemgap>6</itemgap>
-                    <usecontrolcoords>true</usecontrolcoords>
-
-                    <control type="group">
-                        <visible>!String.IsEmpty(Window.Property(video.res))</visible>
-                        <height>{{ vscale(30) }}</height>
-                        <control type="image" id="310">
-                            <width>100</width>
-                            <height>{{ vscale(30) }}</height>
-                            <texture border="10" colordiffuse="CC0A0F0D">script.plex/white-square-rounded.png</texture>
-                        </control>
-                        <control type="label" id="311">
-                            <posx>12</posx>
-                            <width>76</width>
-                            <height>{{ vscale(30) }}</height>
-                            <font>font8</font>
-                            <align>left</align>
-                            <aligny>center</aligny>
-                            <scroll>true</scroll>
-                            <scrollspeed>35</scrollspeed>
-                            <textcolor>FFFFFFFF</textcolor>
-                            <label>$INFO[Window.Property(video.res)]$INFO[Window.Property(video.rendering), ]</label>
-                        </control>
-                    </control>
-
-                    <control type="group">
-                        <visible>!String.IsEmpty(Window.Property(audio))</visible>
-                        <height>{{ vscale(30) }}</height>
-                        <control type="image" id="312">
-                            <width>100</width>
-                            <height>{{ vscale(30) }}</height>
-                            <texture border="10" colordiffuse="CC0A0F0D">script.plex/white-square-rounded.png</texture>
-                        </control>
-                        <control type="label" id="313">
-                            <posx>12</posx>
-                            <width>76</width>
-                            <height>{{ vscale(30) }}</height>
-                            <font>font8</font>
-                            <align>left</align>
-                            <aligny>center</aligny>
-                            <scroll>true</scroll>
-                            <scrollspeed>35</scrollspeed>
-                            <textcolor>FFFFFFFF</textcolor>
-                            <label>$INFO[Window.Property(audio)]</label>
-                        </control>
-                    </control>
-
-                    <control type="group">
-                        <visible>!String.IsEmpty(Window.Property(subtitles))</visible>
-                        <height>{{ vscale(30) }}</height>
-                        <control type="image" id="314">
-                            <width>100</width>
-                            <height>{{ vscale(30) }}</height>
-                            <texture border="10" colordiffuse="CC0A0F0D">script.plex/white-square-rounded.png</texture>
-                        </control>
-                        <control type="label" id="315">
-                            <posx>12</posx>
-                            <width>76</width>
-                            <height>{{ vscale(30) }}</height>
-                            <font>font8</font>
-                            <align>left</align>
-                            <aligny>center</aligny>
-                            <scroll>true</scroll>
-                            <scrollspeed>35</scrollspeed>
-                            <textcolor>FFFFFFFF</textcolor>
-                            <label>$INFO[Window.Property(subtitles)]</label>
-                        </control>
-                    </control>
-                </control>
+                {% include "includes/media_info_pills.xml.tpl" with posx=1155 & posy=498 %}
             {% endblock %}
             </control>
         </control>
