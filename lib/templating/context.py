@@ -73,20 +73,12 @@ TEMPLATE_CONTEXTS = {
                 "noFocusColor": None
             },
 
-            # specific interface config
+            # specific interface config; kept in lockstep with pre_play's button sizing/spacing below
+            # since the episode row's play buttons are the same visual element on both screens
             "episodes": {
-                "use_button_bg": False,
-                "button_bg_color": None,
                 "buttongroup": {
-                    "posy": None,
-                    "itemgap": -50,
+                    "itemgap": -20,
                 },
-                # this button group will only exist when multiple media files for an episode exist, it adds another button
-                "buttongroup_1300": {
-                    "posy": None,
-                    "itemgap": -50,
-                },
-                # applies to the main buttons
                 "buttons": {
                     "width": None,
                     "height": None,
@@ -115,18 +107,11 @@ TEMPLATE_CONTEXTS = {
             "INHERIT": "base",
             "episodes": {
                 "buttongroup": {
-                    "posy": 369
-                },
-                "buttongroup_1300": {
-                    "posy": "388.5"
+                    "itemgap": -50
                 },
                 "buttons": {
                     "width": 176,
                     "height": 140
-                },
-                "buttons_1300": {
-                    "width": 161,
-                    "height": 125
                 }
             },
             "seasons": {
@@ -159,23 +144,12 @@ TEMPLATE_CONTEXTS = {
                 "noFocusColor": "88FFFFFF"
             },
             "episodes": {
-                "use_button_bg": True,
-                "button_bg_color": "66000000",
                 "buttongroup": {
-                    "posy": 369,
-                    "itemgap": -40,
-                },
-                "buttongroup_1300": {
-                    "posy": 369,
-                    "itemgap": -40,
+                    "itemgap": -60,
                 },
                 "buttons": {
-                    "width": 131,
-                    "height": 104,
-                },
-                "buttons_1300": {
-                    "width": 131,
-                    "height": 104
+                    "width": 152,
+                    "height": 121,
                 }
             },
             "seasons": {
