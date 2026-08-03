@@ -28,6 +28,7 @@ from . import videoplayer
 from . import windowutils
 from .mixins.seasons import SeasonsMixin
 from .mixins.spoilers import SpoilersMixin
+from .mixins.media_info_pills import MediaInfoPillsMixin
 from .mixins.playbackbtn import PlaybackBtnMixin
 from .mixins.thememusic import ThemeMusicMixin
 from .mixins.watchlist import WatchlistUtilsMixin, removeFromWatchlistBlind
@@ -230,8 +231,8 @@ def close_safe(func):
 VIDEO_PROGRESS = OrderedDict()
 
 class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMixin, RatingsMixin, SpoilersMixin,
-                     RolesMixin, PlaybackBtnMixin, ThemeMusicMixin, WatchlistUtilsMixin, CommonMixin, TasksMixin,
-                     playbacksettings.PlaybackSettingsMixin):
+                     MediaInfoPillsMixin, RolesMixin, PlaybackBtnMixin, ThemeMusicMixin, WatchlistUtilsMixin,
+                     CommonMixin, TasksMixin, playbacksettings.PlaybackSettingsMixin):
     xmlFile = 'script-plex-episodes.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -351,6 +352,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
     @busy.dialog(delay_time=2.5)
     def _onFirstInit(self):
         self.episodeListControl = kodigui.ManagedControlList(self, self.EPISODE_LIST_ID, 5)
+        self.initMediaInfoPillControls()
 
         self.seasonsListControl = kodigui.ManagedControlList(self, self.SEASONS_LIST_ID, 5)
         self.rolesListControl = kodigui.ManagedControlList(self, self.ROLES_LIST_ID, 5)
@@ -1388,6 +1390,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
             self.lastItem = mli
             self.setProgress(mli)
             self.fillRoles()
+            self.updateMediaInfoPills(mli)
 
         if action in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_PAGE_UP):
             if mli.getProperty('is.header'):
@@ -1527,8 +1530,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
         if sas:
             if len(video.audioStreams) > 1:
                 mli.setProperty(
-                    'audio', sas and u'{0} \u2022 {1} {2}'.format(sas.getTitle(metadata.apiTranslate),
-                                                                  len(video.audioStreams) - 1, T(32307, 'More'))
+                    'audio', sas and u'{0} +{1}'.format(sas.getTitle(metadata.apiTranslate),
+                                                        len(video.audioStreams) - 1)
                     or T(32309, 'None')
                 )
             else:
@@ -1540,15 +1543,29 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
         if sss:
             if len(video.subtitleStreams) > 1:
                 mli.setProperty(
-                    'subtitles', u'{0} \u2022 {1} {2}'.format(sss.getTitle(metadata.apiTranslate), len(video.subtitleStreams) - 1, T(32307, 'More'))
+                    'subtitles', u'{0} +{1}'.format(sss.getTitle(metadata.apiTranslate), len(video.subtitleStreams) - 1)
                 )
             else:
                 mli.setProperty('subtitles', sss.getTitle(metadata.apiTranslate))
         else:
             if video.subtitleStreams:
-                mli.setProperty('subtitles', u'{0} \u2022 {1} {2}'.format(T(32309, 'None'), len(video.subtitleStreams), T(32308, 'Available')))
+                mli.setProperty('subtitles', u'{0} +{1}'.format(T(32309, 'None'), len(video.subtitleStreams)))
             else:
                 mli.setProperty('subtitles', T(32309, 'None'))
+
+    def updateMediaInfoPills(self, mli):
+        if self.fromWatchlist:
+            return
+
+        video_text = mli.getProperty('video.res')
+        rendering = mli.getProperty('video.rendering')
+        if rendering:
+            video_text = u'{0} {1}'.format(video_text, rendering)
+
+        self.resizeInfoPill(self.videoInfoImage, self.videoInfoLabel, video_text, self.VIDEO_PILL_MAX_WIDTH)
+        self.resizeInfoPill(self.audioInfoImage, self.audioInfoLabel, mli.getProperty('audio'), self.AUDIO_PILL_MAX_WIDTH)
+        self.resizeInfoPill(self.subtitleInfoImage, self.subtitleInfoLabel, mli.getProperty('subtitles'),
+                            self.SUBTITLE_PILL_MAX_WIDTH)
 
     def setProgress(self, mli, view_offset=None):
         video = mli.dataSource
@@ -1607,6 +1624,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMix
             util.DEBUG_LOG("Episodes: Currently selected item loaded")
             self.currentItemLoaded = True
             self.lastItem = cur_mli
+            self.updateMediaInfoPills(cur_mli)
             self.setBoolProperty('current_item.loaded', True)
         else:
             util.LOG("Episodes: There's no current item to be loaded, something's wrong.")
