@@ -37,7 +37,7 @@
         <control type="image" id="310">
             <width>100</width>
             <height>{{ vscale(30) }}</height>
-            <texture border="10" colordiffuse="CC0A0F0D">script.plex/white-square-rounded.png</texture>
+            <texture border="10" colordiffuse="E60A0F0D">script.plex/white-square-rounded.png</texture>
         </control>
         <control type="label" id="311">
             <posx>12</posx>
@@ -60,7 +60,7 @@
         <control type="image" id="312">
             <width>100</width>
             <height>{{ vscale(30) }}</height>
-            <texture border="10" colordiffuse="CC0A0F0D">script.plex/white-square-rounded.png</texture>
+            <texture border="10" colordiffuse="E60A0F0D">script.plex/white-square-rounded.png</texture>
         </control>
         <control type="label" id="313">
             <posx>12</posx>
@@ -83,7 +83,7 @@
         <control type="image" id="314">
             <width>100</width>
             <height>{{ vscale(30) }}</height>
-            <texture border="10" colordiffuse="CC0A0F0D">script.plex/white-square-rounded.png</texture>
+            <texture border="10" colordiffuse="E60A0F0D">script.plex/white-square-rounded.png</texture>
         </control>
         <control type="label" id="315">
             <posx>12</posx>
