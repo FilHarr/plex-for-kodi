@@ -246,51 +246,18 @@
             <!-- The streams block below (audio/subtitle pills, overridden by pre_play-wl.xml.tpl for the
                  watchlist screen's availability row) stays a single instance and slides instead of
                  duplicating: Kodi/ibis blocks can only be defined once, so a subclass's override would
-                 only ever reach one of two physical copies. Base posy (353) is the poster-shown position;
-                 hiding the poster slides both x (to line up at 60) and y (+30, back down to 383) since only
-                 the poster-shown row gets the 30px nudge up. -->
+                 only ever reach one of two physical copies. Now laid out horizontally (see
+                 includes/media_info_pills.xml.tpl for how/why the pills themselves are sized - position is
+                 the only thing pre_play-specific left here). posx=1155 is 1920 (screen width) minus the
+                 row's own 765 width (200 + 295 + 260 + 2*5 itemgap), so its right edge sits flush with the
+                 screen's right edge. posy=498 puts it where the subtitle pill (the last of the three) used
+                 to sit back when this was a vertical stack starting at posy=426 (426 + 30 + 6 + 30 + 6 =
+                 498) - only y nudges by the same 30px used elsewhere when the poster is hidden, to keep
+                 vertical rhythm with the row above it. -->
             <control type="group">
-                <animation effect="slide" start="0,0" end="-406,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
+                <animation effect="slide" start="0,0" end="0,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
             {% block streams %}
-                <control type="grouplist">
-                    <posx>466</posx>
-                    <posy>{{ vscale(353) }}</posy>
-                    <width>1360</width>
-                    <height>{{ vscale(90) }}</height>
-                    <align>left</align>
-                    <orientation>vertical</orientation>
-                    <usecontrolcoords>true</usecontrolcoords>
-                    <control type="label">
-                        <visible>!String.IsEmpty(Window.Property(video.res))</visible>
-                        <width>auto</width>
-                        <height>{{ vscale(30) }}</height>
-                        <font>font8</font>
-                        <align>left</align>
-                        <aligny>top</aligny>
-                        <textcolor>FFFFFFFF</textcolor>
-                        <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32053][/UPPERCASE][/COLOR][TABS]2[/TABS]$INFO[Window.Property(video.res)]$INFO[Window.Property(video.rendering), &#8226; ]$INFO[Window.Property(video.codec), &#8226; ]</label>
-                    </control>
-                    <control type="label">
-                        <visible>!String.IsEmpty(Window.Property(audio))</visible>
-                        <width>auto</width>
-                        <height>{{ vscale(30) }}</height>
-                        <font>font8</font>
-                        <align>left</align>
-                        <aligny>top</aligny>
-                        <textcolor>FFFFFFFF</textcolor>
-                        <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32048][/UPPERCASE][/COLOR][TABS]2[/TABS]$INFO[Window.Property(audio)]</label>
-                    </control>
-                    <control type="label">
-                        <visible>!String.IsEmpty(Window.Property(subtitles))</visible>
-                        <width>auto</width>
-                        <height>{{ vscale(30) }}</height>
-                        <font>font8</font>
-                        <align>left</align>
-                        <aligny>top</aligny>
-                        <textcolor>FFFFFFFF</textcolor>
-                        <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32396][/UPPERCASE][/COLOR][TABS]1[/TABS]$INFO[Window.Property(subtitles)]</label>
-                    </control>
-                </control>
+                {% include "includes/media_info_pills.xml.tpl" with posx=1155 & posy=498 %}
             {% endblock %}
             </control>
         </control>

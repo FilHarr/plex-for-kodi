@@ -22,6 +22,7 @@ from . import search
 from . import videoplayer
 from . import windowutils
 from .mixins.ratings import RatingsMixin
+from .mixins.media_info_pills import MediaInfoPillsMixin
 from .mixins.playbackbtn import PlaybackBtnMixin
 from .mixins.thememusic import ThemeMusicMixin
 from .mixins.watchlist import WatchlistUtilsMixin, removeFromWatchlistBlind
@@ -84,8 +85,8 @@ class CollectionPaginator(pagination.BaseRelatedPaginator):
         mli.setProperty('progress', util.getProgressImage(item))
 
 
-class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixin, PlaybackBtnMixin, ThemeMusicMixin,
-                    RolesMixin, CommonMixin, WatchlistUtilsMixin, TasksMixin):
+class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixin, MediaInfoPillsMixin,
+                    PlaybackBtnMixin, ThemeMusicMixin, RolesMixin, CommonMixin, WatchlistUtilsMixin, TasksMixin):
     xmlFile = 'script-plex-pre_play.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -158,6 +159,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
         kodigui.ControlledWindow.doClose(self)
 
     def onFirstInit(self):
+        if not self.fromWatchlist:
+            # pre_play-wl.xml replaces this whole block with wl_availability.xml.tpl's own controls -
+            # these ids only exist on the non-watchlist streams block
+            self.initMediaInfoPillControls()
+
         self.extraListControl = kodigui.ManagedControlList(self, self.EXTRA_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
         self.rolesListControl = kodigui.ManagedControlList(self, self.ROLES_LIST_ID, 5)
@@ -751,6 +757,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
             self.setProperty('audio.channels', self.video.audioChannelsString(metadata.apiTranslate))
             self.setBoolProperty('media.multiple', len(list(filter(lambda x: x.isAccessible(), self.video.media()))) > 1)
 
+            video_text = self.video.resolutionString()
+            if self.video.videoCodecRendering:
+                video_text = u'{0} {1}'.format(video_text, self.video.videoCodecRendering)
+            self.resizeInfoPill(self.videoInfoImage, self.videoInfoLabel, video_text, self.VIDEO_PILL_MAX_WIDTH)
+
         self.populateRatings(self.video, self)
 
         if not self.fromWatchlist:
@@ -770,31 +781,33 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RatingsMixi
 
         sas = self.video.selectedAudioStream()
 
+        audio_text = ''
         if sas:
             if len(self.video.audioStreams) > 1:
-                self.setProperty(
-                    'audio', sas and u'{0} \u2022 {1} {2}'.format(sas.getTitle(metadata.apiTranslate),
-                                                                  len(self.video.audioStreams) - 1, T(32307, 'More'))
+                audio_text = sas and u'{0} +{1}'.format(sas.getTitle(metadata.apiTranslate),
+                                                         len(self.video.audioStreams) - 1) \
                     or T(32309, 'None')
-                )
             else:
-                self.setProperty('audio', sas and sas.getTitle(metadata.apiTranslate) or T(32309, 'None'))
+                audio_text = sas and sas.getTitle(metadata.apiTranslate) or T(32309, 'None')
+            self.setProperty('audio', audio_text)
 
         sss = self.video.selectedSubtitleStream(
             forced_subtitles_override=util.getSetting("forced_subtitles_override") and pnUtil.ACCOUNT.subtitlesForced == 0,
             deselect_subtitles=getNativeLanguages(util.getSetting("disable_subtitle_languages") or []))
         if sss:
             if len(self.video.subtitleStreams) > 1:
-                self.setProperty(
-                    'subtitles', u'{0} \u2022 {1} {2}'.format(sss.getTitle(metadata.apiTranslate), len(self.video.subtitleStreams) - 1, T(32307, 'More'))
-                )
+                subtitles_text = u'{0} +{1}'.format(sss.getTitle(metadata.apiTranslate), len(self.video.subtitleStreams) - 1)
             else:
-                self.setProperty('subtitles', sss.getTitle(metadata.apiTranslate))
+                subtitles_text = sss.getTitle(metadata.apiTranslate)
         else:
             if self.video.subtitleStreams:
-                self.setProperty('subtitles', u'{0} \u2022 {1} {2}'.format(T(32309, 'None'), len(self.video.subtitleStreams), T(32308, 'Available')))
+                subtitles_text = u'{0} +{1}'.format(T(32309, 'None'), len(self.video.subtitleStreams))
             else:
-                self.setProperty('subtitles', T(32309, u'None'))
+                subtitles_text = T(32309, u'None')
+        self.setProperty('subtitles', subtitles_text)
+
+        self.resizeInfoPill(self.audioInfoImage, self.audioInfoLabel, audio_text, self.AUDIO_PILL_MAX_WIDTH)
+        self.resizeInfoPill(self.subtitleInfoImage, self.subtitleInfoLabel, subtitles_text, self.SUBTITLE_PILL_MAX_WIDTH)
 
     def createListItem(self, obj):
         mli = kodigui.ManagedListItem(obj.title or '', thumbnailImage=obj.thumb.asTranscodedImageURL(*self.EXTRA_DIM), data_source=obj)

@@ -208,47 +208,17 @@
             <label>$INFO[Container(400).ListItem.Property(summary)]</label>
         </control>
 
-        <!-- Video/audio/subtitles, formatted like pre_play's streams block: a vertical grouplist of
-             label-per-line rows (grey uppercase tag + tab + value) instead of the pill buttons used above -->
-        <control type="grouplist">
-            <posx>60</posx>
-            <posy>{{ vscale(358) }}</posy>
-            <width>1800</width>
-            <height>{{ vscale(90) }}</height>
-            <align>left</align>
-            <orientation>vertical</orientation>
-            <usecontrolcoords>true</usecontrolcoords>
-            <control type="label">
-                <visible>!String.IsEmpty(Container(400).ListItem.Property(video.res))</visible>
-                <width>auto</width>
-                <height>{{ vscale(30) }}</height>
-                <font>font8</font>
-                <align>left</align>
-                <aligny>top</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32053][/UPPERCASE][/COLOR][TABS]2[/TABS]$INFO[Container(400).ListItem.Property(video.res)]$INFO[Container(400).ListItem.Property(video.rendering), &#8226; ]$INFO[Container(400).ListItem.Property(video.codec), &#8226; ]</label>
-            </control>
-            <control type="label">
-                <visible>!String.IsEmpty(Container(400).ListItem.Property(audio))</visible>
-                <width>auto</width>
-                <height>{{ vscale(30) }}</height>
-                <font>font8</font>
-                <align>left</align>
-                <aligny>top</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32048][/UPPERCASE][/COLOR][TABS]2[/TABS]$INFO[Container(400).ListItem.Property(audio)]</label>
-            </control>
-            <control type="label">
-                <visible>!String.IsEmpty(Container(400).ListItem.Property(subtitles))</visible>
-                <width>auto</width>
-                <height>{{ vscale(30) }}</height>
-                <font>font8</font>
-                <align>left</align>
-                <aligny>top</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>[COLOR grey][UPPERCASE]$ADDON[script.plexmod 32396][/UPPERCASE][/COLOR][TABS]1[/TABS]$INFO[Container(400).ListItem.Property(subtitles)]</label>
-            </control>
-        </control>
+        <!-- Video/audio/subtitles pill row, shared with pre_play (see includes/media_info_pills.xml.tpl).
+             posx=1155 matches pre_play's screen-edge alignment: 1920 (screen width) minus the row's own 765
+             width. posy=727 keeps the same vertical offset from the play button row that pre_play uses -
+             both screens' button rows are the same 145px-tall box, and pre_play's pill row sits 47px below
+             its button row's top (button row posy=451 poster-shown, pills at 498). This screen's button row
+             is declared at posy=307, but that's relative to its own wrapper group (the "EPISODES" group
+             below, itself at posy=373 relative to group 50 - see that group's comment) rather than group 50
+             directly like pre_play's button row is, so its true group-50-relative top is 373+307=680, and
+             680+47=727. propref reads off the currently-focused episode row item instead of the window,
+             since this screen has one row per episode rather than pre_play's single video. -->
+        {% include "includes/media_info_pills.xml.tpl" with posx=1155 & posy=727 & propref="Container(400).ListItem.Property" %}
 
     </control>
 
@@ -260,10 +230,13 @@
          at exactly the posx/posy they declare, same as the title/summary panel above. This group is a sibling
          of grouplist 60 within group 50 (matching pre_play/seasons, where grouplist 60 is likewise nested
          inside group 50 rather than being a top-level control) - posy is relative to group 50's own origin
-         (155), not the window. 463 = 448 (streams block's own bottom: posy 358 + height 90) + 15 (gap). -->
+         (155), not the window. 373 = 352 (summary textbox's own bottom: posy 200 + height 152) + 21 (the
+         same combined gap that used to separate the summary from the streams block, and the streams block
+         from this row - unchanged; only the streams block's own 90px footprint was reclaimed when it moved
+         into the media-info pill row above, dropping this from 463 to 373). -->
     <control type="group">
         <posx>0</posx>
-        <posy>{{ vscale(463) }}</posy>
+        <posy>{{ vscale(373) }}</posy>
         <width>1920</width>
         <!-- 452 = 307 (button row's own posy below, see its comment) + 145 (buttons) -->
         <height>{{ vscale(452) }}</height>
@@ -682,12 +655,12 @@
     <!-- Roles/Reviews/Extras: supplementary info, unlike the episode row and its buttons above. This
          grouplist auto-stacks its direct children (502/503/504) purely by height and skips them entirely
          when their <visible> condition is false, so an empty Roles section doesn't leave a gap before
-         Reviews. 915 = 463 (episode row's own start) + 452 (its height, carousel + button row); both
+         Reviews. 825 = 373 (episode row's own start) + 452 (its height, carousel + button row); both
          relative to group 50's origin, same as the episode row group above. -->
     <control type="grouplist" id="60">
         <visible>!String.IsEmpty(Window.Property(initialized))</visible>
         <posx>0</posx>
-        <posy>{{ vscale(915) }}</posy>
+        <posy>{{ vscale(825) }}</posy>
         <width>1920</width>
         <height>{{ vscale(1800) }}</height>
 
@@ -710,7 +683,7 @@
                 <align>left</align>
                 <aligny>center</aligny>
                 <textcolor>FFFFFFFF</textcolor>
-                <label>[UPPERCASE]$ADDON[script.plexmod 32419][/UPPERCASE]</label>
+                <label>[UPPERCASE]$ADDON[script.plexmod 33609][/UPPERCASE]</label>
             </control>
             <control type="list" id="402">
                 <posx>0</posx>
@@ -725,7 +698,7 @@
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
-                <itemlayout width="304">
+                <itemlayout width="260">
                     <control type="group">
                         <posx>55</posx>
                         <posy>{{ vscale(61) }}</posy>
@@ -735,26 +708,26 @@
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(244) }}</height>
+                                <width>200</width>
+                                <height>{{ vscale(200) }}</height>
                                 <texture diffuse="script.plex/masks/role.png">script.plex/thumb_fallbacks/role.png</texture>
                             </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(244) }}</height>
+                                <width>200</width>
+                                <height>{{ vscale(200) }}</height>
                                 <texture background="true" diffuse="script.plex/masks/role.png">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false" aligny="top">scale</aspectratio>
                             </control>
                             <control type="group">
                                 <posx>0</posx>
-                                <posy>{{ vscale(253) }}</posy>
+                                <posy>{{ vscale(209) }}</posy>
                                 <control type="label">
                                     <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
+                                    <width>200</width>
                                     <height>{{ vscale(60) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
@@ -765,7 +738,7 @@
                                     <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>{{ vscale(30) }}</posy>
-                                    <width>244</width>
+                                    <width>200</width>
                                     <height>{{ vscale(60) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
@@ -778,21 +751,21 @@
                 </itemlayout>
 
                 <!-- FOCUSED LAYOUT ####################################### -->
-                <focusedlayout width="304">
+                <focusedlayout width="260">
                     <control type="group">
                         <posx>55</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
-                            <animation effect="zoom" start="100" end="110" time="100" center="127,{{ vscale(127) }}" reversible="false">Focus</animation>
-                            <animation effect="zoom" start="110" end="100" time="100" center="127,{{ vscale(127) }}" reversible="false">UnFocus</animation>
+                            <animation effect="zoom" start="100" end="110" time="100" center="105,{{ vscale(105) }}" reversible="false">Focus</animation>
+                            <animation effect="zoom" start="110" end="100" time="100" center="105,{{ vscale(105) }}" reversible="false">UnFocus</animation>
                             <posx>0</posx>
                             <posy>0</posy>
                             <control type="image">
                                 <visible>Control.HasFocus(402)</visible>
                                 <posx>-40</posx>
                                 <posy>{{ vscale(-40) }}</posy>
-                                <width>334</width>
-                                <height>{{ vscale(334) }}</height>
+                                <width>290</width>
+                                <height>{{ vscale(290) }}</height>
                                 <texture border="42">script.plex/buttons/role-shadow.png</texture>
                             </control>
                             <control type="group">
@@ -801,26 +774,26 @@
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(244) }}</height>
+                                    <width>200</width>
+                                    <height>{{ vscale(200) }}</height>
                                     <texture diffuse="script.plex/masks/role.png">script.plex/thumb_fallbacks/role.png</texture>
                                 </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(244) }}</height>
+                                    <width>200</width>
+                                    <height>{{ vscale(200) }}</height>
                                     <texture background="true" diffuse="script.plex/masks/role.png">$INFO[ListItem.Thumb]</texture>
                                     <aspectratio scalediffuse="false" aligny="top">scale</aspectratio>
                                 </control>
                                 <control type="group">
                                     <posx>0</posx>
-                                    <posy>{{ vscale(253) }}</posy>
+                                    <posy>{{ vscale(209) }}</posy>
                                     <control type="label">
                                         <scroll>Control.HasFocus(402)</scroll>
                                         <posx>0</posx>
                                         <posy>0</posy>
-                                        <width>244</width>
+                                        <width>200</width>
                                         <height>{{ vscale(60) }}</height>
                                         <font>font10</font>
                                         <align>center</align>
@@ -831,7 +804,7 @@
                                         <scroll>Control.HasFocus(402)</scroll>
                                         <posx>0</posx>
                                         <posy>{{ vscale(30) }}</posy>
-                                        <width>244</width>
+                                        <width>200</width>
                                         <height>{{ vscale(60) }}</height>
                                         <font>font10</font>
                                         <align>center</align>
@@ -844,8 +817,8 @@
                                 <visible>Control.HasFocus(402)</visible>
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>254</width>
-                                <height>{{ vscale(254) }}</height>
+                                <width>210</width>
+                                <height>{{ vscale(210) }}</height>
                                 <texture>script.plex/buttons/role-selected.png</texture>
                             </control>
                         </control>
