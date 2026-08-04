@@ -507,16 +507,20 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     OPTIONS_GROUP_ID = 200
 
-    SECTION_LIST_ID = 101
+    # Sidebar rail
+    SIDEBAR_GROUP_ID = 9000
+    SECTION_LIST_ID = 9001
+
     SERVER_BUTTON_ID = 201
-
     USER_BUTTON_ID = 202
-    USER_LIST_ID = 250
 
-    SEARCH_BUTTON_ID = 203
+    USER_LIST_ID = 250
     SERVER_LIST_ID = 260
+    SERVER_LIST_SCROLLBAR_ID = 261
     REFRESH_SL_ID = 262
 
+    SERVER_MENU_GROUP_ID = 802
+    SERVER_MENU_BG_ID = 800
     USER_MENU_BG_ID = 801
     USER_MENU_GROUP_ID = 901
 
@@ -710,6 +714,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         self._initialMovingSectionPos = None
         self.block_section_change = False
         self.go_root = False
+        self._initialHubFocusApplied = False
         self.kodi_exiting = False
         self._lastReachabilityCheck = 0
         self._lastPathMappingProbe = 0
@@ -754,7 +759,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                            "re-set on the last BGM encounter".format(lastGoodVlm))
             xbmc.executebuiltin("SetVolume({})".format(lastGoodVlm))
 
-        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 7)
+        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
         self.serverList = kodigui.ManagedControlList(self, self.SERVER_LIST_ID, 10)
         self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5)
 
@@ -812,9 +817,9 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             if needs_hub_switch:
                 self.showHubs(home_section)
             self.setFocusId(self.SECTION_LIST_ID)
-            self.sectionList.setSelectedItemByPos(0)
+            self.sectionList.setSelectedItemByPos(1)  # index 1 = Home (0 = Search)
             # somehow we need to do this as well.
-            xbmc.executebuiltin('Control.SetFocus({0}, {1})'.format(self.SECTION_LIST_ID, 0))
+            xbmc.executebuiltin('Control.SetFocus({0}, {1})'.format(self.SECTION_LIST_ID, 1))
             self.go_root = False
             # set the hold deadline AT THE END so the 150ms window is measured from when the
             # post-branch event queue starts draining (showHubs can take several hundred ms,
@@ -2295,6 +2300,16 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
         return self.focusFirstValidHub()
 
+    def applyInitialHubFocus(self):
+        """One-time, on the very first Home hubs draw of this session: land in the first
+        hub's first item instead of leaving focus on the sidebar's Search entry. Only acts
+        if the user hasn't already navigated elsewhere while hubs were still loading."""
+        if self._initialHubFocusApplied:
+            return
+        self._initialHubFocusApplied = True
+        if self.getFocusId() == self.SECTION_LIST_ID:
+            self.focusFirstValidHub()
+
     def hookSignals(self):
         plexapp.SERVERMANAGER.on('new:server', self.onNewServer)
         plexapp.SERVERMANAGER.on('remove:server', self.onRemoveServer)
@@ -2592,13 +2607,6 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 self.setFocusId(self.USER_BUTTON_ID)
             elif controlID == self.USER_BUTTON_ID and action == xbmcgui.ACTION_MOVE_LEFT:
                 self.setFocusId(self.SERVER_BUTTON_ID)
-            elif controlID == self.SEARCH_BUTTON_ID and action == xbmcgui.ACTION_MOVE_RIGHT:
-                if xbmc.getCondVisibility('Player.HasMedia + Control.IsVisible({0})'.format(self.PLAYER_STATUS_BUTTON_ID)):
-                    self.setFocusId(self.PLAYER_STATUS_BUTTON_ID)
-                else:
-                    self.setFocusId(self.SERVER_BUTTON_ID)
-            elif controlID == self.PLAYER_STATUS_BUTTON_ID and action == xbmcgui.ACTION_MOVE_RIGHT:
-                self.setFocusId(self.SERVER_BUTTON_ID)
             elif 399 < controlID < 500:
                 if action.getId() in MOVE_SET or action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                     _continue = self.checkHubItem(controlID, action=action)
@@ -2633,13 +2641,13 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                         self.setFocusId(self.SERVER_BUTTON_ID)
                         return
 
-                    if controlID == self.SECTION_LIST_ID and self.sectionList.control.getSelectedPosition() > 0:
+                    if controlID == self.SECTION_LIST_ID and self.sectionList.control.getSelectedPosition() > 1:
                         self.goHome()
                         return
 
                     if util.addonSettings.fastBack and not optionsFocused and offSections \
                             and self.lastFocusID not in (self.USER_BUTTON_ID, self.SERVER_BUTTON_ID,
-                                                         self.SEARCH_BUTTON_ID, self.SECTION_LIST_ID):
+                                                         self.SECTION_LIST_ID):
                         self.setProperty('hub.focus', '0')
                         self.setFocusId(self.SECTION_LIST_ID)
                         return
@@ -2719,8 +2727,6 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             self.showAudioPlayer()
         elif 399 < controlID < 500:
             self.hubItemClicked(controlID)
-        elif controlID == self.SEARCH_BUTTON_ID:
-            self.searchButtonClicked()
 
     def onFocus(self, controlID):
         # within the 150ms hold window after go_root, any non-section-list focus event is the
@@ -2733,7 +2739,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             self.setFocusId(self.SECTION_LIST_ID)
             return
 
-        if controlID != 204 and controlID < 500:
+        if controlID != 204 and (controlID < 500 or self.SIDEBAR_GROUP_ID <= controlID <= self.REFRESH_SL_ID):
             # don't store focus for mini music player
             self.lastFocusID = controlID
 
@@ -2747,15 +2753,13 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         self._shuttingDown):
             self.checkSectionItem()
 
-        if xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(100).HasFocus(0)'):
-            util.setGlobalBoolProperty('off.sections', '')
-        elif controlID != 250 and xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + !ControlGroup(100).HasFocus(0)'):
-            util.setGlobalBoolProperty('off.sections', '1')
+        # Sidebar nav: header/nav bar stays visible always
+        util.setGlobalBoolProperty('off.sections', '')
 
     def goHome(self, **kwargs):
         self.setProperty('hub.focus', '')
         self.setFocusId(self.SECTION_LIST_ID)
-        self.sectionList.setSelectedItemByPos(0)
+        self.sectionList.setSelectedItemByPos(1)  # index 1 = Home (0 = Search)
         # set lastSection here already, otherwise tick() might interfere
         # fixme: Might still happen in a race condition, check later
         self.lastSection = home_section
@@ -3104,7 +3108,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     def sectionMenu(self):
         item = self.sectionList.getSelectedItem()
-        if not item or not item.getProperty('item'):
+        if not item or not item.getProperty('item') or item.getProperty('is.search'):
             return
 
         section = item.dataSource
@@ -3525,11 +3529,15 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     def sectionMover(self, item, action):
         def stop_moving(reset=False):
-            # set everything to non-moving and re-insert home item
+            # set everything to non-moving and re-insert search + home items
             self.movingSection = False
             self.setBoolProperty("moving", False)
             item.setBoolProperty("moving", False)
-            homemli = kodigui.ManagedListItem(T(32332, 'Home'), data_source=home_section)
+            searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
+            searchmli.setProperty('is.search', '1')
+            searchmli.setProperty('item', '1')
+            homemli = kodigui.ManagedListItem(T(32332, 'Home'), iconImage='script.plex/home/type/home.png',
+                                              data_source=home_section)
             homemli.setProperty('is.home', '1')
             homemli.setProperty('item', '1')
             if reset:
@@ -3537,17 +3545,19 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                     self.sectionList.moveItem(item, self._initialMovingSectionPos)
                 self._initialMovingSectionPos = None
             self.sectionList.insertItem(0, homemli)
+            self.sectionList.insertItem(0, searchmli)
             if reset:
-                self.sectionList.selectItem(0)
+                self.sectionList.selectItem(1)  # Home
             self.sectionChanged()
 
         if action == "init":
             self.movingSection = item
             self.setBoolProperty("moving", True)
-            self._initialMovingSectionPos = self.sectionList.getSelectedPos() - 1
+            self._initialMovingSectionPos = self.sectionList.getSelectedPos() - 2  # account for search + home
 
-            # remove home item
-            self.sectionList.removeItem(0)
+            # remove search + home items
+            self.sectionList.removeItem(0)  # search
+            self.sectionList.removeItem(0)  # home (shifted to 0)
             self.sectionList.setSelectedItem(item)
 
             item.setBoolProperty("moving", True)
@@ -3555,8 +3565,8 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
             stop_moving(reset=True)
 
-        elif action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
-            direction = "left" if action == xbmcgui.ACTION_MOVE_LEFT else "right"
+        elif action in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
+            direction = "left" if action == xbmcgui.ACTION_MOVE_UP else "right"
             index = self.sectionList.getManagedItemPosition(item)
             last_index = len(self.sectionList) - 1
             next_index = min(max(0, index - 1 if direction == "left" else index + 1), last_index)
@@ -3578,16 +3588,8 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     def checkSectionItem(self, force=False, action=None):
         item = self.sectionList.getSelectedItem()
-        if not item:
+        if not item or item.getProperty('is.search'):
             return
-
-        if not item.getProperty('item') and action:
-            if action == xbmcgui.ACTION_MOVE_RIGHT:
-                self.sectionList.selectItem(0)
-                item = self.sectionList[0]
-            elif action == xbmcgui.ACTION_MOVE_LEFT:
-                self.sectionList.selectItem(self.bottomItem)
-                item = self.sectionList[self.bottomItem]
 
         if item.getProperty('is.home'):
             self.storeLastBG()
@@ -3725,6 +3727,13 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 if time.time() >= self.sectionChangeTimeout:
                     break
 
+            # by the time the debounce settled, focus may have moved past the section list
+            # entirely (e.g. down onto the server/user button) - the selection it's about to
+            # read is stale in that case, so don't reload hubs for a section the user isn't
+            # even browsing anymore
+            if self.getFocusId() != self.SECTION_LIST_ID:
+                return
+
         ds = self.sectionList.getSelectedItem().dataSource
         if self.lastSection == ds:
             return
@@ -3742,6 +3751,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
             util.DEBUG_LOG('Section changed ({0}): {1}', section.key, repr(section.title))
             self.lastSection = section
+            self.updateActiveSectionMarker(section)
             self.showHubs(section)
 
         # timing issue
@@ -3752,6 +3762,15 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                             section.key,
                             cur_sel_ds.key))
             self.checkSectionItem(force=True)
+
+    def updateActiveSectionMarker(self, active_section):
+        """Update the is.active property on section list items to highlight the current section."""
+        for i in range(self.sectionList.size()):
+            mli = self.sectionList[i]
+            if mli and mli.dataSource == active_section:
+                mli.setProperty('is.active', '1')
+            elif mli:
+                mli.setProperty('is.active', '')
 
     def sectionHubsCallback(self, section, hubs, reselect_pos_dict=None):
         with self.lock:
@@ -3778,10 +3797,12 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                     if pending_libs == 0 and pending_cross == 0:
                         # All sources already done, draw now
                         self.showHubs(section, update=update, reselect_pos_dict=reselect_pos_dict)
+                        self.applyInitialHubFocus()
                     # else: wait for library/cross-section tasks to finish
                 else:
                     # No cross-section hubs — draw immediately
                     self.showHubs(section, update=update, reselect_pos_dict=reselect_pos_dict)
+                    self.applyInitialHubFocus()
             else:
                 # Library section completed
                 if self.lastSection == section:
@@ -3800,6 +3821,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                     if self._pendingLibrarySections == 0 and on_home and has_cross:
                         if self.sectionHubs.get(None) is not None:
                             self.showHubs(self.lastSection, update=False)
+                            self.applyInitialHubFocus()
 
     def updateHubCallback(self, hub, items=None, reselect_pos=None):
         with self.lock:
@@ -3878,7 +3900,13 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         self.sectionHubs = {}
         items = []
 
-        homemli = kodigui.ManagedListItem(T(32332, 'Home'), data_source=home_section)
+        searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
+        searchmli.setProperty('is.search', '1')
+        searchmli.setProperty('item', '1')
+        items.append(searchmli)
+
+        homemli = kodigui.ManagedListItem(T(32332, 'Home'), iconImage='script.plex/home/type/home.png',
+                                          data_source=home_section)
         homemli.setProperty('is.home', '1')
         homemli.setProperty('item', '1')
         items.append(homemli)
@@ -3969,14 +3997,14 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         show_pm_indicator = util.getSetting('path_mapping_indicators')
         for section in sections:
             mli = kodigui.ManagedListItem(section.title,
-                                          thumbnailImage='script.plex/home/type/{0}.png'.format(section.type),
+                                          iconImage='script.plex/home/type/{0}.png'.format(section.type),
                                           data_source=section)
             mli.setProperty('item', '1')
             if section == playlists_section:
                 mli.setProperty('is.playlists', '1')
-                mli.setThumbnailImage('script.plex/home/type/playlists.png')
+                mli.setIconImage('script.plex/home/type/playlists.png')
             elif section == watchlist_section:
-                mli.setThumbnailImage('script.plex/home/type/watchlist.png')
+                mli.setIconImage('script.plex/home/type/watchlist.png')
             elif isinstance(section, PinnedTypeSection):
                 # no icon of its own; it keeps the library's type icon
                 mli.setProperty('is.pinned.type', section.itemType)
@@ -3990,11 +4018,14 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
         self.bottomItem = len(items) - 1
 
-        for x in range(len(items), 8):
-            mli = kodigui.ManagedListItem()
-            items.append(mli)
+        # Mark the initial active section
+        active_section = focus_section or home_section
+        for mli in items:
+            if mli.dataSource == active_section:
+                mli.setProperty('is.active', '1')
+                break
 
-        self.lastSection = focus_section or home_section
+        self.lastSection = active_section
         self.sectionList.reset()
         self.sectionList.addItems(items)
 
@@ -4686,6 +4717,10 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         if not item:
             return
 
+        if item.getProperty('is.search'):
+            self.searchButtonClicked()
+            return
+
         section = item.dataSource
         self.lastSection = section
 
@@ -4752,7 +4787,13 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             self.serverList.replaceItems(items)
             itemHeight = util.vscale(100, r=0)
 
-            self.getControl(800).setHeight((min(len(items), 9) * itemHeight) + 80)
+            listHeight = min(len(items), 9) * itemHeight
+            self.getControl(self.SERVER_MENU_BG_ID).setHeight(listHeight + 80)
+
+            # Position dropdown so it grows upward from the server button area
+            buttonY = util.vscale(990, r=0)
+            dropdownY = buttonY - listHeight
+            self.getControl(self.SERVER_MENU_GROUP_ID).setPosition(80, dropdownY)
 
             for item in items:
                 if item.dataSource != kodigui.DUMMY_DATA_SOURCE:
