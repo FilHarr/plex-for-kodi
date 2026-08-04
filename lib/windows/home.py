@@ -25,6 +25,7 @@ from . import optionsdialog
 from . import playlists
 from . import search
 from . import background
+from . import windowutils
 from .mixins.spoilers import SpoilersMixin
 from .mixins.watchlist import removeFromWatchlistBlind
 from .mixins.common import CommonMixin
@@ -497,7 +498,7 @@ class ServerListItem(kodigui.ManagedListItem):
         self.unHookSignals()
 
 
-class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMixin):
+class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMixin, windowutils.SidebarMixin):
     xmlFile = 'script-plex-home.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -505,22 +506,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
     width = 1920
     height = 1080
 
-    # Sidebar rail
-    SIDEBAR_GROUP_ID = 9000
-    SECTION_LIST_ID = 9001
-
-    SERVER_BUTTON_ID = 201
-    USER_BUTTON_ID = 202
-
-    USER_LIST_ID = 250
-    SERVER_LIST_ID = 260
-    SERVER_LIST_SCROLLBAR_ID = 261
     REFRESH_SL_ID = 262
-
-    SERVER_MENU_GROUP_ID = 802
-    SERVER_MENU_BG_ID = 800
-    USER_MENU_BG_ID = 801
-    USER_MENU_GROUP_ID = 901
 
     PLAYER_STATUS_BUTTON_ID = 204
 

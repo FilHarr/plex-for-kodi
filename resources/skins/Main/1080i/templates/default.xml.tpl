@@ -26,6 +26,7 @@
             <colordiffuse>C0000000</colordiffuse>
         </control>
         {% endblock %}
+        {% block header_topleft %}
         <control type="grouplist">
             <posx>60</posx>
             <posy>{{ vscale(47.5) }}</posy>
@@ -72,6 +73,8 @@
                 </control>
             </control>
         </control>
+        {% endblock header_topleft %}
+        {% block header_sidebar %}{% endblock %}
         {% block header_middle_add %}{% endblock %}
         <control type="label">
             <right>60</right>
