@@ -1,8 +1,6 @@
 {% extends "default.xml.tpl" %}
 {% block content %}
 <control type="grouplist" id="50">
-    <animation effect="slide" end="0,{{ vscale(-135) }}" time="200" tween="sine" easing="inout" condition="!String.IsEmpty(Window(10000).Property(script.plex.off.sections))">Conditional</animation>
-
     <!-- Slide right while the sidebar rail is expanded (focused), so hub content doesn't sit under the labels -->
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
 
@@ -100,22 +98,10 @@
 
 {% block header %}
 <control type="group" id="200">
-    <animation effect="slide" end="0,{{ vscale(-135) }}" time="200" tween="sine" easing="inout" condition="!String.IsEmpty(Window(10000).Property(script.plex.off.sections)) + !ControlGroup(200).HasFocus(0)">Conditional</animation>
-    <defaultcontrol always="true">201</defaultcontrol>
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
     <height>{{ vscale(135) }}</height>
-    <control type="image">
-        <animation effect="fade" start="0" end="100" time="200" tween="quadratic" easing="out" reversible="true">VisibleChange</animation>
-        <visible>ControlGroup(200).HasFocus(0) + !String.IsEmpty(Window(10000).Property(script.plex.off.sections))</visible>
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>1920</width>
-        <height>{{ vscale(135) }}</height>
-        <texture>script.plex/white-square.png</texture>
-        <colordiffuse>C0000000</colordiffuse>
-    </control>
     <control type="group">
         <visible>Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))</visible>
         <posx>438</posx>
