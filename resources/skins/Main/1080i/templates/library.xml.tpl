@@ -4,7 +4,7 @@
 {% block header %}
 <control type="group" id="200">
     {% block header_animation %}<animation effect="slide" end="0,{{ vscale(-135) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + !ControlGroup(200).HasFocus(0) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>{% endblock %}
-    <defaultcontrol always="true">201</defaultcontrol>
+    {% block header_defaultcontrol %}{% endblock %}
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
@@ -22,65 +22,7 @@
         <colordiffuse>C0000000</colordiffuse>
     </control>
     {% endblock %}
-    <control type="grouplist">
-        <posx>60</posx>
-        <posy>{{ vscale(47.5) }}</posy>
-        <width>1000</width>
-        <height>{{ vscale(40) }}</height>
-        <align>left</align>
-        <itemgap>60</itemgap>
-        <orientation>horizontal</orientation>
-        <ondown condition="String.IsEmpty(Window.Property(no.content.filtered))">50</ondown>
-        <ondown condition="!String.IsEmpty(Window.Property(no.content.filtered))">600</ondown>
-        <control type="group">
-            <width>40</width>
-            <height>{{ vscale(40) }}</height>
-            <control type="button" id="201">
-                <animation effect="zoom" start="100" end="144" time="100" center="20,{{ vscale(20) }}" reversible="false">Focus</animation>
-                <animation effect="zoom" start="144" end="100" time="100" center="20,{{ vscale(20) }}" reversible="false">UnFocus</animation>
-                <width>40</width>
-                <height>{{ vscale(40) }}</height>
-                <onright>202</onright>
-                <ondown condition="String.IsEmpty(Window.Property(no.content.filtered))">50</ondown>
-                <ondown condition="!String.IsEmpty(Window.Property(no.content.filtered))">600</ondown>
-                <font>font12</font>
-                <focusedcolor>FF000000</focusedcolor>
-                <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/home-focus.png</texturefocus>
-                <texturenofocus colordiffuse="99FFFFFF">script.plex/buttons/home.png</texturenofocus>
-                <label> </label>
-            </control>
-        </control>
-        <control type="label">
-            <width max="300">auto</width>
-            <height>{{ vscale(40) }}</height>
-            <font>font12</font>
-            <align>left</align>
-            <aligny>center</aligny>
-            <textcolor>FFFFFFFF</textcolor>
-            <label>[UPPERCASE]$INFO[Window.Property(screen.title)][/UPPERCASE][COLOR=gray]$INFO[Window.Property(items.count),  (,)][/COLOR]</label>
-            <scroll>true</scroll>
-        </control>
-        <control type="group">
-            <width>40</width>
-            <height>{{ vscale(40) }}</height>
-            <control type="button" id="202">
-                <animation effect="zoom" start="100" end="144" time="100" center="20,{{ vscale(20) }}" reversible="false">Focus</animation>
-                <animation effect="zoom" start="144" end="100" time="100" center="20,{{ vscale(20) }}" reversible="false">UnFocus</animation>
-                <width>40</width>
-                <height>{{ vscale(40) }}</height>
-                <onright condition="String.IsEmpty(Window.Property(no.content.filtered))">204</onright>
-                <onright condition="!String.IsEmpty(Window.Property(no.content.filtered))">600</onright>
-                <onleft>201</onleft>
-                <ondown condition="String.IsEmpty(Window.Property(no.content.filtered))">50</ondown>
-                <ondown condition="!String.IsEmpty(Window.Property(no.content.filtered))">600</ondown>
-                <font>font12</font>
-                <focusedcolor>FF000000</focusedcolor>
-                <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/search-focus.png</texturefocus>
-                <texturenofocus colordiffuse="99FFFFFF">script.plex/buttons/search.png</texturenofocus>
-                <label> </label>
-            </control>
-        </control>
-    </control>
+    {% block header_topleft %}{% endblock header_topleft %}
     <control type="group">
         <visible>Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))</visible>
         <posx>620</posx>
@@ -91,7 +33,7 @@
             <posy>{{ vscale(38) }}</posy>
             <width>260</width>
             <height>{{ vscale(75) }}</height>
-            <onleft>202</onleft>
+            {% block header_audiowidget_onleft2 %}<onleft>9001</onleft>{% endblock %}
             <ondown>50</ondown>
             <font>font12</font>
             <textcolor>FFFFFFFF</textcolor>
@@ -193,10 +135,10 @@
         <itemgap>30</itemgap>
         <orientation>horizontal</orientation>
         <onleft condition="String.IsEmpty(Window.Property(no.content.filtered))">304</onleft>
-        <onleft condition="!String.IsEmpty(Window.Property(no.content.filtered))">200</onleft>
+        {% block header_filteropts_onleft_nocontent %}<onleft condition="!String.IsEmpty(Window.Property(no.content.filtered))">9000</onleft>{% endblock %}
         <onright>151</onright>
         <ondown>101</ondown>
-        <onup>200</onup>
+        {% block header_filteropts_onup %}<onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>{% endblock %}
         <control type="button" id="311">
             <enable>false</enable>
             <width max="300">auto</width>
@@ -288,6 +230,11 @@
         <label>$INFO[System.Time]</label>
     </control>
 </control>
+
+{# The sidebar rail lives outside group 200 deliberately, mirroring script-plex-home.xml.tpl -
+   group 200 slides off-screen on scroll (header_animation above), and nothing in the sidebar
+   (including the user/server buttons) should move when that happens. #}
+{% block header_sidebar %}{% include "includes/sidebar.xml.tpl" %}{% endblock %}
 
 {% block no_content %}
 <control type="group">

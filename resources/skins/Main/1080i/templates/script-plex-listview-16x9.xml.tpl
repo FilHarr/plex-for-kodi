@@ -6,18 +6,20 @@
 {% block filteropts_grouplist %}
 <control type="grouplist" id="600">
     <visible>String.IsEmpty(Window.Property(hide.filteroptions))</visible>
-    <right>120</right>
-    <posy>{{ vscale(135) }}</posy>
+    <!-- Swapped with the buttons row (300): this row now sits where 300 used to (left,
+         next to the sidebar), so it needs the same expand-slide 300 used to have. -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <posx>90</posx>
+    <posy>{{ vscale(127.5) }}</posy>
     <width>870</width>
     <height>{{ vscale(65) }}</height>
-    <align>right</align>
+    <align>left</align>
     <itemgap>30</itemgap>
     <orientation>horizontal</orientation>
-    <onleft condition="String.IsEmpty(Window.Property(no.content.filtered))">304</onleft>
-    <onleft condition="!String.IsEmpty(Window.Property(no.content.filtered))">200</onleft>
-    <onright>151</onright>
+    <onleft>9000</onleft>
+    <onright>300</onright>
     <ondown>101</ondown>
-    <onup>200</onup>
+    <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
     <control type="button" id="311">
         <visible>!String.IsEqual(Window.Property(media.itemType),folder)</visible>
         <enable>false</enable>
@@ -40,11 +42,11 @@
         <width max="400">auto</width>
         <height>{{ vscale(65) }}</height>
         <font>font10</font>
-        <textcolor>A0FFFFFF</textcolor>
-        <focusedcolor>FF000000</focusedcolor>
+        <textcolor>FFFFFFFF</textcolor>
+        <focusedcolor>FFFFFFFF</focusedcolor>
         <align>center</align>
         <aligny>center</aligny>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
@@ -73,11 +75,11 @@
         <height>{{ vscale(65) }}</height>
         <font>font12</font>
         <textcolor>FFFFFFFF</textcolor>
-        <focusedcolor>FF000000</focusedcolor>
+        <focusedcolor>FFFFFFFF</focusedcolor>
         <disabledcolor>FFFFFFFF</disabledcolor>
         <align>center</align>
         <aligny>center</aligny>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
@@ -88,22 +90,32 @@
         <width max="300">auto</width>
         <height>{{ vscale(65) }}</height>
         <font>font10</font>
-        <textcolor>A0FFFFFF</textcolor>
-        <focusedcolor>FF000000</focusedcolor>
+        <textcolor>FFFFFFFF</textcolor>
+        <focusedcolor>FFFFFFFF</focusedcolor>
         <align>center</align>
         <aligny>center</aligny>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
         <label>[UPPERCASE]$INFO[Window.Property(sort.display)][/UPPERCASE]</label>
+    </control>
+    <control type="label">
+        <width max="400">auto</width>
+        <height>{{ vscale(65) }}</height>
+        <font>font10</font>
+        <textcolor>FFFFFFFF</textcolor>
+        <align>left</align>
+        <aligny>center</aligny>
+        <label>[COLOR=gray]$INFO[Window.Property(items.count)] $INFO[Window.Property(screen.title)][/COLOR]</label>
     </control>
 </control>
 {% endblock filteropts_grouplist %}
 
 {% block content %}
 <control type="group">
-    <posx>60</posx>
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <posx>115</posx>
     <posy>{{ vscale(248) }}</posy>
     <control type="image">
         <visible>!String.IsEqual(Window.Property(media),show) + !String.IsEqual(Window.Property(media),movie)</visible>
@@ -173,34 +185,6 @@
     <posy>{{ vscale(135) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
-    {% block buttons %}
-        <control type="grouplist" id="300">
-            <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
-            <defaultcontrol>301</defaultcontrol>
-            <posx>30</posx>
-            <posy>{{ vscale(-25) }}</posy>
-            <width>1000</width>
-            <height>{{ vscale(145) }}</height>
-            <onup>200</onup>
-            <ondown>101</ondown>
-            <onleft>210</onleft>
-            <onright>600</onright>
-            <itemgap>-20</itemgap>
-            <orientation>horizontal</orientation>
-            <scrolltime tween="quadratic" easing="out">200</scrolltime>
-            <usecontrolcoords>true</usecontrolcoords>
-            <visible>!String.IsEmpty(Window.Property(initialized))</visible>
-
-            {% with attr = {"width": 126, "height": 100} & template = "includes/themed_button.xml.tpl" & hitrect = {"x": 20, "y": 20, "w": 86, "h": 60} %}
-                {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-                {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-                {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio]" %}
-                {% include template with name="chapters" & id=304 %}
-            {% endwith %}
-
-        </control>
-    {% endblock %}
-
     <control type="group" id="100">
         <visible>Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
         <defaultcontrol>101</defaultcontrol>
@@ -222,13 +206,12 @@
             <posy>0</posy>
             <width>1170</width>
             <height>845</height>
-            <onup>600</onup>
+            <onup>300</onup>
             <onright>151</onright>
-            <onleft>304</onleft>
+            <onleft>210</onleft>
             <scrolltime>200</scrolltime>
             <orientation>vertical</orientation>
             <preloaditems>4</preloaditems>
-            <pagecontrol>152</pagecontrol>
             <!-- ITEM LAYOUT ########################################## -->
             <itemlayout height="{{ vscale(76) }}">
                 <control type="group">
@@ -375,22 +358,48 @@
             </focusedlayout>
         </control>
     </control>
-    <control type="scrollbar" id="152">
-        <hitrect x="1820" y="150" w="100" h="910" />
-        <left>1875</left>
-        <top>{{ vscale(15) }}</top>
-        <width>12</width>
-        <height>910</height>
-        <onleft>151</onleft>
-        <visible>true</visible>
-        {% include "includes/scrollbar_style.xml.tpl" %}
-    </control>
 </control>
+
+{% block buttons %}
+<!-- Swapped with the filter row (600): this row now sits where 600 used to (right, next
+     to the scrubber), so it's right-anchored like 600 was and no longer needs its own
+     expand-slide (600 has it now). -->
+<control type="grouplist" id="300">
+    <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
+    <defaultcontrol>301</defaultcontrol>
+    <right>120</right>
+    <posy>{{ vscale(110) }}</posy>
+    <width>1000</width>
+    <height>{{ vscale(145) }}</height>
+    <align>right</align>
+    <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
+    <ondown>101</ondown>
+    <onleft>210</onleft>
+    <onright>151</onright>
+    <itemgap>-20</itemgap>
+    <orientation>horizontal</orientation>
+    <scrolltime tween="quadratic" easing="out">200</scrolltime>
+    <usecontrolcoords>true</usecontrolcoords>
+    <visible>!String.IsEmpty(Window.Property(initialized))</visible>
+
+    {% with attr = {"width": 126, "height": 100} & template = "includes/themed_button.xml.tpl" & hitrect = {"x": 20, "y": 20, "w": 86, "h": 60} %}
+        {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+        {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+        {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio]" %}
+        {% include template with name="chapters" & id=304 %}
+    {% endwith %}
+
+</control>
+{% endblock %}
 
 <control type="group" id="150">
     <visible>String.IsEqual(Window(10000).Property(script.plex.sort),titleSort) + Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
     <defaultcontrol>151</defaultcontrol>
-    <posx>1830</posx>
+    <!-- posx matches where the scrollbar used to rest (removed - the scrubber is now the only
+         right-edge nav aid); posy matches the other 6 views' resting position for a consistent
+         starting height. No animation here: this view never hides its header on scroll, so
+         there's no freed space to grow into. -->
+    <posx>1875</posx>
     <posy>{{ vscale(150) }}</posy>
     <width>20</width>
     <height>920</height>
@@ -399,8 +408,7 @@
         <posy>0</posy>
         <width>34</width>
         <height>1050</height>
-        <onleft>600</onleft>
-        <onright>152</onright>
+        <onleft>300</onleft>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
         {% include "includes/key_scrubber_items.xml.tpl" %}

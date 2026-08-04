@@ -7,18 +7,20 @@
     {% block filteropts_animation %}
         <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
     {% endblock %}
-    <right>170</right>
-    <posy>{{ vscale(135) }}</posy>
+    <!-- Swapped with the buttons row (300): this row now sits where 300 used to (left,
+         next to the sidebar), so it needs the same expand-slide the content/scrubber use. -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <posx>90</posx>
+    <posy>{{ vscale(127.5) }}</posy>
     <width>1000</width>
     <height>65</height>
-    <align>right</align>
+    <align>left</align>
     <itemgap>30</itemgap>
     <orientation>horizontal</orientation>
-    <onleft condition="String.IsEmpty(Window.Property(no.content.filtered))">304</onleft>
-    <onleft condition="!String.IsEmpty(Window.Property(no.content.filtered))">200</onleft>
-    <onright>151</onright>
+    <onleft>9000</onleft>
+    <onright>300</onright>
     <ondown>101</ondown>
-    <onup>200</onup>
+    <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
     <control type="button" id="311">
         <enable>false</enable>
         <width max="300">auto</width>
@@ -40,10 +42,10 @@
         <height>65</height>
         <font>font12</font>
         <textcolor>FFFFFFFF</textcolor>
-        <focusedcolor>FF000000</focusedcolor>
+        <focusedcolor>FFFFFFFF</focusedcolor>
         <align>center</align>
         <aligny>center</aligny>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
@@ -72,11 +74,11 @@
         <height>65</height>
         <font>font12</font>
         <textcolor>FFFFFFFF</textcolor>
-        <focusedcolor>FF000000</focusedcolor>
+        <focusedcolor>FFFFFFFF</focusedcolor>
         <disabledcolor>FFFFFFFF</disabledcolor>
         <align>center</align>
         <aligny>center</aligny>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
@@ -87,14 +89,23 @@
         <height>65</height>
         <font>font12</font>
         <textcolor>FFFFFFFF</textcolor>
-        <focusedcolor>FF000000</focusedcolor>
+        <focusedcolor>FFFFFFFF</focusedcolor>
         <align>center</align>
         <aligny>center</aligny>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
         <label>[UPPERCASE]$INFO[Window.Property(sort.display)][/UPPERCASE]</label>
+    </control>
+    <control type="label">
+        <width max="400">auto</width>
+        <height>65</height>
+        <font>font10</font>
+        <textcolor>FFFFFFFF</textcolor>
+        <align>left</align>
+        <aligny>center</aligny>
+        <label>[COLOR=gray]$INFO[Window.Property(items.count)] $INFO[Window.Property(screen.title)][/COLOR]</label>
     </control>
 </control>
 {% endblock filteropts_grouplist %}
@@ -102,37 +113,11 @@
 <control type="group" id="50">
     <animation effect="slide" time="200" end="0,{{ vscale(-135) }}" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5)">Conditional</animation>
     <animation effect="slide" time="200" end="0,{{ vscale(-200) }}" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + Integer.IsGreater(Container(101).Position,5)">Conditional</animation>
-    <posx>0</posx>
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <posx>60</posx>
     <posy>{{ vscale(135) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
-    {% block buttons %}
-        <control type="grouplist" id="300">
-            <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
-            <visible>!Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(no.content)) + String.IsEmpty(Window.Property(no.content.filtered)) + !String.IsEmpty(Window.Property(initialized))</visible>
-            <defaultcontrol>301</defaultcontrol>
-            <posx>30</posx>
-            <posy>{{ vscale(-25) }}</posy>
-            <width>1000</width>
-            <height>{{ vscale(145) }}</height>
-            <onup>200</onup>
-            <ondown>101</ondown>
-            <onleft>210</onleft>
-            <onright>600</onright>
-            <itemgap>-20</itemgap>
-            <orientation>horizontal</orientation>
-            <scrolltime tween="quadratic" easing="out">200</scrolltime>
-            <usecontrolcoords>true</usecontrolcoords>
-
-            {% with attr = {"width": 126, "height": 100} & template = "includes/themed_button.xml.tpl" & hitrect = {"x": 20, "y": 20, "w": 86, "h": 60} %}
-                {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-                {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-                {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio]" %}
-                {% include template with name="chapters" & id=304 & visible="String.IsEmpty(Window.Property(hide.filteroptions))" %}
-            {% endwith %}
-
-        </control>
-    {% endblock %}
 
     <control type="group" id="100">
         <visible>Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
@@ -147,13 +132,13 @@
             <posy>0</posy>
             <width>1800</width>
             <height>1280</height>
-            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),3)">300</onup>
-            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),6) + Integer.IsGreaterOrEqual(Container(101).ListItem.Property(index),3)">600</onup>
+            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),3)">600</onup>
+            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),6) + Integer.IsGreaterOrEqual(Container(101).ListItem.Property(index),3)">300</onup>
+            <onleft>9000</onleft>
             <onright>151</onright>
             <scrolltime>200</scrolltime>
             <orientation>vertical</orientation>
             <preloaditems>2</preloaditems>
-            <pagecontrol>152</pagecontrol>
             <!-- ITEM LAYOUT ########################################## -->
             <itemlayout width="287" height="{{ vscale(343) }}">
                 <control type="group">
@@ -297,10 +282,49 @@
     </control>
 </control>
 
+{% block buttons %}
+<!-- Swapped with the filter row (600): this row now sits where 600 used to (right, next
+     to the scrubber) so it's right-anchored like 600 was, and no longer needs the
+     sidebar-expand slide 600 needed on the left. -->
+<control type="grouplist" id="300">
+    <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
+    <visible>!Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(no.content)) + String.IsEmpty(Window.Property(no.content.filtered)) + !String.IsEmpty(Window.Property(initialized))</visible>
+    <defaultcontrol>301</defaultcontrol>
+    <right>120</right>
+    <posy>{{ vscale(110) }}</posy>
+    <width>1000</width>
+    <height>{{ vscale(145) }}</height>
+    <align>right</align>
+    <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
+    <ondown>101</ondown>
+    <onleft>210</onleft>
+    <onright>151</onright>
+    <itemgap>-20</itemgap>
+    <orientation>horizontal</orientation>
+    <scrolltime tween="quadratic" easing="out">200</scrolltime>
+    <usecontrolcoords>true</usecontrolcoords>
+
+    {% with attr = {"width": 126, "height": 100} & template = "includes/themed_button.xml.tpl" & hitrect = {"x": 20, "y": 20, "w": 86, "h": 60} %}
+        {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+        {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+        {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio]" %}
+        {% include template with name="chapters" & id=304 & visible="String.IsEmpty(Window.Property(hide.filteroptions))" %}
+    {% endwith %}
+
+</control>
+{% endblock %}
+
 <control type="group" id="150">
     <visible>String.IsEqual(Window(10000).Property(script.plex.sort),titleSort) + Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
     <defaultcontrol>151</defaultcontrol>
-    <posx>1780</posx>
+    <!-- posx/posy match where the scrollbar used to rest (removed - the scrubber is now the only
+         right-edge nav aid); the slide animation mirrors the zoom the scrollbar used to do when the
+         header hides on scroll, growing into the space the header vacates instead of resizing.
+         End position centers the scrubber's full 27-key extent (26 letters + '#', 34px each =
+         918) in the 1080-tall screen: (1080-918)/2 = 81 top margin, a 150-81=69px move up from
+         the resting posy. -->
+    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <posx>1875</posx>
     <posy>{{ vscale(150) }}</posy>
     <width>20</width>
     <height>920</height>
@@ -310,23 +334,10 @@
         <width>34</width>
         <height>1050</height>
         <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
-        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),5) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">600</onleft>
-        <onright>152</onright>
+        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),5) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">300</onleft>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
         {% include "includes/key_scrubber_items.xml.tpl" %}
     </control>
-</control>
-
-<control type="scrollbar" id="152">
-    <hitrect x="1820" y="150" w="100" h="910" />
-    <left>1860</left>
-    <top>{{ vscale(150) }}</top>
-    <width>12</width>
-    <height>910</height>
-    <visible>true</visible>
-    <animation effect="zoom" time="200" start="1860,{{ vscale(150) }},12,910" end="1860,16,12,1055" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
-    {% include "includes/scrollbar_style.xml.tpl" %}
-    <onleft>151</onleft>
 </control>
 {% endblock content %}

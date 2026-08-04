@@ -7,18 +7,20 @@
     {% block filteropts_animation %}
         <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
     {% endblock %}
-    <right>170</right>
-    <posy>{{ vscale(135) }}</posy>
+    <!-- Swapped with the buttons row (300): this row now sits where 300 used to (left,
+         next to the sidebar), so it needs the same expand-slide the content/scrubber use. -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <posx>90</posx>
+    <posy>{{ vscale(127.5) }}</posy>
     <width>870</width>
     <height>{{ vscale(65) }}</height>
-    <align>right</align>
+    <align>left</align>
     <itemgap>30</itemgap>
     <orientation>horizontal</orientation>
-    <onleft condition="String.IsEmpty(Window.Property(no.content.filtered))">304</onleft>
-    <onleft condition="!String.IsEmpty(Window.Property(no.content.filtered))">200</onleft>
-    <onright>151</onright>
+    <onleft>9000</onleft>
+    <onright>300</onright>
     <ondown>101</ondown>
-    <onup>200</onup>
+    <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
     <control type="button" id="311">
         <visible>!String.IsEqual(Window.Property(media.itemType),folder)</visible>
         <enable>false</enable>
@@ -41,11 +43,11 @@
         <width max="400">auto</width>
         <height>{{ vscale(65) }}</height>
         <font>font10</font>
-        <textcolor>A0FFFFFF</textcolor>
-        <focusedcolor>FF000000</focusedcolor>
+        <textcolor>FFFFFFFF</textcolor>
+        <focusedcolor>FFFFFFFF</focusedcolor>
         <align>center</align>
         <aligny>center</aligny>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
@@ -74,11 +76,11 @@
         <height>{{ vscale(65) }}</height>
         <font>font12</font>
         <textcolor>FFFFFFFF</textcolor>
-        <focusedcolor>FF000000</focusedcolor>
+        <focusedcolor>FFFFFFFF</focusedcolor>
         <disabledcolor>FFFFFFFF</disabledcolor>
         <align>center</align>
         <aligny>center</aligny>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
@@ -89,15 +91,24 @@
         <width max="300">auto</width>
         <height>{{ vscale(65) }}</height>
         <font>font10</font>
-        <textcolor>A0FFFFFF</textcolor>
-        <focusedcolor>FF000000</focusedcolor>
+        <textcolor>FFFFFFFF</textcolor>
+        <focusedcolor>FFFFFFFF</focusedcolor>
         <align>center</align>
         <aligny>center</aligny>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
         <label>[UPPERCASE]$INFO[Window.Property(sort.display)][/UPPERCASE]</label>
+    </control>
+    <control type="label">
+        <width max="400">auto</width>
+        <height>{{ vscale(65) }}</height>
+        <font>font10</font>
+        <textcolor>FFFFFFFF</textcolor>
+        <align>left</align>
+        <aligny>center</aligny>
+        <label>[COLOR=gray]$INFO[Window.Property(items.count)] $INFO[Window.Property(screen.title)][/COLOR]</label>
     </control>
 </control>
 {% endblock filteropts_grouplist %}

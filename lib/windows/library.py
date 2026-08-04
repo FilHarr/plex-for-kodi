@@ -14,6 +14,7 @@ from kodi_six import xbmc
 from kodi_six import xbmcgui
 from plexnet import playqueue
 from plexnet import playlist
+from plexnet import plexapp
 from plexnet import plexobjects
 from plexnet import util as pnUtil
 from six.moves import range
@@ -25,10 +26,12 @@ from lib import shuffle
 from lib.util import T
 from . import busy
 from . import dropdown
+from . import home
 from . import kodigui
 from . import opener
 from . import videoplayer
 from . import optionsdialog
+from . import playlists
 from . import preplay
 from . import search
 from . import subitems
@@ -429,7 +432,7 @@ class LibrarySettings(object):
         self._saveSettings()
 
 
-class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin, CommonMixin):
+class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin, windowutils.SidebarMixin, CommonMixin):
     bgXML = 'script-plex-blank.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -455,6 +458,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.backgroundSet = False
         self.showPanelControl = None
         self.keyListControl = None
+        self.sectionList = None
         self.lastItem = None
         self.lastFocusID = None
         self.lastNonOptionsFocusID = None
@@ -526,6 +530,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def onFirstInit(self):
         pnUtil.APP.on("watchlist:modified", self.setWatchlistDirty)
         util.MONITOR.on("library.back_home", self.goHomeRoot)
+
+        if self.sectionList is None:
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.buildSectionList()
+            self.displayServerAndUser()
+        else:
+            self.sectionList.newControl(self)
+
         if self.showPanelControl and not self.refill:
             self.showPanelControl.newControl(self)
             self.keyListControl.newControl(self)
@@ -569,7 +581,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.fill()
         self.refill = False
         if self.getProperty('no.content') or self.getProperty('no.content.filtered'):
-            self.setFocusId(self.HOME_BUTTON_ID)
+            self.setFocusId(self.SECTION_LIST_ID)
         else:
             self.setFocusId(self.POSTERS_PANEL_ID)
 
@@ -637,8 +649,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         kodigui.MultiWindow.onAction(self, action)
 
     def onClick(self, controlID):
-        if controlID == self.HOME_BUTTON_ID:
-            self.goHome()
+        if controlID == self.SECTION_LIST_ID:
+            self.sectionClicked()
         elif controlID == self.POSTERS_PANEL_ID:
             self.showPanelClicked()
         elif controlID == self.KEY_LIST_ID:
@@ -659,8 +671,133 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.filter1ButtonClicked()
         elif controlID == self.ITEM_TYPE_BUTTON_ID:
             self.itemTypeButtonClicked()
-        elif controlID == self.SEARCH_BUTTON_ID:
+
+    def buildSectionList(self):
+        """Populate the sidebar's section list. Mirrors home.py's showSections(), minus
+        the hub-fetching side effects Home needs and this window doesn't - see the Sidebar
+        rollout plan (Phase B) for why this isn't shared code yet: the two consumers'
+        needs (in-place hub reload vs. plain nav) diverge enough that extracting a shared
+        helper before a third consumer exists risked locking in the wrong shape.
+        """
+        items = []
+
+        searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
+        searchmli.setProperty('is.search', '1')
+        searchmli.setProperty('item', '1')
+        items.append(searchmli)
+
+        homemli = kodigui.ManagedListItem(T(32332, 'Home'), iconImage='script.plex/home/type/home.png',
+                                          data_source=home.home_section)
+        homemli.setProperty('is.home', '1')
+        homemli.setProperty('item', '1')
+        items.append(homemli)
+
+        setting_key = 'home.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID)
+        try:
+            navSettings = json.loads(util.getSetting(setting_key, '')) or {}
+        except ValueError:
+            navSettings = {}
+
+        sections = []
+
+        if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True) and home.watchlist_section
+                and home.watchlist_section.has_data()
+                and ("/library/sections/watchlist" not in navSettings
+                     or navSettings["/library/sections/watchlist"].get("show", True))):
+            sections.append(home.watchlist_section)
+
+        if "playlists" not in navSettings or navSettings["playlists"].get("show", True):
+            if plexapp.SERVERMANAGER.selectedServer.playlists():
+                sections.append(home.playlists_section)
+
+        for section in plexapp.SERVERMANAGER.selectedServer.library.sections():
+            if section.key in navSettings and not navSettings[section.key].get("show", True):
+                continue
+            sections.append(section)
+            if navSettings:
+                pinnable = home.PINNABLE_TYPES.get(str(getattr(section, 'TYPE', None)), ())
+                stored = navSettings.get(section.key, {}).get('pinned_types') or []
+                for item_type in stored:
+                    if item_type in pinnable:
+                        sections.append(home.PinnedTypeSection(section, item_type))
+
+        if "order" in navSettings:
+            order = navSettings["order"]
+
+            def orderPos(s):
+                if s.key in order:
+                    return order.index(s.key), 0
+                if isinstance(s, home.PinnedTypeSection) and s.librarySection.key in order:
+                    return order.index(s.librarySection.key), 1
+                return -1, 0
+
+            sections = sorted(sections, key=orderPos)
+
+        for section in sections:
+            mli = kodigui.ManagedListItem(section.title,
+                                          iconImage='script.plex/home/type/{0}.png'.format(section.type),
+                                          data_source=section)
+            mli.setProperty('item', '1')
+            if section == home.playlists_section:
+                mli.setProperty('is.playlists', '1')
+                mli.setIconImage('script.plex/home/type/playlists.png')
+            elif section == home.watchlist_section:
+                mli.setIconImage('script.plex/home/type/watchlist.png')
+            elif isinstance(section, home.PinnedTypeSection):
+                mli.setProperty('is.pinned.type', section.itemType)
+            if section.key == self.section.key:
+                mli.setProperty('is.active', '1')
+            items.append(mli)
+
+        self.sectionList.reset()
+        self.sectionList.addItems(items)
+
+    def sectionClicked(self):
+        mli = self.sectionList.getSelectedItem()
+        if not mli:
+            return
+
+        if mli.getProperty('is.search'):
             self.searchButtonClicked()
+            return
+
+        if mli.getProperty('is.home'):
+            self.goHome()
+            return
+
+        section = mli.dataSource
+        if section.key == self.section.key:
+            return
+
+        if section.type == 'playlists':
+            self.processCommand(opener.handleOpen(playlists.PlaylistsWindow))
+        else:
+            self.processCommand(opener.sectionClicked(section))
+
+    def displayServerAndUser(self):
+        """Sidebar avatar/username and server icon/name. Window properties are
+        per-window, so home.py's own displayServerAndUser() (which this mirrors)
+        never reaches this window - see home.py:3622.
+        """
+        title = plexapp.ACCOUNT.title or plexapp.ACCOUNT.username or ' '
+        self.setProperty('user.name', title)
+        self.setProperty('user.avatar', plexapp.ACCOUNT.safeUserThumb(plexapp.ACCOUNT.ID,
+                                                                       thumb=plexapp.ACCOUNT.thumb))
+        self.setProperty('user.avatar.letter', title[0].upper())
+
+        if plexapp.SERVERMANAGER.selectedServer:
+            self.setProperty('server.name', plexapp.SERVERMANAGER.selectedServer.name)
+            self.setProperty('server.icon', 'script.plex/home/device/plex.png')
+            self.setProperty('server.iconmod',
+                             plexapp.SERVERMANAGER.selectedServer.isSecure and 'script.plex/home/device/lock.png' or '')
+            self.setProperty('server.iconmod2',
+                             plexapp.SERVERMANAGER.selectedServer.isLocal and 'script.plex/home/device/home_small.png'
+                             or '')
+        else:
+            self.setProperty('server.name', T(32338, 'No Servers Found'))
+            self.setProperty('server.icon', 'script.plex/home/device/error.png')
+            self.setProperty('server.iconmod', '')
+            self.setProperty('server.iconmod2', '')
 
     def onFocus(self, controlID):
         self.lastFocusID = controlID
@@ -1006,7 +1143,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         except:
             pass
 
-        result = dropdown.showDropdown(options, (1280, 106), with_indicator=True,
+        result = dropdown.showDropdown(options, (380, 106), with_indicator=True,
                                        select_item=not self.getBoolProperty('no.content.filtered') and selectItem or None)
         if not result:
             return
@@ -1139,7 +1276,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         except:
             pass
 
-        result = dropdown.showDropdown(options, (1280, 106), with_indicator=True,
+        result = dropdown.showDropdown(options, (560, 106), with_indicator=True,
                                        select_item=not self.getBoolProperty('no.content.filtered') and selectItem or None)
         if not result:
             return
@@ -1278,7 +1415,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             util.DEBUG_LOG('No filters available for section {0}', self.section.key)
             dropdown.showDropdown(
                 [{'val': None, 'display': T(32375, 'No filters available'), 'ignore': True}],
-                (980, 106))
+                (200, 106))
             return
 
         # Group boolean toggles (HDR/DOVI/Atmos/Unwatched/...) at the top, separated from
@@ -1320,7 +1457,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             options.append(None)  # Separator between toggles and value filters
         options.extend(valueOptions)
 
-        result = dropdown.showDropdown(options, (980, 106), with_indicator=True,
+        result = dropdown.showDropdown(options, (200, 106), with_indicator=True,
                                        suboption_callback=self.subOptionCallback,
                                        select_item=not self.getBoolProperty('no.content.filtered') and self.filter or None,
                                        open_sublists=not self.getBoolProperty('no.content.filtered'))
@@ -1480,7 +1617,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         mli.setProperty('progress', util.getProgressImage(mli.dataSource))
 
     def setTitle(self):
-        self.setProperty('screen.title', self.section.title.upper())
+        self.setProperty('screen.title', self.section.title)
 
         self.updateFilterDisplay()
 
@@ -1996,8 +2133,6 @@ class PostersWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
 
     OPTIONS_GROUP_ID = 200
 
-    HOME_BUTTON_ID = 201
-    SEARCH_BUTTON_ID = 202
     PLAYER_STATUS_BUTTON_ID = 204
 
     SORT_BUTTON_ID = 210

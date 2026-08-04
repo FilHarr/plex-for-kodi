@@ -1,6 +1,76 @@
 {% extends "library.xml.tpl" %}
 {% block headers %}<defaultcontrol>50</defaultcontrol>{% endblock %}
 
+{# Genres predates the sidebar rollout and isn't part of it - restore library.xml.tpl's
+   original top-left nav (Home/Search buttons) and focus targets verbatim so this screen
+   is unaffected. #}
+{% block header_defaultcontrol %}<defaultcontrol always="true">201</defaultcontrol>{% endblock %}
+{% block header_topleft %}
+<control type="grouplist">
+    <posx>60</posx>
+    <posy>{{ vscale(47.5) }}</posy>
+    <width>1000</width>
+    <height>{{ vscale(40) }}</height>
+    <align>left</align>
+    <itemgap>60</itemgap>
+    <orientation>horizontal</orientation>
+    <ondown condition="String.IsEmpty(Window.Property(no.content.filtered))">50</ondown>
+    <ondown condition="!String.IsEmpty(Window.Property(no.content.filtered))">600</ondown>
+    <control type="group">
+        <width>40</width>
+        <height>{{ vscale(40) }}</height>
+        <control type="button" id="201">
+            <animation effect="zoom" start="100" end="144" time="100" center="20,{{ vscale(20) }}" reversible="false">Focus</animation>
+            <animation effect="zoom" start="144" end="100" time="100" center="20,{{ vscale(20) }}" reversible="false">UnFocus</animation>
+            <width>40</width>
+            <height>{{ vscale(40) }}</height>
+            <onright>202</onright>
+            <ondown condition="String.IsEmpty(Window.Property(no.content.filtered))">50</ondown>
+            <ondown condition="!String.IsEmpty(Window.Property(no.content.filtered))">600</ondown>
+            <font>font12</font>
+            <focusedcolor>FF000000</focusedcolor>
+            <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/home-focus.png</texturefocus>
+            <texturenofocus colordiffuse="99FFFFFF">script.plex/buttons/home.png</texturenofocus>
+            <label> </label>
+        </control>
+    </control>
+    <control type="label">
+        <width max="300">auto</width>
+        <height>{{ vscale(40) }}</height>
+        <font>font12</font>
+        <align>left</align>
+        <aligny>center</aligny>
+        <textcolor>FFFFFFFF</textcolor>
+        <label>[UPPERCASE]$INFO[Window.Property(screen.title)][/UPPERCASE][COLOR=gray]$INFO[Window.Property(items.count),  (,)][/COLOR]</label>
+        <scroll>true</scroll>
+    </control>
+    <control type="group">
+        <width>40</width>
+        <height>{{ vscale(40) }}</height>
+        <control type="button" id="202">
+            <animation effect="zoom" start="100" end="144" time="100" center="20,{{ vscale(20) }}" reversible="false">Focus</animation>
+            <animation effect="zoom" start="144" end="100" time="100" center="20,{{ vscale(20) }}" reversible="false">UnFocus</animation>
+            <width>40</width>
+            <height>{{ vscale(40) }}</height>
+            <onright condition="String.IsEmpty(Window.Property(no.content.filtered))">204</onright>
+            <onright condition="!String.IsEmpty(Window.Property(no.content.filtered))">600</onright>
+            <onleft>201</onleft>
+            <ondown condition="String.IsEmpty(Window.Property(no.content.filtered))">50</ondown>
+            <ondown condition="!String.IsEmpty(Window.Property(no.content.filtered))">600</ondown>
+            <font>font12</font>
+            <focusedcolor>FF000000</focusedcolor>
+            <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/search-focus.png</texturefocus>
+            <texturenofocus colordiffuse="99FFFFFF">script.plex/buttons/search.png</texturenofocus>
+            <label> </label>
+        </control>
+    </control>
+</control>
+{% endblock header_topleft %}
+{% block header_audiowidget_onleft2 %}<onleft>202</onleft>{% endblock %}
+{% block header_filteropts_onleft_nocontent %}<onleft condition="!String.IsEmpty(Window.Property(no.content.filtered))">200</onleft>{% endblock %}
+{% block header_filteropts_onup %}<onup>200</onup>{% endblock %}
+{% block header_sidebar %}{% endblock %}
+
 {% block content %}
 <control type="group" id="50">
     <visible>!String.IsEmpty(Window.Property(initialized))</visible>
