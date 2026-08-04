@@ -198,6 +198,7 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
     __slots__ = ("_closing", "_winID", "started", "finishedInit", "dialogProps", "isOpen", "_errored",
                  "_closeSignalled")
     supportsAutoPlay = False
+    ULTRABLUR_TINT_ALPHA = '66'  # hex alpha (~40%) applied atop each corner's own gradient falloff
 
     def __init__(self, *args, **kwargs):
         BaseFunctions.__init__(self)
@@ -336,7 +337,17 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
 
     def updateBackgroundFrom(self, ds):
         if util.addonSettings.dynamicBackgrounds and ds:
+            self._updateUltraBlurFrom(ds)
             return self.windowSetBackground(util.backgroundFromArt(ds.get('art', ds.get('parentArt', ds.get('grandparentArt', None))), width=self.width, height=self.height))
+
+    def _updateUltraBlurFrom(self, ds):
+        colors = getattr(ds, 'ultraBlurColors', None)
+        for corner in ('topLeft', 'topRight', 'bottomLeft', 'bottomRight'):
+            hexColor = colors.get(corner) if colors else None
+            self.setProperty(
+                'ultrablur_{0}'.format(corner.lower()),
+                self.ULTRABLUR_TINT_ALPHA + hexColor if hexColor else ''
+            )
 
     def windowSetBackground(self, value):
         if not util.addonSettings.dbgCrossfade:

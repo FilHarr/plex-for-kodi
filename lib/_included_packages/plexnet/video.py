@@ -108,6 +108,7 @@ class Video(media.MediaItem, AudioCodecMixin):
     def _setData(self, data):
         media.MediaItem._setData(self, data)
         self.images = plexobjects.PlexItemList(data, media.Image, media.Image.TYPE, server=self.server)
+        self.ultraBlurColors = self._findUltraBlurColors(data)
 
     @property
     def clearLogo(self):

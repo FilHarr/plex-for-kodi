@@ -448,6 +448,12 @@ class PlexObject(Checks):
             return PlexObject(elem, self.initpath, server=self.server)
         return None
 
+    def _findUltraBlurColors(self, data):
+        elem = data.find('UltraBlurColors')
+        if elem is not None:
+            return elem.attrib
+        return None
+
     def getAbsolutePath(self, attr):
         path = getattr(self, attr, None)
         if path is None:

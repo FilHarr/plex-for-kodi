@@ -36,4 +36,40 @@
         <texture background="true">{{ background_source|default("$INFO[Window.Property(background)]") }}</texture>
         {% include "includes/scale_background.xml.tpl" %}
     </control>
+    <control type="group">
+        <visible>!String.IsEmpty(Window.Property(ultrablur_topleft))</visible>
+        <fadetime>1000</fadetime>
+        <control type="image">
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture>script.plex/gradient-corner-tl.png</texture>
+            <colordiffuse>$INFO[Window.Property(ultrablur_topleft)]</colordiffuse>
+        </control>
+        <control type="image">
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture>script.plex/gradient-corner-tr.png</texture>
+            <colordiffuse>$INFO[Window.Property(ultrablur_topright)]</colordiffuse>
+        </control>
+        <control type="image">
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture>script.plex/gradient-corner-bl.png</texture>
+            <colordiffuse>$INFO[Window.Property(ultrablur_bottomleft)]</colordiffuse>
+        </control>
+        <control type="image">
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture>script.plex/gradient-corner-br.png</texture>
+            <colordiffuse>$INFO[Window.Property(ultrablur_bottomright)]</colordiffuse>
+        </control>
+    </control>
 </control>
