@@ -323,14 +323,7 @@
             <height>910</height>
             <onleft>151</onleft>
             <visible>true</visible>
-            <texturesliderbackground colordiffuse="40000000" border="5">script.plex/white-square-rounded.png</texturesliderbackground>
-            <texturesliderbar colordiffuse="77FFFFFF" border="5">script.plex/white-square-rounded.png</texturesliderbar>
-            <texturesliderbarfocus colordiffuse="FFE5A00D" border="5">script.plex/white-square-rounded.png</texturesliderbarfocus>
-            <textureslidernib>-</textureslidernib>
-            <textureslidernibfocus>-</textureslidernibfocus>
-            <pulseonselect>false</pulseonselect>
-            <orientation>vertical</orientation>
-            <showonepage>false</showonepage>
+            {% include "includes/scrollbar_style.xml.tpl" %}
         </control>
     </control>
 
@@ -350,92 +343,7 @@
             <onright>152</onright>
             <scrolltime>200</scrolltime>
             <orientation>vertical</orientation>
-            <!-- ITEM LAYOUT ########################################## -->
-            <itemlayout height="34">
-                <control type="group">
-                    <posx>0</posx>
-                    <posy>0</posy>
-                    <control type="group">
-                        <posx>0</posx>
-                        <posy>0</posy>
-                        <control type="label">
-                            <visible>!String.IsEqual(Window(10000).Property(script.plex.key), ListItem.Property(letter))</visible>
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>34</width>
-                            <height>{{ vscale(32) }}</height>
-                            <font>font10</font>
-                            <align>center</align>
-                            <aligny>center</aligny>
-                            <textcolor>99FFFFFF</textcolor>
-                            <label>$INFO[ListItem.Label]</label>
-                        </control>
-                        <control type="label">
-                            <visible>String.IsEqual(Window(10000).Property(script.plex.key), ListItem.Property(key))</visible>
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>34</width>
-                            <height>{{ vscale(32) }}</height>
-                            <font>font10</font>
-                            <align>center</align>
-                            <aligny>center</aligny>
-                            <textcolor>FFE5A00D</textcolor>
-                            <label>$INFO[ListItem.Label]</label>
-                        </control>
-                    </control>
-                </control>
-            </itemlayout>
-
-            <!-- FOCUSED LAYOUT ####################################### -->
-            <focusedlayout height="34">
-                <control type="group">
-                    <posx>0</posx>
-                    <posy>0</posy>
-                    <control type="group">
-                        <posx>0</posx>
-                        <posy>0</posy>
-                        <control type="label">
-                            <visible>!String.IsEqual(Window(10000).Property(script.plex.key), ListItem.Property(letter))</visible>
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>34</width>
-                            <height>{{ vscale(32) }}</height>
-                            <font>font10</font>
-                            <align>center</align>
-                            <aligny>center</aligny>
-                            <textcolor>99FFFFFF</textcolor>
-                            <label>$INFO[ListItem.Label]</label>
-                        </control>
-                        <control type="label">
-                            <visible>String.IsEqual(Window(10000).Property(script.plex.key), ListItem.Property(key))</visible>
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>34</width>
-                            <height>{{ vscale(32) }}</height>
-                            <font>font10</font>
-                            <align>center</align>
-                            <aligny>center</aligny>
-                            <textcolor>FFE5A00D</textcolor>
-                            <label>$INFO[ListItem.Label]</label>
-                        </control>
-                    </control>
-
-                    <control type="group">
-                        <visible>Control.HasFocus(151)</visible>
-                        <posx>0</posx>
-                        <posy>0</posy>
-                        <control type="image">
-                            <visible>Control.HasFocus(151)</visible>
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>34</width>
-                            <height>{{ vscale(34) }}</height>
-                            <colordiffuse>FFE5A00D</colordiffuse>
-                            <texture border="12">script.plex/white-outline-rounded.png</texture>
-                        </control>
-                    </control>
-                </control>
-            </focusedlayout>
+            {% include "includes/key_scrubber_items.xml.tpl" %}
         </control>
     </control>
 {% endblock content %}
