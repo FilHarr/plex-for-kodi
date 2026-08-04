@@ -1,7 +1,9 @@
 <!-- Square focused layout (244x244) - uses hub_id variable -->
 <focusedlayout width="287" condition="String.IsEqual(Window.Property(hub.display.{{ hub_id }}),square)">
     <control type="group">
-        <posx>55</posx>
+        <!-- 10, not 55: compensates for the parent grouplist's posx moving from 55 to 100
+             (see script-plex-home.xml.tpl) so this item's resting position is unchanged. -->
+        <posx>10</posx>
         <posy>{{ vscale(72) }}</posy>
         <control type="group">
             <animation effect="zoom" start="100" end="110" time="100" center="122,{{ vscale(122) }}" reversible="false">Focus</animation>

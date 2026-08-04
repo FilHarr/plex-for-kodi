@@ -18,9 +18,17 @@
     {% endfor %}
 
     <defaultcontrol>500</defaultcontrol>
-    <posx>55</posx>
+    <!-- posx=100, not 55: the sidebar rail is drawn on top (see its own comment in default.xml.tpl's
+         header block), so this is purely about where departing posters get clipped as they scroll
+         out of focus - this grouplist clips its children to its own rect, so its left edge is that
+         clip boundary. 55 sat right at the collapsed rail's icon column, so a departing poster
+         visibly clipped mid-icon instead of clearing the rail's full condensed width first; 100
+         gives it that extra room. Row titles/bifurcation lines and item layout insets below have
+         their own posx reduced by the same 45px this moved right, to keep resting positions
+         unchanged (60->15, 55->10). -->
+    <posx>100</posx>
     <posy>{{ vscale(96) }}</posy>
-    <width>2130</width>
+    <width>2085</width>
     {% with n = core.hub_count %}{% with grouplist_height = n * 555 + 320 %}
     <height>{{ vscale(grouplist_height) }}</height>
     {% endwith %}{% endwith %}
@@ -39,7 +47,7 @@
         <height>{{ vscale(535) }}</height>
         <control type="image">
             <visible>!String.IsEmpty(Window.Property(bifurcation_lines))</visible>
-            <posx>60</posx>
+            <posx>15</posx>
             <posy>{{ vscale(12) }}</posy>
             <width>1800</width>
             <height>{{ vscale(2) }}</height>
@@ -47,7 +55,7 @@
             <colordiffuse>A0000000</colordiffuse>
         </control>
         <control type="label">
-            <posx>60</posx>
+            <posx>15</posx>
             <posy>0</posy>
             <width>1000</width>
             <height>{{ vscale(87) }}</height>
@@ -94,6 +102,7 @@
         <label> </label>
     </control>
 </control>
+
 {% endblock content %}
 
 {% block header %}
@@ -751,7 +760,12 @@
 <!-- ========== SIDEBAR RAIL ========== -->
 <!-- Persistent vertical nav rail: icons-only when unfocused, icons+labels while any
      descendant (section list, server/user buttons or their dropdowns) has focus.
-     Declared last so it z-orders above everything else, including the overlays above. -->
+     Declared last so it z-orders above everything else, including hub content and the
+     overlays above - Kodi gives controls no independent z-index, only paint order, and
+     there's no way to make that conditional on the rail's expand state. Posters clip
+     before reaching the collapsed rail's full width instead (see the hub grouplist's own
+     posx comment in script-plex-home.xml.tpl), so they read as sliding behind the rail
+     rather than getting cut off mid-icon. -->
 <control type="group" id="9000">
     <posx>0</posx>
     <posy>0</posy>
