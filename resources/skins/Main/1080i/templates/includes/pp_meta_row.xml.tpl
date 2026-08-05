@@ -1,7 +1,12 @@
+    <!-- Single control, not duplicated: width/height are identical in both poster states, only posx/posy
+         shift (poster-shown here; a zero-duration Conditional slide moves it when hide.poster is set), so
+         this does the job of the two xoff/yoff-parameterized <visible>-switched copies this used to be
+         included as. Title/clearlogo stay duplicated (their own width/height differ per state, which a
+         slide animation can't reproduce) - see script-plex-pre_play.xml.tpl for both. -->
     <control type="grouplist">
-        <visible>{{ visible_cond }}</visible>
-        <posx>{{ xoff }}</posx>
-        <posy>{{ (80 + yoff)|vscale }}</posy>
+        <animation effect="slide" end="-373,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
+        <posx>433</posx>
+        <posy>{{ vscale(126) }}</posy>
         <width>1360</width>
         <height>{{ vscale(30) }}</height>
         <align>left</align>

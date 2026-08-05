@@ -55,7 +55,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     EXTRA_DIM = util.scaleResolution(329, 185)
     RELATED_DIM = util.scaleResolution(268, 402)
     ROLES_DIM = util.scaleResolution(334, 334)
-    CLEAR_LOGO_DIM = util.scaleResolution(560, 68)
+    THUMB_POSTER_DIM = util.scaleResolution(314, 467)
+    CLEAR_LOGO_DIM = util.scaleResolution(873, 106)
+    CLEAR_LOGO_DIM_NO_POSTER = util.scaleResolution(760, 136)
 
     SUB_ITEM_LIST_ID = 400
 
@@ -73,8 +75,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     HOME_BUTTON_ID = 201
     SEARCH_BUTTON_ID = 202
     PLAYER_STATUS_BUTTON_ID = 204
-
-    PROGRESS_IMAGE_ID = 250
 
     MAIN_BUTTON_GROUP_ID = 300
     INFO_BUTTON_ID = 301
@@ -118,8 +118,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.extraListControl = kodigui.ManagedControlList(self, self.EXTRA_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
 
-        self.progressImageControl = self.getControl(self.PROGRESS_IMAGE_ID)
-
         self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
         self.buildSectionList()
         self.displayServerAndUser()
@@ -159,9 +157,13 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
     def updateProperties(self):
         self.setProperty('title', self.mediaItem.title)
-        self.setProperty('clear.logo', util.clearLogoFrom(self.mediaItem, *self.CLEAR_LOGO_DIM))
+        willHidePoster = util.getSetting('hide_poster_with_logo', True)
+        logoDim = willHidePoster and self.CLEAR_LOGO_DIM_NO_POSTER or self.CLEAR_LOGO_DIM
+        logo = util.clearLogoFrom(self.mediaItem, *logoDim)
+        self.setProperty('clear.logo', logo)
+        self.setBoolProperty('hide.poster', bool(logo) and willHidePoster)
         self.setProperty('summary', self.mediaItem.summary)
-        self.setProperty('thumb', self.mediaItem.defaultThumb.asTranscodedImageURL(*self.THUMB_DIMS[self.mediaItem.type]['main.thumb']))
+        self.setProperty('thumb', self.mediaItem.defaultThumb.asTranscodedImageURL(*self.THUMB_POSTER_DIM))
         self.updateBackgroundFrom(self.mediaItem)
         self.setProperty('duration', util.durationToText(self.mediaItem.fixedDuration()))
         self.setProperty('info', '')
@@ -177,13 +179,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.setProperty('related.header', T(32306, 'Related Shows') if not self.fromWatchlist else T(34018, 'Related Media'))
 
         if self.mediaItem.creator:
-            self.setProperty('directors', u'{0}    {1}'.format(T(32418, 'Creator').upper(), self.mediaItem.creator))
+            self.setProperty('studio', self.mediaItem.creator)
         elif self.mediaItem.studio:
-            self.setProperty('directors', u'{0}    {1}'.format(T(32386, 'Studio').upper(), self.mediaItem.studio))
-
-        cast = self.mediaItem.roles and u' / '.join([r.tag for r in self.mediaItem.roles()][:5]) or ''
-        castLabel = T(32419, 'Cast').upper()
-        self.setProperty('writers', cast and u'{0}    {1}'.format(castLabel, cast) or '')
+            self.setProperty('studio', self.mediaItem.studio)
 
         genres = self.mediaItem.genres()
         self.setProperty('info', genres and (u' / '.join([g.tag for g in genres][:3])) or '')
@@ -201,26 +199,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             forced_subtitles_override=util.getSetting("forced_subtitles_override") and pnUtil.ACCOUNT.subtitlesForced == 0,
             deselect_subtitles=getNativeLanguages(util.getSetting("disable_subtitle_languages") or []))
         self.setProperty('subtitles', sss and sss.getTitle() or 'None')
-
-        leafcount = self.mediaItem.leafCount.asFloat()
-        if leafcount:
-            viewed = self.mediaItem.viewedLeafCount.asInt()
-            has_ondeck_progress = False
-            for v in self.mediaItem.onDeck:
-                if v.viewOffset.asInt():
-                    has_ondeck_progress = True
-                    break
-            if has_ondeck_progress and viewed == int(leafcount):
-                viewed -= 1
-            wBase = viewed / leafcount
-            for v in self.mediaItem.onDeck:
-                if v.viewOffset:
-                    wBase += v.viewOffset.asInt() / v.duration.asFloat() / leafcount
-
-            # if we have _any_ progress, display it as the smallest step
-            wBase = 0 < wBase < 0.01 and 0.01 or wBase
-            width = (int(wBase * self.width)) or 1
-            self.progressImageControl.setWidth(width)
 
     def focusPlayButton(self, extended=False):
         if extended:

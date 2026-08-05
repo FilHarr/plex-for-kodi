@@ -189,8 +189,7 @@
                 <aspectratio align="left" aligny="bottom">keep</aspectratio>
                 <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
             </control>
-            {% include "includes/pp_meta_row.xml.tpl" with xoff=433 & visible_cond="String.IsEmpty(Window.Property(hide.poster))" & yoff=46 %}
-            {% include "includes/pp_meta_row.xml.tpl" with xoff=60 & visible_cond="!String.IsEmpty(Window.Property(hide.poster))" & yoff=76 %}
+            {% include "includes/pp_meta_row.xml.tpl" %}
 
             <control type="grouplist">
                 <visible>!String.IsEmpty(Window.Property(rating)) | !String.IsEmpty(Window.Property(rating2))</visible>
@@ -249,24 +248,14 @@
             </control>
             {% block summary %}
                 <control type="textbox">
-                    <visible>String.IsEmpty(Window.Property(hide.poster))</visible>
+                    <!-- Single control, not duplicated: width/height are identical in both poster states,
+                         only posx/posy shift, so a zero-duration Conditional slide does the job of the
+                         <visible>-switched pair used where size also changes (title/clearlogo above). -->
+                    <animation effect="slide" end="-373,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
                     <!-- 433, not 466: shifted left 33px (347-314) to close the gap the two poster
                          shrinks opened up between the poster's right edge and this column. -->
                     <posx>433</posx>
                     <posy>{{ vscale(176) }}</posy>
-                    <width>1080</width>
-                    <height>{{ vscale(152) }}</height>
-                    <font>font12</font>
-                    <align>left</align>
-                    <textcolor>FFFFFFFF</textcolor>
-                    <scrolltime>200</scrolltime>
-                    <autoscroll delay="2000" time="2000" repeat="10000">!Control.HasFocus(13)</autoscroll>
-                    <label>$INFO[Window.Property(summary)]</label>
-                </control>
-                <control type="textbox">
-                    <visible>!String.IsEmpty(Window.Property(hide.poster))</visible>
-                    <posx>60</posx>
-                    <posy>{{ vscale(206) }}</posy>
                     <width>1080</width>
                     <height>{{ vscale(152) }}</height>
                     <font>font12</font>

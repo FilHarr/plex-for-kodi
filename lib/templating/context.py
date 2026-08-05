@@ -74,7 +74,7 @@ TEMPLATE_CONTEXTS = {
             },
 
             # specific interface config; kept in lockstep with pre_play's button sizing/spacing below
-            # since the episode row's play buttons are the same visual element on both screens
+            # since the episode/seasons row's play buttons are the same visual element on both screens
             "episodes": {
                 "buttongroup": {
                     "itemgap": -20,
@@ -115,9 +115,12 @@ TEMPLATE_CONTEXTS = {
                 }
             },
             "seasons": {
+                "buttongroup": {
+                    "itemgap": -50
+                },
                 "buttons": {
-                    "width": 126,
-                    "height": 100,
+                    "width": 176,
+                    "height": 140,
                 }
             },
             "pre_play": {
@@ -154,7 +157,7 @@ TEMPLATE_CONTEXTS = {
             },
             "seasons": {
                 "buttongroup": {
-                    "itemgap": -40
+                    "itemgap": -60
                 },
                 "buttons": {
                     "width": 152,

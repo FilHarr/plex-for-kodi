@@ -34,12 +34,16 @@
             <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
             <visible>!String.IsEmpty(Window.Property(initialized))</visible>
             <defaultcontrol>302</defaultcontrol>
-            <posx>440</posx>
-            <posy>{{ vscale(445) }}</posy>
+            <!-- posx/posy match Pre-play's button row exactly (script-plex-pre_play.xml.tpl) - same
+                 152x121 button box (theme.seasons.buttons now kept in lockstep with theme.pre_play.buttons,
+                 see context.py), so the same position clears the poster/hub-row stack the same way. -->
+            <posx>22</posx>
+            <posy>{{ vscale(481) }}</posy>
             <width>1000</width>
             <height>{{ vscale(145) }}</height>
             <onup>200</onup>
             <ondown>400</ondown>
+            <onleft>9000</onleft>
             <itemgap>{{ theme.seasons.buttongroup.itemgap }}</itemgap>
             <orientation>horizontal</orientation>
             <scrolltime tween="quadratic" easing="out">200</scrolltime>
@@ -62,92 +66,87 @@
         <posy>0</posy>
         <width>1920</width>
         <height>{{ vscale(600) }}</height>
-        <control type="image">
-            <posx>60</posx>
-            <posy>0</posy>
-            <width>347</width>
-            <height>{{ vscale(518) }}</height>
-            <texture background="true">script.plex/thumb_fallbacks/movie.png</texture>
-            <animation effect="fade" start="0" end="100" time="0" delay="500">WindowOpen</animation>
-            <aspectratio>scale</aspectratio>
+        <control type="group">
+            <visible>String.IsEmpty(Window.Property(hide.poster))</visible>
+            <control type="image">
+                <posx>60</posx>
+                <posy>0</posy>
+                <width>314</width>
+                <height>{{ vscale(467) }}</height>
+                <texture background="true">script.plex/thumb_fallbacks/movie.png</texture>
+                <animation effect="fade" start="0" end="100" time="0" delay="500">WindowOpen</animation>
+                <aspectratio>scale</aspectratio>
+            </control>
+            <control type="image">
+                <posx>60</posx>
+                <posy>0</posy>
+                <width>314</width>
+                <height>{{ vscale(467) }}</height>
+                <texture background="true">$INFO[Window.Property(thumb)]</texture>
+                <aspectratio>scale</aspectratio>
+            </control>
+            {% include "includes/watched_indicator.xml.tpl" with itemref="Window" & xoff=314+60 & uw_size=48 & with_count=True & scale="large" %}
         </control>
-        <control type="image">
-            <posx>60</posx>
-            <posy>0</posy>
-            <width>347</width>
-            <height>{{ vscale(518) }}</height>
-            <texture background="true">$INFO[Window.Property(thumb)]</texture>
-            <aspectratio>scale</aspectratio>
-        </control>
-        {% include "includes/watched_indicator.xml.tpl" with itemref="Window" & xoff=347+60 & uw_size=48 & with_count=True & scale="large" %}
 
-        <!-- same box and baseline as the clear logo below it, so the two variants line up -->
+        <!-- Title/clearlogo duplicated at two x-offsets (433 with the poster, 60 filling its slot when
+             hidden) and switched with <visible>, since posx/width can't take a condition in Kodi - see
+             script-plex-pre_play.xml.tpl for the reference implementation these mirror verbatim. -->
         <control type="label">
-            <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
-            <posx>466</posx>
+            <visible>String.IsEmpty(Window.Property(hide.poster)) + String.IsEmpty(Window.Property(clear.logo))</visible>
+            <posx>433</posx>
             <posy>0</posy>
-            <width>1360</width>
+            <width>880</width>
             <height>{{ vscale(68) }}</height>
             <font>font45</font>
             <align>left</align>
             <aligny>bottom</aligny>
             <scroll>true</scroll>
-            <scrollspeed>25</scrollspeed>
+            <scrollspeed>35</scrollspeed>
             <textcolor>FFFFFFFF</textcolor>
             <label>$INFO[Window.Property(title)]</label>
         </control>
-        <!-- see the pre_play template: same box on all three detail screens, top on the artwork's baseline -->
-        <control type="image">
-            <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
-            <posx>466</posx>
+        <control type="label">
+            <visible>!String.IsEmpty(Window.Property(hide.poster)) + String.IsEmpty(Window.Property(clear.logo))</visible>
+            <posx>60</posx>
             <posy>0</posy>
-            <width>560</width>
-            <height>{{ vscale(68) }}</height>
+            <width>940</width>
+            <height>{{ vscale(136) }}</height>
+            <font>font45</font>
+            <align>left</align>
+            <aligny>bottom</aligny>
+            <scroll>true</scroll>
+            <scrollspeed>35</scrollspeed>
+            <textcolor>FFFFFFFF</textcolor>
+            <label>$INFO[Window.Property(title)]</label>
+        </control>
+        <control type="image">
+            <visible>String.IsEmpty(Window.Property(hide.poster)) + !String.IsEmpty(Window.Property(clear.logo))</visible>
+            <posx>433</posx>
+            <posy>0</posy>
+            <width>873</width>
+            <height>{{ vscale(106) }}</height>
             <aspectratio align="left" aligny="bottom">keep</aspectratio>
             <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
         </control>
-        <control type="grouplist">
-            <posx>466</posx>
-            <posy>{{ vscale(82) }}</posy>
-            <width>1360</width>
-            <height>{{ vscale(30) }}</height>
-            <align>left</align>
-            <itemgap>0</itemgap>
-            <orientation>horizontal</orientation>
-            <usecontrolcoords>true</usecontrolcoords>
-            <control type="label">
-                <width>auto</width>
-                <height>{{ vscale(30) }}</height>
-                <font>font12</font>
-                <align>left</align>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>$INFO[Window.Property(duration)]$INFO[Window.Property(info), &#8226; ]$INFO[Window.Property(date), &#8226; ]$INFO[Window.Property(content.rating), &#8226; ]</label>
-            </control>
-            <control type="label">
-                <visible>!String.IsEmpty(Window.Property(rating.stars))</visible>
-                <width>auto</width>
-                <height>{{ vscale(30) }}</height>
-                <font>font12</font>
-                <align>left</align>
-                <textcolor>FFFFFFFF</textcolor>
-                <label> &#8226; </label>
-            </control>
-            <control type="image">
-                <visible>!String.IsEmpty(Window.Property(rating.stars))</visible>
-                <posy>4</posy>
-                <width>134</width>
-                <height>{{ vscale(22) }}</height>
-                <texture>script.plex/stars/$INFO[Window.Property(rating.stars)].png</texture>
-            </control>
+        <control type="image">
+            <visible>!String.IsEmpty(Window.Property(hide.poster)) + !String.IsEmpty(Window.Property(clear.logo))</visible>
+            <posx>60</posx>
+            <posy>0</posy>
+            <width>760</width>
+            <height>{{ vscale(136) }}</height>
+            <aspectratio align="left" aligny="bottom">keep</aspectratio>
+            <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
         </control>
+        {% include "includes/seasons_meta_row.xml.tpl" %}
 
         <control type="grouplist">
             <visible>!String.IsEmpty(Window.Property(rating)) | !String.IsEmpty(Window.Property(rating2))</visible>
-            <!-- posx=1500, not 1560: compensates for group 50's own +60 posx shift (sidebar rail
-                 clearance) so this right-anchored row keeps its original screen position/right margin. -->
-            <posx>1500</posx>
-            <posy>{{ vscale(82) }}</posy>
-            <width>300</width>
+            <!-- posx=1366, not 1426: offset -60 to cancel out group 50's own +60 sidebar-clearance shift -
+                 matches Pre-play's identical ratings box exactly (position, width, and now the rating-stars
+                 image below too, moved here from the info row to match Pre-play's content split). -->
+            <posx>1366</posx>
+            <posy>4</posy>
+            <width>434</width>
             <height>{{ vscale(32) }}</height>
             <align>right</align>
             <itemgap>15</itemgap>
@@ -187,31 +186,16 @@
                 <textcolor>FFFFFFFF</textcolor>
                 <label>$INFO[Window.Property(rating2)]</label>
             </control>
+            <control type="image">
+                <visible>!String.IsEmpty(Window.Property(rating.stars))</visible>
+                <posy>6</posy>
+                <width>134</width>
+                <height>{{ vscale(22) }}</height>
+                <texture>script.plex/stars/$INFO[Window.Property(rating.stars)].png</texture>
+            </control>
         </control>
 
 
-        <control type="label">
-            <visible>!String.IsEmpty(Window.Property(directors))</visible>
-            <posx>466</posx>
-            <posy>{{ vscale(142) }}</posy>
-            <width>1360</width>
-            <height>{{ vscale(30) }}</height>
-            <font>font12</font>
-            <align>left</align>
-            <textcolor>99FFFFFF</textcolor>
-            <label>$INFO[Window.Property(directors)]</label>
-        </control>
-        <control type="label">
-            <visible>!String.IsEmpty(Window.Property(writers))</visible>
-            <posx>466</posx>
-            <posy>{{ vscale(177) }}</posy>
-            <width>1360</width>
-            <height>{{ vscale(30) }}</height>
-            <font>font12</font>
-            <align>left</align>
-            <textcolor>99FFFFFF</textcolor>
-            <label>$INFO[Window.Property(writers)]</label>
-        </control>
         <!-- <control type="grouplist">
             <posx>466</posx>
             <posy>{{ vscale(237) }}</posy>
@@ -283,29 +267,29 @@
         </control> -->
         {% include "includes/wl_availability.xml.tpl" %}
         <control type="textbox">
-            <posx>466</posx>
-            <posy>{{ vscale(286) }}</posy>
-            <width>1360</width>
-            <height>{{ vscale(179) }}</height>
+            <!-- Single control, not duplicated: width/height are identical in both poster states, only
+                 posx/posy shift, so a zero-duration Conditional slide does the job of the <visible>-switched
+                 pair used where size also changes (title/clearlogo above) - see script-plex-pre_play.xml.tpl's
+                 identical treatment of its own summary box. -->
+            <animation effect="slide" end="-373,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
+            <posx>433</posx>
+            <posy>{{ vscale(176) }}</posy>
+            <width>1080</width>
+            <height>{{ vscale(152) }}</height>
             <font>font12</font>
             <align>left</align>
             <textcolor>FFFFFFFF</textcolor>
             <label>$INFO[Window.Property(summary)]</label>
         </control>
-        <control type="image" id="250">
-            <animation effect="zoom" start="0,100" end="100,100" time="1000" center="-1,561" reversible="false" tween="circle" easing="out">WindowOpen</animation>
-            <posx>-1</posx>
-            <posy>{{ vscale(557) }}</posy>
-            <width>1</width>
-            <height>{{ vscale(8) }}</height>
-            <texture>script.plex/white-square.png</texture>
-            <colordiffuse>FFCC7B19</colordiffuse>
-        </control>
     </control>
 
     <control type="grouplist" id="60">
         <posx>0</posx>
-        <posy>{{ vscale(565) }}</posy>
+        <!-- 540, not 565: aligns this row stack's top edge with Pre-play's cast-row equivalent
+             (script-plex-pre_play.xml.tpl's own grouplist 60, also posy=540) - both sit in an identical
+             group-50 frame (posx=60, posy=vscale(155)), so matching this one number lines up the absolute
+             screen position. -->
+        <posy>{{ vscale(540) }}</posy>
         <width>1920</width>
         <height>{{ vscale(1600) }}</height>
 
