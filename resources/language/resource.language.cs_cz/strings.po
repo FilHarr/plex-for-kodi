@@ -925,3 +925,7 @@ msgstr "Režim offline"
 msgctxt "#32457"
 msgid "Sign In"
 msgstr "Přihlásit"
+
+msgctxt "#35052"
+msgid "by"
+msgstr "Podle"

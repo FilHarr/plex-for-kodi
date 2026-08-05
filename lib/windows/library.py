@@ -566,11 +566,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.updateFilterDisplay()
         try:
             self.setProperty('sort.display',
-                             SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['title'])
+                             SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
         except TypeError:
             self.resetSort()
             self.setProperty('sort.display',
-                             SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['title'])
+                             SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
         self.setProperty('media.itemType', ITEM_TYPE or self.section.TYPE)
         self.setProperty('media.type', TYPE_PLURAL.get(ITEM_TYPE or self.section.TYPE, self.section.TYPE))
         self.setProperty('media', self.section.TYPE)
@@ -1191,11 +1191,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if not self.nextWindow(False):
             self.setProperty('media.type', TYPE_PLURAL.get(ITEM_TYPE or self.section.TYPE, self.section.TYPE))
             try:
-                self.setProperty('sort.display', SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['title'])
+                self.setProperty('sort.display', SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
             except TypeError:
                 # stored sort isn't valid for this item type
                 self.resetSort()
-            self.fill()
+            self.fill(keep_focus=True)
 
     def sortButtonClicked(self):
         desc = 'script.plex/indicators/arrow-down.png'
@@ -1297,9 +1297,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.librarySettings.setSetting('sort.desc', self.sortDesc)
 
         util.setGlobalProperty('sort', choice)
-        self.setProperty('sort.display', result['title'])
+        self.setProperty('sort.display', result['display'])
 
-        self.sortShowPanel(choice, True)
+        self.sortShowPanel(choice, True, keep_focus=True)
 
     def viewTypeButtonClicked(self):
         for task in self.tasks:
@@ -1316,9 +1316,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             key = self.section.getLibrarySectionId()
         util.setSetting('viewtype.{0}.{1}'.format(self.section.server.uuid, key), win.VIEWTYPE)
 
-    def sortShowPanel(self, choice, force_refresh=False):
+    def sortShowPanel(self, choice, force_refresh=False, keep_focus=False):
         if force_refresh or self.showPanelControl.size() == 0:
-            self.fillShows()
+            self.fillShows(keep_focus=keep_focus)
             return
 
         # inline sorting is disabled; this code will never be reached
@@ -1482,7 +1482,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.updateFilterDisplay()
 
         if self.filter or choice == 'clear_filter' or result.get('is_bool') or self._filterTypeByKey.get(choice) == 'boolean':
-            self.fill()
+            self.fill(keep_focus=True)
 
     def clearFilters(self, skip_display=False):
         self.filter = None
@@ -1500,7 +1500,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.librarySettings.setSetting('sort.desc', self.sortDesc)
 
         util.setGlobalProperty('sort', self.sort)
-        self.setProperty('sort.display', SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['title'])
+        self.setProperty('sort.display', SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
 
     def updateFilterDisplay(self):
         boolLabels = [self._filterLabel(k, k) for k, on in self.boolFilters.items() if on]
@@ -1648,13 +1648,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.updateBackgroundFrom(items[0])
         self.backgroundSet = True
 
-    def fill(self):
+    def fill(self, keep_focus=False):
         self.backgroundSet = False
 
         if self.section.TYPE in ('photo', 'photodirectory'):
             self.fillPhotos()
         else:
-            self.fillShows()
+            self.fillShows(keep_focus=keep_focus)
 
     def getFilterOpts(self):
         if not self.filter:
@@ -1683,7 +1683,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         return 'script.plex/thumb_fallbacks/{0}.png'.format(TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['fallback'])
 
     @busy.dialog()
-    def fillShows(self):
+    def fillShows(self, keep_focus=False):
         self.setBoolProperty('no.content', False)
         self.setBoolProperty('no.content.filtered', False)
         self.setBoolProperty('content.filling', True)
@@ -1792,7 +1792,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.keyListControl.addItems(jitems)
 
         self.showPanelControl.selectItem(0)
-        self.setFocusId(self.POSTERS_PANEL_ID)
+        if not keep_focus:
+            self.setFocusId(self.POSTERS_PANEL_ID)
 
         tasks = []
         for startChunkPosition in range(0, totalSize, self.CHUNK_SIZE):

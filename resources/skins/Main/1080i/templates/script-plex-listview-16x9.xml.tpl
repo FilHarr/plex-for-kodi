@@ -14,7 +14,7 @@
     <width>870</width>
     <height>{{ vscale(65) }}</height>
     <align>left</align>
-    <itemgap>30</itemgap>
+    <itemgap>15</itemgap>
     <orientation>horizontal</orientation>
     <onleft>9000</onleft>
     <onright>300</onright>
@@ -57,7 +57,7 @@
         <enable>false</enable>
         <width max="300">auto</width>
         <height>{{ vscale(65) }}</height>
-        <font>font12</font>
+        <font>font10</font>
         <textcolor>FFFFFFFF</textcolor>
         <focusedcolor>FFFFFFFF</focusedcolor>
         <disabledcolor>FFFFFFFF</disabledcolor>
@@ -73,7 +73,7 @@
         <visible>!String.IsEqual(Window.Property(subDir),1) + [String.IsEqual(Window.Property(media),show) | String.IsEqual(Window.Property(media),movie) | String.IsEqual(Window.Property(media),movies_shows)]</visible>
         <width max="300">auto</width>
         <height>{{ vscale(65) }}</height>
-        <font>font12</font>
+        <font>font10</font>
         <textcolor>FFFFFFFF</textcolor>
         <focusedcolor>FFFFFFFF</focusedcolor>
         <disabledcolor>FFFFFFFF</disabledcolor>
@@ -85,8 +85,32 @@
         <textoffsety>0</textoffsety>
         <label>[UPPERCASE]$INFO[Window.Property(media.type)][/UPPERCASE]</label>
     </control>
+    <control type="button" id="314">
+        <!-- Same disabled-button placeholder trick as 311/310/313: a plain <label> here
+             would sit mid-list rather than trailing, so it wouldn't break onright the way
+             313 did, but it's kept as a button for consistency with the rest of the row. -->
+        <visible>!String.IsEqual(Window.Property(media.itemType),folder)</visible>
+        <enable>false</enable>
+        <width max="60">auto</width>
+        <height>{{ vscale(65) }}</height>
+        <font>font10</font>
+        <textcolor>gray</textcolor>
+        <disabledcolor>gray</disabledcolor>
+        <align>center</align>
+        <aligny>center</aligny>
+        <texturefocus>-</texturefocus>
+        <texturenofocus>-</texturenofocus>
+        <textoffsetx>0</textoffsetx>
+        <textoffsety>0</textoffsety>
+        <label>$ADDON[script.plexmod 35052]</label>
+    </control>
     <control type="button" id="210">
         <visible>!String.IsEqual(Window.Property(media.itemType),folder)</visible>
+        <!-- Explicit, not relying on the grouplist's own onright: the trailing item-count
+             label below is non-focusable, which stops the grouplist from falling through to
+             its container-level onright when 210 is the last focusable (but not last
+             declared) child. -->
+        <onright>300</onright>
         <width max="300">auto</width>
         <height>{{ vscale(65) }}</height>
         <font>font10</font>
@@ -100,14 +124,22 @@
         <textoffsety>0</textoffsety>
         <label>[UPPERCASE]$INFO[Window.Property(sort.display)][/UPPERCASE]</label>
     </control>
-    <control type="label">
+    <control type="button" id="313">
+        <!-- type=button + enable=false, not a plain label: a trailing plain <label> as the
+             grouplist's last child breaks the list's onright boundary-fallback for whichever
+             button precedes it (210 couldn't reach 300 on the right with a label here) - a
+             disabled button matches the already-working 311/310 placeholder pattern above. -->
+        <enable>false</enable>
         <width max="400">auto</width>
         <height>{{ vscale(65) }}</height>
         <font>font10</font>
-        <textcolor>FFFFFFFF</textcolor>
+        <textcolor>gray</textcolor>
+        <disabledcolor>gray</disabledcolor>
         <align>left</align>
         <aligny>center</aligny>
-        <label>[COLOR=gray]$INFO[Window.Property(items.count)] $INFO[Window.Property(screen.title)][/COLOR]</label>
+        <texturefocus>-</texturefocus>
+        <texturenofocus>-</texturenofocus>
+        <label>$INFO[Window.Property(items.count)] $INFO[Window.Property(screen.title)]</label>
     </control>
 </control>
 {% endblock filteropts_grouplist %}

@@ -3775,8 +3775,13 @@ msgctxt "#34079"
 msgid "How long should we wait when executing Seek back on start, after having seeked forwards temporarily, before seeking back? Setting this higher could resolve decoder initialisation issues. Default: 500ms"
 msgstr "Mennyi ideig kell várni a visszakeresés végrehajtása előtt az indításkor, miután ideiglenesen előretekertünk, mielőtt visszatekernénk? Ennek magasabbra állítása megoldhatja a dekóder inicializálási problémáit. Alapértelmezett: 500 ms"
 
-#: 
+#:
 msgctxt "#34045"
 msgid "When waiting for certain events to occur, poll this often. Default: 10 Hz. With a decent device try 100 Hz, it should feel snappier in certain situations."
 msgstr "Ha bizonyos események bekövetkeztére vár, gyakran ellenőrizze ezt. Alapértelmezett: 10 Hz. Megfelelő eszközzel próbálja ki a 100 Hz-es beállítást, bizonyos helyzetekben ez gyorsabbnak tűnhet."
+
+#:
+msgctxt "#35052"
+msgid "by"
+msgstr "szerint"
 

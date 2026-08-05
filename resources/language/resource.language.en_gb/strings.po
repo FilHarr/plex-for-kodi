@@ -3364,3 +3364,7 @@ msgstr ""
 msgctxt "#35051"
 msgid "On detail screens, hide the poster for items that have a title logo, giving the logo and other details more room."
 msgstr ""
+
+msgctxt "#35052"
+msgid "by"
+msgstr ""

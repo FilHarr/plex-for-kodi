@@ -3537,8 +3537,13 @@ msgctxt "#34042"
 msgid "By Album"
 msgstr ""
 
-#: 
+#:
 msgctxt "#34043"
 msgid "Album"
 msgstr ""
+
+#:
+msgctxt "#35052"
+msgid "by"
+msgstr "Por"
 

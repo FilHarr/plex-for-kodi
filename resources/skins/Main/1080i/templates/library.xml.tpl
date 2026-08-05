@@ -134,9 +134,8 @@
         <align>right</align>
         <itemgap>30</itemgap>
         <orientation>horizontal</orientation>
-        <onleft condition="String.IsEmpty(Window.Property(no.content.filtered))">304</onleft>
-        {% block header_filteropts_onleft_nocontent %}<onleft condition="!String.IsEmpty(Window.Property(no.content.filtered))">9000</onleft>{% endblock %}
-        <onright>151</onright>
+        {% block header_filteropts_onleft_nocontent %}<onleft>9000</onleft>{% endblock %}
+        <onright>300</onright>
         <ondown>101</ondown>
         {% block header_filteropts_onup %}<onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>{% endblock %}
         <control type="button" id="311">

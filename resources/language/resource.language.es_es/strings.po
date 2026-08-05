@@ -3774,8 +3774,13 @@ msgctxt "#34079"
 msgid "How long should we wait when executing Seek back on start, after having seeked forwards temporarily, before seeking back? Setting this higher could resolve decoder initialisation issues. Default: 500ms"
 msgstr ""
 
-#: 
+#:
 msgctxt "#34045"
 msgid "When waiting for certain events to occur, poll this often. Default: 10 Hz. With a decent device try 100 Hz, it should feel snappier in certain situations."
 msgstr ""
+
+#:
+msgctxt "#35052"
+msgid "by"
+msgstr "Por"
 
