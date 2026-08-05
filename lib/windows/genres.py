@@ -57,9 +57,10 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
             return
 
         items = []
-        for cat in categories:
+        for idx, cat in enumerate(categories):
             mli = kodigui.ManagedListItem(str(cat.title))
             mli.dataSource = cat
+            mli.setProperty('index', str(idx))
             if cat.__dict__.get('thumb'):
                 mli.setThumbnailImage(cat.thumb.asURL(includeToken=True))
             items.append(mli)
