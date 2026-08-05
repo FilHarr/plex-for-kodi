@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 import gc
+import json
 
 from kodi_six import xbmc
 from kodi_six import xbmcgui
@@ -13,12 +14,14 @@ from lib.language_util import getNativeLanguages
 from . import busy
 from . import dropdown
 from . import episodes
+from . import home
 from . import info
 from . import kodigui
 from . import musicplayer
 from . import opener
 from . import pagination
 from . import playbacksettings
+from . import playlists
 from . import search
 from . import tracks
 from . import videoplayer
@@ -39,9 +42,9 @@ class RelatedPaginator(pagination.BaseRelatedPaginator):
         return self.parentWindow.mediaItem.getRelated(offset=offset, limit=amount)
 
 
-class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMixin, DeleteMediaMixin, RatingsMixin,
-                 RolesMixin, PlaybackBtnMixin, WatchlistUtilsMixin, ThemeMusicMixin, CommonMixin, TasksMixin,
-                 playbacksettings.PlaybackSettingsMixin):
+class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, SeasonsMixin,
+                 DeleteMediaMixin, RatingsMixin, RolesMixin, PlaybackBtnMixin, WatchlistUtilsMixin,
+                 ThemeMusicMixin, CommonMixin, TasksMixin, playbacksettings.PlaybackSettingsMixin):
     xmlFile = 'script-plex-seasons.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -62,6 +65,11 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMixin, 
 
     OPTIONS_GROUP_ID = 200
 
+    # Still referenced by ArtistWindow (subclasses this window, doesn't override onClick): its own
+    # template (script-plex-artist.xml.tpl) doesn't blank header_topleft the way seasons' does, so it
+    # still renders the default Home/Search buttons at these ids and needs onClick to handle them. Left
+    # in place (now dead for the Seasons screen itself, whose header no longer has controls at these
+    # ids) rather than forking onClick between the two windows.
     HOME_BUTTON_ID = 201
     SEARCH_BUTTON_ID = 202
     PLAYER_STATUS_BUTTON_ID = 204
@@ -111,6 +119,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMixin, 
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
 
         self.progressImageControl = self.getControl(self.PROGRESS_IMAGE_ID)
+
+        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+        self.buildSectionList()
+        self.displayServerAndUser()
 
         self.setup()
         self.initialized = True
@@ -291,7 +303,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMixin, 
         kodigui.ControlledWindow.onAction(self, action)
 
     def onClick(self, controlID):
-        if controlID == self.HOME_BUTTON_ID:
+        if controlID == self.SECTION_LIST_ID:
+            self.sectionClicked()
+        elif controlID == self.HOME_BUTTON_ID:
             self.goHome()
         elif controlID == self.SUB_ITEM_LIST_ID:
             if not self.fromWatchlist:
@@ -340,8 +354,139 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SeasonsMixin, 
 
         if xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)'):
             self.setProperty('on.extras', '')
+            # hub.focus (set above, only for controlIDs 400-499) is otherwise never reset once focus
+            # leaves the seasons/roles/extras/related row stack for the button row - it's not in that
+            # range, so it'd keep whatever value the last-focused row left it at. The row-collapse slide
+            # animations on group 50 key off hub.focus, not on.extras, so without this they'd stay
+            # collapsed even after on.extras clears and the header reappears - see episodes.py's onFocus
+            # for the identical fix and rationale.
+            self.setProperty('hub.focus', '0')
         elif xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + !ControlGroup(300).HasFocus(0)'):
             self.setProperty('on.extras', '1')
+
+    def buildSectionList(self):
+        """Populate the sidebar's section list. Mirrors library.py's buildSectionList()/
+        home.py's showSections() and episodes.py's/preplay.py's own copies - see library.py:675 for why
+        this isn't shared code yet.
+        """
+        items = []
+
+        searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
+        searchmli.setProperty('is.search', '1')
+        searchmli.setProperty('item', '1')
+        items.append(searchmli)
+
+        homemli = kodigui.ManagedListItem(T(32332, 'Home'), iconImage='script.plex/home/type/home.png',
+                                          data_source=home.home_section)
+        homemli.setProperty('is.home', '1')
+        homemli.setProperty('item', '1')
+        items.append(homemli)
+
+        setting_key = 'home.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID)
+        try:
+            navSettings = json.loads(util.getSetting(setting_key, '')) or {}
+        except ValueError:
+            navSettings = {}
+
+        sections = []
+
+        if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True) and home.watchlist_section
+                and home.watchlist_section.has_data()
+                and ("/library/sections/watchlist" not in navSettings
+                     or navSettings["/library/sections/watchlist"].get("show", True))):
+            sections.append(home.watchlist_section)
+
+        if "playlists" not in navSettings or navSettings["playlists"].get("show", True):
+            if plexapp.SERVERMANAGER.selectedServer.playlists():
+                sections.append(home.playlists_section)
+
+        for section in plexapp.SERVERMANAGER.selectedServer.library.sections():
+            if section.key in navSettings and not navSettings[section.key].get("show", True):
+                continue
+            sections.append(section)
+            if navSettings:
+                pinnable = home.PINNABLE_TYPES.get(str(getattr(section, 'TYPE', None)), ())
+                stored = navSettings.get(section.key, {}).get('pinned_types') or []
+                for item_type in stored:
+                    if item_type in pinnable:
+                        sections.append(home.PinnedTypeSection(section, item_type))
+
+        if "order" in navSettings:
+            order = navSettings["order"]
+
+            def orderPos(s):
+                if s.key in order:
+                    return order.index(s.key), 0
+                if isinstance(s, home.PinnedTypeSection) and s.librarySection.key in order:
+                    return order.index(s.librarySection.key), 1
+                return -1, 0
+
+            sections = sorted(sections, key=orderPos)
+
+        activeSectionId = self.mediaItem.getLibrarySectionId()
+
+        for section in sections:
+            mli = kodigui.ManagedListItem(section.title,
+                                          iconImage='script.plex/home/type/{0}.png'.format(section.type),
+                                          data_source=section)
+            mli.setProperty('item', '1')
+            if section == home.playlists_section:
+                mli.setProperty('is.playlists', '1')
+                mli.setIconImage('script.plex/home/type/playlists.png')
+            elif section == home.watchlist_section:
+                mli.setIconImage('script.plex/home/type/watchlist.png')
+            elif isinstance(section, home.PinnedTypeSection):
+                mli.setProperty('is.pinned.type', section.itemType)
+            if activeSectionId and section.key == activeSectionId:
+                mli.setProperty('is.active', '1')
+            items.append(mli)
+
+        self.sectionList.reset()
+        self.sectionList.addItems(items)
+
+    def sectionClicked(self):
+        mli = self.sectionList.getSelectedItem()
+        if not mli:
+            return
+
+        if mli.getProperty('is.search'):
+            self.searchButtonClicked()
+            return
+
+        if mli.getProperty('is.home'):
+            self.goHome()
+            return
+
+        section = mli.dataSource
+        if section.type == 'playlists':
+            self.processCommand(opener.handleOpen(playlists.PlaylistsWindow))
+        else:
+            self.processCommand(opener.sectionClicked(section))
+
+    def displayServerAndUser(self):
+        """Sidebar avatar/username and server icon/name. Mirrors library.py's/episodes.py's/preplay.py's
+        displayServerAndUser() (see library.py:777 for why home.py's own version doesn't reach this
+        window - window properties are per-window).
+        """
+        title = plexapp.ACCOUNT.title or plexapp.ACCOUNT.username or ' '
+        self.setProperty('user.name', title)
+        self.setProperty('user.avatar', plexapp.ACCOUNT.safeUserThumb(plexapp.ACCOUNT.ID,
+                                                                       thumb=plexapp.ACCOUNT.thumb))
+        self.setProperty('user.avatar.letter', title[0].upper())
+
+        if plexapp.SERVERMANAGER.selectedServer:
+            self.setProperty('server.name', plexapp.SERVERMANAGER.selectedServer.name)
+            self.setProperty('server.icon', 'script.plex/home/device/plex.png')
+            self.setProperty('server.iconmod',
+                             plexapp.SERVERMANAGER.selectedServer.isSecure and 'script.plex/home/device/lock.png' or '')
+            self.setProperty('server.iconmod2',
+                             plexapp.SERVERMANAGER.selectedServer.isLocal and 'script.plex/home/device/home_small.png'
+                             or '')
+        else:
+            self.setProperty('server.name', T(32338, 'No Servers Found'))
+            self.setProperty('server.icon', 'script.plex/home/device/error.png')
+            self.setProperty('server.iconmod', '')
+            self.setProperty('server.iconmod2', '')
 
     def toggleWatched(self, item, state=None, **kw):
         watched = super(ShowWindow, self).toggleWatched(item, state=state, **kw)

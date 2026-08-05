@@ -1,7 +1,15 @@
 {% extends "default.xml.tpl" %}
+{% block header_topleft %}{% endblock %}
+{% block header %}
+    {{ super() }}
+    {% include "includes/sidebar.xml.tpl" %}
+{% endblock header %}
 {% block content %}
 <control type="group" id="50">
     <animation effect="slide" end="0,{{ vscale(-300) }}" time="200" tween="quadratic" easing="out" condition="!String.IsEmpty(Window.Property(on.extras))">Conditional</animation>
+
+    <!-- Slide right while the sidebar rail is expanded (focused), matching Home/Library/Pre-play/Episodes -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
 
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500)" reversible="true">
         <effect type="slide" end="0,{{ vscale(-500) }}" time="200" tween="quadratic" easing="out"/>
@@ -15,7 +23,9 @@
         <effect type="slide" end="0,{{ vscale(-500) }}" time="200" tween="quadratic" easing="out"/>
     </animation>
 
-    <posx>0</posx>
+    <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column, matching Home/Library/Pre-play/
+         Episodes. Every child below is positioned relative to this group, so the shift applies uniformly. -->
+    <posx>60</posx>
     <posy>{{ vscale(155) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
@@ -133,7 +143,9 @@
 
         <control type="grouplist">
             <visible>!String.IsEmpty(Window.Property(rating)) | !String.IsEmpty(Window.Property(rating2))</visible>
-            <posx>1560</posx>
+            <!-- posx=1500, not 1560: compensates for group 50's own +60 posx shift (sidebar rail
+                 clearance) so this right-anchored row keeps its original screen position/right margin. -->
+            <posx>1500</posx>
             <posy>{{ vscale(82) }}</posy>
             <width>300</width>
             <height>{{ vscale(32) }}</height>
@@ -306,19 +318,26 @@
             <height>{{ vscale(380) }}</height>
             <width>1920</width>
             <control type="list" id="400">
-                <posx>0</posx>
+                <!-- posx=40, not 0 (width shrunk from 1920 to 1880 to match, keeping the local right
+                     edge fixed): gives departing thumbnails room to clear the collapsed sidebar rail's
+                     icon column before this list's own clip boundary cuts them off - see Episodes'
+                     identical fix (script-plex-episodes.xml.tpl grouplist 500, posx 0->40) for the full
+                     rationale. Item layouts' own posx reduced by the same 40 below, canceling this out,
+                     so resting/focused positions don't move. -->
+                <posx>40</posx>
                 <posy>{{ vscale(36) }}</posy>
-                <width>1920</width>
+                <width>1880</width>
                 <height>{{ vscale(380) }}</height>
                 <onup>300</onup>
                 <ondown>401</ondown>
+                <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="218">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>15</posx>
                         <posy>{{ vscale(29) }}</posy>
                         <control type="group">
                             <posx>5</posx>
@@ -378,7 +397,7 @@
                 <!-- FOCUSED LAYOUT ####################################### -->
                 <focusedlayout width="218">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>15</posx>
                         <posy>{{ vscale(29) }}</posy>
                         <control type="group">
                             <animation effect="zoom" start="100" end="110" time="100" center="84,{{ vscale(123) }}" reversible="false">Focus</animation>
@@ -478,19 +497,22 @@
                 <label>[UPPERCASE]$ADDON[script.plexmod 32419][/UPPERCASE]</label>
             </control>
             <control type="list" id="401">
-                <posx>0</posx>
+                <!-- posx=40, not 0 (width shrunk to match): see list 400's comment above for the full
+                     rationale (sidebar rail clip-boundary clearance). -->
+                <posx>40</posx>
                 <posy>0</posy>
-                <width>1920</width>
+                <width>1880</width>
                 <height>{{ vscale(400) }}</height>
                 <onup>400</onup>
                 <ondown>402</ondown>
+                <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="304">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>15</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
                             <posx>5</posx>
@@ -543,7 +565,7 @@
                 <!-- FOCUSED LAYOUT ####################################### -->
                 <focusedlayout width="304">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>15</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
                             <animation effect="zoom" start="100" end="110" time="100" center="127,{{ vscale(127) }}" reversible="false">Focus</animation>
@@ -635,19 +657,22 @@
                 <label>[UPPERCASE]$INFO[Window.Property(extras.header)][/UPPERCASE]</label>
             </control>
             <control type="list" id="402">
-                <posx>0</posx>
+                <!-- posx=40, not 0 (width shrunk to match): see list 400's comment above for the full
+                     rationale (sidebar rail clip-boundary clearance). -->
+                <posx>40</posx>
                 <posy>{{ vscale(18) }}</posy>
-                <width>1920</width>
+                <width>1880</width>
                 <height>{{ vscale(430) }}</height>
                 <onup>401</onup>
                 <ondown>403</ondown>
+                <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="359">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>15</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
                             <posx>5</posx>
@@ -697,7 +722,7 @@
                 <!-- FOCUSED LAYOUT ####################################### -->
                 <focusedlayout width="359">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>15</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
                             <animation effect="zoom" start="100" end="110" time="100" center="154.5,{{ vscale(87.5) }}" reversible="false">Focus</animation>
@@ -789,13 +814,21 @@
                 <label>[UPPERCASE]$INFO[Window.Property(related.header)][/UPPERCASE]</label>
             </control>
             <control type="list" id="403">
-                <posx>0</posx>
+                <!-- posx=40, not 0 (width shrunk to match): see list 400's comment above for the full
+                     rationale (sidebar rail clip-boundary clearance). -->
+                <posx>40</posx>
                 <posy>{{ vscale(16) }}</posy>
-                <width>1920</width>
+                <width>1880</width>
                 <height>{{ vscale(520) }}</height>
                 <onup>402</onup>
                 <ondown>403</ondown>
-                <onleft>noop</onleft>
+                <!-- onleft: noop while the leftmost item is the left-pagination boundary marker, so
+                     RelatedPaginator's boundaryHit check (onAction) fires and loads the previous page
+                     instead of the rail stealing focus mid-pagination. Once truly at the first item (no
+                     boundary marker), onleft falls through to the sidebar (9000) - same pattern as
+                     Episodes' related row. -->
+                <onleft condition="!String.IsEmpty(Container(403).ListItem.Property(left.boundary))">noop</onleft>
+                <onleft>9000</onleft>
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
@@ -803,7 +836,7 @@
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="304">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>15</posx>
                         <posy>{{ vscale(72) }}</posy>
                         <control type="group">
                             <posx>5</posx>
@@ -897,7 +930,7 @@
                 <!-- FOCUSED LAYOUT ####################################### -->
                 <focusedlayout width="304">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>15</posx>
                         <posy>{{ vscale(72) }}</posy>
                         <control type="group">
                             <animation effect="zoom" start="100" end="110" time="100" center="127,{{ vscale(180.5) }}" reversible="false">Focus</animation>
