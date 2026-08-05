@@ -1,7 +1,20 @@
 {% extends "default.xml.tpl" %}
+{# Blanks the default Home/Search topleft nav and slots the persistent sidebar rail in its
+   place instead - see script-plex-pre_play.xml.tpl's identical opt-in and the comment there
+   explaining why the rail must be appended after super()'s header output rather than filled
+   into default.xml.tpl's header_sidebar block (that block sits inside header group 200, which
+   slides off-screen on scroll). Ids 201/202 (Home/Search there) are reused by the rail's
+   server/user buttons, so onClick handling for those ids moves to the section list below. #}
+{% block header_topleft %}{% endblock %}
+{% block header %}
+    {{ super() }}
+    {% include "includes/sidebar.xml.tpl" %}
+{% endblock header %}
 {% block content %}
 <control type="group" id="50">
     <animation effect="slide" end="0,{{ vscale(-125) }}" time="200" tween="quadratic" easing="out" condition="!String.IsEmpty(Window.Property(on.extras))">Conditional</animation>
+    <!-- Slide right while the sidebar rail is expanded (focused), matching Home/Library/Pre-play -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
 
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500)" reversible="true">
         <effect type="slide" end="0,{{ vscale(-500) }}" time="200" tween="quadratic" easing="out"/>
@@ -17,7 +30,11 @@
 
     <ondown condition="!String.IsEmpty(Window.Property(disable_playback))">400</ondown>
 
-    <posx>0</posx>
+    <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column, matching the same
+         resting-position shift pre_play/Library made when they adopted the rail. Every child
+         below is positioned relative to this group, so the shift applies uniformly without
+         touching any of their own pixel-tuned offsets. -->
+    <posx>60</posx>
     <posy>{{ vscale(155) }}</posy>
     <!--<defaultcontrol>101</defaultcontrol>-->
 
@@ -54,7 +71,10 @@
         </control>
         <control type="image">
             <visible>!String.IsEmpty(Container(400).ListItem.Property(rating.stars))</visible>
-            <posx>1726</posx>
+            <!-- 1666, not 1726: offset -60 to cancel out group 50's own +60 sidebar-clearance
+                 shift, so this stays flush with the screen's right edge like it was before the
+                 sidebar. -->
+            <posx>1666</posx>
             <posy>6</posy>
             <width>134</width>
             <height>{{ vscale(22) }}</height>
@@ -67,9 +87,10 @@
             <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
             <posx>60</posx>
             <posy>0</posy>
-            <!-- 1500, not the heading's 1800: this box overlaps the ratings' y range, and 60+1500 stops short
-                 of them at 1560. The heading below clears them and can run wider. -->
-            <width>1500</width>
+            <!-- 1440, not the heading's 1800: this box overlaps the ratings' y range, and 60+1440
+                 stops short of them at 1500 (the ratings grouplist's own -60 sidebar-clearance
+                 offset - see its comment below). The heading below clears them and can run wider. -->
+            <width>1440</width>
             <height>{{ vscale(68) }}</height>
             <!-- stands in for the logo and has its whole 100px box to fill, so it takes the largest face
                  the templates use; font32_title is the step down if this crowds the box -->
@@ -84,14 +105,14 @@
         <!-- Sized to match pre_play's poster-shown clear logo box (873x106, itself scaled off this box's old
              560x68 by the 106/68 ratio) rather than the movie/show screens' shorter 0..68 box - the logo now
              renders larger at the cost of no longer sharing their exact slot. Width trimmed from pre_play's
-             873 to 1500 (60+1500=1560) so it can't run into the ratings badge, which starts at 1560 here vs
-             1426 there. Bottom-aligned, so the taller box draws the logo lower; heading (114) still clears it
-             with an 8px gap. -->
+             873 to 1440 (60+1440=1500) so it can't run into the ratings badge, which starts at 1500 here
+             (after its own -60 sidebar-clearance offset - see its comment below) vs 1366 there. Bottom-
+             aligned, so the taller box draws the logo lower; heading (114) still clears it with an 8px gap. -->
         <control type="image">
             <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
             <posx>60</posx>
             <posy>0</posy>
-            <width>1500</width>
+            <width>1440</width>
             <height>{{ vscale(106) }}</height>
             <aspectratio align="left" aligny="bottom">keep</aspectratio>
             <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
@@ -99,7 +120,10 @@
 
         <control type="grouplist">
             <visible>!String.IsEmpty(Container(400).ListItem.Property(rating)) | !String.IsEmpty(Container(400).ListItem.Property(rating2))</visible>
-            <posx>1560</posx>
+            <!-- 1500, not 1560: offset -60 to cancel out group 50's own +60 sidebar-clearance
+                 shift, so this stays flush with the screen's right edge like it was before the
+                 sidebar (see group 50's own posx comment above). -->
+            <posx>1500</posx>
             <posy>{{ vscale(50) }}</posy>
             <width>300</width>
             <height>{{ vscale(32) }}</height>
@@ -209,16 +233,19 @@
         </control>
 
         <!-- Video/audio/subtitles pill row, shared with pre_play (see includes/media_info_pills.xml.tpl).
-             posx=1155 matches pre_play's screen-edge alignment: 1920 (screen width) minus the row's own 765
-             width. posy=727 keeps the same vertical offset from the play button row that pre_play uses -
-             both screens' button rows are the same 145px-tall box, and pre_play's pill row sits 47px below
-             its button row's top (button row posy=451 poster-shown, pills at 498). This screen's button row
-             is declared at posy=307, but that's relative to its own wrapper group (the "EPISODES" group
-             below, itself at posy=373 relative to group 50 - see that group's comment) rather than group 50
-             directly like pre_play's button row is, so its true group-50-relative top is 373+307=680, and
-             680+47=727. propref reads off the currently-focused episode row item instead of the window,
-             since this screen has one row per episode rather than pre_play's single video. -->
-        {% include "includes/media_info_pills.xml.tpl" with posx=1155 & posy=727 & propref="Container(400).ListItem.Property" %}
+             posx=1095 is 1920 (screen width) minus the row's own 765 width minus 60 to cancel out group
+             50's own +60 sidebar-clearance shift, so its right edge still sits flush with the screen's
+             right edge like it did before the sidebar (see group 50's own posx comment above, and
+             pre_play's identical -60 treatment of this same include). posy=727 keeps the same vertical
+             offset from the play button row that pre_play uses - both screens' button rows are the same
+             145px-tall box, and pre_play's pill row sits 47px below its button row's top (button row
+             posy=451 poster-shown, pills at 498). This screen's button row is declared at posy=307, but
+             that's relative to its own wrapper group (the "EPISODES" group below, itself at posy=373
+             relative to group 50 - see that group's comment) rather than group 50 directly like pre_play's
+             button row is, so its true group-50-relative top is 373+307=680, and 680+47=727. propref reads
+             off the currently-focused episode row item instead of the window, since this screen has one
+             row per episode rather than pre_play's single video. -->
+        {% include "includes/media_info_pills.xml.tpl" with posx=1095 & posy=727 & propref="Container(400).ListItem.Property" %}
 
     </control>
 
@@ -241,22 +268,37 @@
         <!-- 452 = 307 (button row's own posy below, see its comment) + 145 (buttons) -->
         <height>{{ vscale(452) }}</height>
 
-        <!-- Fixed-center carousel: 500 is a full-width (1920) clipping mask (grouplist clips its children,
-             a plain group doesn't). Inside it, list 400 is oversized to 2375 (5 item-cells of 475) and
-             shifted -227.5, so the mask's edges fall mid-cell on the outer items instead of on a cell
-             boundary - that's what turns the leftover width into a symmetric 247.5px peek on both sides
-             (edge-to-edge across the full row) rather than one lopsided sliver. focusposition=2 pins the
-             true center cell (3rd of 5) as the fixed focus; items scroll under it. 500's own
-             onup/ondown/onleft/onright are required here (duplicated onto the child fixedlist too): a
-             grouplist wrapper doesn't automatically forward its child's direction rules for keys outside its
-             own orientation axis - same reason the buttongroup grouplists (300/1300) below define their own
-             onup/ondown rather than relying on their buttons'. -->
+        <!-- Fixed-center carousel: 500 is a clipping mask (grouplist clips its children, a plain group
+             doesn't). Inside it, list 400 is oversized to 2375 (5 item-cells of 475) and shifted -267.5,
+             so the mask's edges fall mid-cell on the outer items instead of on a cell boundary rather than
+             one lopsided sliver. focusposition=2 pins the true center cell (3rd of 5) as the fixed focus;
+             items scroll under it. 500's own onup/ondown/onleft/onright are required here (duplicated onto
+             the child fixedlist too): a grouplist wrapper doesn't automatically forward its child's
+             direction rules for keys outside its own orientation axis - same reason the buttongroup
+             grouplists (300/1300) below define their own onup/ondown rather than relying on their buttons'.
+
+             posx=40, not 0 (width shrunk from 1920 to 1880 to match, keeping the right edge fixed): gives
+             departing thumbnails room to clear the collapsed sidebar rail's icon column before this
+             grouplist's own clip boundary cuts them off, exactly like Home's identical fix for its hub
+             posters (script-plex-home.xml.tpl's grouplist 50, posx 55->100) - see that file's own comment
+             for the full rationale. Thumbnail's absolute position is unchanged (list 400's posx reduced by
+             the same 40, from -227.5 to -267.5, cancels this grouplist's own +40), so only the clip
+             boundary moves, not the resting/focused layout; the fixed-center peek is now asymmetric (more
+             hidden on the left) as a direct, accepted side effect, same as Home's.
+
+             onleft: noop while the centered item is the left-pagination boundary marker (Container(400)
+             reads off the fixedlist's own currently-centered item, same pattern the info row above uses) -
+             pressing left there must stay put so EpisodesPaginator's boundaryHit check (onAction) fires and
+             loads the previous page instead of the rail stealing focus mid-pagination. Once truly at the
+             first episode (no boundary marker left to land on), onleft falls through to the sidebar
+             (9000). onright stays an unconditional hard stop - past the last episode there's nothing to
+             page to on the right that would need the same escape hatch. -->
         <control type="grouplist" id="500">
-            <posx>0</posx>
+            <posx>40</posx>
             <posy>0</posy>
             <visible>Integer.IsGreater(Container(400).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
             <height>{{ vscale(360) }}</height>
-            <width>1920</width>
+            <width>1880</width>
             <usecontrolcoords>true</usecontrolcoords>
             <orientation>horizontal</orientation>
             <itemgap>0</itemgap>
@@ -265,10 +307,11 @@
             <ondown condition="Control.IsVisible(300)">300</ondown>
             <ondown condition="Control.IsVisible(1300)">1300</ondown>
             <ondown>402</ondown>
-            <onleft>noop</onleft>
+            <onleft condition="!String.IsEmpty(Container(400).ListItem.Property(left.boundary))">noop</onleft>
+            <onleft>9000</onleft>
             <onright>noop</onright>
             <control type="fixedlist" id="400">
-                <posx>-227.5</posx>
+                <posx>-267.5</posx>
                 <posy>{{ vscale(18) }}</posy>
                 <width>2375</width>
                 <height>{{ vscale(360) }}</height>
@@ -278,7 +321,8 @@
                 <ondown condition="Control.IsVisible(300)">300</ondown>
                 <ondown condition="Control.IsVisible(1300)">1300</ondown>
                 <ondown>402</ondown>
-                <onleft>noop</onleft>
+                <onleft condition="!String.IsEmpty(Container(400).ListItem.Property(left.boundary))">noop</onleft>
+                <onleft>9000</onleft>
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
@@ -598,6 +642,7 @@
                     <height>{{ vscale(200) }}</height>
                     <onup>400</onup>
                     <ondown>402</ondown>
+                    <onleft>9000</onleft>
                     <itemgap>{{ theme.episodes.buttongroup.itemgap }}</itemgap>
                     <orientation>horizontal</orientation>
                     <scrolltime tween="quadratic" easing="out">200</scrolltime>
@@ -627,6 +672,7 @@
                     <height>{{ vscale(200) }}</height>
                     <onup>400</onup>
                     <ondown>402</ondown>
+                    <onleft>9000</onleft>
                     <itemgap>{{ theme.episodes.buttongroup.itemgap }}</itemgap>
                     <orientation>horizontal</orientation>
                     <scrolltime tween="quadratic" easing="out">200</scrolltime>
@@ -694,6 +740,7 @@
                 <onup condition="Control.IsVisible(1300)">1300</onup>
                 <onup>400</onup>
                 <ondown>403</ondown>
+                <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
@@ -851,6 +898,7 @@
                 <height>{{ vscale(430) }}</height>
                 <onup>402</onup>
                 <ondown>404</ondown>
+                <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
@@ -1005,7 +1053,11 @@
                 <height>{{ vscale(520) }}</height>
                 <onup>403</onup>
                 <ondown>404</ondown>
-                <onleft>noop</onleft>
+                <!-- noop was a leftover from a template shared with the bidirectional episode carousel:
+                     RelatedPaginator always starts at offset=0 and never produces a left-boundary marker,
+                     so there's no pagination state for noop to protect here - safe to route straight to
+                     the sidebar. -->
+                <onleft>9000</onleft>
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
@@ -1228,51 +1280,57 @@
 </control>
 {% endblock content %}
 
-{# widget now sits at the header's far right, past the tabs, so the header runs search -> tabs -> widget #}
-{% block header_search_onright %}<onright condition="Control.IsVisible(205)">205</onright><onright>204</onright>{% endblock %}
-{% block header_audiowidget_onleft %}<onleft condition="Control.IsVisible(205)">205</onleft><onleft>202</onleft>{% endblock %}
+{# widget sits at the header's far right, past the tabs, so the header runs tabs -> widget. There's no
+   more header_search_onright override here - it used to wire the default Search button's (id 202)
+   onright, but that button is gone now that header_topleft is blanked above (id 202 is the sidebar's
+   user button instead), so overriding a tag nested inside markup that no longer renders would be
+   dead code. #}
+{% block header_audiowidget_onleft %}<onleft condition="Control.IsVisible(205)">205</onleft><onleft>9000</onleft>{% endblock %}
 
 {% block header_middle_add %}
 <!-- SEASON TABS -->
-<!-- Fixed-center carousel, same technique as the episode row: this grouplist is a 1160-wide clipping mask,
-     positioned for a symmetric 380px gap to each screen edge - matching the audio widget's collapsed hitbox
-     at 1920-360=1560 on the right (380+1160=1540, 20px shy of it) and the equivalent 380 on the left, which
-     used to be split between the header buttons (ending at 200) and ~300px of dead space left behind when the
-     audio widget moved out to the header's far right (see default.xml.tpl). Inside the mask, fixedlist 205 is
-     oversized to 7 item-cells of 200 (170 for the label, +30 filling in for the itemgap a fixedlist can't
-     express) and shifted -120, so the mask's edges fall mid-cell on the outer tabs instead of on a cell
-     boundary, leaving a symmetric ~80px peek on both sides that hints at more tabs off-screen rather than a
-     hard cutoff. focusposition=3 pins the true center cell (4th of 7) as the fixed focus; tabs scroll under
-     it. The wrapper's onup/onleft/onright/ondown are required here (duplicated onto the child fixedlist too)
-     for the same reason noted on the episode row's carousel: a grouplist wrapper doesn't reliably forward a
-     nested list's boundary-exit rules on its own. -->
+<!-- Fixed-center carousel, same technique as the episode row. This grouplist is a clipping mask; its right
+     edge stays fixed at 1540 (posx 100 + width 1440), 20px shy of the audio widget's collapsed hitbox at
+     1920-360=1560 - unchanged from before. Its left edge moved from 380 to 100 (the same sidebar-clearance
+     floor used everywhere else content sits near the rail - see e.g. group 50's own posx comment) now that
+     it no longer needs to leave a symmetric 380px gap to balance the removed header Home/Search buttons
+     (that space is reclaimed here instead - not required to be symmetric any more). Inside the mask,
+     fixedlist 205 is oversized to 9 item-cells of 200 (170 for the label, +30 filling in for the itemgap a
+     fixedlist can't express) and shifted -120 - unchanged from before, so the left edge keeps the same
+     ~80px peek it always had; the extra 2 cells (was 7) just extend the fixedlist's own right edge far
+     enough to still fully cover the mask's new, wider right portion, at the cost of a bigger (~160px) peek
+     there instead of a matching 80px - asymmetric, per the above. focusposition=3 still pins the same
+     cell (4th, now of 9) as the fixed focus; tabs scroll under it, landing left-of-center in the wider bar
+     rather than dead-center. The wrapper's onup/onleft/onright/ondown are required here (duplicated onto
+     the child fixedlist too) for the same reason noted on the episode row's carousel: a grouplist wrapper
+     doesn't reliably forward a nested list's boundary-exit rules on its own. -->
 <control type="grouplist">
     <visible>Integer.IsGreater(Container(205).NumItems,0)</visible>
-    <posx>380</posx>
+    <posx>100</posx>
     <posy>0</posy>
-    <width>1160</width>
+    <width>1440</width>
     <height>{{ vscale(135) }}</height>
     <usecontrolcoords>true</usecontrolcoords>
     <orientation>horizontal</orientation>
     <onup>200</onup>
-    <onleft>202</onleft>
+    <onleft>9000</onleft>
     <onright condition="Control.IsVisible(204)">204</onright>
     <onright>noop</onright>
     <ondown>400</ondown>
     <control type="fixedlist" id="205">
         <posx>-120</posx>
         <posy>0</posy>
-        <width>1400</width>
+        <width>1800</width>
         <height>{{ vscale(135) }}</height>
         <focusposition>3</focusposition>
         <onup>200</onup>
-        <onleft>202</onleft>
+        <onleft>9000</onleft>
         <onright condition="Control.IsVisible(204)">204</onright>
         <onright>noop</onright>
         <ondown>400</ondown>
         <scrolltime tween="quadratic" easing="out">200</scrolltime>
         <orientation>horizontal</orientation>
-        <preloaditems>7</preloaditems>
+        <preloaditems>9</preloaditems>
         <!-- ITEM LAYOUT ########################################## -->
         <itemlayout width="200" height="{{ vscale(135) }}">
             <control type="label">
