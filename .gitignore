@@ -8,3 +8,6 @@
 __pycache__
 .pytest_cache
 .venv
+
+# Local work-tracking notes (session status, scoping docs) - not project docs, never pushed
+/docs/notes/
