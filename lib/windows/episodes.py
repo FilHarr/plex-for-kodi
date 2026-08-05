@@ -902,6 +902,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.openItem(self.relatedListControl)
 
     def onFocus(self, controlID):
+        self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
         # we allow hidden focus on the play button when we're in multiple video files mode. in that case focus the

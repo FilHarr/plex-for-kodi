@@ -2698,6 +2698,8 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             self.setFocusId(self.SECTION_LIST_ID)
             return
 
+        self.reselectActiveSection(controlID, self.lastFocusID)
+
         if controlID != 204 and (controlID < 500 or self.SIDEBAR_GROUP_ID <= controlID <= self.SECTION_LIST_ID):
             # don't store focus for mini music player
             self.lastFocusID = controlID

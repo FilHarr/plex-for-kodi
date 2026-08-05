@@ -322,6 +322,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.searchButtonClicked()
 
     def onFocus(self, controlID):
+        self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
         if 399 < controlID < 500:

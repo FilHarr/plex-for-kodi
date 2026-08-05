@@ -46,6 +46,31 @@ class SidebarMixin():
     USER_MENU_BG_ID = 801
     USER_MENU_GROUP_ID = 901
 
+    def reselectActiveSection(self, controlID, previousFocusID):
+        """Call from onFocus(controlID), passing the control that had focus immediately before
+        (self.lastFocusID, captured before it gets overwritten with controlID). If focus just moved
+        onto the section list from outside the sidebar's own controls, snap the highlight to
+        whichever item carries is.active - the section actually on screen - instead of leaving it on
+        the list's last internally-browsed position, or, on a window's first focus event, index 0,
+        which is always Search.
+        """
+        if controlID != self.SECTION_LIST_ID:
+            return
+
+        if previousFocusID in (self.SIDEBAR_GROUP_ID, self.SECTION_LIST_ID,
+                                self.SERVER_BUTTON_ID, self.USER_BUTTON_ID):
+            return
+
+        sectionList = getattr(self, 'sectionList', None)
+        if not sectionList:
+            return
+
+        for i in range(sectionList.size()):
+            mli = sectionList[i]
+            if mli and mli.getProperty('is.active'):
+                sectionList.setSelectedItemByPos(i)
+                return
+
 
 class UtilMixin(GoHomeMixin):
     def __init__(self):

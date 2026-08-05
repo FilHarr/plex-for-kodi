@@ -800,6 +800,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.setProperty('server.iconmod2', '')
 
     def onFocus(self, controlID):
+        self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
         if controlID == self.KEY_LIST_ID:

@@ -31,6 +31,7 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         windowutils.UtilMixin.__init__(self)
         self.section = kwargs.get('section')
         self.exitCommand = None
+        self.lastFocusID = None
 
     def onFirstInit(self):
         self.genreListControl = kodigui.ManagedControlList(self, self.GENRE_PANEL_ID, 5)
@@ -78,6 +79,10 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
             self.showAudioPlayer()
         elif controlID == self.GENRE_PANEL_ID:
             self.genreClicked()
+
+    def onFocus(self, controlID):
+        self.reselectActiveSection(controlID, self.lastFocusID)
+        self.lastFocusID = controlID
 
     def searchButtonClicked(self):
         self.processCommand(search.dialog(self, section_id=self.section.key))

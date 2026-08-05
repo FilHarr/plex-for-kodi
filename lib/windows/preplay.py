@@ -332,6 +332,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.mediaButtonClicked()
 
     def onFocus(self, controlID):
+        self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
         if 399 < controlID < 500:
