@@ -97,7 +97,7 @@
         <ondown>201</ondown>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
-        <focusposition>0</focusposition>
+        <focusposition>3</focusposition>
         <movement>6</movement>
         <pagecontrol>0</pagecontrol>
         <!-- SIDEBAR ITEM LAYOUT (unfocused list) -->
