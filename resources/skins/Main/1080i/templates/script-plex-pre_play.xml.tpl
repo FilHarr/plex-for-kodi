@@ -869,7 +869,11 @@
                 <height>{{ vscale(555) }}</height>
                 <onup>402</onup>
                 <ondown>404</ondown>
-                <onleft>noop</onleft>
+                <!-- noop was a leftover from a template shared with the bidirectional episode carousel:
+                     these paginators (RelatedPaginator/CollectionPaginator) always start at offset=0 and
+                     never produce a left-boundary marker, so there's no pagination state for noop to
+                     protect here - safe to route straight to the sidebar. -->
+                <onleft>9000</onleft>
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
@@ -1137,7 +1141,11 @@
                 <height>{{ vscale(555) }}</height>
                 <onup>403</onup>
                 <ondown>405</ondown>
-                <onleft>noop</onleft>
+                <!-- noop was a leftover from a template shared with the bidirectional episode carousel:
+                     these paginators (RelatedPaginator/CollectionPaginator) always start at offset=0 and
+                     never produce a left-boundary marker, so there's no pagination state for noop to
+                     protect here - safe to route straight to the sidebar. -->
+                <onleft>9000</onleft>
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
@@ -1400,7 +1408,11 @@
                 <height>{{ vscale(555) }}</height>
                 <onup>404</onup>
                 <ondown>406</ondown>
-                <onleft>noop</onleft>
+                <!-- noop was a leftover from a template shared with the bidirectional episode carousel:
+                     these paginators (RelatedPaginator/CollectionPaginator) always start at offset=0 and
+                     never produce a left-boundary marker, so there's no pagination state for noop to
+                     protect here - safe to route straight to the sidebar. -->
+                <onleft>9000</onleft>
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
@@ -1662,7 +1674,11 @@
                 <width>1920</width>
                 <height>{{ vscale(555) }}</height>
                 <onup>405</onup>
-                <onleft>noop</onleft>
+                <!-- noop was a leftover from a template shared with the bidirectional episode carousel:
+                     these paginators (RelatedPaginator/CollectionPaginator) always start at offset=0 and
+                     never produce a left-boundary marker, so there's no pagination state for noop to
+                     protect here - safe to route straight to the sidebar. -->
+                <onleft>9000</onleft>
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
