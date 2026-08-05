@@ -1,7 +1,15 @@
 {% extends "default.xml.tpl" %}
+{# Blanks the default Home/Search topleft nav and slots the persistent sidebar rail in its
+   place instead - see default.xml.tpl's header_topleft/header_sidebar blocks and the Library
+   window's identical opt-in. Ids 201/202 (Home/Search there) are reused by the rail's
+   server/user buttons, so onClick handling for those ids moves to the section list below. #}
+{% block header_topleft %}{% endblock %}
+{% block header_sidebar %}{% include "includes/sidebar.xml.tpl" %}{% endblock %}
 {% block content %}
 <control type="group" id="50">
     <animation effect="slide" end="0,{{ vscale(-300) }}" time="200" tween="quadratic" easing="out" condition="!String.IsEmpty(Window.Property(on.extras))">Conditional</animation>
+    <!-- Slide right while the sidebar rail is expanded (focused), matching Home/Library -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
 
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500)" reversible="true">
         <effect type="slide" end="0,{{ vscale(-500) }}" time="200" tween="quadratic" easing="out"/>
@@ -27,31 +35,36 @@
         <effect type="slide" end="0,{{ vscale(-500) }}" time="200" tween="quadratic" easing="out"/>
     </animation>
 
-    <posx>0</posx>
+    <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column, matching the same
+         resting-position shift Home/Library made when they adopted the rail (e.g.
+         script-plex-posters.xml.tpl's group 50 also moved from 0 to 60). Every child below is
+         positioned relative to this group, so the shift applies uniformly without touching any
+         of their own pixel-tuned offsets. -->
+    <posx>60</posx>
     <posy>{{ vscale(155) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
     {% block buttons %}
-        {% for _posx, _vis, _posy in ((428, "String.IsEmpty(Window.Property(hide.poster))", 451), (22, "!String.IsEmpty(Window.Property(hide.poster))", 481)) %}
         <control type="grouplist" id="300">
             <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
-            <visible>!String.IsEmpty(Window.Property(initialized)) + {{ _vis }}</visible>
+            <visible>!String.IsEmpty(Window.Property(initialized))</visible>
             <defaultcontrol>302</defaultcontrol>
-            <posx>{{ _posx }}</posx>
+            <posx>22</posx>
             <!-- 481, not 441: the button textures are 180x145 source art stretched into a 152x121 box
                  with no aspectratio, and the icon glyphs don't fill that box - play.png's opaque pixels only
                  reach row 92 of 145 (~77px once stretched to 121). This group sits inside id 50 (posy 155),
                  so the icon's visible bottom is 155+481+77=713 in window coords, a deliberate 73px perceived
                  gap above the cast row's thumbnails (top at 786, itself 25px lower than its original
-                 position). No longer flush with the poster's bottom (518) as it was at 441. Smaller icons
-                 like "more" sit higher inside the same box and land even further above the cast row - only
-                 tested against modern's button height. With the poster shown, the whole row (along with the
-                 meta row, summary, and streams) is nudged up another 30px to 451, purely a spacing tweak. -->
-            <posy>{{ vscale(_posy) }}</posy>
+                 position). Same posx/posy regardless of the poster - this used to be a separate, further-
+                 right position (428,451) while the poster was shown, but the poster's own height (467,
+                 after two 5% shrinks) now clears this row's top (481) by 14px, so unifying on the
+                 poster-hidden position no longer causes an overlap. -->
+            <posy>{{ vscale(481) }}</posy>
             <width>1000</width>
             <height>{{ vscale(145) }}</height>
             <onup>200</onup>
             <ondown>400</ondown>
+            <onleft>9000</onleft>
             <itemgap>{{ theme.pre_play.buttongroup.itemgap }}</itemgap>
             <orientation>horizontal</orientation>
             <scrolltime tween="quadratic" easing="out">200</scrolltime>
@@ -69,7 +82,6 @@
             {% endwith %}
 
         </control>
-        {% endfor %}
     {% endblock %}
 
     {% block details %}
@@ -83,8 +95,9 @@
                 <control type="image">
                     <posx>60</posx>
                     <posy>0</posy>
-                    <width>347</width>
-                    <height>{{ vscale(518) }}</height>
+                    <!-- Another 5% down from 330x492 (347x518 originally), top-left pinned at (60,0) -->
+                    <width>314</width>
+                    <height>{{ vscale(467) }}</height>
                     <texture background="true">script.plex/thumb_fallbacks/movie.png</texture>
                     <animation effect="fade" start="0" end="100" time="0" delay="500">WindowOpen</animation>
                     <aspectratio>scale</aspectratio>
@@ -92,8 +105,9 @@
                 <control type="image">
                     <posx>60</posx>
                     <posy>0</posy>
-                    <width>347</width>
-                    <height>{{ vscale(518) }}</height>
+                    <!-- Another 5% down from 330x492 (347x518 originally), top-left pinned at (60,0) -->
+                    <width>314</width>
+                    <height>{{ vscale(467) }}</height>
                     <texture background="true">$INFO[Window.Property(thumb)]</texture>
                     <aspectratio>scale</aspectratio>
                 </control>
@@ -108,11 +122,17 @@
                  grouplist would clip the taller box. -->
             <control type="label">
                 <visible>String.IsEmpty(Window.Property(hide.poster)) + String.IsEmpty(Window.Property(clear.logo))</visible>
-                <posx>466</posx>
+                <!-- 433, not 466: shifted left 33px (347-314) to close the gap the two poster shrinks
+                     opened up between the poster's right edge and this column - see the poster's own
+                     width comment above. -->
+                <posx>433</posx>
                 <posy>0</posy>
-                <!-- 940, not the row's old 1226: this box reaches up into the ratings' band (x1426-1860,
-                     y4-36) and at font45 a title gets there easily; 466+940 stops 20px short -->
-                <width>940</width>
+                <!-- 880, not the row's old 1226 (or 940, pre-sidebar): this box reaches up into the
+                     ratings' band (now x1366-1800, y4-36, shifted -60 to cancel group 50's sidebar-
+                     clearance shift - see that comment) and at font45 a title gets there easily;
+                     433+880 stops 53px short, more margin than before the sidebar (previously 20px) now
+                     that this column moved left without shrinking. -->
+                <width>880</width>
                 <height>{{ vscale(68) }}</height>
                 <font>font45</font>
                 <align>left</align>
@@ -144,7 +164,9 @@
                  CLEAR_LOGO_DIM requests the transcoded clearlogo at this same 873x106 size. -->
             <control type="image">
                 <visible>String.IsEmpty(Window.Property(hide.poster)) + !String.IsEmpty(Window.Property(clear.logo))</visible>
-                <posx>466</posx>
+                <!-- 433, not 466: shifted left 33px (347-314) to close the gap the two poster shrinks
+                     opened up between the poster's right edge and this column. -->
+                <posx>433</posx>
                 <posy>0</posy>
                 <width>873</width>
                 <height>{{ vscale(106) }}</height>
@@ -160,12 +182,15 @@
                 <aspectratio align="left" aligny="bottom">keep</aspectratio>
                 <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
             </control>
-            {% include "includes/pp_meta_row.xml.tpl" with xoff=466 & visible_cond="String.IsEmpty(Window.Property(hide.poster))" & yoff=46 %}
+            {% include "includes/pp_meta_row.xml.tpl" with xoff=433 & visible_cond="String.IsEmpty(Window.Property(hide.poster))" & yoff=46 %}
             {% include "includes/pp_meta_row.xml.tpl" with xoff=60 & visible_cond="!String.IsEmpty(Window.Property(hide.poster))" & yoff=76 %}
 
             <control type="grouplist">
                 <visible>!String.IsEmpty(Window.Property(rating)) | !String.IsEmpty(Window.Property(rating2))</visible>
-                <posx>1426</posx>
+                <!-- 1366, not 1426: offset -60 to cancel out group 50's own +60 sidebar-clearance
+                     shift, so this stays flush with the screen's right edge like it was before the
+                     sidebar (see group 50's own posx comment above). -->
+                <posx>1366</posx>
                 <posy>4</posy>
                 <width>434</width>
                 <height>{{ vscale(32) }}</height>
@@ -218,7 +243,9 @@
             {% block summary %}
                 <control type="textbox">
                     <visible>String.IsEmpty(Window.Property(hide.poster))</visible>
-                    <posx>466</posx>
+                    <!-- 433, not 466: shifted left 33px (347-314) to close the gap the two poster
+                         shrinks opened up between the poster's right edge and this column. -->
+                    <posx>433</posx>
                     <posy>{{ vscale(176) }}</posy>
                     <width>1080</width>
                     <height>{{ vscale(152) }}</height>
@@ -244,20 +271,23 @@
                 </control>
             {% endblock %}
             <!-- The streams block below (audio/subtitle pills, overridden by pre_play-wl.xml.tpl for the
-                 watchlist screen's availability row) stays a single instance and slides instead of
-                 duplicating: Kodi/ibis blocks can only be defined once, so a subclass's override would
-                 only ever reach one of two physical copies. Now laid out horizontally (see
-                 includes/media_info_pills.xml.tpl for how/why the pills themselves are sized - position is
-                 the only thing pre_play-specific left here). posx=1155 is 1920 (screen width) minus the
-                 row's own 765 width (200 + 295 + 260 + 2*5 itemgap), so its right edge sits flush with the
-                 screen's right edge. posy=498 puts it where the subtitle pill (the last of the three) used
-                 to sit back when this was a vertical stack starting at posy=426 (426 + 30 + 6 + 30 + 6 =
-                 498) - only y nudges by the same 30px used elsewhere when the poster is hidden, to keep
-                 vertical rhythm with the row above it. -->
+                 watchlist screen's availability row) stays a single instance rather than duplicating:
+                 Kodi/ibis blocks can only be defined once, so a subclass's override would only ever reach
+                 one of two physical copies. Now laid out horizontally (see includes/media_info_pills.xml.tpl
+                 for how/why the pills themselves are sized - position is the only thing pre_play-specific
+                 left here). posx=1095 is 1920 (screen width) minus the row's own 765 width (200 + 295 + 260
+                 + 2*5 itemgap) minus 60 to cancel out group 50's own +60 sidebar-clearance shift, so its
+                 right edge still sits flush with the screen's right edge like it did before the sidebar.
+                 posy=498 puts it where the subtitle pill (the last of the three) used to sit back when this
+                 was a vertical stack starting at posy=426 (426 + 30 + 6 + 30 + 6 = 498). The wrapping
+                 group's own posy=30 used to be a conditional slide applied only while the poster was
+                 hidden, to keep vertical rhythm with the row above it; now applies unconditionally so this
+                 row (and pre_play-wl's availability row, which shares this same wrapper) sits at the same
+                 place regardless of the poster, matching the button row's own unification above. -->
             <control type="group">
-                <animation effect="slide" start="0,0" end="0,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
+                <posy>{{ vscale(30) }}</posy>
             {% block streams %}
-                {% include "includes/media_info_pills.xml.tpl" with posx=1155 & posy=498 %}
+                {% include "includes/media_info_pills.xml.tpl" with posx=1095 & posy=498 %}
             {% endblock %}
             </control>
         </control>
@@ -285,6 +315,7 @@
                 <height>{{ vscale(410) }}</height>
                 <onup>300</onup>
                 <ondown>401</ondown>
+                <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
@@ -443,6 +474,7 @@
                 <height>{{ vscale(410) }}</height>
                 <onup>400</onup>
                 <ondown>402</ondown>
+                <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
@@ -615,6 +647,7 @@
                 <height>{{ vscale(430) }}</height>
                 <onup>401</onup>
                 <ondown>403</ondown>
+                <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>

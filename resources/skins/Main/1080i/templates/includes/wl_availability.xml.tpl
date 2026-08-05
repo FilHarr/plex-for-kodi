@@ -1,6 +1,8 @@
     <control type="grouplist">
         <visible>!String.IsEmpty(Window.Property(wl_server_availability_verbose))</visible>
-        <posx>466</posx>
+        <!-- 433, not 466: shifted left 33px (347-314) to close the gap the two poster shrinks in
+             script-plex-pre_play.xml.tpl opened up between the poster's right edge and this column. -->
+        <posx>433</posx>
         <posy>{{ vscale(130) }}</posy>
         <width>1360</width>
         <height>{{ vscale(34) }}</height>
