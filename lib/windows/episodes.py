@@ -892,8 +892,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             else:
                 self.setCondFocusId(self.EPISODE_LIST_ID)
         elif controlID == self.ROLES_LIST_ID:
-            if self.fromWatchlist:
-                return
             if not self.roleClicked():
                 return
         elif controlID == self.EXTRA_LIST_ID:
@@ -960,11 +958,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         self.processCommand(opener.open(item, came_from=came_from))
 
-    def roleClicked(self):
-        if self.fromWatchlist:
-            return
+    def roleSectionId(self):
+        return self.show_.getLibrarySectionId()
 
-        return super(EpisodesWindow, self).roleClicked()
+    def roleFromWatchlist(self):
+        return self.fromWatchlist or self.directlyFromWatchlist
 
     def getRoleItemDDPosition(self, *args, **kwargs):
         y = 900
@@ -1126,6 +1124,18 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             sections = sorted(sections, key=orderPos)
 
         activeSectionId = self.show_.getLibrarySectionId()
+        # A real section match always wins; only fall back to Watchlist when nothing matched -
+        # activeSectionId can be a real section's key, empty, or the literal string "watchlist"
+        # (what discover/watchlist items report), which never matches a real section's key, so it
+        # naturally falls through to the watchlist fallback below.
+        activeSection = None
+        if activeSectionId:
+            for section in sections:
+                if section.key == activeSectionId:
+                    activeSection = section
+                    break
+        if activeSection is None and (self.fromWatchlist or self.directlyFromWatchlist):
+            activeSection = home.watchlist_section
 
         for section in sections:
             mli = kodigui.ManagedListItem(section.title,
@@ -1139,7 +1149,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 mli.setIconImage('script.plex/home/type/watchlist.png')
             elif isinstance(section, home.PinnedTypeSection):
                 mli.setProperty('is.pinned.type', section.itemType)
-            if activeSectionId and section.key == activeSectionId:
+            if section == activeSection:
                 mli.setProperty('is.active', '1')
             items.append(mli)
 

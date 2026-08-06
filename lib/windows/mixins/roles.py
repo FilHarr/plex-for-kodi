@@ -27,6 +27,23 @@ class RolesMixin(object):
         x = ((focus + 1) * 304) - 100
         return x, y
 
+    def roleSectionId(self):
+        """Library section id of the item roles are being browsed from, if any. Host windows
+        that track a "current item" (PrePlayWindow, EpisodesWindow, ShowWindow/ArtistWindow)
+        override this so PersonWindow's sidebar can highlight the section the click came from;
+        default is None (VideoPlayerWindow has no sidebar, so it has nothing to thread through).
+        """
+        return None
+
+    def roleFromWatchlist(self):
+        """Whether the item roles are being browsed from was itself reached via the watchlist.
+        Watchlist ("discover") items report the literal string "watchlist" as their library
+        section id, which never matches a real section's key - this lets PersonWindow fall back
+        to highlighting the Watchlist rail entry instead of nothing, same as PrePlayWindow's own
+        buildSectionList() does.
+        """
+        return False
+
     def roleClicked(self):
         mli = self.rolesListControl.getSelectedItem()
         if not mli:
@@ -37,4 +54,5 @@ class RolesMixin(object):
             return
 
         # Open the actor detail window directly
-        self.processCommand(opener.open(role))
+        self.processCommand(opener.open(role, section_id=self.roleSectionId(),
+                                        from_watchlist=self.roleFromWatchlist()))

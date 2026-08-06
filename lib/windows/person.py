@@ -166,6 +166,8 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
         self.setProperty('loading', '1')
         self.role = kwargs.get('role')
+        self.sectionId = kwargs.get('section_id')
+        self.cameFromWatchlist = kwargs.get('from_watchlist', False)
         self.personDetails = None
         self.filmographyItems = []
         self.filmographyAllItems = []
@@ -619,11 +621,23 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
             sections = sorted(sections, key=orderPos)
 
-        # A person/role isn't tied to one library section (their filmography can span several),
-        # so unlike other ported screens there's no activeSectionId to compare against - none of
-        # the rail's entries get highlighted here, which buildSectionList already degrades to
-        # gracefully.
-        activeSectionId = None
+        # A person/role itself isn't tied to one library section (their filmography can span
+        # several), but the screen the role was clicked from is - self.sectionId carries that
+        # through (see RolesMixin.roleSectionId()). Falls back to None (no highlight) when the
+        # role was reached some other way (e.g. Search) and no section context is known.
+        activeSectionId = self.sectionId
+        # A real section match always wins; only fall back to Watchlist (self.cameFromWatchlist)
+        # when nothing matched - activeSectionId can be a real section's key, empty, or the
+        # literal string "watchlist" (what discover/watchlist items report), which never matches
+        # a real section's key, so it naturally falls through to the watchlist fallback below.
+        activeSection = None
+        if activeSectionId:
+            for section in sections:
+                if section.key == activeSectionId:
+                    activeSection = section
+                    break
+        if activeSection is None and self.cameFromWatchlist:
+            activeSection = home.watchlist_section
 
         for section in sections:
             mli = kodigui.ManagedListItem(section.title,
@@ -637,7 +651,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
                 mli.setIconImage('script.plex/home/type/watchlist.png')
             elif isinstance(section, home.PinnedTypeSection):
                 mli.setProperty('is.pinned.type', section.itemType)
-            if activeSectionId and section.key == activeSectionId:
+            if section == activeSection:
                 mli.setProperty('is.active', '1')
             items.append(mli)
 

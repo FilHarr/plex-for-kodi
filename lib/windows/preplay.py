@@ -360,6 +360,12 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     def searchButtonClicked(self):
         self.processCommand(search.dialog(self, section_id=self.video.getLibrarySectionId() or None))
 
+    def roleSectionId(self):
+        return self.video.getLibrarySectionId()
+
+    def roleFromWatchlist(self):
+        return self.fromWatchlist or self.directlyFromWatchlist
+
     def buildSectionList(self):
         """Populate the sidebar's section list. Mirrors library.py's buildSectionList()/
         home.py's showSections() - see library.py:675 for why this isn't shared code yet.
@@ -419,6 +425,18 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             sections = sorted(sections, key=orderPos)
 
         activeSectionId = self.video.getLibrarySectionId()
+        # A real section match always wins; only fall back to Watchlist when nothing matched -
+        # activeSectionId can be a real section's key, empty, or the literal string "watchlist"
+        # (what discover/watchlist items report), which never matches a real section's key, so it
+        # naturally falls through to the watchlist fallback below.
+        activeSection = None
+        if activeSectionId:
+            for section in sections:
+                if section.key == activeSectionId:
+                    activeSection = section
+                    break
+        if activeSection is None and (self.fromWatchlist or self.directlyFromWatchlist):
+            activeSection = home.watchlist_section
 
         for section in sections:
             mli = kodigui.ManagedListItem(section.title,
@@ -432,7 +450,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 mli.setIconImage('script.plex/home/type/watchlist.png')
             elif isinstance(section, home.PinnedTypeSection):
                 mli.setProperty('is.pinned.type', section.itemType)
-            if activeSectionId and section.key == activeSectionId:
+            if section == activeSection:
                 mli.setProperty('is.active', '1')
             items.append(mli)
 

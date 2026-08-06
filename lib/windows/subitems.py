@@ -286,7 +286,14 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 if self.wl_availability:
                     self.wl_item_opener(mli.dataSource, self.openItem)
                 else:
-                    self.openItem(item=mli.dataSource, inherit_from_watchlist=False)
+                    # Not available anywhere - inherit_from_watchlist=False keeps the opened
+                    # season/episode from being (wrongly) treated as playable, but it also drops
+                    # from_watchlist entirely, which the sidebar relies on to highlight Watchlist.
+                    # directly_from_watchlist carries that context separately; is_watchlisted is
+                    # already known from this show (self.is_watchlisted) so there's no need to
+                    # make the destination window re-check it.
+                    self.openItem(item=mli.dataSource, inherit_from_watchlist=False,
+                                 is_watchlisted=self.is_watchlisted, directly_from_watchlist=True)
         elif controlID == self.PLAYER_STATUS_BUTTON_ID:
             self.showAudioPlayer()
         elif controlID == self.EXTRA_LIST_ID:
@@ -392,6 +399,18 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             sections = sorted(sections, key=orderPos)
 
         activeSectionId = self.mediaItem.getLibrarySectionId()
+        # A real section match always wins; only fall back to Watchlist when nothing matched -
+        # activeSectionId can be a real section's key, empty, or the literal string "watchlist"
+        # (what discover/watchlist items report), which never matches a real section's key, so it
+        # naturally falls through to the watchlist fallback below.
+        activeSection = None
+        if activeSectionId:
+            for section in sections:
+                if section.key == activeSectionId:
+                    activeSection = section
+                    break
+        if activeSection is None and (self.fromWatchlist or self.directlyFromWatchlist):
+            activeSection = home.watchlist_section
 
         for section in sections:
             mli = kodigui.ManagedListItem(section.title,
@@ -405,7 +424,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 mli.setIconImage('script.plex/home/type/watchlist.png')
             elif isinstance(section, home.PinnedTypeSection):
                 mli.setProperty('is.pinned.type', section.itemType)
-            if activeSectionId and section.key == activeSectionId:
+            if section == activeSection:
                 mli.setProperty('is.active', '1')
             items.append(mli)
 
@@ -541,6 +560,12 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
     def searchButtonClicked(self):
         self.processCommand(search.dialog(self, section_id=self.mediaItem.getLibrarySectionId() or None))
+
+    def roleSectionId(self):
+        return self.mediaItem.getLibrarySectionId()
+
+    def roleFromWatchlist(self):
+        return self.fromWatchlist or self.directlyFromWatchlist
 
     def openItem(self, control=None, item=None, inherit_from_watchlist=True, server=None, is_watchlisted=False, **kw):
         if not item:
