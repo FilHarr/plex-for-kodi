@@ -1,5 +1,6 @@
 # coding=utf-8
 import threading
+import time
 import _strptime
 import datetime
 import binascii
@@ -34,9 +35,12 @@ def _processSetting(setting, default, is_json=False):
         try:
             return datetime.datetime.strptime(setting, '%Y-%m-%dT%H:%M:%S.%f')
         except TypeError:
-            # workaround for a rare CPython thread race on the first-ever strptime() call
-            # (concurrent threads can observe a partially-initialized _strptime module)
-            return datetime.datetime.strptime(setting, '%Y-%m-%dT%H:%M:%S.%f')
+            # datetime.datetime.strptime() can intermittently fail under Kodi's
+            # threading model with "TypeError: 'NoneType' object is not callable"
+            # (same issue worked around in lib/compat.py). Retrying the identical
+            # call fails the same way, so fall back to time.strptime() instead,
+            # which isn't affected (at the cost of microsecond precision).
+            return datetime.datetime(*(time.strptime(setting, '%Y-%m-%dT%H:%M:%S.%f')[0:6]))
 
     return setting
 
