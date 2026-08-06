@@ -1,5 +1,10 @@
 {% extends "default.xml.tpl" %}
 {% block headers %}<defaultcontrol>100</defaultcontrol>{% endblock %}
+{% block header_topleft %}{% endblock %}
+{% block header %}
+    {{ super() }}
+    {% include "includes/sidebar.xml.tpl" %}
+{% endblock header %}
 {% block content %}
 <control type="group" id="50">
     <animation effect="slide" end="0,{{ vscale(-300) }}" time="200" tween="quadratic" easing="out" condition="!String.IsEmpty(Window.Property(on.extras))">Conditional</animation>
@@ -8,7 +13,11 @@
         <effect type="slide" end="0,{{ vscale(-500) }}" time="200" tween="quadratic" easing="out"/>
     </animation>
 
-    <posx>0</posx>
+    <!-- Slide right while the sidebar rail is expanded (focused), matching every other ported screen. -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+
+    <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column - see includes/sidebar.xml.tpl. -->
+    <posx>60</posx>
     <posy>{{ vscale(135) }}</posy>
     <defaultcontrol>400</defaultcontrol>
 
@@ -108,6 +117,9 @@
             <height>{{ vscale(700) }}</height>
             <onup>300</onup>
             <ondown>401</ondown>
+            <!-- No pagination on this list (fill() adds every album up front), so no boundary
+                 markers to protect - straight to the sidebar. -->
+            <onleft>9000</onleft>
             <scrolltime>200</scrolltime>
             <orientation>horizontal</orientation>
             <preloaditems>2</preloaditems>
@@ -262,7 +274,10 @@
             <height>{{ vscale(520) }}</height>
             <onup>400</onup>
             <ondown>false</ondown>
-            <onleft>noop</onleft>
+            <!-- RelatedPaginator always starts at offset=0 and never produces a left-boundary
+                 marker (same as Episodes' Related row), so noop here was already a dead end -
+                 safe to go straight to the sidebar. onright stays an unconditional hard stop. -->
+            <onleft>9000</onleft>
             <onright>noop</onright>
             <scrolltime>200</scrolltime>
             <orientation>horizontal</orientation>

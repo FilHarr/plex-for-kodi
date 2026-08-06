@@ -67,13 +67,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
     OPTIONS_GROUP_ID = 200
 
-    # Still referenced by ArtistWindow (subclasses this window, doesn't override onClick): its own
-    # template (script-plex-artist.xml.tpl) doesn't blank header_topleft the way seasons' does, so it
-    # still renders the default Home/Search buttons at these ids and needs onClick to handle them. Left
-    # in place (now dead for the Seasons screen itself, whose header no longer has controls at these
-    # ids) rather than forking onClick between the two windows.
-    HOME_BUTTON_ID = 201
-    SEARCH_BUTTON_ID = 202
     PLAYER_STATUS_BUTTON_ID = 204
 
     MAIN_BUTTON_GROUP_ID = 300
@@ -283,8 +276,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     def onClick(self, controlID):
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
-        elif controlID == self.HOME_BUTTON_ID:
-            self.goHome()
         elif controlID == self.SUB_ITEM_LIST_ID:
             if not self.fromWatchlist:
                 self.subItemListClicked()
@@ -318,8 +309,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.shuffleButtonClicked()
         elif controlID == self.OPTIONS_BUTTON_ID:
             self.optionsButtonClicked()
-        elif controlID == self.SEARCH_BUTTON_ID:
-            self.searchButtonClicked()
 
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
@@ -844,6 +833,13 @@ class ArtistWindow(ShowWindow):
     def onFirstInit(self):
         self.subItemListControl = kodigui.ManagedControlList(self, self.SUB_ITEM_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
+
+        # This fully overrides ShowWindow.onFirstInit() rather than calling super(), so unlike
+        # every other ShowWindow-based screen the sidebar's section list is never populated for
+        # free via inheritance - needs its own copy of the same three calls.
+        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+        self.buildSectionList()
+        self.displayServerAndUser()
 
         self.setup()
         self.initialized = True
