@@ -2011,7 +2011,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     if obj:
                         mli.dataSource = obj
                         mli.setProperty('index', str(pos))
-                        mli.setLabel(u'{0}\n{1}'.format(obj.parentTitle, obj.title))
+                        mli.setLabel(obj.title)
+                        mli.setProperty('album.artist', obj.parentTitle)
 
                         mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
 

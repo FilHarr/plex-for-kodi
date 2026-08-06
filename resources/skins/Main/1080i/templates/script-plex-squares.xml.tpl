@@ -208,12 +208,25 @@
                             <posx>0</posx>
                             <posy>{{ vscale(244) }}</posy>
                             <width>244</width>
-                            <height>{{ vscale(40) }}</height>
+                            <height>{{ vscale(34) }}</height>
                             <font>font10</font>
                             <align>center</align>
                             <aligny>center</aligny>
                             <textcolor>FFFFFFFF</textcolor>
                             <label>$INFO[ListItem.Label]</label>
+                        </control>
+                        <control type="label">
+                            <visible>!String.IsEmpty(ListItem.Property(album.artist))</visible>
+                            <scroll>true</scroll>
+                            <posx>0</posx>
+                            <posy>{{ vscale(278) }}</posy>
+                            <width>244</width>
+                            <height>{{ vscale(34) }}</height>
+                            <font>font10</font>
+                            <align>center</align>
+                            <aligny>center</aligny>
+                            <textcolor>FFAAAAAA</textcolor>
+                            <label>$INFO[ListItem.Property(album.artist)]</label>
                         </control>
                     </control>
                 </control>
@@ -280,12 +293,25 @@
                                 <posx>0</posx>
                                 <posy>{{ vscale(244) }}</posy>
                                 <width>244</width>
-                                <height>{{ vscale(40) }}</height>
+                                <height>{{ vscale(34) }}</height>
                                 <font>font10</font>
                                 <align>center</align>
                                 <aligny>center</aligny>
                                 <textcolor>FFFFFFFF</textcolor>
                                 <label>$INFO[ListItem.Label]</label>
+                            </control>
+                            <control type="label">
+                                <visible>!String.IsEmpty(ListItem.Property(album.artist))</visible>
+                                <scroll>Control.HasFocus(101)</scroll>
+                                <posx>0</posx>
+                                <posy>{{ vscale(278) }}</posy>
+                                <width>244</width>
+                                <height>{{ vscale(34) }}</height>
+                                <font>font10</font>
+                                <align>center</align>
+                                <aligny>center</aligny>
+                                <textcolor>FFAAAAAA</textcolor>
+                                <label>$INFO[ListItem.Property(album.artist)]</label>
                             </control>
                         </control>
                         <control type="group">
