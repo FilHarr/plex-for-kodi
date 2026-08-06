@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 
 import datetime
+import json
 
 from kodi_six import xbmc
 from kodi_six import xbmcgui
@@ -9,11 +10,13 @@ from kodi_six import xbmcgui
 from lib import backgroundthread
 from lib import util
 from lib.util import T
-from plexnet import util as plexnetUtil
+from plexnet import util as plexnetUtil, plexapp
 from . import busy
 from . import dropdown
+from . import home
 from . import kodigui
 from . import opener
+from . import playlists
 from . import search
 from . import windowutils
 
@@ -137,7 +140,7 @@ class DiscoverCreditsTask(backgroundthread.Task):
             self.callback(discover_hubs, library_guids)
 
 
-class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
+class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin):
     xmlFile = 'script-plex-person.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -151,8 +154,6 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
     FILMOGRAPHY_LIST_ID = 400
     DISCOVER_LIST_BASE_ID = 401
     DISCOVER_GROUP_BASE_ID = 501
-    HOME_BUTTON_ID = 201
-    SEARCH_BUTTON_ID = 202
     PLAYER_STATUS_BUTTON_ID = 204
     FILTER_BUTTON_ID = 300
 
@@ -178,6 +179,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.tasks = backgroundthread.Tasks()
         self.exitCommand = None
         self.initialized = False
+        self.lastFocusID = None
 
     def onFirstInit(self):
         self.setProperty('loading', '1')
@@ -192,7 +194,10 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
             except Exception:
                 break
 
-        from plexnet import plexapp
+        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+        self.buildSectionList()
+        self.displayServerAndUser()
+
         local_server = plexapp.SERVERMANAGER.selectedServer
         if local_server and self.role.server != local_server:
             self.role.server = local_server
@@ -239,20 +244,21 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         return False
 
     def onClick(self, controlID):
-        if controlID == self.HOME_BUTTON_ID:
-            self.goHome()
+        if controlID == self.SECTION_LIST_ID:
+            self.sectionClicked()
         elif controlID == self.FILTER_BUTTON_ID:
             self.filterButtonClicked()
         elif controlID == self.FILMOGRAPHY_LIST_ID:
             self.filmographyItemClicked()
-        elif controlID == self.SEARCH_BUTTON_ID:
-            self.searchButtonClicked()
         elif controlID == self.PLAYER_STATUS_BUTTON_ID:
             self.showAudioPlayer()
         elif self.DISCOVER_LIST_BASE_ID <= controlID < self.DISCOVER_LIST_BASE_ID + DISCOVER_HUB_SLOTS:
             self.openDiscoverItem(controlID)
 
     def onFocus(self, controlID):
+        self.reselectActiveSection(controlID, self.lastFocusID)
+        self.lastFocusID = controlID
+
         if self.FILMOGRAPHY_LIST_ID <= controlID <= self.DISCOVER_LIST_BASE_ID + DISCOVER_HUB_SLOTS:
             self.setProperty('hub.focus', str(controlID - self.FILMOGRAPHY_LIST_ID))
 
@@ -553,6 +559,134 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
 
     def searchButtonClicked(self):
         self.processCommand(search.dialog(self))
+
+    def buildSectionList(self):
+        """Populate the sidebar's section list. Mirrors library.py's buildSectionList()/
+        home.py's showSections() and preplay.py's own copy - see library.py:675 for why this
+        isn't shared code yet.
+        """
+        items = []
+
+        searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
+        searchmli.setProperty('is.search', '1')
+        searchmli.setProperty('item', '1')
+        items.append(searchmli)
+
+        homemli = kodigui.ManagedListItem(T(32332, 'Home'), iconImage='script.plex/home/type/home.png',
+                                          data_source=home.home_section)
+        homemli.setProperty('is.home', '1')
+        homemli.setProperty('item', '1')
+        items.append(homemli)
+
+        setting_key = 'home.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID)
+        try:
+            navSettings = json.loads(util.getSetting(setting_key, '')) or {}
+        except ValueError:
+            navSettings = {}
+
+        sections = []
+
+        if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True) and home.watchlist_section
+                and home.watchlist_section.has_data()
+                and ("/library/sections/watchlist" not in navSettings
+                     or navSettings["/library/sections/watchlist"].get("show", True))):
+            sections.append(home.watchlist_section)
+
+        if "playlists" not in navSettings or navSettings["playlists"].get("show", True):
+            if plexapp.SERVERMANAGER.selectedServer.playlists():
+                sections.append(home.playlists_section)
+
+        for section in plexapp.SERVERMANAGER.selectedServer.library.sections():
+            if section.key in navSettings and not navSettings[section.key].get("show", True):
+                continue
+            sections.append(section)
+            if navSettings:
+                pinnable = home.PINNABLE_TYPES.get(str(getattr(section, 'TYPE', None)), ())
+                stored = navSettings.get(section.key, {}).get('pinned_types') or []
+                for item_type in stored:
+                    if item_type in pinnable:
+                        sections.append(home.PinnedTypeSection(section, item_type))
+
+        if "order" in navSettings:
+            order = navSettings["order"]
+
+            def orderPos(s):
+                if s.key in order:
+                    return order.index(s.key), 0
+                if isinstance(s, home.PinnedTypeSection) and s.librarySection.key in order:
+                    return order.index(s.librarySection.key), 1
+                return -1, 0
+
+            sections = sorted(sections, key=orderPos)
+
+        # A person/role isn't tied to one library section (their filmography can span several),
+        # so unlike other ported screens there's no activeSectionId to compare against - none of
+        # the rail's entries get highlighted here, which buildSectionList already degrades to
+        # gracefully.
+        activeSectionId = None
+
+        for section in sections:
+            mli = kodigui.ManagedListItem(section.title,
+                                          iconImage='script.plex/home/type/{0}.png'.format(section.type),
+                                          data_source=section)
+            mli.setProperty('item', '1')
+            if section == home.playlists_section:
+                mli.setProperty('is.playlists', '1')
+                mli.setIconImage('script.plex/home/type/playlists.png')
+            elif section == home.watchlist_section:
+                mli.setIconImage('script.plex/home/type/watchlist.png')
+            elif isinstance(section, home.PinnedTypeSection):
+                mli.setProperty('is.pinned.type', section.itemType)
+            if activeSectionId and section.key == activeSectionId:
+                mli.setProperty('is.active', '1')
+            items.append(mli)
+
+        self.sectionList.reset()
+        self.sectionList.addItems(items)
+
+    def sectionClicked(self):
+        mli = self.sectionList.getSelectedItem()
+        if not mli:
+            return
+
+        if mli.getProperty('is.search'):
+            self.searchButtonClicked()
+            return
+
+        if mli.getProperty('is.home'):
+            self.goHome()
+            return
+
+        section = mli.dataSource
+        if section.type == 'playlists':
+            self.processCommand(opener.handleOpen(playlists.PlaylistsWindow))
+        else:
+            self.processCommand(opener.sectionClicked(section))
+
+    def displayServerAndUser(self):
+        """Sidebar avatar/username and server icon/name. Mirrors library.py's/preplay.py's
+        displayServerAndUser() (see library.py:777 for why home.py's own version doesn't
+        reach this window - window properties are per-window).
+        """
+        title = plexapp.ACCOUNT.title or plexapp.ACCOUNT.username or ' '
+        self.setProperty('user.name', title)
+        self.setProperty('user.avatar', plexapp.ACCOUNT.safeUserThumb(plexapp.ACCOUNT.ID,
+                                                                       thumb=plexapp.ACCOUNT.thumb))
+        self.setProperty('user.avatar.letter', title[0].upper())
+
+        if plexapp.SERVERMANAGER.selectedServer:
+            self.setProperty('server.name', plexapp.SERVERMANAGER.selectedServer.name)
+            self.setProperty('server.icon', 'script.plex/home/device/plex.png')
+            self.setProperty('server.iconmod',
+                             plexapp.SERVERMANAGER.selectedServer.isSecure and 'script.plex/home/device/lock.png' or '')
+            self.setProperty('server.iconmod2',
+                             plexapp.SERVERMANAGER.selectedServer.isLocal and 'script.plex/home/device/home_small.png'
+                             or '')
+        else:
+            self.setProperty('server.name', T(32338, 'No Servers Found'))
+            self.setProperty('server.icon', 'script.plex/home/device/error.png')
+            self.setProperty('server.iconmod', '')
+            self.setProperty('server.iconmod2', '')
 
     def formatDate(self, dateStr):
         if not dateStr:

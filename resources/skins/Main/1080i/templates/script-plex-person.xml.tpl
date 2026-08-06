@@ -1,5 +1,10 @@
 {% extends "default.xml.tpl" %}
 {% block headers %}<defaultcontrol>400</defaultcontrol>{% endblock %}
+{% block header_topleft %}{% endblock %}
+{% block header %}
+    {{ super() }}
+    {% include "includes/sidebar.xml.tpl" %}
+{% endblock header %}
 {% block header_anim %}<animation effect="slide" end="0,{{ vscale(-135) }}" time="200" tween="sine" easing="inout" condition="!String.IsEmpty(Window.Property(on.extras)) + !ControlGroup(200).HasFocus(0)">Conditional</animation>{% endblock %}
 
 {% block content %}
@@ -24,7 +29,10 @@
 
 <!-- Main Content -->
 <control type="group" id="50">
-    <posx>0</posx>
+    <!-- Slide right while the sidebar rail is expanded (focused), matching every other ported screen. -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column - see includes/sidebar.xml.tpl. -->
+    <posx>60</posx>
     <posy>0</posy>
     <!-- Stacking slide animations for discover hub rows -->
     {% for i in range(6) %}
@@ -147,7 +155,9 @@
     <!-- Loading Indicator -->
     <control type="group">
         <visible>!String.IsEmpty(Window.Property(loading))</visible>
-        <posx>960</posx>
+        <!-- 900, not 960: offset -60 to cancel out group 50's own +60 sidebar-clearance shift, so
+             this stays centered on the screen like it was before the sidebar (960 = 1920/2). -->
+        <posx>900</posx>
         <posy>{{ vscale(700) }}</posy>
         <control type="image">
             <posx>-32</posx>
@@ -202,6 +212,9 @@
             <height>{{ vscale(515) }}</height>
             <onup>300</onup>
             <ondown>401</ondown>
+            <!-- No pagination boundary markers on this list (is.end/is.updating only page in on the
+                 right), so unlike a bidirectional carousel this can go straight to the sidebar. -->
+            <onleft>9000</onleft>
             <scrolltime>200</scrolltime>
             <orientation>horizontal</orientation>
             <preloaditems>4</preloaditems>
@@ -357,6 +370,9 @@
             {% if loop.is_first %}<onup condition="Integer.IsGreater(Container(400).NumItems,0)">400</onup>
             <onup condition="!Integer.IsGreater(Container(400).NumItems,0)">300</onup>{% else %}<onup>{{ list_id - 1 }}</onup>{% endif %}
             <ondown>{% if loop.is_last %}{{ list_id }}{% else %}{{ list_id + 1 }}{% endif %}</ondown>
+            <!-- No pagination on these hubs (filled once via fillDiscoverHub), so no boundary
+                 markers to protect - straight to the sidebar. -->
+            <onleft>9000</onleft>
             <scrolltime>200</scrolltime>
             <orientation>horizontal</orientation>
             <preloaditems>4</preloaditems>
