@@ -4,8 +4,11 @@
          Pre-play, which this mirrors (same content Seasons already showed here; not Pre-play's own fields -
          Seasons' rating-stars moved into the ratings box instead, matching Pre-play's content split there). -->
     <control type="grouplist">
-        <animation effect="slide" end="-373,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
-        <posx>433</posx>
+        <!-- -316, not -373: the poster-shown base posx moved from 433 to 376 (Seasons' poster shrink -
+             see script-plex-seasons.xml.tpl's own poster group comment), so the slide distance back to
+             the poster-hidden x=60 shrank by the same 57 (376-60=316). -->
+        <animation effect="slide" end="-316,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
+        <posx>376</posx>
         <posy>{{ vscale(126) }}</posy>
         <width>1360</width>
         <height>{{ vscale(30) }}</height>

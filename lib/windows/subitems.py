@@ -119,6 +119,15 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.initialized = True
         self.themeMusicInit(self.mediaItem)
 
+        # focusPlayButton() above gives the window something focused immediately, before setup() has
+        # populated the season row (an empty list control can't take focus) - once it's filled, move
+        # focus there so the season row is what the screen actually opens on. Skipped when opened from
+        # the watchlist: setup() -> watchlistItemAvailable() already drives focus onto whichever watchlist
+        # button reflects this item's availability (see mixins/watchlist.py's wl_set_btn()), which matters
+        # more there than the season row does.
+        if not self.fromWatchlist and self.subItemListControl.size():
+            self.setFocusId(self.SUB_ITEM_LIST_ID)
+
     def onReInit(self):
         PlaybackBtnMixin.onReInit(self)
         self.wl_auto_remove(self.mediaItem)
@@ -143,8 +152,12 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
         self.updateProperties()
         self.setBoolProperty("initialized", True)
-        self.batch_simple([(self.fill, None, None),
-                           (self.fillExtras, None, None),
+        # fill() (the season row) runs synchronously, unlike the rest below - it's this screen's primary
+        # content (same treatment episodes.py's _setup() gives fillEpisodes()), and onFirstInit() needs it
+        # populated before it can focus the season row as the screen's default control. The rest are
+        # secondary content, postponed to background threads same as before.
+        self.fill()
+        self.batch_simple([(self.fillExtras, None, None),
                            (self.fillRelated, None, None),
                            (self.fillRoles, None, None)])
 
@@ -327,7 +340,12 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             if controlID == self.RELATED_LIST_ID:
                 self.updateBackgroundFrom(self.relatedListControl.getSelectedItem().dataSource)
 
-        if xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)'):
+        # controlID == SUB_ITEM_LIST_ID counts as "not on extras" too, now that the season row is the
+        # screen's default focus target - otherwise this fires the moment the window opens (and every
+        # time focus returns to the row from the button group) instead of only once focus goes deeper,
+        # into roles/extras/related. Episodes needed the identical fix when its own row became the
+        # default focus target - see episodes.py's onFocus for the same rationale in more detail.
+        if controlID == self.SUB_ITEM_LIST_ID or xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)'):
             self.setProperty('on.extras', '')
             # hub.focus (set above, only for controlIDs 400-499) is otherwise never reset once focus
             # leaves the seasons/roles/extras/related row stack for the button row - it's not in that

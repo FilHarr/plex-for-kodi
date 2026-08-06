@@ -1,8 +1,11 @@
     <control type="grouplist">
         <visible>!String.IsEmpty(Window.Property(wl_server_availability_verbose))</visible>
         <!-- 433, not 466: shifted left 33px (347-314) to close the gap the two poster shrinks in
-             script-plex-pre_play.xml.tpl opened up between the poster's right edge and this column. -->
-        <posx>433</posx>
+             script-plex-pre_play.xml.tpl opened up between the poster's right edge and this column.
+             posx is overridable (Seasons passes 356, matching its own further poster shrink) rather than
+             hardcoded, since this include is shared with script-plex-pre_play-wl.xml.tpl, whose poster
+             hasn't shrunk to match. -->
+        <posx>{{ posx|default(433) }}</posx>
         <posy>{{ vscale(130) }}</posy>
         <width>1360</width>
         <height>{{ vscale(34) }}</height>

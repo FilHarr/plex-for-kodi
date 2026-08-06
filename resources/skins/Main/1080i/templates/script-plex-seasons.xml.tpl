@@ -11,8 +11,11 @@
     <!-- Slide right while the sidebar rail is expanded (focused), matching Home/Library/Pre-play/Episodes -->
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
 
+    <!-- -530, not Episodes' -500: mirrors Episodes' identical slide exactly, plus the same 30px delta
+         between the two screens' row+buttons wrapper heights (482 here vs Episodes' 452) - see that
+         group's own posy comment below. -->
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500)" reversible="true">
-        <effect type="slide" end="0,{{ vscale(-500) }}" time="200" tween="quadratic" easing="out"/>
+        <effect type="slide" end="0,{{ vscale(-530) }}" time="200" tween="quadratic" easing="out"/>
     </animation>
 
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),1) + Control.IsVisible(501)" reversible="true">
@@ -27,39 +30,10 @@
          Episodes. Every child below is positioned relative to this group, so the shift applies uniformly. -->
     <posx>60</posx>
     <posy>{{ vscale(155) }}</posy>
-    <defaultcontrol>101</defaultcontrol>
-
-    {% block buttons %}
-        <control type="grouplist" id="300">
-            <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
-            <visible>!String.IsEmpty(Window.Property(initialized))</visible>
-            <defaultcontrol>302</defaultcontrol>
-            <!-- posx/posy match Pre-play's button row exactly (script-plex-pre_play.xml.tpl) - same
-                 152x121 button box (theme.seasons.buttons now kept in lockstep with theme.pre_play.buttons,
-                 see context.py), so the same position clears the poster/hub-row stack the same way. -->
-            <posx>22</posx>
-            <posy>{{ vscale(481) }}</posy>
-            <width>1000</width>
-            <height>{{ vscale(145) }}</height>
-            <onup>200</onup>
-            <ondown>400</ondown>
-            <onleft>9000</onleft>
-            <itemgap>{{ theme.seasons.buttongroup.itemgap }}</itemgap>
-            <orientation>horizontal</orientation>
-            <scrolltime tween="quadratic" easing="out">200</scrolltime>
-            <usecontrolcoords>true</usecontrolcoords>
-
-            {% with attr = theme.seasons.buttons & template = "includes/themed_button.xml.tpl" & hitrect = None %} {# fixme: should hitrect be None? #}
-                {% include template with name="info" & id=301 %}
-                {% include template with name="play" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
-                {% include "includes/wl_dynamic_buttons.xml.tpl" %}
-                {% include "includes/wl_add_remove_buttons.xml.tpl" %}
-                {% include template with name="shuffle" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
-                {% include template with name="more" & id=304 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
-            {% endwith %}
-
-        </control>
-    {% endblock %}
+    <!-- 400, not the stale 101 (not a control that exists on this screen - Python's own onFirstInit()
+         explicitly focused the play button on open instead, masking this). Now points at the season row,
+         which Python also explicitly focuses once it's populated - see ShowWindow.onFirstInit(). -->
+    <defaultcontrol>400</defaultcontrol>
 
     <control type="group">
         <posx>0</posx>
@@ -68,11 +42,19 @@
         <height>{{ vscale(600) }}</height>
         <control type="group">
             <visible>String.IsEmpty(Window.Property(hide.poster))</visible>
+            <!-- 257x382, not the original 314x467: shrunk (same ~2:3 aspect) to originally land its bottom
+                 edge right at the season row's own top (352, giving the same 21px gap Episodes uses after
+                 its summary) - then given back 15px of height twice per request (352->367->382),
+                 independent of the row/buttons/roles positions below, which intentionally stayed put (see
+                 the season row's own posy comment). Width scaled with it to hold the same ~2:3 aspect
+                 (237->247->257) - the content column to the right shifted by the same net amount so the
+                 gap between the poster's new right edge and that column doesn't shrink (see its own
+                 comment below). -->
             <control type="image">
                 <posx>60</posx>
                 <posy>0</posy>
-                <width>314</width>
-                <height>{{ vscale(467) }}</height>
+                <width>257</width>
+                <height>{{ vscale(382) }}</height>
                 <texture background="true">script.plex/thumb_fallbacks/movie.png</texture>
                 <animation effect="fade" start="0" end="100" time="0" delay="500">WindowOpen</animation>
                 <aspectratio>scale</aspectratio>
@@ -80,20 +62,23 @@
             <control type="image">
                 <posx>60</posx>
                 <posy>0</posy>
-                <width>314</width>
-                <height>{{ vscale(467) }}</height>
+                <width>257</width>
+                <height>{{ vscale(382) }}</height>
                 <texture background="true">$INFO[Window.Property(thumb)]</texture>
                 <aspectratio>scale</aspectratio>
             </control>
-            {% include "includes/watched_indicator.xml.tpl" with itemref="Window" & xoff=314+60 & uw_size=48 & with_count=True & scale="large" %}
+            {% include "includes/watched_indicator.xml.tpl" with itemref="Window" & xoff=257+60 & uw_size=48 & with_count=True & scale="large" %}
         </control>
 
-        <!-- Title/clearlogo duplicated at two x-offsets (433 with the poster, 60 filling its slot when
+        <!-- Title/clearlogo duplicated at two x-offsets (376 with the poster, 60 filling its slot when
              hidden) and switched with <visible>, since posx/width can't take a condition in Kodi - see
-             script-plex-pre_play.xml.tpl for the reference implementation these mirror verbatim. -->
+             script-plex-pre_play.xml.tpl for the reference implementation these mirror verbatim. 376, not
+             433: net 57px left of the original (314->257 poster width, a 57px shrink), closing the gap the
+             narrower poster opened up - same treatment includes/wl_availability.xml.tpl's own "433, not
+             466" comment documents Pre-play's poster shrinks getting previously. -->
         <control type="label">
             <visible>String.IsEmpty(Window.Property(hide.poster)) + String.IsEmpty(Window.Property(clear.logo))</visible>
-            <posx>433</posx>
+            <posx>376</posx>
             <posy>0</posy>
             <width>880</width>
             <height>{{ vscale(68) }}</height>
@@ -121,7 +106,7 @@
         </control>
         <control type="image">
             <visible>String.IsEmpty(Window.Property(hide.poster)) + !String.IsEmpty(Window.Property(clear.logo))</visible>
-            <posx>433</posx>
+            <posx>376</posx>
             <posy>0</posy>
             <width>873</width>
             <height>{{ vscale(106) }}</height>
@@ -265,14 +250,16 @@
             <textcolor>FFFFFFFF</textcolor>
             <label>$INFO[Window.Property(summary)]</label>
         </control> -->
-        {% include "includes/wl_availability.xml.tpl" %}
+        {% include "includes/wl_availability.xml.tpl" with posx=376 %}
         <control type="textbox">
             <!-- Single control, not duplicated: width/height are identical in both poster states, only
                  posx/posy shift, so a zero-duration Conditional slide does the job of the <visible>-switched
                  pair used where size also changes (title/clearlogo above) - see script-plex-pre_play.xml.tpl's
-                 identical treatment of its own summary box. -->
-            <animation effect="slide" end="-373,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
-            <posx>433</posx>
+                 identical treatment of its own summary box. -316, not -373: the poster-shown base posx moved
+                 from 433 to 376 (poster shrink, see the poster group's own comment above), so the slide
+                 distance back to the poster-hidden x=60 shrank by the same 57 (376-60=316). -->
+            <animation effect="slide" end="-316,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
+            <posx>376</posx>
             <posy>{{ vscale(176) }}</posy>
             <width>1080</width>
             <height>{{ vscale(152) }}</height>
@@ -283,18 +270,21 @@
         </control>
     </control>
 
-    <control type="grouplist" id="60">
+    <!-- SEASON ROW + BUTTONS -->
+    <!-- A plain group, not nested inside grouplist 60 below: a grouplist auto-stacks its children by
+         height and doesn't reliably honor a child's own posy as extra gap (nesting the season row here
+         caused it to overlap Roles instead of stacking after it) - same reasoning as Episodes' identical
+         sibling-group treatment of its episode row + button row (script-plex-episodes.xml.tpl). posy=373
+         matches Episodes' own row-top position - originally 352 (poster's old bottom) + 21 (the same gap
+         Episodes uses after its summary). Deliberately left at 373 even after the poster grew back to 382
+         tall (see its own comment above): only the poster's height/width changed, not this row's position,
+         so the gap below the poster is now -9px (a slight overlap) instead of 21. -->
+    <control type="group">
         <posx>0</posx>
-        <!-- 540, not 565: aligns this row stack's top edge with Pre-play's cast-row equivalent
-             (script-plex-pre_play.xml.tpl's own grouplist 60, also posy=540) - both sit in an identical
-             group-50 frame (posx=60, posy=vscale(155)), so matching this one number lines up the absolute
-             screen position. -->
-        <posy>{{ vscale(540) }}</posy>
+        <posy>{{ vscale(373) }}</posy>
         <width>1920</width>
-        <height>{{ vscale(1600) }}</height>
-
-        <onup>300</onup>
-        <itemgap>0</itemgap>
+        <!-- 482 = 337 (buttons' own posy below, see its comment) + 145 (buttons) -->
+        <height>{{ vscale(482) }}</height>
 
         <!-- Seasons -->
         <control type="group" id="500">
@@ -312,8 +302,8 @@
                 <posy>{{ vscale(36) }}</posy>
                 <width>1880</width>
                 <height>{{ vscale(380) }}</height>
-                <onup>300</onup>
-                <ondown>401</ondown>
+                <onup>200</onup>
+                <ondown>300</ondown>
                 <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
@@ -463,6 +453,57 @@
         </control>
         <!-- Seasons -->
 
+        {% block buttons %}
+            <control type="grouplist" id="300">
+                <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
+                <visible>!String.IsEmpty(Window.Property(initialized))</visible>
+                <defaultcontrol>302</defaultcontrol>
+                <!-- Sits directly below the season row, matching Episodes' button-row-under-carousel order
+                     (script-plex-episodes.xml.tpl) rather than Pre-play's poster-adjacent position this used
+                     to share. Same 53px pull-up Episodes' own button row uses (see its identical comment) -
+                     the icons are stretched art with padding baked in, so a raw gap below the carousel's
+                     declared height looks too far down. 337 = 380 (season row's own declared height) - 53
+                     + 10 (dropped 10px lower per request), vs Episodes' 307 = 360 (its row height) - 53. -->
+                <posx>22</posx>
+                <posy>{{ vscale(337) }}</posy>
+                <width>1000</width>
+                <height>{{ vscale(145) }}</height>
+                <onup>400</onup>
+                <ondown>401</ondown>
+                <onleft>9000</onleft>
+                <itemgap>{{ theme.seasons.buttongroup.itemgap }}</itemgap>
+                <orientation>horizontal</orientation>
+                <scrolltime tween="quadratic" easing="out">200</scrolltime>
+                <usecontrolcoords>true</usecontrolcoords>
+
+                {% with attr = theme.seasons.buttons & template = "includes/themed_button.xml.tpl" & hitrect = None %} {# fixme: should hitrect be None? #}
+                    {% include template with name="info" & id=301 %}
+                    {% include template with name="play" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
+                    {% include "includes/wl_dynamic_buttons.xml.tpl" %}
+                    {% include "includes/wl_add_remove_buttons.xml.tpl" %}
+                    {% include template with name="shuffle" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
+                    {% include template with name="more" & id=304 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
+                {% endwith %}
+
+            </control>
+        {% endblock %}
+    </control>
+    <!-- SEASON ROW + BUTTONS -->
+
+    <!-- Roles/Extras/Related: supplementary info, unlike the season row and its buttons above. Stacks
+         immediately at the wrapper's own bottom edge, no extra gap - matching Episodes' identical
+         zero-gap transition from its button row into its own Roles/Extras/Related grouplist 60. 855 =
+         373 (season-row-+-buttons group's own start) + 482 (its height), both relative to group 50's
+         own origin, same as that group above. -->
+    <control type="grouplist" id="60">
+        <posx>0</posx>
+        <posy>{{ vscale(855) }}</posy>
+        <width>1920</width>
+        <height>{{ vscale(1600) }}</height>
+
+        <onup>300</onup>
+        <itemgap>0</itemgap>
+
         <!-- ROLES -->
         <control type="group" id="501">
             <visible>Integer.IsGreater(Container(401).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
@@ -487,7 +528,7 @@
                 <posy>0</posy>
                 <width>1880</width>
                 <height>{{ vscale(400) }}</height>
-                <onup>400</onup>
+                <onup>300</onup>
                 <ondown>402</ondown>
                 <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
