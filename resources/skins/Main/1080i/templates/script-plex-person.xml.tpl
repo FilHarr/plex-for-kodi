@@ -203,6 +203,7 @@
             <onup>201</onup>
             <ondown condition="Integer.IsGreater(Container(400).NumItems,0)">400</ondown>
             <ondown condition="!Integer.IsGreater(Container(400).NumItems,0)">401</ondown>
+            <onleft>9000</onleft>
             <label>$INFO[Window.Property(filmography.filter)]</label>
         </control>
         <control type="list" id="400">

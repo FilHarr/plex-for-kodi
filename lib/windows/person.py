@@ -262,7 +262,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         if self.FILMOGRAPHY_LIST_ID <= controlID <= self.DISCOVER_LIST_BASE_ID + DISCOVER_HUB_SLOTS:
             self.setProperty('hub.focus', str(controlID - self.FILMOGRAPHY_LIST_ID))
 
-        if controlID > self.FILMOGRAPHY_LIST_ID:
+        if controlID > self.FILMOGRAPHY_LIST_ID and xbmc.getCondVisibility('ControlGroup(50).HasFocus(0)'):
             self.setProperty('on.extras', '1')
         else:
             self.setProperty('on.extras', '')
