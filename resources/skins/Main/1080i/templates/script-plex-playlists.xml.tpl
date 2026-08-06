@@ -1,17 +1,11 @@
 {% extends "default.xml.tpl" %}
 {% block headers %}<defaultcontrol>100</defaultcontrol>{% endblock %}
 {% block header_bgfade %}{% endblock %}
-{% block topleft_add %}
-<control type="label">
-    <width max="500">auto</width>
-    <height>{{ vscale(40) }}</height>
-    <font>font12</font>
-    <align>left</align>
-    <aligny>center</aligny>
-    <textcolor>FFFFFFFF</textcolor>
-    <label>[UPPERCASE]$ADDON[script.plexmod 32333][/UPPERCASE]</label>
-</control>
-{% endblock %}
+{% block header_topleft %}{% endblock %}
+{% block header %}
+    {{ super() }}
+    {% include "includes/sidebar.xml.tpl" %}
+{% endblock header %}
 {% block content %}
 <control type="group">
     <visible>String.IsEmpty(Window.Property(use_solid_background))</visible>
@@ -51,9 +45,31 @@
 </control>
 
 <control type="group" id="50">
-    <posx>0</posx>
+    <!-- Slide right while the sidebar rail is expanded (focused), matching every other ported screen. -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column - see includes/sidebar.xml.tpl. -->
+    <posx>60</posx>
     <posy>{{ vscale(115) }}</posy>
     <defaultcontrol always="true">101</defaultcontrol>
+
+    <!-- Page title, relocated from the header's topleft_add block (default.xml.tpl) now that
+         header_topleft is blank - that block was the only place this rendered. Positioned to land
+         roughly where the header row used to show it (header_topleft's own posy=47.5), 70px above
+         this group's own AUDIO section start (115-70=45). -->
+    <control type="label">
+        <!-- posx=60, matching the AUDIO/VIDEO section labels below (their own posx=60, nested one
+             level deeper in group 100/300 which sit at posx=0) - both land at the same absolute
+             x=120 content-start convention Posters/Squares/Genres use. -->
+        <posx>60</posx>
+        <posy>{{ vscale(-70) }}</posy>
+        <width max="500">auto</width>
+        <height>{{ vscale(40) }}</height>
+        <font>font12</font>
+        <align>left</align>
+        <aligny>center</aligny>
+        <textcolor>FFFFFFFF</textcolor>
+        <label>[UPPERCASE]$ADDON[script.plexmod 32333][/UPPERCASE]</label>
+    </control>
 
     <control type="group" id="100">
         <visible>Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
@@ -80,6 +96,9 @@
             <height>{{ vscale(390) }}</height>
             <onup>200</onup>
             <ondown>301</ondown>
+            <!-- No pagination on this list (fill() adds every item up front), so no boundary
+                 markers to protect - straight to the sidebar. -->
+            <onleft>9000</onleft>
             <scrolltime>200</scrolltime>
             <orientation>horizontal</orientation>
             <preloaditems>2</preloaditems>
@@ -237,6 +256,9 @@
             <width>1941.5</width>
             <height>{{ vscale(700) }}</height>
             <onup>101</onup>
+            <!-- No pagination on this list (fill() adds every item up front), so no boundary
+                 markers to protect - straight to the sidebar. -->
+            <onleft>9000</onleft>
             <scrolltime>200</scrolltime>
             <orientation>horizontal</orientation>
             <preloaditems>2</preloaditems>
