@@ -202,6 +202,18 @@ SORT_KEYS = {
     }
 }
 
+
+def isAlphaSort(sortKey):
+    """Whether sorting by this key orders items alphabetically by (some) title -
+    ie. it's a 'titleSort' field, possibly namespaced (show.titleSort, artist.titleSort, ...).
+    Used to decide between showing the A-Z key scrubber vs. a plain scrollbar; the scrubber
+    itself only ends up with real letters when the underlying fetch actually builds one (see
+    fillShows()/fillPhotos()), so this is necessary but not sufficient for that - the
+    'sort.alpha' window property tracks the actual outcome per-fill.
+    """
+    return sortKey == 'titleSort' or bool(sortKey) and sortKey.endswith('.titleSort')
+
+
 ITEM_TYPE = None
 
 # Maps a server filter key -> (string id, fallback) for localized labels. Unknown filter
@@ -488,6 +500,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def reset(self):
         PlaybackBtnMixin.reset(self)
         util.setGlobalProperty('sort', '')
+        util.setGlobalProperty('sort.alpha', '')
         # Active boolean filters as {filter_key: True}. Start clean on upgrade: old
         # filter.unwatched/filter.hdr/filter.dovi keys are intentionally not read.
         self.boolFilters = self.librarySettings.getSetting('filter.bools', {}) or {}
@@ -1706,8 +1719,53 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # boolean filters (hdr/dovi/unwatched/inProgress/...) flow through as a dict
         bool_filters = self.boolFilters
 
-        if self.sort != 'titleSort' or ITEM_TYPE in ('folder', 'episode') or self.subDir \
-            or self.section.TYPE in ("collection", "movies_shows"):
+        jumpList = None
+        # The server's firstCharacter/jumpList endpoint only makes sense for alphabetical
+        # sorts, and only for the item types/sections it's known to support: episode titles
+        # are excluded since browsing episodes by their own title isn't a sensible A-Z
+        # anchor, but show.titleSort groups by the parent show's title, so episodes are let
+        # through specifically for that one. artist.titleSort is excluded outright - the
+        # server 500s on it (confirmed against a real PMS), so it always falls through to
+        # the plain scrollbar below instead.
+        if isAlphaSort(self.sort) and self.sort != 'artist.titleSort' and ITEM_TYPE != 'folder' \
+                and (ITEM_TYPE != 'episode' or self.sort == 'show.titleSort') \
+                and not self.subDir and self.section.TYPE not in ("collection", "movies_shows"):
+            # find library collection mode setting, as we need to force-feed the collection type to the jumpList,
+            # if collection_mode is 2, otherwise the returned item count differs from /all with the same parameters
+            collection_mode = self.section.settings.get("collectionMode",
+                                                       {"value": plexobjects.PlexValue(2)})["value"].asInt()
+
+            jl_type = type_
+            if collection_mode == 2 and not (self.filter or self.boolFilters.get('unwatched')):
+                jl_type = getQueryItemType(self.section, fallback_to_section_type=True, force_include_collections=True)
+
+            jumpList = self.section.jumpList(filter_=self.getFilterOpts(), sort=self.getSortOpts(),
+                                             type_=jl_type, bool_filters=bool_filters)
+            if jumpList is None:
+                # Endpoint doesn't support this sort/type combo (or errored) - fall back to
+                # a regular fetch below rather than reporting the section as empty.
+                util.DEBUG_LOG('jumpList() unavailable for sort {0}/type {1}, falling back to all()',
+                               self.sort, ITEM_TYPE)
+
+        if jumpList:
+            idx = 0
+            for kidx, ji in enumerate(jumpList):
+                ji_size = ji.size.asInt()
+                mli = kodigui.ManagedListItem(ji.title, data_source=ji.key)
+                mli.setProperty('key', ji.key)
+                mli.setProperty('index', str(kidx))
+                mli.setProperty('original', '{0:02d}'.format(kidx))
+                self.keyItems[ji.key] = mli
+                jitems.append(mli)
+                totalSize += ji_size
+
+                tasks.append(CreateDefaultItemsTask().setup(idx, ji.size.asInt(), totalSize, self.thumb_fallback, self._defaultItemsCallback, key=ji.key))
+                idx += ji_size
+
+            util.DEBUG_LOG('JumpList item size: {}', totalSize)
+
+            util.setGlobalProperty('key', jumpList[0].key)
+        else:
             if ITEM_TYPE == 'folder':
                 sectionAll = self.section.folder(0, 0, self.subDir)
             else:
@@ -1730,51 +1788,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             else:
                 for startPosition in range(0, totalSize, self.getDefChunkSize(totalSize)):
                     tasks.append(CreateDefaultItemsTask().setup(startPosition, self.getDefChunkSize(totalSize), totalSize, self.thumb_fallback, self._defaultItemsCallback))
-        else:
-            # find library collection mode setting, as we need to force-feed the collection type to the jumpList,
-            # if collection_mode is 2, otherwise the returned item count differs from /all with the same parameters
-            collection_mode = self.section.settings.get("collectionMode",
-                                                       {"value": plexobjects.PlexValue(2)})["value"].asInt()
-
-            jl_type = type_
-            if collection_mode == 2 and not (self.filter or self.boolFilters.get('unwatched')):
-                jl_type = getQueryItemType(self.section, fallback_to_section_type=True, force_include_collections=True)
-
-            jumpList = self.section.jumpList(filter_=self.getFilterOpts(), sort=self.getSortOpts(),
-                                             type_=jl_type, bool_filters=bool_filters)
-
-            if not jumpList:
-                self.showPanelControl.reset()
-                self.keyListControl.reset()
-
-                if (self.filter or any(self.boolFilters.values())
-                        or self.librarySettings.getItemType()):
-                    self.setBoolProperty('no.content.filtered', True)
-                else:
-                    self.setBoolProperty('no.content', True)
-
-                if jumpList is None:
-                    util.messageDialog("Error", "There was an error.")
-
-                return
-
-            idx = 0
-            for kidx, ji in enumerate(jumpList):
-                ji_size = ji.size.asInt()
-                mli = kodigui.ManagedListItem(ji.title, data_source=ji.key)
-                mli.setProperty('key', ji.key)
-                mli.setProperty('index', str(kidx))
-                mli.setProperty('original', '{0:02d}'.format(kidx))
-                self.keyItems[ji.key] = mli
-                jitems.append(mli)
-                totalSize += ji_size
-
-                tasks.append(CreateDefaultItemsTask().setup(idx, ji.size.asInt(), totalSize, self.thumb_fallback, self._defaultItemsCallback, key=ji.key))
-                idx += ji_size
-
-            util.DEBUG_LOG('JumpList item size: {}', totalSize)
-
-            util.setGlobalProperty('key', jumpList[0].key)
 
         self.setProperty("items.count", str(totalSize))
 
@@ -1791,6 +1804,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         if jitems:
             self.keyListControl.addItems(jitems)
+
+        util.setGlobalProperty('sort.alpha', jitems and '1' or '')
 
         self.showPanelControl.selectItem(0)
         if not keep_focus:
@@ -1919,18 +1934,24 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         litems = []
         self.keyItems = {}
-        for i, key in enumerate(keys):
-            mli = kodigui.ManagedListItem(key, data_source=key)
-            mli.setProperty('key', key)
-            mli.setProperty('original', '{0:02d}'.format(i))
-            self.keyItems[key] = mli
-            litems.append(mli)
+        # Keys are collected above in whatever order items were fetched in, which is only
+        # alphabetical when the fetch itself was sorted by title - otherwise the letters
+        # would show up in a meaningless, jumbled order, so skip building the scrubber list.
+        if isAlphaSort(self.sort):
+            for i, key in enumerate(keys):
+                mli = kodigui.ManagedListItem(key, data_source=key)
+                mli.setProperty('key', key)
+                mli.setProperty('original', '{0:02d}'.format(i))
+                self.keyItems[key] = mli
+                litems.append(mli)
 
         self.showPanelControl.reset()
         self.keyListControl.reset()
 
         self.showPanelControl.addItems(items)
         self.keyListControl.addItems(litems)
+
+        util.setGlobalProperty('sort.alpha', litems and '1' or '')
 
         if keys:
             util.setGlobalProperty('key', keys[0])

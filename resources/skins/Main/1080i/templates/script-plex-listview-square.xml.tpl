@@ -459,12 +459,12 @@
     {% endblock %}
 
     <control type="group" id="150">
-        <visible>String.IsEqual(Window(10000).Property(script.plex.sort),titleSort) + Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
+        <visible>!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
         <defaultcontrol>151</defaultcontrol>
-        <!-- posx matches where the scrollbar used to rest (removed - the scrubber is now the only
-             right-edge nav aid); posy matches the other 6 views' resting position for a consistent
-             starting height. No animation here: this view never hides its header on scroll, so
-             there's no freed space to grow into. -->
+        <!-- posx matches where the scrollbar (id 152, below) rests when it's showing instead;
+             posy matches the other 6 views' resting position for a consistent starting height.
+             No animation here: this view never hides its header on scroll, so there's no freed
+             space to grow into. -->
         <posx>1875</posx>
         <posy>{{ vscale(150) }}</posy>
         <width>20</width>
@@ -479,5 +479,18 @@
             <orientation>vertical</orientation>
             {% include "includes/key_scrubber_items.xml.tpl" %}
         </control>
+    </control>
+
+    <!-- Shown instead of the scrubber above for sorts that don't produce alphabetical
+         ordering (script.plex.sort.alpha unset) - a plain proportional position indicator. -->
+    <control type="scrollbar" id="152">
+        <visible>String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
+        <hitrect x="1845" y="150" w="100" h="910" />
+        <left>1885</left>
+        <top>{{ vscale(15) }}</top>
+        <width>12</width>
+        <height>910</height>
+        <onleft>300</onleft>
+        {% include "includes/scrollbar_style.xml.tpl" %}
     </control>
 {% endblock content %}
