@@ -5,16 +5,28 @@
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
 
     <!-- Dynamic focus animations for hub rows -->
-    <!-- First hub (500) slides up less since it's after the section bar -->
-    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500)" reversible="true">
-        <effect type="slide" end="0,{{ vscale(-345) }}" time="200" tween="sine" easing="inout"/>
+    <!-- Both stages below collapse row 0 out of view and are keyed off ITS actual display type
+         (hub.display.400), not the type of whichever row currently has focus - the -555 "fully
+         collapsed" stage stays flat once focus passes row 1 no matter how much deeper you scroll
+         (every i beyond 1 produces the same effect), so this was never a per-row cumulative
+         slide, just two fixed states sized to how tall row 0 itself is. The collapsed-stage
+         values below are exact: -(row 0's real full pitch), matching the 555/500/445 pitches the
+         hub rows above now render at. The partial-stage values (poster's hand-tuned -345, and
+         ar16x9/square scaled from it by the same 345/555 ratio) are an estimate, not measured -
+         flag if the transition feels off for a non-poster row 0. -->
+    {% for display_type, transitional_end in [('poster', -345), ('ar16x9', -311), ('square', -277)] %}
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500) + String.IsEqual(Window.Property(hub.display.400),{{ display_type }})" reversible="true">
+        <effect type="slide" end="0,{{ vscale(transitional_end) }}" time="200" tween="sine" easing="inout"/>
     </animation>
+    {% endfor %}
 
-    <!-- Subsequent hubs use consistent slide distance -->
+    <!-- Subsequent hubs: fully collapse row 0 once focus has passed row 1 -->
     {% for i in range(1, core.hub_count) %}
-    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),{{ i }}) + Control.IsVisible({{ i + 499 }})" reversible="true">
-        <effect type="slide" end="0,{{ vscale(-555) }}" time="200" tween="sine" easing="inout"/>
+    {% for display_type, collapsed_end in [('poster', -555), ('ar16x9', -500), ('square', -445)] %}
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),{{ i }}) + Control.IsVisible({{ i + 499 }}) + String.IsEqual(Window.Property(hub.display.400),{{ display_type }})" reversible="true">
+        <effect type="slide" end="0,{{ vscale(collapsed_end) }}" time="200" tween="sine" easing="inout"/>
     </animation>
+    {% endfor %}
     {% endfor %}
 
     <defaultcontrol>500</defaultcontrol>
@@ -39,12 +51,22 @@
 
     <!-- DYNAMIC HUB ROWS - Generated from hub_count setting -->
     {% for i in range(core.hub_count) %}
-    {% with group_id = i + 500 & hub_id = i + 400 %}
+    {% with group_id = i + 500 & hub_id = i + 400 & spacer_id = i + 600 & is_first_hub = loop.is_first & is_last_hub = loop.is_last %}
+    <!-- Row pitch varies by display type, but the hub's list control itself must stay a single
+         physical control: home.py caches it via getControl() once at init (self.hubControls,
+         home.py ~749), and Kodi's control lookup for a duplicated id always resolves to the same
+         one instance regardless of which sibling's <visible> is actually true - unlike native
+         focus/visibility handling, which is duplicate-id-aware (that's why the
+         hub_itemlayout_*/hub_focusedlayout_* conditional selection works). Duplicating this
+         list's id silently sent content to a hidden variant, leaving the visible (shorter) row
+         empty. So the content group below is single and fixed at the shortest type's (square)
+         real content extent, and a small conditional spacer - safe to duplicate since nothing
+         ever targets it from Python - restores the rest of the pitch for taller types. -->
     <control type="group" id="{{ group_id }}">
         <visible>Integer.IsGreater(Container({{ hub_id }}).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
         <defaultcontrol>{{ hub_id }}</defaultcontrol>
         <width>1920</width>
-        <height>{{ vscale(535) }}</height>
+        <height>{{ vscale(425) }}</height>
         <control type="image">
             <visible>!String.IsEmpty(Window.Property(bifurcation_lines))</visible>
             <posx>15</posx>
@@ -70,8 +92,8 @@
             <posy>{{ vscale(29) }}</posy>
             <width>1920</width>
             <height>{{ vscale(515) }}</height>
-            <onup>{% if not loop.is_first %}{{ hub_id - 1 }}{% else %}noop{% endif %}</onup>
-            <ondown>{% if loop.is_last %}{{ hub_id }}{% else %}{{ hub_id + 1 }}{% endif %}</ondown>
+            <onup>{% if not is_first_hub %}{{ hub_id - 1 }}{% else %}noop{% endif %}</onup>
+            <ondown>{% if is_last_hub %}{{ hub_id }}{% else %}{{ hub_id + 1 }}{% endif %}</ondown>
             <onright>noop</onright>
             <onleft>9001</onleft>
             <scrolltime>200</scrolltime>
@@ -88,6 +110,15 @@
             {% include "includes/hub_focusedlayout_ar16x9.xml.tpl" %}
         </control>
     </control>
+    <!-- Pitch top-up for types taller than the square baseline above; absent entirely for
+         square, so it doesn't add a second itemgap on top of an already-correct pitch. -->
+    {% for display_type, extra_height in [('poster', 90), ('ar16x9', 35)] %}
+    <control type="group" id="{{ spacer_id }}">
+        <visible>Integer.IsGreater(Container({{ hub_id }}).NumItems,0) + String.IsEmpty(Window.Property(drawing)) + String.IsEqual(Window.Property(hub.display.{{ hub_id }}),{{ display_type }})</visible>
+        <width>1920</width>
+        <height>{{ vscale(extra_height) }}</height>
+    </control>
+    {% endfor %}
     {% endwith %}
     {% endfor %}
 
