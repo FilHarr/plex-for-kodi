@@ -1,8 +1,16 @@
 {% extends "default.xml.tpl" %}
 {% block headers %}<defaultcontrol>100</defaultcontrol>{% endblock %}
+{% block header_topleft %}{% endblock %}
+{% block header %}
+    {{ super() }}
+    {% include "includes/sidebar.xml.tpl" %}
+{% endblock header %}
 {% block content %}
 <control type="group" id="50">
-    <posx>0</posx>
+    <!-- Slide right while the sidebar rail is expanded (focused), matching every other ported screen. -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column - see includes/sidebar.xml.tpl. -->
+    <posx>60</posx>
     <posy>{{ vscale(135) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
@@ -51,6 +59,7 @@
             <height>{{ vscale(145) }}</height>
             <onup>200</onup>
             <onright>101</onright>
+            <onleft>9000</onleft>
             <itemgap>-50</itemgap>
             <orientation>horizontal</orientation>
             <align>center</align>
@@ -69,7 +78,9 @@
     <control type="group" id="100">
         <visible>Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
         <defaultcontrol>101</defaultcontrol>
-        <posx>750</posx>
+        <!-- 690, not 750: offset -60 to cancel out group 50's own +60 sidebar-clearance shift, so this
+             stays flush with the screen's right edge like it was before the sidebar (750+1170=1920). -->
+        <posx>690</posx>
         <posy>0</posy>
         <width>1170</width>
         <height>1080</height>
