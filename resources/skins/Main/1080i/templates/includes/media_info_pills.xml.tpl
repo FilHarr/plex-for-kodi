@@ -48,7 +48,8 @@
             <aligny>center</aligny>
             <scroll>true</scroll>
             <scrollspeed>35</scrollspeed>
-            <textcolor>FFFFFFFF</textcolor>
+            <textcolor>DDFFFFFF</textcolor>
+            <shadowcolor>66000000</shadowcolor>
             <label>$INFO[{{ propref|default("Window.Property") }}(video.res)]$INFO[{{ propref|default("Window.Property") }}(video.rendering), ]</label>
         </control>
     </control>
@@ -71,7 +72,8 @@
             <aligny>center</aligny>
             <scroll>true</scroll>
             <scrollspeed>35</scrollspeed>
-            <textcolor>FFFFFFFF</textcolor>
+            <textcolor>DDFFFFFF</textcolor>
+            <shadowcolor>66000000</shadowcolor>
             <label>$INFO[{{ propref|default("Window.Property") }}(audio)]</label>
         </control>
     </control>
@@ -94,7 +96,8 @@
             <aligny>center</aligny>
             <scroll>true</scroll>
             <scrollspeed>35</scrollspeed>
-            <textcolor>FFFFFFFF</textcolor>
+            <textcolor>DDFFFFFF</textcolor>
+            <shadowcolor>66000000</shadowcolor>
             <label>$INFO[{{ propref|default("Window.Property") }}(subtitles)]</label>
         </control>
     </control>

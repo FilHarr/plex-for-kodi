@@ -17,7 +17,9 @@
     <!-- User button at top (overlays avatar area) -->
     <control type="button" id="202">
         <posx>8</posx>
-        <posy>{{ vscale(30) }}</posy>
+        <!-- posy=42, not 30: measured against official Plex, the avatar's center sits at y=74, not the
+             62 this (and the avatar group below, which this button overlays) computed to. -->
+        <posy>{{ vscale(42) }}</posy>
         <width>284</width>
         <height>{{ vscale(64) }}</height>
         <font>font10</font>
@@ -36,7 +38,10 @@
     <!-- User avatar area at top (visual overlay, not focusable) -->
     <control type="group">
         <posx>0</posx>
-        <posy>{{ vscale(30) }}</posy>
+        <!-- posy=42, not 30: see button 202's own comment above - moves the 44-tall avatar image (itself
+             at posy=10 within this group) down 12px so its center lands at y=74, matching official
+             Plex's own measured avatar position (was y=62). -->
+        <posy>{{ vscale(42) }}</posy>
         <width>300</width>
         <height>{{ vscale(80) }}</height>
         <!-- Avatar image (always visible) -->
@@ -89,9 +94,14 @@
     <!-- Section list (sidebar items) -->
     <control type="fixedlist" id="9001">
         <posx>0</posx>
-        <posy>{{ vscale(120) }}</posy>
+        <!-- posy=118, barely changed from 120: with the 88-tall rows below (was 72), row 1's center
+             lands at 118+44=162, matching official Plex's own measured first-icon (search) position.
+             The pitch change below does almost all the work here, not this. -->
+        <posy>{{ vscale(118) }}</posy>
         <width>300</width>
-        <height>{{ vscale(860) }}</height>
+        <!-- height=792 (9 items x 88), not 860: matches the real content height under the new pitch
+             below - cosmetic, 860 wasn't causing any visible problem, just more slack than needed. -->
+        <height>{{ vscale(792) }}</height>
         <onright>50</onright>
         <onup>202</onup>
         <ondown>201</ondown>
@@ -101,18 +111,22 @@
         <movement>6</movement>
         <pagecontrol>0</pagecontrol>
         <!-- SIDEBAR ITEM LAYOUT (unfocused list) -->
-        <itemlayout height="{{ vscale(72) }}">
+        <!-- height=88, not 72: measured against official Plex, icon-to-icon pitch is a very consistent
+             88px (confirmed across 7 consecutive gaps, +/-1px) - fixedlist has no separate item-gap
+             control, the item height IS the pitch. Every posy below that was tuned against the old
+             72-tall row is recentered against this new 88-tall one in the same ratio. -->
+        <itemlayout height="{{ vscale(88) }}">
             <control type="group">
                 <visible>!String.IsEmpty(ListItem.Property(item))</visible>
                 <posx>0</posx>
                 <posy>0</posy>
                 <width>300</width>
-                <height>{{ vscale(72) }}</height>
+                <height>{{ vscale(88) }}</height>
                 <!-- Active indicator bar (left edge) -->
                 <control type="image">
                     <visible>!String.IsEmpty(ListItem.Property(is.active))</visible>
                     <posx>0</posx>
-                    <posy>{{ vscale(16) }}</posy>
+                    <posy>{{ vscale(24) }}</posy>
                     <width>3</width>
                     <height>{{ vscale(40) }}</height>
                     <texture>script.plex/white-square.png</texture>
@@ -121,7 +135,7 @@
                 <!-- Section icon (always visible) -->
                 <control type="image">
                     <posx>26</posx>
-                    <posy>{{ vscale(22) }}</posy>
+                    <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
                     <height>{{ vscale(28) }}</height>
                     <texture>$INFO[ListItem.Icon]</texture>
@@ -131,7 +145,7 @@
                 <control type="image">
                     <visible>!String.IsEmpty(ListItem.Property(is.active))</visible>
                     <posx>26</posx>
-                    <posy>{{ vscale(22) }}</posy>
+                    <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
                     <height>{{ vscale(28) }}</height>
                     <texture>$INFO[ListItem.Icon]</texture>
@@ -141,7 +155,7 @@
                 <control type="image">
                     <visible>!String.IsEmpty(ListItem.Property(is.mapped)) + String.IsEmpty(ListItem.Property(is.mapped.broken))</visible>
                     <posx>46</posx>
-                    <posy>{{ vscale(18) }}</posy>
+                    <posy>{{ vscale(26) }}</posy>
                     <width>8</width>
                     <height>{{ vscale(8) }}</height>
                     <texture>script.plex/white-square-rounded-4r.png</texture>
@@ -150,7 +164,7 @@
                 <control type="image">
                     <visible>!String.IsEmpty(ListItem.Property(is.mapped.broken))</visible>
                     <posx>46</posx>
-                    <posy>{{ vscale(18) }}</posy>
+                    <posy>{{ vscale(26) }}</posy>
                     <width>8</width>
                     <height>{{ vscale(8) }}</height>
                     <texture>script.plex/white-square-rounded-4r.png</texture>
@@ -162,7 +176,7 @@
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
-                    <height>{{ vscale(72) }}</height>
+                    <height>{{ vscale(88) }}</height>
                     <font>font10</font>
                     <align>left</align>
                     <aligny>center</aligny>
@@ -172,18 +186,18 @@
             </control>
         </itemlayout>
         <!-- SIDEBAR FOCUSED ITEM LAYOUT -->
-        <focusedlayout height="{{ vscale(72) }}">
+        <focusedlayout height="{{ vscale(88) }}">
             <control type="group">
                 <visible>!String.IsEmpty(ListItem.Property(item))</visible>
                 <posx>0</posx>
                 <posy>0</posy>
                 <width>300</width>
-                <height>{{ vscale(72) }}</height>
+                <height>{{ vscale(88) }}</height>
                 <!-- Focus highlight background (only when list itself has focus) -->
                 <control type="image">
                     <visible>Control.HasFocus(9001)</visible>
                     <posx>8</posx>
-                    <posy>{{ vscale(6) }}</posy>
+                    <posy>{{ vscale(14) }}</posy>
                     <width>284</width>
                     <height>{{ vscale(60) }}</height>
                     <texture border="10">script.plex/white-square-rounded.png</texture>
@@ -193,7 +207,7 @@
                 <control type="image">
                     <visible>!String.IsEmpty(ListItem.Property(is.active))</visible>
                     <posx>0</posx>
-                    <posy>{{ vscale(16) }}</posy>
+                    <posy>{{ vscale(24) }}</posy>
                     <width>3</width>
                     <height>{{ vscale(40) }}</height>
                     <texture>script.plex/white-square.png</texture>
@@ -203,7 +217,7 @@
                 <control type="image">
                     <visible>Control.HasFocus(9001) | !String.IsEmpty(ListItem.Property(is.active))</visible>
                     <posx>26</posx>
-                    <posy>{{ vscale(22) }}</posy>
+                    <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
                     <height>{{ vscale(28) }}</height>
                     <texture>$INFO[ListItem.Icon]</texture>
@@ -213,7 +227,7 @@
                 <control type="image">
                     <visible>!Control.HasFocus(9001) + String.IsEmpty(ListItem.Property(is.active))</visible>
                     <posx>26</posx>
-                    <posy>{{ vscale(22) }}</posy>
+                    <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
                     <height>{{ vscale(28) }}</height>
                     <texture>$INFO[ListItem.Icon]</texture>
@@ -223,7 +237,7 @@
                 <control type="image">
                     <visible>!String.IsEmpty(ListItem.Property(is.mapped)) + String.IsEmpty(ListItem.Property(is.mapped.broken))</visible>
                     <posx>46</posx>
-                    <posy>{{ vscale(18) }}</posy>
+                    <posy>{{ vscale(26) }}</posy>
                     <width>8</width>
                     <height>{{ vscale(8) }}</height>
                     <texture>script.plex/white-square-rounded-4r.png</texture>
@@ -232,7 +246,7 @@
                 <control type="image">
                     <visible>!String.IsEmpty(ListItem.Property(is.mapped.broken))</visible>
                     <posx>46</posx>
-                    <posy>{{ vscale(18) }}</posy>
+                    <posy>{{ vscale(26) }}</posy>
                     <width>8</width>
                     <height>{{ vscale(8) }}</height>
                     <texture>script.plex/white-square-rounded-4r.png</texture>
@@ -244,7 +258,7 @@
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
-                    <height>{{ vscale(72) }}</height>
+                    <height>{{ vscale(88) }}</height>
                     <font>font10</font>
                     <align>left</align>
                     <aligny>center</aligny>
@@ -259,7 +273,10 @@
     <!-- Server button at bottom of sidebar -->
     <control type="button" id="201">
         <posx>8</posx>
-        <posy>{{ vscale(990) }}</posy>
+        <!-- posy=1009, not 990: measured against official Plex, the bottom gear icon's center sits at
+             y=1034, not the 1015 this (and the icon+name overlay group below, which this button
+             overlays) computed to. -->
+        <posy>{{ vscale(1009) }}</posy>
         <width>284</width>
         <height>{{ vscale(50) }}</height>
         <font>font10</font>
@@ -279,7 +296,10 @@
     <!-- Server icon + name overlay -->
     <control type="group">
         <posx>10</posx>
-        <posy>{{ vscale(990) }}</posy>
+        <!-- posy=1009, not 990: see button 201's own comment above - moves the icon (itself at posy=10
+             within this group) down 19px so its center lands at y=1034, matching official Plex's own
+             measured gear position (was y=1015). -->
+        <posy>{{ vscale(1009) }}</posy>
         <width>280</width>
         <height>{{ vscale(50) }}</height>
         <control type="image">

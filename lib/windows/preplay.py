@@ -103,12 +103,10 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     # re-activate; actively dismiss it on NAV_BACK (see ControlledWindow.onAction)
     dismissOnClose = True
 
-    THUMB_POSTER_DIM = util.scaleResolution(314, 467)
     RELATED_DIM = util.scaleResolution(268, 402)
     EXTRA_DIM = util.scaleResolution(329, 185)
     ROLES_DIM = util.scaleResolution(334, 334)
-    CLEAR_LOGO_DIM = util.scaleResolution(873, 106)
-    CLEAR_LOGO_DIM_NO_POSTER = util.scaleResolution(760, 136)
+    CLEAR_LOGO_DIM = util.scaleResolution(616, 109)
 
     ROLES_LIST_ID = 400
     REVIEWS_LIST_ID = 401
@@ -801,13 +799,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             return
         try:
             if not self.getFocusId() == self.PLAY_BUTTON_ID:
-                # id 302 is duplicated across the poster-shown/poster-hidden button rows (see
-                # xml.tpl), told apart only by <visible>. That condition is keyed off the
-                # hide.poster property we just set, but the GUI thread hasn't necessarily
-                # recalculated visibility yet - SetFocus on the still-invisible copy fails
-                # silently and focus falls through elsewhere (e.g. a hub row, which then
-                # triggers its slide-into-view animation). Wait for either copy to actually
-                # be visible first.
+                # id 302's own <visible> (unavailable/disable_playback) is keyed off properties
+                # we just set, but the GUI thread hasn't necessarily recalculated visibility yet -
+                # SetFocus on a still-invisible control fails silently and focus falls through
+                # elsewhere (e.g. a hub row, which then triggers its slide-into-view animation).
+                # Wait for it to actually be visible first.
                 self.waitForVisibility(self.PLAY_BUTTON_ID)
                 self.setFocusId(self.PLAY_BUTTON_ID)
         except (SystemError, RuntimeError):
@@ -837,9 +833,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
         self.setInfo()
         self.setBoolProperty("initialized", True)
-        # hide.poster (set in setInfo) picks which of the two duplicate-id button rows is
-        # visible; focusing before both properties are set leaves setFocusId(302) resolving
-        # to whichever copy is first in document order, which may never become visible.
         # For watchlist items, PLAY_BUTTON_ID (302) is permanently hidden behind disable_playback
         # - watchlistItemAvailable() above already owns focusing the dynamic wl button (2302-2305)
         # once its availability check resolves, so waiting on 302 here would just block on a
@@ -856,11 +849,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         if not skip_bg:
             self.updateBackgroundFrom(self.video)
         self.setProperty('title', self.video.title)
-        willHidePoster = util.getSetting('hide_poster_with_logo', True)
-        logoDim = willHidePoster and self.CLEAR_LOGO_DIM_NO_POSTER or self.CLEAR_LOGO_DIM
-        logo = util.clearLogoFrom(self.video, *logoDim)
+        logo = util.clearLogoFrom(self.video, *self.CLEAR_LOGO_DIM)
         self.setProperty('clear.logo', logo)
-        self.setBoolProperty('hide.poster', bool(logo) and willHidePoster)
         self.setProperty('duration', self.video.duration and util.durationToText(self.video.duration.asInt()))
         self.setProperty('summary', self.video.summary.strip().replace('\t', ' '))
         self.setProperty('unwatched', not self.video.isWatched and '1' or '')
@@ -876,7 +866,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                          writers and u'{0}{1}    {2}'.format(directors and '    ' or '', writersLabel, writers) or '')
 
         self.setProperty('title', self.video.defaultTitle)
-        self.setProperty('thumb', self.video.thumb.asTranscodedImageURL(*self.THUMB_POSTER_DIM))
         genres = u' / '.join([g.tag for g in self.video.genres()][:3])
         self.setProperty('info', genres)
         self.setProperty('date', self.video.year)

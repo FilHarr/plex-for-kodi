@@ -42,12 +42,17 @@
         <effect type="slide" end="0,{{ vscale(-500) }}" time="200" tween="quadratic" easing="out"/>
     </animation>
 
-    <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column, matching the same
-         resting-position shift Home/Library made when they adopted the rail (e.g.
-         script-plex-posters.xml.tpl's group 50 also moved from 0 to 60). Every child below is
-         positioned relative to this group, so the shift applies uniformly without touching any
-         of their own pixel-tuned offsets. -->
-    <posx>60</posx>
+    <!-- posx=52, not 60: 60 cleared the collapsed sidebar rail's icon column (matching the same
+         resting-position shift Home/Library made when they adopted the rail - e.g.
+         script-plex-posters.xml.tpl's group 50 also moved from 0 to 60), but measured against real
+         official Plex screenshots the resulting content column sat a consistent ~8px right of
+         Plex's own (median x=122-123 here vs. x=114-115 there, measured per synopsis text row
+         across two titles). 52 closes that gap. Every child below is positioned relative to this
+         group, so the shift applies uniformly without touching any of their own pixel-tuned
+         offsets - except includes/media_info_pills.xml.tpl's posx, which deliberately cancels this
+         exact value to stay flush with the screen's right edge and must move with it (see that
+         include's own call below). -->
+    <posx>52</posx>
     <posy>{{ vscale(155) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
@@ -57,16 +62,15 @@
             <visible>!String.IsEmpty(Window.Property(initialized))</visible>
             <defaultcontrol>302</defaultcontrol>
             <posx>22</posx>
-            <!-- 481, not 441: the button textures are 180x145 source art stretched into a 152x121 box
+            <!-- 415, not the old 481: raised to sit under the (now higher, narrower) summary box like
+                 official Plex's own button row does, instead of being anchored a fixed distance above the
+                 cast row below. The button textures are 180x145 source art stretched into a 152x121 box
                  with no aspectratio, and the icon glyphs don't fill that box - play.png's opaque pixels only
                  reach row 92 of 145 (~77px once stretched to 121). This group sits inside id 50 (posy 155),
-                 so the icon's visible bottom is 155+481+77=713 in window coords, a deliberate 73px perceived
-                 gap above the cast row's thumbnails (top at 786, itself 25px lower than its original
-                 position). Same posx/posy regardless of the poster - this used to be a separate, further-
-                 right position (428,451) while the poster was shown, but the poster's own height (467,
-                 after two 5% shrinks) now clears this row's top (481) by 14px, so unifying on the
-                 poster-hidden position no longer causes an overlap. -->
-            <posy>{{ vscale(481) }}</posy>
+                 so the icon's visible bottom is 155+415+77=647 in window coords - the gap above the cast
+                 row's thumbnails (top at 786) grows to ~139px, closer to official Plex's own proportionally
+                 larger button-row-to-cast-row gap than the old tight 73px. -->
+            <posy>{{ vscale(415) }}</posy>
             <width>1000</width>
             <height>{{ vscale(145) }}</height>
             <onup>200</onup>
@@ -97,50 +101,21 @@
             <posy>0</posy>
             <width>1920</width>
             <height>{{ vscale(600) }}</height>
-            <control type="group">
-                <visible>String.IsEmpty(Window.Property(hide.poster))</visible>
-                <control type="image">
-                    <posx>60</posx>
-                    <posy>0</posy>
-                    <!-- Another 5% down from 330x492 (347x518 originally), top-left pinned at (60,0) -->
-                    <width>314</width>
-                    <height>{{ vscale(467) }}</height>
-                    <texture background="true">script.plex/thumb_fallbacks/movie.png</texture>
-                    <animation effect="fade" start="0" end="100" time="0" delay="500">WindowOpen</animation>
-                    <aspectratio>scale</aspectratio>
-                </control>
-                <control type="image">
-                    <posx>60</posx>
-                    <posy>0</posy>
-                    <!-- Another 5% down from 330x492 (347x518 originally), top-left pinned at (60,0) -->
-                    <width>314</width>
-                    <height>{{ vscale(467) }}</height>
-                    <texture background="true">$INFO[Window.Property(thumb)]</texture>
-                    <aspectratio>scale</aspectratio>
-                </control>
-
-            </control>
-            <!-- Everything from the title down to the summary is duplicated at two x-offsets (466 with the
-                 poster, 60 filling its slot when hidden) and switched with <visible>, since posx/width can't
-                 take a condition in Kodi. The y position and height of the meta row, summary, and streams
-                 below now always match the poster-hidden layout in both states - only x differs. -->
-            <!-- Fills the same box as the clear logo below, on the same baseline, so both variants put the
-                 title in one place at one weight. No grouplist any more: nothing shares this row, and a
-                 grouplist would clip the taller box. -->
+            <!-- No more poster-thumbnail fallback: the hero-art box (see default_background.xml.tpl,
+                 anchored top-right at x691-1920/y0-691) covers what the small corner poster used to be
+                 for, and title/clearlogo/meta/rating/summary now have a single fixed position and width
+                 instead of being duplicated at two x-offsets and switched with <visible>. Column runs
+                 x60-618 (width 558) inside this group (absolute x112-670 on screen, group 50 now at
+                 posx=52) to clear the hero-art box's left edge (691) with a 20px margin - width bumped
+                 558 from 550 alongside group 50's own posx move from 60 to 52, so the column's right edge
+                 stays exactly where it was (670) while its left edge gains the same 8px that move closed
+                 up, rather than just leaving that 8px as unused margin. -->
             <control type="label">
-                <visible>String.IsEmpty(Window.Property(hide.poster)) + String.IsEmpty(Window.Property(clear.logo))</visible>
-                <!-- 433, not 466: shifted left 33px (347-314) to close the gap the two poster shrinks
-                     opened up between the poster's right edge and this column - see the poster's own
-                     width comment above. -->
-                <posx>433</posx>
+                <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
+                <posx>60</posx>
                 <posy>0</posy>
-                <!-- 880, not the row's old 1226 (or 940, pre-sidebar): this box reaches up into the
-                     ratings' band (now x1366-1800, y4-36, shifted -60 to cancel group 50's sidebar-
-                     clearance shift - see that comment) and at font45 a title gets there easily;
-                     433+880 stops 53px short, more margin than before the sidebar (previously 20px) now
-                     that this column moved left without shrinking. -->
-                <width>880</width>
-                <height>{{ vscale(68) }}</height>
+                <width>616</width>
+                <height>{{ vscale(109) }}</height>
                 <font>font45</font>
                 <align>left</align>
                 <aligny>bottom</aligny>
@@ -149,64 +124,37 @@
                 <textcolor>FFFFFFFF</textcolor>
                 <label>$INFO[Window.Property(title)]</label>
             </control>
-            <control type="label">
-                <visible>!String.IsEmpty(Window.Property(hide.poster)) + String.IsEmpty(Window.Property(clear.logo))</visible>
+            <!-- 616x109, not 760x136: shrunk from the pre-hero-art size so its right edge intrudes on the
+                 hero-art box's left edge (691) as little as the 20% cap from earlier in this session
+                 allows (616 is a ~19% reduction off 760, still within that cap - the extra 8px over the
+                 616-width figure this shrink alone would give (608) comes from the same left-edge column
+                 width bump as the title label above, not from loosening the cap). preplay.py's
+                 CLEAR_LOGO_DIM requests the transcoded clearlogo at this same 616x109 size. -->
+            <control type="image">
+                <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
                 <posx>60</posx>
                 <posy>0</posy>
-                <width>940</width>
-                <height>{{ vscale(136) }}</height>
-                <font>font45</font>
-                <align>left</align>
-                <aligny>bottom</aligny>
-                <scroll>true</scroll>
-                <scrollspeed>35</scrollspeed>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>$INFO[Window.Property(title)]</label>
-            </control>
-            <!-- Outside any grouplist on purpose: a grouplist clips its children to its own bounds and this
-                 box is taller than the row. Top sits on the artwork's baseline at 0, bottom at 106, sized to
-                 leave only a 20px gap above the meta row at 126 (poster-shown yoff=46) - taller than the
-                 title's 68 box above, so the two are no longer baseline-matched. Width scaled up by the same
-                 106/68 ratio (560 -> 873) to keep the box's own aspect ratio unchanged; preplay.py's
-                 CLEAR_LOGO_DIM requests the transcoded clearlogo at this same 873x106 size. -->
-            <control type="image">
-                <visible>String.IsEmpty(Window.Property(hide.poster)) + !String.IsEmpty(Window.Property(clear.logo))</visible>
-                <!-- 433, not 466: shifted left 33px (347-314) to close the gap the two poster shrinks
-                     opened up between the poster's right edge and this column. -->
-                <posx>433</posx>
-                <posy>0</posy>
-                <width>873</width>
-                <height>{{ vscale(106) }}</height>
-                <aspectratio align="left" aligny="bottom">keep</aspectratio>
-                <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
-            </control>
-            <control type="image">
-                <visible>!String.IsEmpty(Window.Property(hide.poster)) + !String.IsEmpty(Window.Property(clear.logo))</visible>
-                <posx>60</posx>
-                <posy>0</posy>
-                <width>760</width>
-                <height>{{ vscale(136) }}</height>
+                <width>616</width>
+                <height>{{ vscale(109) }}</height>
                 <aspectratio align="left" aligny="bottom">keep</aspectratio>
                 <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
             </control>
             {% include "includes/pp_meta_row.xml.tpl" %}
 
+            <!-- Moved from top-right (near the clock) to the left column, directly under the metadata
+                 lines, matching official Plex's own placement. -->
             <control type="grouplist">
                 <visible>!String.IsEmpty(Window.Property(rating)) | !String.IsEmpty(Window.Property(rating2))</visible>
-                <!-- 1366, not 1426: offset -60 to cancel out group 50's own +60 sidebar-clearance
-                     shift, so this stays flush with the screen's right edge like it was before the
-                     sidebar (see group 50's own posx comment above). -->
-                <posx>1366</posx>
-                <posy>4</posy>
-                <width>434</width>
+                <posx>60</posx>
+                <posy>{{ vscale(191) }}</posy>
+                <width>558</width>
                 <height>{{ vscale(32) }}</height>
-                <align>right</align>
+                <align>left</align>
                 <itemgap>15</itemgap>
                 <orientation>horizontal</orientation>
                 <usecontrolcoords>true</usecontrolcoords>
                 <control type="image">
                     <visible>!String.IsEmpty(Window.Property(rating))</visible>
-                    <posy>2</posy>
                     <width>63</width>
                     <height>{{ vscale(30) }}</height>
                     <texture fallback="script.plex/ratings/other/image.rating.png">$INFO[Window.Property(rating.image)]</texture>
@@ -216,14 +164,13 @@
                     <visible>!String.IsEmpty(Window.Property(rating))</visible>
                     <width>auto</width>
                     <height>{{ vscale(30) }}</height>
-                    <font>font12</font>
+                    <font>font8</font>
                     <align>left</align>
-                    <textcolor>FFFFFFFF</textcolor>
+                    <textcolor>FFD2CCCE</textcolor>
                     <label>$INFO[Window.Property(rating)]</label>
                 </control>
                 <control type="image">
                     <visible>!String.IsEmpty(Window.Property(rating2))</visible>
-                    <posy>2</posy>
                     <width>40</width>
                     <height>{{ vscale(30) }}</height>
                     <texture fallback="script.plex/ratings/other/image.rating.png">$INFO[Window.Property(rating2.image)]</texture>
@@ -233,9 +180,9 @@
                     <visible>!String.IsEmpty(Window.Property(rating2))</visible>
                     <width>auto</width>
                     <height>{{ vscale(30) }}</height>
-                    <font>font12</font>
+                    <font>font8</font>
                     <align>left</align>
-                    <textcolor>FFFFFFFF</textcolor>
+                    <textcolor>FFD2CCCE</textcolor>
                     <label>$INFO[Window.Property(rating2)]</label>
                 </control>
                 <control type="image">
@@ -248,19 +195,22 @@
             </control>
             {% block summary %}
                 <control type="textbox">
-                    <!-- Single control, not duplicated: width/height are identical in both poster states,
-                         only posx/posy shift, so a zero-duration Conditional slide does the job of the
-                         <visible>-switched pair used where size also changes (title/clearlogo above). -->
-                    <animation effect="slide" end="-373,{{ vscale(30) }}" time="0" condition="!String.IsEmpty(Window.Property(hide.poster))">Conditional</animation>
-                    <!-- 433, not 466: shifted left 33px (347-314) to close the gap the two poster
-                         shrinks opened up between the poster's right edge and this column. -->
-                    <posx>433</posx>
-                    <posy>{{ vscale(176) }}</posy>
-                    <width>1080</width>
-                    <height>{{ vscale(152) }}</height>
+                    <!-- 708x90, matching official Plex's own measured synopsis box (was 550x152 -
+                         narrower and taller than Plex's, per feedback), plus the same 8px left-edge
+                         column-width bump every other control above the button bar got when group 50's
+                         posx moved from 60 to 52. Right edge (112+708=820 on screen) reaches 129px into
+                         the hero-art box's left edge (691) - same as the clearlogo/metadata column now
+                         that it's also 708 wide (see pp_meta_row.xml.tpl) - but that same box is masked
+                         to fade to transparent along its left edge (see default_background.xml.tpl), so
+                         text overlapping that fade zone blends rather than crosses a hard image edge. -->
+                    <posx>60</posx>
+                    <posy>{{ vscale(233) }}</posy>
+                    <width>708</width>
+                    <height>{{ vscale(90) }}</height>
                     <font>font12</font>
                     <align>left</align>
-                    <textcolor>FFFFFFFF</textcolor>
+                    <textcolor>FFD2CCCE</textcolor>
+                    <shadowcolor>66000000</shadowcolor>
                     <scrolltime>200</scrolltime>
                     <autoscroll delay="2000" time="2000" repeat="10000">!Control.HasFocus(13)</autoscroll>
                     <label>$INFO[Window.Property(summary)]</label>
@@ -271,19 +221,21 @@
                  Kodi/ibis blocks can only be defined once, so a subclass's override would only ever reach
                  one of two physical copies. Now laid out horizontally (see includes/media_info_pills.xml.tpl
                  for how/why the pills themselves are sized - position is the only thing pre_play-specific
-                 left here). posx=1095 is 1920 (screen width) minus the row's own 765 width (200 + 295 + 260
-                 + 2*5 itemgap) minus 60 to cancel out group 50's own +60 sidebar-clearance shift, so its
-                 right edge still sits flush with the screen's right edge like it did before the sidebar.
-                 posy=498 puts it where the subtitle pill (the last of the three) used to sit back when this
-                 was a vertical stack starting at posy=426 (426 + 30 + 6 + 30 + 6 = 498). The wrapping
-                 group's own posy=30 used to be a conditional slide applied only while the poster was
-                 hidden, to keep vertical rhythm with the row above it; now applies unconditionally so this
-                 row (and pre_play-wl's availability row, which shares this same wrapper) sits at the same
-                 place regardless of the poster, matching the button row's own unification above. -->
+                 left here). posx=1103 is 1920 (screen width) minus the row's own 765 width (200 + 295 + 260
+                 + 2*5 itemgap) minus 52 to cancel out group 50's own +52 sidebar-clearance shift, so its
+                 right edge still sits flush with the screen's right edge like it did before the sidebar
+                 (52, not the original 60, since group 50's own posx moved - see that control's own
+                 comment). posy=417 lands the row's bottom at absolute y=632, matching official Plex's own
+                 measured pill-row position (614-632) and sitting 59px above the hero-art box's bottom edge
+                 (691) - not the old legacy-vertical-stack-derived 498. The wrapping group's own posy=30
+                 used to be a conditional slide applied only while the poster was hidden, to keep vertical
+                 rhythm with the row above it; now applies unconditionally so this row (and pre_play-wl's
+                 availability row, which shares this same wrapper) sits at the same place regardless of the
+                 poster, matching the button row's own unification above. -->
             <control type="group">
                 <posy>{{ vscale(30) }}</posy>
             {% block streams %}
-                {% include "includes/media_info_pills.xml.tpl" with posx=1095 & posy=498 %}
+                {% include "includes/media_info_pills.xml.tpl" with posx=1103 & posy=417 %}
             {% endblock %}
             </control>
         </control>
@@ -304,6 +256,21 @@
             <defaultcontrol>400</defaultcontrol>
             <width>1920</width>
             <height>{{ vscale(446) }}</height>
+            <!-- Same heading pattern/string ("Credits", 33609) as the episode screen's own Roles section
+                 (script-plex-episodes.xml.tpl id 502) and seasons.xml.tpl id 501 - Plex was missing one
+                 here entirely. -->
+            <control type="label">
+                <posx>60</posx>
+                <posy>{{ vscale(5) }}</posy>
+                <width>1000</width>
+                <height>{{ vscale(80) }}</height>
+                <font>font12</font>
+                <align>left</align>
+                <aligny>center</aligny>
+                <textcolor>FFFFFFFF</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>[UPPERCASE][B]$ADDON[script.plexmod 33609][/B][/UPPERCASE]</label>
+            </control>
             <control type="list" id="400">
                 <posx>0</posx>
                 <posy>25</posy>

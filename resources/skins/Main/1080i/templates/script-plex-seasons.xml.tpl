@@ -519,7 +519,8 @@
                 <align>left</align>
                 <aligny>center</aligny>
                 <textcolor>FFFFFFFF</textcolor>
-                <label>[UPPERCASE]$ADDON[script.plexmod 32419][/UPPERCASE]</label>
+                <shadowcolor>66000000</shadowcolor>
+                <label>[UPPERCASE][B]$ADDON[script.plexmod 33609][/B][/UPPERCASE]</label>
             </control>
             <control type="list" id="401">
                 <!-- posx=40, not 0 (width shrunk to match): see list 400's comment above for the full

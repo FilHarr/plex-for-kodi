@@ -729,7 +729,8 @@
                 <align>left</align>
                 <aligny>center</aligny>
                 <textcolor>FFFFFFFF</textcolor>
-                <label>[UPPERCASE]$ADDON[script.plexmod 33609][/UPPERCASE]</label>
+                <shadowcolor>66000000</shadowcolor>
+                <label>[UPPERCASE][B]$ADDON[script.plexmod 33609][/B][/UPPERCASE]</label>
             </control>
             <control type="list" id="402">
                 <posx>0</posx>

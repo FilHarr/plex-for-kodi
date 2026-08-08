@@ -196,9 +196,8 @@ class XMLBase(object):
 
 class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
     __slots__ = ("_closing", "_winID", "started", "finishedInit", "dialogProps", "isOpen", "_errored",
-                 "_closeSignalled")
+                 "_closeSignalled", "_bgPainted", "_bgSyncGen")
     supportsAutoPlay = False
-    ULTRABLUR_TINT_ALPHA = '66'  # hex alpha (~40%) applied atop each corner's own gradient falloff
 
     def __init__(self, *args, **kwargs):
         BaseFunctions.__init__(self)
@@ -208,6 +207,8 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self._winID = None
         self.started = False
         self.finishedInit = False
+        self._bgPainted = False
+        self._bgSyncGen = 0
         self.dialogProps = kwargs.get("dialog_props", None)
 
         carryProps = kwargs.get("window_props", None)
@@ -337,17 +338,22 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
 
     def updateBackgroundFrom(self, ds):
         if util.addonSettings.dynamicBackgrounds and ds:
-            self._updateUltraBlurFrom(ds)
-            return self.windowSetBackground(util.backgroundFromArt(ds.get('art', ds.get('parentArt', ds.get('grandparentArt', None))), width=self.width, height=self.height))
-
-    def _updateUltraBlurFrom(self, ds):
-        colors = getattr(ds, 'ultraBlurColors', None)
-        for corner in ('topLeft', 'topRight', 'bottomLeft', 'bottomRight'):
-            hexColor = colors.get(corner) if colors else None
-            self.setProperty(
-                'ultrablur_{0}'.format(corner.lower()),
-                self.ULTRABLUR_TINT_ALPHA + hexColor if hexColor else ''
-            )
+            art = ds.get('art', ds.get('parentArt', ds.get('grandparentArt', None)))
+            # 4-corner tinted-panel colors, Phase 1 approximation of official Plex's native
+            # per-corner art color extraction - see docs/notes/hero-art-background-status.md.
+            # getattr, not ds.get(): ultraBlurColors is a plain instance attribute only present on
+            # Video subclasses (Movie/Show/Season/Episode/Clip), absent entirely on e.g. Photo, and
+            # PlexObject.get() would wrap a missing key in a truthy PlexValue instead of None.
+            corners = util.backgroundPanelCorners(getattr(ds, 'ultraBlurColors', None))
+            for prop, corner in (('background_panel_tl', 'topLeft'), ('background_panel_tr', 'topRight'),
+                                  ('background_panel_bl', 'bottomLeft'), ('background_panel_br', 'bottomRight')):
+                # always set, even to '' - established hide-via-empty-property idiom this skin already
+                # uses, needed so a title with no ultraBlurColors clears colors left by a prior title.
+                self.setProperty(prop, corners.get(corner, ''))
+            # opacity=100: this art is now a focal, vivid box next to its own color panel, not a
+            # full-bleed wash with text floating on top anywhere - backgroundArtOpacityAmount2's
+            # server-side dimming was designed for that older look and just reads as muddy here.
+            return self.windowSetBackground(util.backgroundFromArt(art, width=self.width, height=self.height, opacity=100))
 
     def windowSetBackground(self, value):
         if not util.addonSettings.dbgCrossfade:
@@ -366,16 +372,46 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             return BG_NA
 
         cur1 = self.getProperty('background')
-        if not cur1:
+        # window ids get reused, so on this window instance's own first background set, cur1
+        # here (and LAST_BG_URL below) may just be leftover from whatever window last held this
+        # id - not this window's own prior state. Jump straight to the new value rather than
+        # crossfading from that stale one.
+        instant = not self._bgPainted
+        self._bgPainted = True
+        if instant or not cur1:
             self.setProperty("background_static", value)
             self.setProperty("background", value)
 
         elif LAST_BG_URL != value:
             self.setProperty("background_static", LAST_BG_URL)
             self.setProperty("background", value)
+            self._scheduleBackgroundStaticSync(value)
 
         LAST_BG_URL = value
         return value
+
+    def _scheduleBackgroundStaticSync(self, value):
+        # default_background.xml.tpl's crossfading 'background' layer and its slower-fading
+        # 'background_static' counterpart underneath both use the exact same edge-fading vignette
+        # mask, so once the fade above finishes, background_static needs to catch up to the same
+        # value - otherwise it's left permanently one change behind, and its still-partially-
+        # transparent edges keep showing that now-stale (previous item's) art bleeding through
+        # forever, not just during the transition. Most noticeable when something re-fires this in
+        # quick succession (e.g. scrolling across Home's hub rows) rather than the rarer once-per-
+        # window-open case this crossfade was originally tuned for. 0.5s matches that file's own
+        # <fadetime>500</fadetime> on the crossfading layer; the generation counter drops this sync
+        # if another background change (or window close) supersedes it before it fires - this timer
+        # thread runs detached from the main thread, so 'value' may already be stale by the time it
+        # wakes up.
+        self._bgSyncGen += 1
+        gen = self._bgSyncGen
+
+        def sync():
+            if self._closing or self._bgSyncGen != gen:
+                return
+            self.setProperty("background_static", value)
+
+        threading.Timer(0.5, sync).start()
 
     def doClose(self, **kw):
         force = kw.get('force', True)

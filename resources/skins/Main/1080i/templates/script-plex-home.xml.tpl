@@ -6,15 +6,18 @@
 
     <!-- Dynamic focus animations for hub rows -->
     <!-- Both stages below collapse row 0 out of view and are keyed off ITS actual display type
-         (hub.display.400), not the type of whichever row currently has focus - the -555 "fully
-         collapsed" stage stays flat once focus passes row 1 no matter how much deeper you scroll
-         (every i beyond 1 produces the same effect), so this was never a per-row cumulative
-         slide, just two fixed states sized to how tall row 0 itself is. The collapsed-stage
-         values below are exact: -(row 0's real full pitch), matching the 555/500/445 pitches the
-         hub rows above now render at. The partial-stage values (poster's hand-tuned -345, and
-         ar16x9/square scaled from it by the same 345/555 ratio) are an estimate, not measured -
-         flag if the transition feels off for a non-poster row 0. -->
-    {% for display_type, transitional_end in [('poster', -345), ('ar16x9', -311), ('square', -277)] %}
+         (hub.display.400), not the type of whichever row currently has focus - the collapsed
+         stage stays flat once focus passes row 1 no matter how much deeper you scroll (every i
+         beyond 1 produces the same effect), so this was never a per-row cumulative slide, just
+         two fixed states sized to how tall row 0 itself is. The collapsed-stage values below are
+         exact: -(row 0's real full pitch), matching the 470/500/445 pitches the hub rows above now
+         render at - poster's own spacer shrank from +90 to +5 (and its 555/345 pair to 470/292)
+         once its item layout lost its under-poster label; the 5 is a deliberate small breathing-
+         gap below the poster/progress-bar, not leftover label space. The partial-stage values
+         (originally poster's hand-tuned -345, with ar16x9/square scaled from it by the same
+         345/555 ratio) are an estimate, not measured - flag if the transition feels off for a
+         non-poster row 0. -->
+    {% for display_type, transitional_end in [('poster', -292), ('ar16x9', -311), ('square', -277)] %}
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500) + String.IsEqual(Window.Property(hub.display.400),{{ display_type }})" reversible="true">
         <effect type="slide" end="0,{{ vscale(transitional_end) }}" time="200" tween="sine" easing="inout"/>
     </animation>
@@ -22,7 +25,7 @@
 
     <!-- Subsequent hubs: fully collapse row 0 once focus has passed row 1 -->
     {% for i in range(1, core.hub_count) %}
-    {% for display_type, collapsed_end in [('poster', -555), ('ar16x9', -500), ('square', -445)] %}
+    {% for display_type, collapsed_end in [('poster', -470), ('ar16x9', -500), ('square', -445)] %}
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),{{ i }}) + Control.IsVisible({{ i + 499 }}) + String.IsEqual(Window.Property(hub.display.400),{{ display_type }})" reversible="true">
         <effect type="slide" end="0,{{ vscale(collapsed_end) }}" time="200" tween="sine" easing="inout"/>
     </animation>
@@ -39,7 +42,7 @@
          their own posx reduced by the same 45px this moved right, to keep resting positions
          unchanged (60->15, 55->10). -->
     <posx>100</posx>
-    <posy>{{ vscale(96) }}</posy>
+    <posy>{{ vscale(424) }}</posy>
     <width>2085</width>
     {% with n = core.hub_count %}{% with grouplist_height = n * 555 + 320 %}
     <height>{{ vscale(grouplist_height) }}</height>
@@ -81,11 +84,12 @@
             <posy>0</posy>
             <width>1000</width>
             <height>{{ vscale(87) }}</height>
-            <font>font12</font>
+            <font>font13</font>
             <align>left</align>
             <aligny>center</aligny>
             <textcolor>FFFFFFFF</textcolor>
-            <label>[UPPERCASE]$INFO[Window.Property(hub.{{ hub_id }})][/UPPERCASE]</label>
+            <shadowcolor>66000000</shadowcolor>
+            <label>[B]$INFO[Window.Property(hub.{{ hub_id }})][/B]</label>
         </control>
         <control type="list" id="{{ hub_id }}">
             <posx>0</posx>
@@ -110,9 +114,12 @@
             {% include "includes/hub_focusedlayout_ar16x9.xml.tpl" %}
         </control>
     </control>
-    <!-- Pitch top-up for types taller than the square baseline above; absent entirely for
-         square, so it doesn't add a second itemgap on top of an already-correct pitch. -->
-    {% for display_type, extra_height in [('poster', 90), ('ar16x9', 35)] %}
+    <!-- Pitch top-up for types taller than the square baseline above; absent entirely for square,
+         so it doesn't add a second itemgap on top of an already-correct pitch. Poster's real
+         content (art + progress bar, no more under-poster label) lands right at the 425 baseline
+         itself with essentially no slack, so its own +5 here is purely a deliberate breathing gap
+         before the next row's title, not leftover label space. -->
+    {% for display_type, extra_height in [('poster', 5), ('ar16x9', 35)] %}
     <control type="group" id="{{ spacer_id }}">
         <visible>Integer.IsGreater(Container({{ hub_id }}).NumItems,0) + String.IsEmpty(Window.Property(drawing)) + String.IsEqual(Window.Property(hub.display.{{ hub_id }}),{{ display_type }})</visible>
         <width>1920</width>
@@ -359,6 +366,65 @@
         <width>90</width>
         <height>{{ vscale(38) }}</height>
         <texture diffuse="script.plex/busy-diffuse.png">script.plex/busy.gif</texture>
+    </control>
+</control>
+
+
+<!-- Focused hub item info overlay - clearlogo/title, meta row and summary, matching pre_play's own
+     details block (script-plex-pre_play.xml.tpl) exactly: same posx=52/posy=155 group offset as
+     pre_play's own group id=50, same inner posx=60 controls, so this reads as the same UI language
+     rather than a reinvention. No rating row here (Home has no single focused video the way pre_play
+     does - ratings would only make sense per-hub-item and there's no room to duplicate the rating
+     row per hub), so the summary sits at pre_play's rating-row height (210) instead of its own
+     summary height (252), filling the gap that would otherwise sit empty between the meta row and
+     the hero art below. Driven entirely by the Window properties HomeWindow.setHeroInfo() sets on
+     hub focus change (see home.py); hidden via the hide-via-empty-property idiom until the first hub
+     item is focused. -->
+<control type="group">
+    <!-- Same slide-with-the-sidebar-rail animation as grouplist 50's hub content (see this file's
+         own content block) - this overlay lives in the header block instead, as a sibling rather
+         than a child of that grouplist, so it needs its own copy of the animation to move in sync
+         rather than inheriting it. -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <visible>!String.IsEmpty(Window.Property(title))</visible>
+    <posx>52</posx>
+    <posy>{{ vscale(155) }}</posy>
+    <control type="label">
+        <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
+        <posx>60</posx>
+        <posy>0</posy>
+        <width>616</width>
+        <height>{{ vscale(109) }}</height>
+        <font>font45</font>
+        <align>left</align>
+        <aligny>bottom</aligny>
+        <scroll>true</scroll>
+        <scrollspeed>35</scrollspeed>
+        <textcolor>FFFFFFFF</textcolor>
+        <label>$INFO[Window.Property(title)]</label>
+    </control>
+    <control type="image">
+        <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
+        <posx>60</posx>
+        <posy>0</posy>
+        <width>616</width>
+        <height>{{ vscale(109) }}</height>
+        <aspectratio align="left" aligny="bottom">keep</aspectratio>
+        <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
+    </control>
+    {% include "includes/pp_meta_row.xml.tpl" %}
+    <control type="textbox">
+        <posx>60</posx>
+        <posy>{{ vscale(186) }}</posy>
+        <width>708</width>
+        <height>{{ vscale(90) }}</height>
+        <font>font12</font>
+        <align>left</align>
+        <textcolor>FFD2CCCE</textcolor>
+        <shadowcolor>66000000</shadowcolor>
+        <scrolltime>200</scrolltime>
+        <autoscroll delay="2000" time="2000" repeat="10000"/>
+        <label>$INFO[Window.Property(summary)]</label>
     </control>
 </control>
 

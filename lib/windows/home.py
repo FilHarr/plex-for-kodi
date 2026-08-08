@@ -513,6 +513,10 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
     # Hub base ID - hubs are dynamically generated starting from this ID
     HUB_BASE_ID = 400
 
+    # Same box size pre_play.py's own CLEAR_LOGO_DIM requests, so the hero info overlay's clearlogo
+    # matches pre_play's exactly (see script-plex-home.xml.tpl's hero info group).
+    CLEAR_LOGO_DIM = util.scaleResolution(616, 109)
+
     def getHubDisplayType(self, hub, identifier):
         """Determine the display type for a hub: 'poster', 'ar16x9', or 'square'.
 
@@ -3555,6 +3559,75 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         if item.dataSource != self.lastSection or force:
             self.sectionChanged(force=force)
 
+    def updateHeroFrom(self, ds):
+        """
+        Like updateBackgroundFrom, but also drives the hero info overlay (clearlogo/title, meta
+        row, summary - see script-plex-home.xml.tpl) from the same item. Wraps updateBackgroundFrom
+        rather than folding into it, since that method is shared BaseWindow plumbing used by windows
+        that don't want a text overlay at all. Returns updateBackgroundFrom's own result unchanged,
+        since several call sites key backgroundSet off of it.
+        """
+        result = self.updateBackgroundFrom(ds)
+        self.setHeroInfo(ds)
+        return result
+
+    def setHeroInfo(self, ds):
+        """
+        Populates the same Window properties pre_play.py's setInfo() does for its details block
+        (title/clear.logo/duration/date/content.rating/info/studios/summary), scoped to just what
+        the hero info overlay shows - no rating row here, and no video-only tech pills (video.res
+        etc.), so those are skipped. Hub items aren't always Video subclasses (playlists, artists,
+        albums, people all turn up in various hubs), so every field is read defensively rather than
+        assuming the pre_play-style attributes exist - a non-Video item just leaves those properties
+        empty, which the XML's existing String.IsEmpty visibility guards already treat as "hide this".
+        """
+        if not ds:
+            return
+
+        self.setProperty('title', getattr(ds, 'title', '') or '')
+        self.setProperty('clear.logo', util.clearLogoFrom(ds, *self.CLEAR_LOGO_DIM))
+
+        duration = getattr(ds, 'duration', None)
+        self.setProperty('duration', duration and util.durationToText(duration.asInt()) or '')
+
+        summary = getattr(ds, 'summary', None)
+        self.setProperty('summary', summary and str(summary).strip().replace('\t', ' ') or '')
+
+        year = getattr(ds, 'year', None)
+        self.setProperty('date', year and str(year) or '')
+
+        content_rating = getattr(ds, 'contentRating', None)
+        self.setProperty('content.rating', content_rating and str(content_rating).split('/', 1)[-1] or '')
+
+        # genres is a lazy-reloading method on Show/Episode (video.py Show.genres() reloads the
+        # object if it isn't full yet) but a plain list attribute on Movie, populated straight from
+        # whatever the hub listing response included - no reload fallback there at all. Handling
+        # only the callable case left Movies with permanently empty genres until something else
+        # (e.g. visiting pre_play) reloaded the same cached object in place.
+        genres_attr = getattr(ds, 'genres', None)
+        genres = ''
+        try:
+            genre_list = genres_attr() if callable(genres_attr) else genres_attr
+            if genre_list:
+                genres = u' / '.join([g.tag for g in genre_list][:3])
+        except Exception:
+            util.DEBUG_LOG('setHeroInfo: genres failed for {}', ds)
+        self.setProperty('info', genres)
+
+        self.setProperty('studios', getattr(ds, 'studio', None) or '')
+
+        # Same guard preplay.py's own setInfo() uses: only show "X left" when there's actual
+        # playback progress, not just because the item happens to have a duration.
+        view_offset = getattr(ds, 'viewOffset', None)
+        remaining = ''
+        if view_offset is not None:
+            try:
+                if view_offset.asInt():
+                    remaining = T(33615, "{time} left").format(time=ds.remainingTimeString)
+            except Exception:
+                util.DEBUG_LOG('setHeroInfo: remainingTime failed for {}', ds)
+        self.setProperty('remainingTime', remaining)
+
     def checkHubItem(self, controlID, action=None):
         control = self.hubControls[controlID - 400]
         mli = control.getSelectedItem()
@@ -3568,11 +3641,15 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             pos = control.getSelectedPos()
             if pos is not None and pos > 0:
                 control.selectItem(0)
-                self.updateBackgroundFrom(control[0].dataSource)
+                self.updateHeroFrom(control[0].dataSource)
                 return
             return True
 
-        if util.addonSettings.dynamicBackgrounds and is_valid_mli:
+        if is_valid_mli:
+            # Hero info (title/meta/summary) updates regardless of the dynamicBackgrounds setting -
+            # only the background art panel itself is gated on it (updateBackgroundFrom no-ops
+            # internally when the setting is off, same as every other call site here).
+            self.setHeroInfo(mli.dataSource)
             self.updateBackgroundFrom(mli.dataSource)
 
         if not mli or not mli.getProperty('is.end') or mli.getProperty('is.updating') == '1':
@@ -3587,7 +3664,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                     if (controlID, mlipos) == self._lastSelectedItem:
                         control.selectItem(0)
                         self._lastSelectedItem = (controlID, 0)
-                        self.updateBackgroundFrom(control[0].dataSource)
+                        self.updateHeroFrom(control[0].dataSource)
                         return
                 elif (action == xbmcgui.ACTION_MOVE_LEFT and mlipos == 0
                       and ((controlID, mlipos) == self._lastSelectedItem)):
@@ -3602,7 +3679,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                             control.selectItem(last_item_index)
                             
                         self._lastSelectedItem = (controlID, last_item_index)
-                        self.updateBackgroundFrom(control[last_item_index].dataSource)
+                        self.updateHeroFrom(control[last_item_index].dataSource)
                     else:
                         task = ExtendHubTask().setup(control.dataSource, self.extendHubCallback,
                                                      canceledCallback=lambda hub: mli.setBoolProperty('is.updating',
@@ -4512,7 +4589,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
         for obj in hubitems or hub.items:
             if not self.backgroundSet and not use_reselect_pos:
-                if self.updateBackgroundFrom(obj):
+                if self.updateHeroFrom(obj):
                     self.backgroundSet = True
 
             wide = with_art
@@ -4596,7 +4673,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
                 control.selectItem(last_pos)
                 self._lastSelectedItem = (index + 400, last_pos)
-                if last_pos < control.size() and self.updateBackgroundFrom(control[last_pos].dataSource):
+                if last_pos < control.size() and self.updateHeroFrom(control[last_pos].dataSource):
                     self.backgroundSet = True
                 return
 
@@ -4621,7 +4698,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                         else:
                             return
                 if rk_found:
-                    if pos < control.size() and self.updateBackgroundFrom(control[pos].dataSource):
+                    if pos < control.size() and self.updateHeroFrom(control[pos].dataSource):
                         self.backgroundSet = True
                     return
 
@@ -4634,7 +4711,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 util.DEBUG_LOG("Hub {}: Reselect: We didn't find {} in list, or no item given. "
                                "Reselecting position {}", identifier, rk, pos)
                 control.selectItem(pos)
-                if pos < control.size() and self.updateBackgroundFrom(control[pos].dataSource):
+                if pos < control.size() and self.updateHeroFrom(control[pos].dataSource):
                     self.backgroundSet = True
             else:
                 if more:
@@ -4651,7 +4728,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                     backgroundthread.BGThreader.addTask(task)
                 else:
                     control.selectItem(control.size() - 1)
-                    if self.updateBackgroundFrom(control[control.size() - 1].dataSource):
+                    if self.updateHeroFrom(control[control.size() - 1].dataSource):
                         self.backgroundSet = True
 
     def updateListItem(self, mli):

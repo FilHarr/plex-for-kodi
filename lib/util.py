@@ -8,6 +8,7 @@ import re
 import json
 import threading
 import math
+import colorsys
 import time
 import datetime
 import contextlib
@@ -796,17 +797,56 @@ def getProgressImage(obj, perc=None, view_offset=None):
     return 'script.plex/progress/{0}.png'.format(pct)
 
 
-def backgroundFromArt(art, width=1920, height=1080, background=colors.noAlpha.Background):
+def backgroundFromArt(art, width=1920, height=1080, background=colors.noAlpha.Background, opacity=None, blur=None):
     if not art:
         return
 
     w, h = scaleResolution(width, height, by=addonSettings.backgroundResolutionScalePerc)
     return art.asTranscodedImageURL(
         w, h,
-        blur=addonSettings.backgroundArtBlurAmount2,
-        opacity=addonSettings.backgroundArtOpacityAmount2,
+        blur=addonSettings.backgroundArtBlurAmount2 if blur is None else blur,
+        opacity=addonSettings.backgroundArtOpacityAmount2 if opacity is None else opacity,
         background=background
     )
+
+def backgroundPanelCorners(ultraBlurColors, maxValue=0.3):
+    """
+    Phase 1 approximation of official Plex's native per-corner art-color extraction (see
+    docs/notes/hero-art-background-status.md, "Resolved: official Plex Android decompile"). Sources
+    colors from the item's own ultraBlurColors PMS metadata rather than real pixel extraction from
+    the art (Phase 2, not yet implemented - Kodi's Python has no PIL/Pillow and this addon has never
+    done local pixel decoding).
+
+    Clamps HSV *value* (not HSL lightness) to maxValue - confirmed against live screenshots of the
+    official client's own full-background view (no hero-art box occluding it): capped corners land
+    on an exact max-channel value of ~77/255 across multiple titles (Deadpool 2, Wakanda Forever,
+    LOTR), consistent with a hard max(R,G,B) cap at 0.3, not a lightness ((max+min)/2) cap - an HSL
+    clamp on the same swatches overshoots that ceiling substantially (e.g. Supergirl's raw
+    bottomRight af1308 HSL-clamped to ~146 max channel vs officially observed ~77).
+
+    Returns a dict of up to 4 ARGB colordiffuse-ready hex strings keyed 'topLeft'/'topRight'/
+    'bottomLeft'/'bottomRight'. Returns {} when the item has no ultraBlurColors data at all, so
+    callers can leave the skin's corner-tint layers hidden and fall back to the flat base color only.
+    """
+    if not ultraBlurColors:
+        return {}
+
+    result = {}
+    for corner in ('topLeft', 'topRight', 'bottomLeft', 'bottomRight'):
+        rgbHex = ultraBlurColors.get(corner)
+        if not rgbHex:
+            continue
+        try:
+            r, g, b = (int(rgbHex[i:i + 2], 16) for i in (0, 2, 4))
+        except (ValueError, TypeError):
+            continue
+        h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+        if v > maxValue:
+            v = maxValue
+        r, g, b = colorsys.hsv_to_rgb(h, s, v)
+        result[corner] = 'FF{:02X}{:02X}{:02X}'.format(round(r * 255), round(g * 255), round(b * 255))
+    return result
+
 
 def clearLogoFrom(item, width, height):
     """
