@@ -4,7 +4,11 @@
         <!-- 10, not 55: compensates for the parent grouplist's posx moving from 55 to 100
              (see script-plex-home.xml.tpl) so this item's resting position is unchanged. -->
         <posx>10</posx>
-        <posy>{{ vscale(72) }}</posy>
+        <!-- hub_id 401 (peek-above): mirrors hub_itemlayout_square.xml.tpl's own copy of this
+             override exactly (same content/heights) - Kodi renders whichever item is *selected*
+             within a list via focusedlayout regardless of whether the list control itself has
+             window focus, so the previously-focused item needs this too, not just itemlayout. -->
+        <posy>{% if hub_id == 401 %}{{ vscale(-44) }}{% else %}{{ vscale(72) }}{% endif %}</posy>
         <control type="group">
             <animation effect="zoom" start="100" end="110" time="100" center="122,{{ vscale(122) }}" reversible="false">Focus</animation>
             <animation effect="zoom" start="110" end="100" time="100" center="122,{{ vscale(122) }}" reversible="false">UnFocus</animation>

@@ -91,7 +91,11 @@
              would sit on top of the color panel above and hide it for however long the art takes
              to fetch. The plain black base fallback control at the top of this file already
              covers that spot regardless. -->
-        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds))</visible>
+        <!-- no_hero_art (HomeWindow.updateHeroFrom, home.py): hides this box for items with no
+             real background art (Photos, many Music artists/albums), rather than showing the
+             previous item's art or a placeholder - empty/unset for every other window, so this
+             only ever actively hides anything on the home screen. -->
+        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
         <posx>691</posx>
         <posy>0</posy>
         <width>1229</width>
@@ -108,7 +112,7 @@
         {% include "includes/scale_background.xml.tpl" %}
     </control>
     <control type="image">
-        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds))</visible>
+        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
         <posx>691</posx>
         <posy>0</posy>
         <width>1229</width>
@@ -125,7 +129,7 @@
          layers above so it fades out at the box edges instead of ending in a hard rectangle where
          the art has already faded to reveal the panel underneath. -->
     <control type="image">
-        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds))</visible>
+        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
         <fadetime>1000</fadetime>
         <posx>691</posx>
         <posy>0</posy>

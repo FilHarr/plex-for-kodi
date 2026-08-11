@@ -4,7 +4,12 @@
         <!-- 10, not 55: compensates for the parent grouplist's posx moving from 55 to 100
              (see script-plex-home.xml.tpl) so this item's resting position is unchanged. -->
         <posx>10</posx>
-        <posy>{{ vscale(72) }}</posy>
+        <!-- hub_id 401 (peek-above, script-plex-home.xml.tpl's grouplist 501) shows the *bottom* of
+             the item instead of the top: -51 = 277 (that grouplist's own height) - 328 (this item's
+             own full content height: 3 inner group posy + 325 art) - pushes the item up so its
+             bottom edge lands flush with the wrapper's own bottom, with the top (and the row title,
+             which peek-above omits entirely) clipped away above y=0. -->
+        <posy>{% if hub_id == 401 %}{{ vscale(-51) }}{% else %}{{ vscale(72) }}{% endif %}</posy>
         <control type="group">
             <posx>3</posx>
             <posy>3</posy>

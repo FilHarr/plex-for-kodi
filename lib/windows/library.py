@@ -839,6 +839,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if watched:
             removeFromWatchlistBlind(wl_ref.guid, wl_ref)
         self.updateUnwatchedAndProgress(mli)
+        util.MONITOR.watchStatusChanged()
 
     def itemOptions(self):
         mli = self.showPanelControl.getSelectedItem()

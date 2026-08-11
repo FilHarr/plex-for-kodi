@@ -3077,7 +3077,7 @@ msgid "Hub Count"
 msgstr ""
 
 msgctxt "#34088"
-msgid "Number of hub rows displayed on the home screen. More rows require more memory."
+msgid "Maximum number of hubs available to scroll through on the home screen. Higher values use more memory."
 msgstr ""
 
 msgctxt "#34091"

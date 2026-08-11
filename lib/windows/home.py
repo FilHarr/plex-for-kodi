@@ -242,6 +242,15 @@ class ExtendHubTask(backgroundthread.Task):
                 if self.canceledCallback:
                     self.canceledCallback(self.hub)
                 return
+            # Hub.extend() (plexlibrary.py) only returns the newly-fetched page - it doesn't append
+            # to self.hub.items, so without this, hub.items stays frozen at its original first-page
+            # size for the object's whole lifetime. That's invisible as long as the same physical
+            # control stays bound to a hub forever (pagination then lives only in that control's own
+            # ManagedControlList), but any full rebuild from hub.items - _bindFocusedHub() re-binding
+            # a previously-paginated hub after navigating away and back, or peek row binding - would
+            # silently drop everything past the first page, stranding any remembered position beyond
+            # it. Keeping hub.items itself authoritative fixes every rebuild path at once.
+            self.hub.items.extend(items)
             self.callback(self.hub, items, reselect_pos=self.reselect_pos)
         except plexnet.exceptions.BadRequest:
             util.DEBUG_LOG('404 on hub: {0}', repr(self.hub.hubIdentifier))
@@ -510,8 +519,10 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     PLAYER_STATUS_BUTTON_ID = 204
 
-    # Hub base ID - hubs are dynamically generated starting from this ID
-    HUB_BASE_ID = 400
+    # The single physical hub-row control. Only one ever exists - home.py rebinds its content to
+    # whichever hub is logically focused as the user moves up/down, rather than there being one
+    # physical control per hub. See docs/notes/home-hub-fixed-focus-position-status.md.
+    HUB_CONTROL_ID = 400
 
     # Same box size pre_play.py's own CLEAR_LOGO_DIM requests, so the hero info overlay's clearlogo
     # matches pre_play's exactly (see script-plex-home.xml.tpl's hero info group).
@@ -656,6 +667,12 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         'season': 'poster',
     }
 
+    # Item types the hero art/info overlay is allowed to show for - movies and TV shows only. Music
+    # (album/artist/track), photos, other videos (clip/video), playlists and collections all hide it
+    # (no_hero_art) regardless of whether the specific item happens to have an art field set - see
+    # _typeHasHeroArt().
+    HERO_ART_TYPES = {'movie', 'show', 'season', 'episode'}
+
     THUMB_POSTER_DIM = util.scaleResolution(244, 361)
     THUMB_AR16X9_DIM = util.scaleResolution(532, 299)
     THUMB_SQUARE_DIM = util.scaleResolution(244, 244)
@@ -748,13 +765,23 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         self.serverList = kodigui.ManagedControlList(self, self.SERVER_LIST_ID, 10)
         self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5)
 
-        # Dynamic hub control generation based on hub_count setting
-        hub_count = util.getSetting('hub_count', 8)
-        self.hubControls = tuple(
-            kodigui.ManagedControlList(self, self.HUB_BASE_ID + i, 5)
-            for i in range(hub_count)
+        # Index 0 is the focused anchor (self.HUB_CONTROL_ID / 400) - every existing
+        # self.hubControls[controlID - self.HUB_CONTROL_ID] call site relies on that (controlID is
+        # always 400 for focus/selection-driven calls, since peek controls 401/402 are never
+        # focused). Indices 1/2 are the non-interactive peek-above/peek-below previews, bound by
+        # _bindPeekHubs() - see script-plex-home.xml.tpl's grouplist 501/502.
+        self.hubControls = (
+            kodigui.ManagedControlList(self, self.HUB_CONTROL_ID, 5),
+            kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 1, 3),
+            kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 2, 3),
         )
-        self.hubFocusIndexes = tuple(range(hub_count))
+        self.visibleHubs = []  # in-memory ordered list of hubs currently available to page through
+        self.focusedHubIndex = 0  # pointer into visibleHubs for whichever hub is bound to the anchor
+        # identifier -> (ratingKey, pos): a hub's scroll position used to live on in Kodi's own list
+        # state for its permanent physical control. With one shared control, navigating away rebinds
+        # it to a different hub, so position has to be remembered explicitly instead.
+        self._hubReselectPositions = {}
+        self.lastFocusedHubIdentifier = None  # for onReInit's identifier-based focus restore
 
         self.bottomItem = 0
         if self.serverRefresh():
@@ -791,7 +818,6 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             return
 
         if self.go_root:
-            self.setProperty('hub.focus', '')
             # cancel any pending async section change so the focus call below doesn't trigger a redundant reload
             self.sectionChangeTimeout = None
             # decide whether we need to switch the displayed hubs before overwriting state
@@ -820,18 +846,27 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             self._recheckPD = False
 
         if self.lastFocusID:
-            # try focusing the last focused ID. if that's a hub, and it's empty (=not focusable), try focusing the
-            # next best hub
-            if 399 < self.lastFocusID < 500:
-                hubControlIndex = self.lastFocusID - 400
+            # try restoring focus to whichever hub was last focused. The physical control id is
+            # always self.HUB_CONTROL_ID now, so it can't tell us which hub that was - restore by
+            # identifier instead (self.lastFocusedHubIdentifier, set in onFocus).
+            if self.lastFocusID == self.HUB_CONTROL_ID:
+                idx = None
+                if self.lastFocusedHubIdentifier is not None:
+                    is_home = not self.lastSection or self.lastSection.key is None
+                    for i, hub in enumerate(self.visibleHubs):
+                        if hub.getCleanHubIdentifier(is_home=is_home) == self.lastFocusedHubIdentifier:
+                            idx = i
+                            break
 
-                if hubControlIndex in self.hubFocusIndexes and self.hubControls[hubControlIndex]:
+                if idx is not None:
+                    self.focusedHubIndex = idx
+                    self._bindFocusedHub()
                     # this is basically just used for setting the background upon reinit
                     # fixme: declutter, separation of concerns
-                    self.checkHubItem(self.lastFocusID)
+                    self.checkHubItem(self.HUB_CONTROL_ID)
                 else:
-                    util.DEBUG_LOG("Focus requested on {}, which can't focus. Trying next hub", self.lastFocusID)
-                    self.focusFirstValidHub(hubControlIndex)
+                    util.DEBUG_LOG("Focus requested on a hub that's no longer available. Trying next hub")
+                    self.focusFirstValidHub()
 
             elif self.lastFocusID == self.SECTION_LIST_ID:
                 if self.lastSection and self.lastHubs != self.lastSection.key:
@@ -841,16 +876,25 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 if self.getFocusId() != self.lastFocusID:
                     self.setFocusId(self.lastFocusID)
 
-        if self._odHubsDirty:
-            self._odHubsDirty = False
-            # If section is stale, do a full section refresh instead of individual
-            # hub updates. Running both causes race conditions and index errors.
-            hubs = self.sectionHubs.get(self.lastSection.key) if self.lastSection else None
-            if hubs is not None and time.time() - hubs.lastUpdated > HUBS_REFRESH_INTERVAL:
-                util.DEBUG_LOG('UpdateOnDeckHubs: Section stale, doing full refresh instead')
-                self.showHubs(self.lastSection, update=True)
-            else:
-                self._updateOnDeckHubs()
+        self._checkOnDeckDirty()
+
+    def _checkOnDeckDirty(self):
+        """If a watch-status change happened elsewhere (util.MONITOR's changed.watchstatus signal)
+        since hubs were last drawn, refresh now instead of leaving Continue Watching/On Deck stale.
+        Called from onReInit (covers leaving Home and coming back) and from _sectionReallyChanged
+        (covers switching sidebar sections without ever leaving the window, e.g. Film -> Home,
+        which onReInit never sees since the window itself never got reactivated)."""
+        if not self._odHubsDirty:
+            return
+        self._odHubsDirty = False
+        # If section is stale, do a full section refresh instead of individual
+        # hub updates. Running both causes race conditions and index errors.
+        hubs = self.sectionHubs.get(self.lastSection.key) if self.lastSection else None
+        if hubs is not None and time.time() - hubs.lastUpdated > HUBS_REFRESH_INTERVAL:
+            util.DEBUG_LOG('UpdateOnDeckHubs: Section stale, doing full refresh instead')
+            self.showHubs(self.lastSection, update=True)
+        else:
+            self._updateOnDeckHubs()
 
     def checkPlexDirectHosts(self, servers, source="stored", *args, **kwargs):
         while self._checkingPD:
@@ -2246,44 +2290,27 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     @property
     def currentHub(self):
-        try:
-            hub_focus = int(self.getProperty('hub.focus'))
-        except ValueError:
-            return None
-
-        if len(self.hubControls) > hub_focus and self.hubControls[hub_focus]:
-            hub_control = self.hubControls[hub_focus]
-            hub = hub_control.dataSource
-            return hub
+        if self.hubControls and self.hubControls[0]:
+            return self.hubControls[0].dataSource
+        return None
 
     def updateProperties(self, *args, **kwargs):
         self.setBoolProperty('bifurcation_lines', util.getSetting('hubs_bifurcation_lines'))
 
     def focusFirstValidHub(self, startIndex=None):
-        indices = self.hubFocusIndexes
-        if startIndex is not None:
-            try:
-                indices = self.hubFocusIndexes[self.hubFocusIndexes.index(startIndex):]
-                util.DEBUG_LOG("Trying to focus the next best hub after: %i" % (400 + startIndex))
-            except IndexError:
-                pass
-
-        for index in indices:
-            if self.hubControls[index]:
-                if self.lastFocusID != 400+index:
-                    util.DEBUG_LOG("Focusing hub: %i" % (400 + index))
-                    self.setFocusId(400+index)
-                    self.checkHubItem(400+index)
-                return
-
-        if startIndex is not None:
-            util.DEBUG_LOG("Tried all possible hubs after %i. Continuing from the top" % (400 + startIndex))
-        else:
+        # visibleHubs by construction only ever contains non-empty hubs, so any in-range index is
+        # automatically valid - no per-slot existence walk needed like the old per-hub-control design.
+        if not self.visibleHubs:
             util.DEBUG_LOG("Can't find any suitable hub to focus. This is bad.")
             self.setFocusId(self.SECTION_LIST_ID)
             return
 
-        return self.focusFirstValidHub()
+        self.focusedHubIndex = max(0, min(startIndex if startIndex is not None else 0, len(self.visibleHubs) - 1))
+        self._bindFocusedHub()
+        if self.getFocusId() != self.HUB_CONTROL_ID:
+            util.DEBUG_LOG("Focusing hub: %i" % self.focusedHubIndex)
+            self.setFocusId(self.HUB_CONTROL_ID)
+        self.checkHubItem(self.HUB_CONTROL_ID)
 
     def applyInitialHubFocus(self):
         """One-time, on the very first Home hubs draw of this session: land in the first
@@ -2487,26 +2514,26 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             # store BG url of first hub, first item, as this is most likely to be the one we're focusing on the
             # next start
             try:
-                # only store background for home section hubs
+                # only store background for home section hubs - walk visibleHubs directly (their
+                # raw hub.items, not a physical control) since only one hub is ever bound to a
+                # control at a time now, not necessarily this one
                 if self.lastSection and self.lastSection.key is None:
-                    indices = self.hubFocusIndexes
-                    for index in indices:
-                        if self.hubControls[index]:
-                            ds = self.hubControls[index][0].dataSource
-                            if not ds.art:
-                                continue
+                    for hub in self.visibleHubs:
+                        ds = hub.items[0]
+                        if not ds.art:
+                            continue
 
-                            if oldbg:
-                                url = plexnet.compat.quote_plus(ds.art)
-                                if url in oldbg:
-                                    return
-
-                            bg = util.backgroundFromArt(ds.art, width=self.width, height=self.height)
-                            if bg:
-                                util.DEBUG_LOG('Storing BG for {0}, "{1}", acc {2}'.format(self.hubControls[index].dataSource,
-                                                                                  ds.defaultTitle, plexapp.ACCOUNT.ID))
-                                util.setSetting("last_bg_url.{}".format(plexapp.ACCOUNT.ID), bg)
+                        if oldbg:
+                            url = plexnet.compat.quote_plus(ds.art)
+                            if url in oldbg:
                                 return
+
+                        bg = util.backgroundFromArt(ds.art, width=self.width, height=self.height)
+                        if bg:
+                            util.DEBUG_LOG('Storing BG for {0}, "{1}", acc {2}'.format(hub,
+                                                                              ds.defaultTitle, plexapp.ACCOUNT.ID))
+                            util.setSetting("last_bg_url.{}".format(plexapp.ACCOUNT.ID), bg)
+                            return
             except:
                 util.LOG("Couldn't store last background")
 
@@ -2593,7 +2620,14 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             elif controlID == self.USER_BUTTON_ID and action == xbmcgui.ACTION_MOVE_LEFT:
                 self.setFocusId(self.SERVER_BUTTON_ID)
             elif 399 < controlID < 500:
-                if action.getId() in MOVE_SET or action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
+                action_id = action.getId()
+                if action_id in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
+                    # There's only ever one physical hub-row control (this one) - up/down doesn't
+                    # navigate to a different control (both are noop in the skin), it switches which
+                    # hub is logically focused and rebinds this control's content to it.
+                    self._switchFocusedHub(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
+                    return
+                if action_id in MOVE_SET or action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                     _continue = self.checkHubItem(controlID, action=action)
                     if not _continue:
                         return
@@ -2708,8 +2742,11 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             # don't store focus for mini music player
             self.lastFocusID = controlID
 
-        if 399 < controlID < 500:
-            self.setProperty('hub.focus', str(self.hubFocusIndexes[controlID - 400]))
+        if controlID == self.HUB_CONTROL_ID:
+            hub = self.hubControls[0].dataSource
+            if hub:
+                is_home = not self.lastSection or self.lastSection.key is None
+                self.lastFocusedHubIdentifier = hub.getCleanHubIdentifier(is_home=is_home)
 
         if self.movingSection:
             return
@@ -2719,7 +2756,6 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             self.checkSectionItem()
 
     def goHome(self, **kwargs):
-        self.setProperty('hub.focus', '')
         self.setFocusId(self.SECTION_LIST_ID)
         self.sectionList.setSelectedItemByPos(1)  # index 1 = Home (0 = Search)
         # set lastSection here already, otherwise tick() might interfere
@@ -2785,6 +2821,19 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     def updateOnDeckHubs(self, **kwargs):
         self._odHubsDirty = True
+        # A watch-status change can affect on-deck-style hubs in ANY cached section, not just
+        # whichever one happens to be on screen when this fires - _odHubsDirty's own refresh (see
+        # _checkOnDeckDirty) only ever targets self.lastSection at the moment it's consumed, which
+        # can be a different section than the one the user actually switches to next (e.g. this
+        # fires while backing out of an item on Films, consuming the flag for Films, before the
+        # user then switches to Home - Home's own hubs never get touched). Force every OTHER
+        # cached section's staleness timer to expire too, so switching to one later goes through
+        # the existing fresh-refetch path (_showHubs's own stale check) instead of serving stale
+        # cached data indefinitely.
+        current_key = self.lastSection.key if self.lastSection else None
+        for key, hubs in self.sectionHubs.items():
+            if hubs is not None and key != current_key:
+                hubs.lastUpdated = 0
 
     def _updateOnDeckHubs(self, **kwargs):
         util.DEBUG_LOG('UpdateOnDeckHubs called')
@@ -2937,7 +2986,6 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 task.cancel()
 
         with self.lock:
-            self.setProperty('hub.focus', '')
             self.displayServerAndUser()
             if plexapp.SERVERMANAGER.selectedServer:
                 self.loadLibrarySettings()
@@ -3015,14 +3063,12 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 pass
 
         if not control.size():
-            idx = self.hubFocusIndexes[hubControlID - 400]
-            while idx > 0:
-                idx -= 1
-                controlID = 400 + self.hubFocusIndexes.index(idx)
-                control = self.hubControls[self.hubFocusIndexes.index(idx)]
-                if control.size():
-                    self.setFocusId(controlID)
-                    break
+            # the hub this control was showing is now empty - drop it from the logical list and
+            # rebind to whatever's left (visibleHubs has no "holes", unlike the old per-slot design)
+            if self.visibleHubs:
+                del self.visibleHubs[self.focusedHubIndex]
+            if self.visibleHubs:
+                self.focusFirstValidHub(min(self.focusedHubIndex, len(self.visibleHubs) - 1))
             else:
                 self.setFocusId(self.SECTION_LIST_ID)
 
@@ -3035,7 +3081,6 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 if mli.dataSource and mli.dataSource.key == sectionID:
                     self.sectionList.selectItem(mli.pos())
                     self.lastSection = mli.dataSource
-                    self.setProperty('hub.focus', '')
                     self.setFocusId(self.SECTION_LIST_ID)
                     self._sectionReallyChanged(self.lastSection)
 
@@ -3044,11 +3089,9 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         # carry over some props to the new window as we might end up showing a dialog not rendering the
         # underlying window. the new window class will invalidate the old one temporarily, though, as it seems
         # and the properties vanish, resulting in all text2lines enabled hubs to lose their title2 labels
-        if self.hubControls:
+        if self.hubControls and self.hubControls[0].dataSource:
             # All hubs default to text2lines=True now
-            return dict(
-                ('hub.text2lines.4{0:02d}'.format(i), '1') for i, hubCtrl in enumerate(self.hubControls) if
-                hubCtrl.dataSource)
+            return {'hub.text2lines.400': '1'}
 
     def sectionPinnedTypes(self, section):
         """Item types this library has pinned to the top bar as views of their own."""
@@ -3559,14 +3602,61 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         if item.dataSource != self.lastSection or force:
             self.sectionChanged(force=force)
 
-    def updateHeroFrom(self, ds):
+    def _typeHasHeroArt(self, ds, hub=None):
+        """Whether ds's item type is allowed to show the hero art/info treatment - movies/TV shows
+        only (self.HERO_ART_TYPES). Type-based rather than art-field-presence-based: every item in a
+        given hub row is always the same type, so this is a per-hub decision in practice, and more
+        reliable than trusting individual items' art/parentArt/grandparentArt fields, which turned
+        out not to reliably distinguish "has real key art" (movies, shows) from "doesn't" (music,
+        photos, other videos).
+
+        hub, when given, adds more exclusions on top of the type check: Plex's "Other Videos"
+        library sections report their items with type='movie' - the same type real Movie libraries
+        use, since Plex has no distinct item type for it - so item type alone can't tell them apart.
+
+        Checked three ways, since none alone covers every context this can be called from:
+        - The hub's own identifier, checked with the same *substring* match getHubDisplayType uses
+          via HUB_16X9_KEYWORDS ('episode', 'clip', 'video' - 'episode' excluded here, real TV
+          episode hubs should still show hero art), not the stricter HUB_PREFIXES_16X9 prefix match
+          this used originally. The prefix match is enough when viewing the Other Videos section
+          directly (identifier starts with 'video.'), but Home's cross-section hub aggregation
+          doesn't preserve that same identifier shape - it's still substring-matchable, just not
+          prefix-matchable, which is exactly why getHubDisplayType (substring-based) already renders
+          these correctly as ar16x9 on Home while this prefix-based check was missing them.
+        - The hub's own `type` attribute (mirrors getHubDisplayType's identical `hub_type in
+          ('episode', 'clip', 'video')` check, same 'episode' exclusion) - a second, independent
+          signal in case the identifier itself doesn't contain a matching keyword in some context.
+        - The first item's own `type` attribute (mirrors getHubDisplayType's final content-based
+          fallback), for the same reason."""
+        if not ds or getattr(ds, 'type', None) not in self.HERO_ART_TYPES:
+            return False
+        if hub is not None:
+            is_home = not self.lastSection or self.lastSection.key is None
+            identifier = hub.getCleanHubIdentifier(is_home=is_home)
+            if identifier and any(kw in identifier.lower() for kw in ('clip', 'video')):
+                return False
+            if getattr(hub, 'type', None) in ('clip', 'video'):
+                return False
+            if hub.items and getattr(hub.items[0], 'type', None) in ('clip', 'video'):
+                return False
+        return True
+
+    def updateHeroFrom(self, ds, hub=None):
         """
         Like updateBackgroundFrom, but also drives the hero info overlay (clearlogo/title, meta
         row, summary - see script-plex-home.xml.tpl) from the same item. Wraps updateBackgroundFrom
         rather than folding into it, since that method is shared BaseWindow plumbing used by windows
         that don't want a text overlay at all. Returns updateBackgroundFrom's own result unchanged,
         since several call sites key backgroundSet off of it.
+
+        Also sets no_hero_art via _typeHasHeroArt() - see that method for why this is type-based, and
+        why hub (the item's own hub, when the caller has it handy) matters too.  Both the hero
+        overlay group and the sharp hero-art box controls in default_background.xml.tpl key off this
+        (hide-via-non-empty-property idiom, empty/unset everywhere else so no other window is
+        affected) to hide the whole treatment rather than show stale or placeholder art with text
+        describing it.
         """
+        self.setBoolProperty('no_hero_art', not self._typeHasHeroArt(ds, hub=hub))
         result = self.updateBackgroundFrom(ds)
         self.setHeroInfo(ds)
         return result
@@ -3633,6 +3723,10 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         mli = control.getSelectedItem()
         is_valid_mli = mli and mli.getProperty('is.end') != '1'
         is_last_item = is_valid_mli and control.isLastItem(mli)
+        # controlID is always self.HUB_CONTROL_ID now, so it can't disambiguate which hub a stored
+        # round-robin position belongs to the way it used to (one control per hub) - key off the
+        # hub's own identity instead.
+        hub_key = id(control.dataSource)
 
         if action:
             self._anyItemAction = True
@@ -3641,16 +3735,30 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             pos = control.getSelectedPos()
             if pos is not None and pos > 0:
                 control.selectItem(0)
-                self.updateHeroFrom(control[0].dataSource)
+                self.updateHeroFrom(control[0].dataSource, hub=control.dataSource)
                 return
             return True
 
         if is_valid_mli:
             # Hero info (title/meta/summary) updates regardless of the dynamicBackgrounds setting -
             # only the background art panel itself is gated on it (updateBackgroundFrom no-ops
-            # internally when the setting is off, same as every other call site here).
-            self.setHeroInfo(mli.dataSource)
-            self.updateBackgroundFrom(mli.dataSource)
+            # internally when the setting is off, same as every other call site here). Doesn't call
+            # updateHeroFrom() (which would also set no_hero_art) since that always calls
+            # updateBackgroundFrom unconditionally - replicate its property set here instead, so
+            # no_hero_art stays correct without ignoring the setting.
+            ds = mli.dataSource
+            self.setBoolProperty('no_hero_art', not self._typeHasHeroArt(ds, hub=control.dataSource))
+            self.setHeroInfo(ds)
+            self.updateBackgroundFrom(ds)
+
+            # Remember this hub's scroll position - with one shared physical control, navigating to
+            # a different hub discards it otherwise (see self._hubReselectPositions).
+            if control.dataSource:
+                is_home = not self.lastSection or self.lastSection.key is None
+                identifier = control.dataSource.getCleanHubIdentifier(is_home=is_home)
+                pos = control.getSelectedPos()
+                if pos is not None and ds is not None:
+                    self._hubReselectPositions[identifier] = (str(ds.ratingKey), pos)
 
         if not mli or not mli.getProperty('is.end') or mli.getProperty('is.updating') == '1':
             # round robining
@@ -3661,13 +3769,13 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 # by storing the last selected item of the current control. if we've seen it twice, we need to wrap
                 # around
                 if not mli.getProperty('is.end') and is_last_item and action == xbmcgui.ACTION_MOVE_RIGHT:
-                    if (controlID, mlipos) == self._lastSelectedItem:
+                    if (hub_key, mlipos) == self._lastSelectedItem:
                         control.selectItem(0)
-                        self._lastSelectedItem = (controlID, 0)
-                        self.updateHeroFrom(control[0].dataSource)
+                        self._lastSelectedItem = (hub_key, 0)
+                        self.updateHeroFrom(control[0].dataSource, hub=control.dataSource)
                         return
                 elif (action == xbmcgui.ACTION_MOVE_LEFT and mlipos == 0
-                      and ((controlID, mlipos) == self._lastSelectedItem)):
+                      and ((hub_key, mlipos) == self._lastSelectedItem)):
                     if not control.dataSource.more.asInt():
                         last_item_index = len(control) - 1
                         control.selectItem(last_item_index)
@@ -3677,9 +3785,9 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                         if not control[last_item_index].dataSource:
                             last_item_index -= 1
                             control.selectItem(last_item_index)
-                            
-                        self._lastSelectedItem = (controlID, last_item_index)
-                        self.updateHeroFrom(control[last_item_index].dataSource)
+
+                        self._lastSelectedItem = (hub_key, last_item_index)
+                        self.updateHeroFrom(control[last_item_index].dataSource, hub=control.dataSource)
                     else:
                         task = ExtendHubTask().setup(control.dataSource, self.extendHubCallback,
                                                      canceledCallback=lambda hub: mli.setBoolProperty('is.updating',
@@ -3688,7 +3796,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                         self.tasks.append(task)
                         backgroundthread.BGThreader.addTask(task)
                     return
-                self._lastSelectedItem = (controlID, mlipos)
+                self._lastSelectedItem = (hub_key, mlipos)
             return
 
         mli.setBoolProperty('is.updating', True)
@@ -3780,14 +3888,27 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             while self.block_section_change:
                 util.MONITOR.waitFor()
 
-            self.setProperty('hub.focus', '')
             if util.addonSettings.dynamicBackgrounds:
                 self.backgroundSet = False
 
             util.DEBUG_LOG('Section changed ({0}): {1}', section.key, repr(section.title))
             self.lastSection = section
             self.updateActiveSectionMarker(section)
+
+            # If this section's hubs are already fresh enough to be served from cache, showHubs()
+            # below won't itself trigger a refetch - so a watch-status change elsewhere since they
+            # were last fetched wouldn't otherwise get picked up until this window's next reinit
+            # (e.g. switching sidebar sections within Home never leaves the window, so onReInit's
+            # own _checkOnDeckDirty() call never runs). Only check here when showHubs() isn't also
+            # about to refetch the section itself - see _checkOnDeckDirty's own comment on why
+            # running both at once races.
+            existing_hubs = self.sectionHubs.get(section.key)
+            already_fresh = existing_hubs is not None and time.time() - existing_hubs.lastUpdated <= HUBS_REFRESH_INTERVAL
+
             self.showHubs(section)
+
+            if already_fresh:
+                self._checkOnDeckDirty()
 
         # timing issue
         cur_sel_ds = self.sectionList.getSelectedItem().dataSource
@@ -4149,9 +4270,11 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     def getCurrentHubsPositions(self, section):
         is_home = not section or section.key is None
-        rp = {}
+        # Seed with remembered positions for hubs not currently bound to the one physical control -
+        # with a single shared control, most hubs' positions only live here, not in a live control.
+        rp = dict(self._hubReselectPositions)
 
-        # Iterate through hub controls to find current positions
+        # Overlay with the live selection of whichever hub is currently bound, if any
         for hubCtrl in self.hubControls:
             if not hubCtrl.dataSource:
                 continue
@@ -4266,17 +4389,22 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 except:
                     pass  # Fall back to the random items if re-fetch fails
 
-        # Sequential slot assignment - hubs are assigned to slots in order
-        # Display type is determined per-hub and set as a window property for the skin
-        hasContent = False
-        skip = {}
-        displayed_count = 0
-        hidden_count = 0
-        hub_index = 0  # Sequential counter for slot assignment
+        # Merge in any positions carried through this refresh's async round-trip (from
+        # getCurrentHubsPositions, captured before it started) - fall back only, since
+        # self._hubReselectPositions may already hold fresher data from live interaction since.
+        if reselect_pos_dict:
+            for k, v in reselect_pos_dict.items():
+                self._hubReselectPositions.setdefault(k, v)
+
+        # Collect all hubs currently available to page through - a soft data cap (the hub_count
+        # setting), not a physical row count: only one physical control ever exists, and whichever
+        # hub is logically focused gets bound into it (see _bindFocusedHub). Display-type/render-flag
+        # computation happens at bind time, only for whichever hub is actually shown.
+        max_hubs = util.getSetting('hub_count', 8)
+        visible = []
 
         for hub in hubs:
-            # Check if we've used all available slots
-            if hub_index >= len(self.hubControls):
+            if len(visible) >= max_hubs:
                 break
 
             # For cross-section hubs, use the source section's is_home flag
@@ -4295,71 +4423,142 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
             if not is_cross_section:
                 if self.isHubHidden(identifier, section.key):
-                    hidden_count += 1
                     continue
 
             # Skip hubs with no content - they don't take a slot, but will appear
             # automatically when they have content on the next refresh.
-            # This prevents empty hubs from breaking the scroll animation chain.
             if not hub.items:
                 continue
 
-            # Determine display type for this hub and set as window property for skin
-            display_type = self.getHubDisplayType(hub, identifier)
-            self.setProperty('hub.display.4{0:02d}'.format(hub_index), display_type)
+            visible.append(hub)
+            self.updateHubs[identifier] = hub
 
-            skip[hub_index] = 1
-
-
-            if self.showHub(hub, is_home=hub_is_home,
-                            reselect_pos=reselect_pos_dict.get(identifier) if reselect_pos_dict else None,
-                            hub_index=hub_index):
-                displayed_count += 1
-                if hub.items:
-                    hasContent = True
-                # All hubs with items get updates by default
-                if hub.items:
-                    self.updateHubs[identifier] = hub
-
-            hub_index += 1
-
-
+        hasContent = bool(visible)
         if not hasContent:
             self.setBoolProperty('no.content', True)
 
         # store last visited hubslist identifier (e.g. section key or None for Home)
         self.lastHubs = hubs.identifier
 
-        lastSkip = 0
-        if skip:
-            lastSkip = min(skip.keys())
-
-        focus = None
         if update:
-            for i, control in enumerate(self.hubControls):
-                if i in skip:
-                    lastSkip = i
-                    continue
-                if self.getFocusId() == control.getId():
-                    focus = lastSkip
-                control.reset()
+            focused_identifier = None
+            if (self.getFocusId() == self.HUB_CONTROL_ID and self.visibleHubs
+                    and self.focusedHubIndex < len(self.visibleHubs)):
+                focused_identifier = self.visibleHubs[self.focusedHubIndex].getCleanHubIdentifier(is_home=is_home)
 
-            if focus is not None:
-                # `focus`/`lastSkip` are 0-based hub indices, NOT Kodi control IDs
-                # (hub controls are 400+index). focusFirstValidHub() does the
-                # conversion, verifies the target still has content, and falls back
-                # to the section list. Passing the raw index straight to setFocusId()
-                # targets a non-existent control and throws off the GUI thread, which
-                # takes the whole window down when the focused hub empties out on an
-                # update refresh - e.g. returning to the Watchlist after its last item
-                # was auto-removed as watched.
-                try:
-                    self.focusFirstValidHub(focus)
-                except Exception:
-                    util.ERROR("Home: failed to restore focus after hub cleanup")
+            self.visibleHubs = visible
+
+            if focused_identifier is not None:
+                for i, hub in enumerate(visible):
+                    if hub.getCleanHubIdentifier(is_home=is_home) == focused_identifier:
+                        self.focusedHubIndex = i
+                        self._bindFocusedHub()
+                        break
+                else:
+                    # the focused hub disappeared in this refresh - fall back to the next best one.
+                    # focusFirstValidHub() verifies the target still has content and falls back to
+                    # the section list if nothing does.
+                    try:
+                        self.focusFirstValidHub()
+                    except Exception:
+                        util.ERROR("Home: failed to restore focus after hub cleanup")
+            else:
+                self._bindFocusedHub()
+        else:
+            self.visibleHubs = visible
+            self.focusedHubIndex = 0
+            self._bindFocusedHub()
+
         self.storeLastBG()
 
-    def showHub(self, hub, items=None, is_home=False, reselect_pos=None, hub_index=None):
+    def _bindFocusedHub(self):
+        """Push self.visibleHubs[self.focusedHubIndex] into the one physical hub-row control.
+
+        Reuses showHub()/_showHub() unchanged - they already do control.replaceItems(...)
+        internally, so this is an instant swap by construction, no animation involved."""
+        if not self.visibleHubs:
+            self.hubControls[0].reset()
+            self.setProperty('hub.display.400', '')
+            self._bindPeekHubs()
+            return
+
+        self.focusedHubIndex = max(0, min(self.focusedHubIndex, len(self.visibleHubs) - 1))
+        hub = self.visibleHubs[self.focusedHubIndex]
+        is_home = not self.lastSection or self.lastSection.key is None
+        identifier = hub.getCleanHubIdentifier(is_home=is_home)
+        self.setProperty('hub.display.400', self.getHubDisplayType(hub, identifier))
+        self.showHub(hub, is_home=is_home, reselect_pos=self._hubReselectPositions.get(identifier),
+                     hub_index=0, force_reselect=True)
+        # Peek rows bind only after the anchor above - _showHub() seeds the hero background from
+        # the first item of whatever hub it populates the *first* time self.backgroundSet is False
+        # (home.py's _showHub, near its item loop); binding the anchor first means backgroundSet is
+        # already True by the time peek hubs populate, so their items can never hijack the hero
+        # background meant for the actually-focused hub.
+        self._bindPeekHubs()
+
+    def _bindPeekHubs(self):
+        """Populate the non-focusable peek-above/peek-below previews (hub_index 1/2) with the
+        previous/next hub in self.visibleHubs, and the hub.has_prev/hub.has_next properties their
+        XML visibility conditions key off (see script-plex-home.xml.tpl's grouplist 501/502).
+
+        Must be called after the anchor (hub_index=0) has already been bound - see the comment at
+        this method's own call site in _bindFocusedHub()."""
+        prev_hub = self.visibleHubs[self.focusedHubIndex - 1] if self.focusedHubIndex > 0 else None
+        next_hub = (self.visibleHubs[self.focusedHubIndex + 1]
+                    if self.focusedHubIndex < len(self.visibleHubs) - 1 else None)
+        self.setBoolProperty('hub.has_prev', prev_hub is not None)
+        self.setBoolProperty('hub.has_next', next_hub is not None)
+
+        is_home = not self.lastSection or self.lastSection.key is None
+        for hub, index in ((prev_hub, 1), (next_hub, 2)):
+            if hub is None:
+                self.hubControls[index].reset()
+                self.setProperty('hub.display.4{0:02d}'.format(index), '')
+                continue
+            identifier = hub.getCleanHubIdentifier(is_home=is_home)
+            self.setProperty('hub.display.4{0:02d}'.format(index), self.getHubDisplayType(hub, identifier))
+            # reselect_pos/force_reselect: show each peek hub at the same horizontally-scrolled
+            # position it last had as the anchor, so it reads as one continuous list as it moves
+            # between peek-above/anchor/peek-below rather than resetting to its first item every
+            # time it's rebound into a different physical control. force_reselect is required, not
+            # just reselect_pos - _showHub()'s reselect logic otherwise no-ops once
+            # self._anyItemAction is set (true for virtually all real usage after the first
+            # keypress), the same bug _bindFocusedHub's own anchor call above already works around.
+            self.showHub(hub, is_home=is_home, hub_index=index,
+                         reselect_pos=self._hubReselectPositions.get(identifier), force_reselect=True)
+
+    def _captureHubPosition(self):
+        """Snapshot the currently-bound hub's selection into self._hubReselectPositions before
+        switching away from it - otherwise it'd be lost, since navigating away rebinds the one
+        physical control to a different hub."""
+        control = self.hubControls[0]
+        if not control.dataSource:
+            return
+        pos = control.getSelectedPos()
+        if pos is None:
+            return
+        mli = control.getItemByPos(pos)
+        if not (mli and mli.dataSource):
+            return
+        is_home = not self.lastSection or self.lastSection.key is None
+        identifier = control.dataSource.getCleanHubIdentifier(is_home=is_home)
+        self._hubReselectPositions[identifier] = (str(mli.dataSource.ratingKey), pos)
+
+    def _switchFocusedHub(self, delta):
+        """Move the logical focus delta positions (-1/+1) and rebind the anchor to it. No-ops at
+        the top/bottom of the hub stack, matching the old per-row onup=noop / self-referencing
+        ondown behavior at the edges."""
+        if not self.visibleHubs:
+            return
+        new_index = self.focusedHubIndex + delta
+        if not (0 <= new_index < len(self.visibleHubs)):
+            return
+        self._captureHubPosition()
+        self.focusedHubIndex = new_index
+        self._bindFocusedHub()
+        self.checkHubItem(self.HUB_CONTROL_ID)
+
+    def showHub(self, hub, items=None, is_home=False, reselect_pos=None, hub_index=None, force_reselect=False):
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
 
         if hub_index is None:
@@ -4377,7 +4576,8 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             'ar16x9': flags['ar16x9'],
             'text2lines': flags['text2lines'],
         }
-        self._showHub(hub, hubitems=items, reselect_pos=reselect_pos, identifier=identifier, **kwargs)
+        self._showHub(hub, hubitems=items, reselect_pos=reselect_pos, identifier=identifier,
+                      force_reselect=force_reselect, **kwargs)
         return True
 
     def createGrandparentedListItem(self, obj, thumb_w, thumb_h, with_grandparent_title=False):
@@ -4536,22 +4736,23 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     def clearHubs(self):
         self.updateHubs = {}
+        self.visibleHubs = []
+        self.focusedHubIndex = 0
         for i, control in enumerate(self.hubControls):
             control.reset()
             # Clear display type property for this hub slot
             self.setProperty('hub.display.4{0:02d}'.format(i), '')
 
     def _showHub(self, hub, hubitems=None, reselect_pos=None, identifier=None, index=None, with_progress=False,
-                 with_art=False, ar16x9=False, text2lines=False, **kwargs):
+                 with_art=False, ar16x9=False, text2lines=False, force_reselect=False, **kwargs):
         control = self.hubControls[index]
         control.dataSource = hub
 
         if not hub.items and not hubitems:
             control.reset()
-            if self.lastFocusID == index + 400 and not self._anyItemAction:
+            if self.lastFocusID == self.HUB_CONTROL_ID and not self._anyItemAction:
                 util.DEBUG_LOG("Hub {} was focused but is gone.", identifier)
-                hubControlIndex = self.lastFocusID - 400
-                self.focusFirstValidHub(hubControlIndex)
+                self.focusFirstValidHub(self.focusedHubIndex)
             return
 
         if not hubitems:
@@ -4589,7 +4790,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
         for obj in hubitems or hub.items:
             if not self.backgroundSet and not use_reselect_pos:
-                if self.updateHeroFrom(obj):
+                if self.updateHeroFrom(obj, hub=hub):
                     self.backgroundSet = True
 
             wide = with_art
@@ -4672,13 +4873,16 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                     last_pos -= 1
 
                 control.selectItem(last_pos)
-                self._lastSelectedItem = (index + 400, last_pos)
-                if last_pos < control.size() and self.updateHeroFrom(control[last_pos].dataSource):
+                self._lastSelectedItem = (id(hub), last_pos)
+                if last_pos < control.size() and self.updateHeroFrom(control[last_pos].dataSource, hub=hub):
                     self.backgroundSet = True
                 return
 
-            # during hub updates, if the user manually selects a different item, do nothing
-            if self._anyItemAction:
+            # during background hub updates, if the user manually selects a different item, do
+            # nothing - but this guard doesn't apply to force_reselect, which is an explicit
+            # switch-to-this-hub-and-restore-its-position call (_bindFocusedHub), not a background
+            # refresh that might otherwise fight the user's own in-progress navigation.
+            if self._anyItemAction and not force_reselect:
                 return
 
             cur_pos = control.getSelectedPos()
@@ -4698,7 +4902,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                         else:
                             return
                 if rk_found:
-                    if pos < control.size() and self.updateHeroFrom(control[pos].dataSource):
+                    if pos < control.size() and self.updateHeroFrom(control[pos].dataSource, hub=hub):
                         self.backgroundSet = True
                     return
 
@@ -4711,7 +4915,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 util.DEBUG_LOG("Hub {}: Reselect: We didn't find {} in list, or no item given. "
                                "Reselecting position {}", identifier, rk, pos)
                 control.selectItem(pos)
-                if pos < control.size() and self.updateHeroFrom(control[pos].dataSource):
+                if pos < control.size() and self.updateHeroFrom(control[pos].dataSource, hub=hub):
                     self.backgroundSet = True
             else:
                 if more:
@@ -4728,7 +4932,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                     backgroundthread.BGThreader.addTask(task)
                 else:
                     control.selectItem(control.size() - 1)
-                    if self.updateHeroFrom(control[control.size() - 1].dataSource):
+                    if self.updateHeroFrom(control[control.size() - 1].dataSource, hub=hub):
                         self.backgroundSet = True
 
     def updateListItem(self, mli):

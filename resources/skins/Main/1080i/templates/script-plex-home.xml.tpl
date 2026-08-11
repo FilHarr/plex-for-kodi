@@ -1,73 +1,32 @@
 {% extends "default.xml.tpl" %}
 {% block content %}
-<control type="grouplist" id="50">
+<!-- Single fixed-position hub row ("anchor"): whichever hub is logically focused always renders
+     here, at exactly row 0's old resting position - home.py rebinds this one physical control's
+     content (title, items, display type) as focus moves between hubs, rather than there being one
+     physical control per hub. See docs/notes/home-hub-fixed-focus-position-status.md for why: three
+     <animation>-based attempts failed (a control's clip rect follows its own animated position, so
+     nothing clipped correctly), and nesting hub rows as items inside one native vertical list is
+     impossible (Kodi gives item-template content no real, addressable control identity - confirmed
+     live, RuntimeError: Non-Existent Control). id="50" is kept on the outer control because
+     default.xml.tpl's header controls target it directly via <ondown>50</ondown>. -->
+<control type="group" id="50">
     <!-- Slide right while the sidebar rail is expanded (focused), so hub content doesn't sit under the labels -->
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
 
-    <!-- Dynamic focus animations for hub rows -->
-    <!-- Both stages below collapse row 0 out of view and are keyed off ITS actual display type
-         (hub.display.400), not the type of whichever row currently has focus - the collapsed
-         stage stays flat once focus passes row 1 no matter how much deeper you scroll (every i
-         beyond 1 produces the same effect), so this was never a per-row cumulative slide, just
-         two fixed states sized to how tall row 0 itself is. The collapsed-stage values below are
-         exact: -(row 0's real full pitch), matching the 470/500/445 pitches the hub rows above now
-         render at - poster's own spacer shrank from +90 to +5 (and its 555/345 pair to 470/292)
-         once its item layout lost its under-poster label; the 5 is a deliberate small breathing-
-         gap below the poster/progress-bar, not leftover label space. The partial-stage values
-         (originally poster's hand-tuned -345, with ar16x9/square scaled from it by the same
-         345/555 ratio) are an estimate, not measured - flag if the transition feels off for a
-         non-poster row 0. -->
-    {% for display_type, transitional_end in [('poster', -292), ('ar16x9', -311), ('square', -277)] %}
-    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500) + String.IsEqual(Window.Property(hub.display.400),{{ display_type }})" reversible="true">
-        <effect type="slide" end="0,{{ vscale(transitional_end) }}" time="200" tween="sine" easing="inout"/>
-    </animation>
-    {% endfor %}
-
-    <!-- Subsequent hubs: fully collapse row 0 once focus has passed row 1 -->
-    {% for i in range(1, core.hub_count) %}
-    {% for display_type, collapsed_end in [('poster', -470), ('ar16x9', -500), ('square', -445)] %}
-    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),{{ i }}) + Control.IsVisible({{ i + 499 }}) + String.IsEqual(Window.Property(hub.display.400),{{ display_type }})" reversible="true">
-        <effect type="slide" end="0,{{ vscale(collapsed_end) }}" time="200" tween="sine" easing="inout"/>
-    </animation>
-    {% endfor %}
-    {% endfor %}
-
     <defaultcontrol>500</defaultcontrol>
     <!-- posx=100, not 55: the sidebar rail is drawn on top (see its own comment in default.xml.tpl's
-         header block), so this is purely about where departing posters get clipped as they scroll
-         out of focus - this grouplist clips its children to its own rect, so its left edge is that
-         clip boundary. 55 sat right at the collapsed rail's icon column, so a departing poster
-         visibly clipped mid-icon instead of clearing the rail's full condensed width first; 100
-         gives it that extra room. Row titles/bifurcation lines and item layout insets below have
-         their own posx reduced by the same 45px this moved right, to keep resting positions
-         unchanged (60->15, 55->10). -->
+         header block) - this leaves room for the collapsed rail's icon column. Row titles/
+         bifurcation lines and item layout insets below have their own posx reduced by the same 45px
+         this moved right, to keep resting positions unchanged (60->15, 55->10). -->
     <posx>100</posx>
     <posy>{{ vscale(424) }}</posy>
     <width>2085</width>
-    {% with n = core.hub_count %}{% with grouplist_height = n * 555 + 320 %}
-    <height>{{ vscale(grouplist_height) }}</height>
-    {% endwith %}{% endwith %}
-    <itemgap>20</itemgap>
-    <orientation>vertical</orientation>
+    <height>{{ vscale(425) }}</height>
     <usecontrolcoords>true</usecontrolcoords>
-    <scrolltime tween="quadratic" easing="out">200</scrolltime>
 
-    <!-- DYNAMIC HUB ROWS - Generated from hub_count setting -->
-    {% for i in range(core.hub_count) %}
-    {% with group_id = i + 500 & hub_id = i + 400 & spacer_id = i + 600 & is_first_hub = loop.is_first & is_last_hub = loop.is_last %}
-    <!-- Row pitch varies by display type, but the hub's list control itself must stay a single
-         physical control: home.py caches it via getControl() once at init (self.hubControls,
-         home.py ~749), and Kodi's control lookup for a duplicated id always resolves to the same
-         one instance regardless of which sibling's <visible> is actually true - unlike native
-         focus/visibility handling, which is duplicate-id-aware (that's why the
-         hub_itemlayout_*/hub_focusedlayout_* conditional selection works). Duplicating this
-         list's id silently sent content to a hidden variant, leaving the visible (shorter) row
-         empty. So the content group below is single and fixed at the shortest type's (square)
-         real content extent, and a small conditional spacer - safe to duplicate since nothing
-         ever targets it from Python - restores the rest of the pitch for taller types. -->
-    <control type="group" id="{{ group_id }}">
-        <visible>Integer.IsGreater(Container({{ hub_id }}).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
-        <defaultcontrol>{{ hub_id }}</defaultcontrol>
+    <control type="group" id="500">
+        <visible>Integer.IsGreater(Container(400).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
+        <defaultcontrol>400</defaultcontrol>
         <width>1920</width>
         <height>{{ vscale(425) }}</height>
         <control type="image">
@@ -89,21 +48,27 @@
             <aligny>center</aligny>
             <textcolor>FFFFFFFF</textcolor>
             <shadowcolor>66000000</shadowcolor>
-            <label>[B]$INFO[Window.Property(hub.{{ hub_id }})][/B]</label>
+            <label>[B]$INFO[Window.Property(hub.400)][/B]</label>
         </control>
-        <control type="list" id="{{ hub_id }}">
+        <control type="list" id="400">
             <posx>0</posx>
             <posy>{{ vscale(29) }}</posy>
             <width>1920</width>
             <height>{{ vscale(515) }}</height>
-            <onup>{% if not is_first_hub %}{{ hub_id - 1 }}{% else %}noop{% endif %}</onup>
-            <ondown>{% if is_last_hub %}{{ hub_id }}{% else %}{{ hub_id + 1 }}{% endif %}</ondown>
+            <!-- Vertical hub-to-hub navigation is handled entirely in Python (HomeWindow.onAction
+                 intercepts MOVE_UP/MOVE_DOWN before this native nav map would fire) - there is no
+                 other physical row control to hand focus to, so both are noop here. -->
+            <onup>noop</onup>
+            <ondown>noop</ondown>
             <onright>noop</onright>
             <onleft>9001</onleft>
             <scrolltime>200</scrolltime>
             <orientation>horizontal</orientation>
             <preloaditems>4</preloaditems>
 
+            <!-- hub_id: the includes below key their conditions off Window.Property(hub.display.{{ hub_id }})
+                 - always 400 now, but they still need it in scope. -->
+            {% with hub_id = 400 %}
             <!-- Conditional item layouts - Kodi selects layout based on condition attribute -->
             {% include "includes/hub_itemlayout_poster.xml.tpl" %}
             {% include "includes/hub_itemlayout_square.xml.tpl" %}
@@ -112,32 +77,145 @@
             {% include "includes/hub_focusedlayout_poster.xml.tpl" %}
             {% include "includes/hub_focusedlayout_square.xml.tpl" %}
             {% include "includes/hub_focusedlayout_ar16x9.xml.tpl" %}
+            {% endwith %}
         </control>
     </control>
-    <!-- Pitch top-up for types taller than the square baseline above; absent entirely for square,
-         so it doesn't add a second itemgap on top of an already-correct pitch. Poster's real
-         content (art + progress bar, no more under-poster label) lands right at the 425 baseline
-         itself with essentially no slack, so its own +5 here is purely a deliberate breathing gap
-         before the next row's title, not leftover label space. -->
-    {% for display_type, extra_height in [('poster', 5), ('ar16x9', 35)] %}
-    <control type="group" id="{{ spacer_id }}">
-        <visible>Integer.IsGreater(Container({{ hub_id }}).NumItems,0) + String.IsEmpty(Window.Property(drawing)) + String.IsEqual(Window.Property(hub.display.{{ hub_id }}),{{ display_type }})</visible>
-        <width>1920</width>
-        <height>{{ vscale(extra_height) }}</height>
-    </control>
-    {% endfor %}
-    {% endwith %}
-    {% endfor %}
 
-    <control type="label">
-        <!-- DUMMY -->
+    <!-- Peek rows: non-focusable previews of the previous/next hub, rendered with the exact same
+         itemlayout/focusedlayout includes as the anchor above (just a different hub_id/control id) -
+         they're meant to look identical to the focused row, not a simplified decorative version.
+         Each is wrapped in its own clipping grouplist (a plain group doesn't clip - see
+         script-plex-episodes.xml.tpl:271's own comment on this) sized shorter than full row content,
+         so the crop is just a side effect of limited screen space, not a deliberately-thin sliver.
+         home.py's HomeWindow._bindPeekHubs() populates control ids 401/402 and drives the
+         hub.has_prev/hub.has_next visibility properties below. -->
+    <control type="grouplist" id="501">
+        <!-- Peek-above: only shown when the focused hub has no hero art - that's the only time the
+             band between the header and the anchor (y~135-424) is actually free; when hero art is
+             showing, that space is occupied by the title/meta/summary overlay (see
+             script-plex-home.xml.tpl's header block) and default_background.xml.tpl's art box,
+             which hide together via the same no_hero_art property.
+
+             No title label/bifurcation line here (unlike 502 below) - this preview is meant to read
+             as the *tail end* of the row above trailing into view, not a fresh row starting from its
+             own top: the item templates' outer-group posy is overridden to a per-type negative value
+             for hub_id 401 specifically (see hub_itemlayout_poster/square/ar16x9.xml.tpl), pushing
+             each item up so its own bottom edge lands flush with this wrapper's bottom (right above
+             the anchor) - the label, bifurcation line and top of the art fall above y=0 and are
+             clipped away by this grouplist, same mechanism as everything else being cropped here. -->
+        <visible>!String.IsEmpty(Window.Property(no_hero_art)) + !String.IsEmpty(Window.Property(hub.has_prev))</visible>
+        <posx>0</posx>
+        <!-- -289 = 135 (header's own bottom edge, absolute) - 424 (group 50's own absolute posy) -
+             top edge sits flush with the header, using the full available band down to the anchor. -->
+        <posy>{{ vscale(-289) }}</posy>
         <width>1920</width>
-        <height>{{ vscale(100) }}</height>
-        <font>font12</font>
-        <align>left</align>
-        <aligny>center</aligny>
-        <textcolor>00FFFFFF</textcolor>
-        <label> </label>
+        <!-- 277 = 424 (anchor's absolute top) - 12 (gap) - 135 (header bottom). -->
+        <height>{{ vscale(277) }}</height>
+        <usecontrolcoords>true</usecontrolcoords>
+        <orientation>vertical</orientation>
+        <itemgap>0</itemgap>
+        <control type="group">
+            <visible>Integer.IsGreater(Container(401).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
+            <width>1920</width>
+            <height>{{ vscale(277) }}</height>
+            <control type="list" id="401">
+                <posx>0</posx>
+                <posy>0</posy>
+                <width>1920</width>
+                <height>{{ vscale(277) }}</height>
+                <!-- Never focused - Python never targets this id via setFocusId, and nothing else's
+                     onup/ondown/onleft/onright points at it, so these are just defensive noops. -->
+                <onup>noop</onup>
+                <ondown>noop</ondown>
+                <onleft>noop</onleft>
+                <onright>noop</onright>
+                <scrolltime>200</scrolltime>
+                <orientation>horizontal</orientation>
+                <preloaditems>4</preloaditems>
+
+                {% with hub_id = 401 %}
+                {% include "includes/hub_itemlayout_poster.xml.tpl" %}
+                {% include "includes/hub_itemlayout_square.xml.tpl" %}
+                {% include "includes/hub_itemlayout_ar16x9.xml.tpl" %}
+                {% include "includes/hub_focusedlayout_poster.xml.tpl" %}
+                {% include "includes/hub_focusedlayout_square.xml.tpl" %}
+                {% include "includes/hub_focusedlayout_ar16x9.xml.tpl" %}
+                {% endwith %}
+            </control>
+        </control>
+    </control>
+
+    <control type="grouplist" id="502">
+        <!-- Peek-below: shown whenever a next hub exists, independent of hero art state - the band
+             below the anchor is always free. Same top-anchored render as the anchor itself (title +
+             bifurcation line + top of the art, cropped at the bottom) - unlike 501 above, this one
+             reads as the *start* of the next row, so keeping its own title visible makes sense here.
+
+             posy=489 (not immediately below the anchor's declared 425 height) / height reaching the
+             screen bottom (1080): the anchor's declared height is a nominal figure - a 2-line ar16x9
+             label (hub_itemlayout_ar16x9.xml.tpl, text2lines) actually bottoms out around 477 (see
+             that file's own posy chain: 29 list + 72 item + 5 inner + 336 label2 posy + 35 height),
+             well past 425, since the anchor is a plain, non-clipping group. 489 = 477 + 12px gap,
+             keeping this row's own title clear of the anchor's real worst-case content regardless of
+             which display type currently occupies it. -->
+        <visible>!String.IsEmpty(Window.Property(hub.has_next))</visible>
+        <posx>0</posx>
+        <posy>{{ vscale(489) }}</posy>
+        <width>1920</width>
+        <!-- 167 = 1080 (screen bottom) - 424 (group 50's own absolute posy) - 489 (this grouplist's
+             own relative posy above) - reaches exactly to the bottom of the screen. -->
+        <height>{{ vscale(167) }}</height>
+        <usecontrolcoords>true</usecontrolcoords>
+        <orientation>vertical</orientation>
+        <itemgap>0</itemgap>
+        <control type="group">
+            <visible>Integer.IsGreater(Container(402).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
+            <width>1920</width>
+            <height>{{ vscale(167) }}</height>
+            <control type="image">
+                <visible>!String.IsEmpty(Window.Property(bifurcation_lines))</visible>
+                <posx>15</posx>
+                <posy>{{ vscale(12) }}</posy>
+                <width>1800</width>
+                <height>{{ vscale(2) }}</height>
+                <texture>script.plex/white-square.png</texture>
+                <colordiffuse>A0000000</colordiffuse>
+            </control>
+            <control type="label">
+                <posx>15</posx>
+                <posy>0</posy>
+                <width>1000</width>
+                <height>{{ vscale(87) }}</height>
+                <font>font13</font>
+                <align>left</align>
+                <aligny>center</aligny>
+                <textcolor>FFFFFFFF</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>[B]$INFO[Window.Property(hub.402)][/B]</label>
+            </control>
+            <control type="list" id="402">
+                <posx>0</posx>
+                <posy>{{ vscale(29) }}</posy>
+                <width>1920</width>
+                <height>{{ vscale(515) }}</height>
+                <onup>noop</onup>
+                <ondown>noop</ondown>
+                <onleft>noop</onleft>
+                <onright>noop</onright>
+                <scrolltime>200</scrolltime>
+                <orientation>horizontal</orientation>
+                <preloaditems>4</preloaditems>
+
+                {% with hub_id = 402 %}
+                {% include "includes/hub_itemlayout_poster.xml.tpl" %}
+                {% include "includes/hub_itemlayout_square.xml.tpl" %}
+                {% include "includes/hub_itemlayout_ar16x9.xml.tpl" %}
+                {% include "includes/hub_focusedlayout_poster.xml.tpl" %}
+                {% include "includes/hub_focusedlayout_square.xml.tpl" %}
+                {% include "includes/hub_focusedlayout_ar16x9.xml.tpl" %}
+                {% endwith %}
+            </control>
+        </control>
     </control>
 </control>
 
@@ -386,7 +464,10 @@
          than a child of that grouplist, so it needs its own copy of the animation to move in sync
          rather than inheriting it. -->
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
-    <visible>!String.IsEmpty(Window.Property(title))</visible>
+    <!-- no_hero_art (HomeWindow.updateHeroFrom, home.py): hide the whole overlay - not just the
+         art box in default_background.xml.tpl - for items with no real background art (Photos,
+         many Music artists/albums), rather than showing text describing art that isn't there. -->
+    <visible>!String.IsEmpty(Window.Property(title)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
     <posx>52</posx>
     <posy>{{ vscale(155) }}</posy>
     <control type="label">

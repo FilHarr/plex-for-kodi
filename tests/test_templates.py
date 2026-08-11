@@ -190,7 +190,12 @@ class TemplateRenderTest(KodiTestCase):
             with self.subTest(template=name):
                 ET.fromstring(scaled[name])
 
-    def test_hub_count_flows_into_the_home_template(self):
+    def test_hub_count_no_longer_affects_the_home_template(self):
+        # Home renders a single fixed-position hub row (control id 400/500) - home.py rebinds its
+        # content as focus moves between hubs, rather than there being one physical control per
+        # hub. hub_count is a runtime soft cap on how many hubs are fetched, not a compile-time
+        # row count, so it must not affect the compiled template at all. Guards against
+        # accidentally re-coupling the two.
         base = copy.deepcopy(TEMPLATE_CONTEXTS)
         base["core"]["hub_count"] = 4
         few = render_theme(make_engine(self.mktemp(), context=base), "modern")["home"]
@@ -199,8 +204,7 @@ class TemplateRenderTest(KodiTestCase):
         more_ctx["core"]["hub_count"] = 12
         many = render_theme(make_engine(self.mktemp(), context=more_ctx), "modern")["home"]
 
-        self.assertNotEqual(few, many)
-        self.assertLess(len(few), len(many), "more hub rows should produce a longer window")
+        self.assertEqual(few, many)
 
     def test_search_window_defines_a_control_per_search_hub(self):
         xml = render_theme(make_engine(self.mktemp()), "modern")["search"]
