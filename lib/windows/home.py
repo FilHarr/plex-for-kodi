@@ -524,6 +524,27 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
     # physical control per hub. See docs/notes/home-hub-fixed-focus-position-status.md.
     HUB_CONTROL_ID = 400
 
+    # Peek-below's own wrapper (script-plex-home.xml.tpl group 502 - a plain group, not a clipping
+    # grouplist, since getControl() can't address a grouplist control from Python) - its posy/height
+    # are repositioned in Python at every anchor rebind (see _updatePeekBelowGeometry()) to sit
+    # right under whatever the anchor is *actually* showing, instead of always reserving space for
+    # the tallest possible row. The XML's own declared posy/height are just the pre-bind fallback.
+    PEEK_BELOW_WRAPPER_ID = 502
+    ANCHOR_ABS_Y = 424  # group 50's own declared posy in script-plex-home.xml.tpl
+    PEEK_BELOW_GAP = 12  # matches the fixed layout's own gap before peek-below's title
+
+    # Real bottom edge of the anchor's own rendered content (template-declared, pre-vscale units,
+    # relative to group 50's own origin - i.e. ANCHOR_ABS_Y), keyed by the same (display_type,
+    # text2lines) values getHubDisplayType()/getHubRenderFlags() already report. See
+    # hub_itemlayout_poster/square/ar16x9.xml.tpl's own peek-above posy-override comments for the
+    # underlying arithmetic (29 list + 72 item + inner-group offset + content bottom). Poster has no
+    # title label under it at all, so its bottom doesn't depend on text2lines.
+    ANCHOR_CONTENT_BOTTOM = {
+        ('poster', False): 429, ('poster', True): 429,
+        ('square', False): 395, ('square', True): 422,
+        ('ar16x9', False): 450, ('ar16x9', True): 477,
+    }
+
     # Same box size pre_play.py's own CLEAR_LOGO_DIM requests, so the hero info overlay's clearlogo
     # matches pre_play's exactly (see script-plex-home.xml.tpl's hero info group).
     CLEAR_LOGO_DIM = util.scaleResolution(616, 109)
@@ -4471,6 +4492,19 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
         self.storeLastBG()
 
+    def _updatePeekBelowGeometry(self, display_type, text2lines):
+        """Reposition/resize group 502 (peek-below's wrapper) off the anchor's actual
+        content bottom for (display_type, text2lines), instead of a single constant sized for the
+        tallest possible row (2-line ar16x9) - so a shorter row (poster/square) gets a tighter gap
+        before its peek-below preview instead of always reserving the tallest row's space."""
+        content_bottom = self.ANCHOR_CONTENT_BOTTOM.get(
+            (display_type, text2lines), self.ANCHOR_CONTENT_BOTTOM[('ar16x9', True)]
+        )
+        posy = content_bottom + self.PEEK_BELOW_GAP
+        control = self.getControl(self.PEEK_BELOW_WRAPPER_ID)
+        control.setPosition(0, util.vscale(posy, r=0))
+        control.setHeight(util.vscale(self.height - self.ANCHOR_ABS_Y - posy, r=0))
+
     def _bindFocusedHub(self):
         """Push self.visibleHubs[self.focusedHubIndex] into the one physical hub-row control.
 
@@ -4479,6 +4513,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         if not self.visibleHubs:
             self.hubControls[0].reset()
             self.setProperty('hub.display.400', '')
+            self._updatePeekBelowGeometry('ar16x9', True)
             self._bindPeekHubs()
             return
 
@@ -4486,7 +4521,9 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         hub = self.visibleHubs[self.focusedHubIndex]
         is_home = not self.lastSection or self.lastSection.key is None
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
-        self.setProperty('hub.display.400', self.getHubDisplayType(hub, identifier))
+        display_type = self.getHubDisplayType(hub, identifier)
+        self.setProperty('hub.display.400', display_type)
+        self._updatePeekBelowGeometry(display_type, self.getHubRenderFlags(hub, identifier)['text2lines'])
         self.showHub(hub, is_home=is_home, reselect_pos=self._hubReselectPositions.get(identifier),
                      hub_index=0, force_reselect=True)
         # Peek rows bind only after the anchor above - _showHub() seeds the hero background from

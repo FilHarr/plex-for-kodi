@@ -84,9 +84,15 @@
     <!-- Peek rows: non-focusable previews of the previous/next hub, rendered with the exact same
          itemlayout/focusedlayout includes as the anchor above (just a different hub_id/control id) -
          they're meant to look identical to the focused row, not a simplified decorative version.
-         Each is wrapped in its own clipping grouplist (a plain group doesn't clip - see
-         script-plex-episodes.xml.tpl:271's own comment on this) sized shorter than full row content,
-         so the crop is just a side effect of limited screen space, not a deliberately-thin sliver.
+         501 (peek-above) is wrapped in its own clipping grouplist (a plain group doesn't clip - see
+         script-plex-episodes.xml.tpl:271's own comment on this), since its crop boundary sits
+         mid-screen (the header's bottom edge) with no other control providing that cutoff. 502
+         (peek-below) is a plain group instead - its own crop boundary is always the physical bottom
+         of the screen itself (HomeWindow._updatePeekBelowGeometry() keeps its computed height ending
+         exactly at 1080 regardless of where it starts), which Kodi's own render surface already
+         cuts off with nothing further to draw beneath, so no separate clipping control is needed
+         there - and a plain group is required anyway, since getControl() (used to reposition/resize
+         it from Python - see below) raises "Unknown control type for python" for grouplist controls.
          home.py's HomeWindow._bindPeekHubs() populates control ids 401/402 and drives the
          hub.has_prev/hub.has_next visibility properties below. -->
     <control type="grouplist" id="501">
@@ -145,29 +151,32 @@
         </control>
     </control>
 
-    <control type="grouplist" id="502">
+    <control type="group" id="502">
         <!-- Peek-below: shown whenever a next hub exists, independent of hero art state - the band
              below the anchor is always free. Same top-anchored render as the anchor itself (title +
              bifurcation line + top of the art, cropped at the bottom) - unlike 501 above, this one
              reads as the *start* of the next row, so keeping its own title visible makes sense here.
 
-             posy=489 (not immediately below the anchor's declared 425 height) / height reaching the
-             screen bottom (1080): the anchor's declared height is a nominal figure - a 2-line ar16x9
-             label (hub_itemlayout_ar16x9.xml.tpl, text2lines) actually bottoms out around 477 (see
-             that file's own posy chain: 29 list + 72 item + 5 inner + 336 label2 posy + 35 height),
-             well past 425, since the anchor is a plain, non-clipping group. 489 = 477 + 12px gap,
-             keeping this row's own title clear of the anchor's real worst-case content regardless of
-             which display type currently occupies it. -->
+             A plain group, not a clipping grouplist - see the comment above 501 for why that's fine
+             here (its bottom boundary is always the physical screen edge) and required (grouplist
+             isn't addressable via Python's getControl()).
+
+             posy/height below are just the pre-bind fallback (worst case: 2-line ar16x9, the anchor's
+             declared height being a nominal figure only - a real 2-line ar16x9 label actually bottoms
+             out around 477, see hub_itemlayout_ar16x9.xml.tpl's own posy chain, well past the nominal
+             425, since the anchor is a plain, non-clipping group). HomeWindow._updatePeekBelowGeometry()
+             repositions/resizes this control via setPosition()/setHeight() at every anchor rebind,
+             using the anchor's *actual* display type/text2lines state instead of always reserving the
+             worst case - so poster/square rows get a tighter gap before this preview than ar16x9 does. -->
         <visible>!String.IsEmpty(Window.Property(hub.has_next))</visible>
         <posx>0</posx>
         <posy>{{ vscale(489) }}</posy>
         <width>1920</width>
-        <!-- 167 = 1080 (screen bottom) - 424 (group 50's own absolute posy) - 489 (this grouplist's
-             own relative posy above) - reaches exactly to the bottom of the screen. -->
+        <!-- 167 = 1080 (screen bottom) - 424 (group 50's own absolute posy) - 489 (this group's own
+             relative posy above) - reaches exactly to the bottom of the screen. Fallback only, see
+             the posy comment above. -->
         <height>{{ vscale(167) }}</height>
         <usecontrolcoords>true</usecontrolcoords>
-        <orientation>vertical</orientation>
-        <itemgap>0</itemgap>
         <control type="group">
             <visible>Integer.IsGreater(Container(402).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
             <width>1920</width>
