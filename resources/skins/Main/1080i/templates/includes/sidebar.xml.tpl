@@ -108,7 +108,16 @@
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
         <focusposition>3</focusposition>
-        <movement>6</movement>
+        <!-- movement=5, not 6: fixedlist's own cursor math is maxCursor = min(focusposition + movement,
+             itemsPerPage) (Kodi's GUIFixedListContainer::GetCursorRange), but valid row slots only run
+             0..itemsPerPage-1 - with itemsPerPage=9 (792/88) and movement=6, maxCursor lands on 9, one
+             past the last real slot. SelectItem() then pins the last item's cursor at that invalid slot
+             9 instead of clamping to 8, which renders it below the control's own clip rect - invisible,
+             not scrolled into view. Confirmed against Kodi's actual C++ source, not guessed. Never
+             surfaced before because every section list this sidebar has shipped with so far topped out
+             at 9 items - exactly the itemsPerPage this list was tuned for - so the 10th-item overflow
+             path never ran. movement=5 caps maxCursor at 8 (itemsPerPage-1), the last valid slot. -->
+        <movement>5</movement>
         <pagecontrol>0</pagecontrol>
         <!-- SIDEBAR ITEM LAYOUT (unfocused list) -->
         <!-- height=88, not 72: measured against official Plex, icon-to-icon pitch is a very consistent
