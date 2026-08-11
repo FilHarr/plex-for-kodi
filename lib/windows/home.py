@@ -8,7 +8,7 @@ import math
 import plexnet
 from kodi_six import xbmc
 from kodi_six import xbmcgui
-from plexnet import plexapp, plexlibrary, plexresource
+from plexnet import plexapp, plexlibrary, plexobjects, plexresource
 from six.moves import range
 
 from lib import backgroundthread
@@ -3710,17 +3710,20 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         content_rating = getattr(ds, 'contentRating', None)
         self.setProperty('content.rating', content_rating and str(content_rating).split('/', 1)[-1] or '')
 
-        # genres is a lazy-reloading method on Show/Episode (video.py Show.genres() reloads the
-        # object if it isn't full yet) but a plain list attribute on Movie, populated straight from
-        # whatever the hub listing response included - no reload fallback there at all. Handling
-        # only the callable case left Movies with permanently empty genres until something else
-        # (e.g. visiting pre_play) reloaded the same cached object in place.
+        # genres() is a lazy-reloading method (Show/Movie in video.py both self-heal via a soft
+        # reload if not yet a full object) - callers elsewhere (preplay.py, subitems.py) just call
+        # it unconditionally. The one thing that can't be called that way is
+        # PlexObject.__getattr__'s fabricated PlexValue placeholder for a type that has no genres
+        # concept at all (Photo, Artist) - its __call__ is an unrelated "getter with a default"
+        # idiom requiring an argument, so calling it with none always raised TypeError. Excluding
+        # PlexValue instances is what distinguishes "no genres() to call" from every real case.
         genres_attr = getattr(ds, 'genres', None)
         genres = ''
         try:
-            genre_list = genres_attr() if callable(genres_attr) else genres_attr
-            if genre_list:
-                genres = u' / '.join([g.tag for g in genre_list][:3])
+            if genres_attr is not None and not isinstance(genres_attr, plexobjects.PlexValue):
+                genre_list = genres_attr()
+                if genre_list:
+                    genres = u' / '.join([g.tag for g in genre_list][:3])
         except Exception:
             util.DEBUG_LOG('setHeroInfo: genres failed for {}', ds)
         self.setProperty('info', genres)

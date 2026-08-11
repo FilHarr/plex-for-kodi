@@ -748,7 +748,7 @@ class PlayableVideo(CachableItemsMixin, Video, media.RelatedMixin):
 
 @plexobjects.registerLibType
 class Movie(PlayableVideo):
-    __slots__ = ("collections", "countries", "directors", "genres", "media", "producers", "roles", "reviews",
+    __slots__ = ("collections", "countries", "directors", "_genres", "media", "producers", "roles", "reviews",
                  "writers", "studios", "markers", "sessionKey", "user", "player", "session", "transcodeSession")
     TYPE = 'movie'
 
@@ -759,7 +759,7 @@ class Movie(PlayableVideo):
                                                         server=self.server)
             self.countries = plexobjects.PlexItemList(data, media.Country, media.Country.TYPE, server=self.server)
             self.directors = plexobjects.PlexItemList(data, media.Director, media.Director.TYPE, server=self.server)
-            self.genres = plexobjects.PlexItemList(data, media.Genre, media.Genre.TYPE, server=self.server)
+            self._genres = plexobjects.PlexItemList(data, media.Genre, media.Genre.TYPE, server=self.server)
             self.media = plexobjects.PlexMediaItemList(data, plexmedia.PlexMedia, media.Media.TYPE,
                                                        initpath=self.initpath, server=self.server, media=self)
             self.producers = plexobjects.PlexItemList(data, media.Producer, media.Producer.TYPE, server=self.server)
@@ -786,6 +786,22 @@ class Movie(PlayableVideo):
 
     def isLibraryItem(self):
         return True
+
+    def genres(self):
+        # Movies fetched via a hub listing aren't full objects and never carry genre data - unlike
+        # Show.genres() above, nothing here has historically self-healed that, so callers as far
+        # back as Home's hero overlay saw permanently empty genres for any movie they hadn't
+        # already reloaded elsewhere (e.g. by visiting pre_play first). Mirroring Show's own
+        # lazy-reload-once pattern fixes that at the source instead of in each caller.
+        genres = dcm.getCacheData("movie_genres", self.ratingKey)
+        if genres:
+            return [media.Genre(util.AttributeDict(tag="genre", attrib={"tag": g}, virtual=True)) for g in genres]
+
+        if not self.isFullObject():
+            self.reload(soft=True)
+
+        dcm.setCacheData("movie_genres", self.ratingKey, [g.tag for g in self._genres])
+        return self._genres
 
     @property
     def defaultTitle(self):

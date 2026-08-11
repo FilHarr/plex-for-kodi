@@ -487,14 +487,25 @@ class PlayQueue(signalsmixin.SignalsMixin):
         if self.isRepeatOne:
             return True
 
-        if not self.allowSkipNext and -1 < list(self.items()).index(self.current()) < (len(list(self.items())) - 1):  # TODO: Was 'or' - did change cause issues?
+        items = list(self.items())
+        current = self.current()
+        if current not in items:
+            # an empty/failed-to-window queue has nothing to skip to
+            return False
+
+        if not self.allowSkipNext and -1 < items.index(current) < (len(items) - 1):  # TODO: Was 'or' - did change cause issues?
             return self.isRepeat and not self.isWindowed()
 
         return True
 
     def hasPrev(self):
         # return self.allowSkipPrev or self.items().index(self.current()) > 0
-        return list(self.items()).index(self.current()) > 0
+        items = list(self.items())
+        current = self.current()
+        if current not in items:
+            return False
+
+        return items.index(current) > 0
 
     def next(self):
         if self.isRepeatOne:
@@ -680,11 +691,35 @@ def createRemotePlayQueue(item, contentType, options, args, use_async=True, meth
         path = item.container.address or "/library/metadata/" + item.get("parentRatingKey", "")
         itemType = "directory"
     elif item.isPhotoOrDirectoryItem():
+        if item.type != "photoalbum" and not item.parentKey and not item.isDirectory() and not item.isFullObject():
+            # Photos surfaced via a hub (e.g. Home's "recently added") are partial objects - the
+            # lightweight hub listing omits parentKey/parentRatingKey entirely (confirmed live:
+            # both empty, only librarySectionID present). A full /library/metadata/{id} fetch does
+            # carry the album hierarchy, same as Movie.genres()'s reload-on-demand in video.py.
+            # Without this, item.container.address (the hub's own endpoint, not a listable album
+            # directory) was used instead, and the server silently returned an empty windowed
+            # queue for it.
+            item.reload(soft=True)
+
         if item.type == "photoalbum" or item.parentKey:
             path = item.getParentPath(item.type == "photoalbum" and "key" or "parentKey")
             itemType = "item"
         elif item.isDirectory():
             path = item.getAbsolutePath("key")
+        elif item.get("parentRatingKey"):
+            path = "/library/metadata/" + item.get("parentRatingKey")
+            itemType = "item"
+        elif item.getLibrarySectionId():
+            # No album parent at all - confirmed live: even after the reload above, this item has
+            # neither parentKey nor parentRatingKey, meaning it isn't organized into an album (a
+            # flat photo library), not just missing from a lightweight hub listing. There's no
+            # album directory to window a queue around, so fall back to the section's own "all"
+            # listing - unlike item.container.address (whatever endpoint the item happened to be
+            # fetched through, e.g. a hub aggregation that isn't a real listable directory), this
+            # is guaranteed to be a genuine directory the photo is an actual child of.
+            path = "/library/sections/{0}/all".format(item.getLibrarySectionId())
+            itemType = "directory"
+            options.key = item.getAbsolutePath("key")
         else:
             path = item.container.address
             itemType = "directory"

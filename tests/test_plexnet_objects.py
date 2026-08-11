@@ -181,7 +181,7 @@ class SubObjectTest(KodiTestCase):
                          [g.id for g in self.movie.guids])
 
     def test_tag_lists_are_parsed(self):
-        self.assertEqual(["Action", "Crime"], [g.tag for g in self.movie.genres])
+        self.assertEqual(["Action", "Crime"], [g.tag for g in self.movie.genres()])
         self.assertEqual(["Christopher Nolan"], [d.tag for d in self.movie.directors])
 
     def test_roles_carry_the_character_name(self):
