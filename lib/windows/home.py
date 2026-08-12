@@ -246,8 +246,8 @@ class ExtendHubTask(backgroundthread.Task):
             # to self.hub.items, so without this, hub.items stays frozen at its original first-page
             # size for the object's whole lifetime. That's invisible as long as the same physical
             # control stays bound to a hub forever (pagination then lives only in that control's own
-            # ManagedControlList), but any full rebuild from hub.items - _bindFocusedHub() re-binding
-            # a previously-paginated hub after navigating away and back, or peek row binding - would
+            # ManagedControlList), but any full rebuild from hub.items - _bindAllHubSlots() re-binding
+            # a previously-paginated hub after navigating away and back, or a peek row bind - would
             # silently drop everything past the first page, stranding any remembered position beyond
             # it. Keeping hub.items itself authoritative fixes every rebuild path at once.
             self.hub.items.extend(items)
@@ -519,31 +519,81 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     PLAYER_STATUS_BUTTON_ID = 204
 
-    # The single physical hub-row control. Only one ever exists - home.py rebinds its content to
-    # whichever hub is logically focused as the user moves up/down, rather than there being one
-    # physical control per hub. See docs/notes/home-hub-fixed-focus-position-status.md.
+    # The anchor - whichever hub is logically focused always renders here. home.py rebinds its
+    # content as focus moves up/down, rather than there being one physical control per hub actually
+    # scrolled. See docs/notes/home-hub-fixed-focus-position-status.md.
     HUB_CONTROL_ID = 400
 
-    # Peek-below's own wrapper (script-plex-home.xml.tpl group 502 - a plain group, not a clipping
-    # grouplist, since getControl() can't address a grouplist control from Python) - its posy/height
-    # are repositioned in Python at every anchor rebind (see _updatePeekBelowGeometry()) to sit
-    # right under whatever the anchor is *actually* showing, instead of always reserving space for
-    # the tallest possible row. The XML's own declared posy/height are just the pre-bind fallback.
-    PEEK_BELOW_WRAPPER_ID = 502
-    ANCHOR_ABS_Y = 424  # group 50's own declared posy in script-plex-home.xml.tpl
-    PEEK_BELOW_GAP = 12  # matches the fixed layout's own gap before peek-below's title
+    # group 51's own absolute resting position in script-plex-home.xml.tpl - NOT grouplist 50's own
+    # declared posy (that control's own base moved to y=135 so it could permanently cover peek-above
+    # without needing to move for that case - see its own comment - but group 51's relative posy
+    # inside it absorbs exactly that difference, so this absolute value is unchanged).
+    ANCHOR_ABS_Y = 424
+    # The local y-offset group 51 (grouplist 50's only child) must always be explicitly set to via
+    # setPosition() to sit at its correct resting position - NOT a value grouplist 50's own
+    # auto-stacking provides "for free" (a previous round relied on that via an extra spacer
+    # sibling, but the auto-stack kept re-applying its own contribution on top of whatever Python
+    # had already set, producing a persistent too-low offset - removed; see group 51's own comment
+    # in script-plex-home.xml.tpl). This is the absolute local-offset target itself, not a delta -
+    # every explicit setPosition() call must set exactly this (plus whatever has-hero-art
+    # compensation applies on top - see _group51RestOffset()), every single time, unconditionally.
+    GROUP51_BASELINE_OFFSET = 289
+    # Fixed gap between any two adjacent rows, either direction - used by _roleLocalY()'s stacking
+    # recurrence for every role now, not just peek-below (which is where this constant originally
+    # lived, back when peek-above used a fixed offset + a manual crop instead of the same formula).
+    ROW_GAP = 25
 
-    # Real bottom edge of the anchor's own rendered content (template-declared, pre-vscale units,
-    # relative to group 50's own origin - i.e. ANCHOR_ABS_Y), keyed by the same (display_type,
-    # text2lines) values getHubDisplayType()/getHubRenderFlags() already report. See
-    # hub_itemlayout_poster/square/ar16x9.xml.tpl's own peek-above posy-override comments for the
-    # underlying arithmetic (29 list + 72 item + inner-group offset + content bottom). Poster has no
-    # title label under it at all, so its bottom doesn't depend on text2lines.
-    ANCHOR_CONTENT_BOTTOM = {
+    # Permanent geometric order of the 5 physical controls (see docs/notes/home-hub-fixed-focus-
+    # position-status.md for the full history). Which ROLE (-2 two-above / -1 peek-above / 0 anchor /
+    # +1 peek-below / +2 two-below) a given control id currently plays rotates as focus moves -
+    # tracked by self._anchorRingPos (index into this tuple) - rather than roles being permanently
+    # glued to one control id with content rebound to match every move. That's the whole point: a
+    # control that already has correct, already-rendered content for a hub keeps it and just
+    # repositions: only the one control "wrapping around" per move (see _startHubSlide()) ever needs
+    # a fresh content bind - and since that control's role is always the extreme (±2), which is never
+    # inside grouplist 50's own clip range regardless of which two controls currently hold it, that
+    # rebind is always safely off-screen, never visible.
+    HUB_ROTATION_RING = (403, 401, 400, 402, 404)
+    # Each ring control's own wrapper control id (script-plex-home.xml.tpl groups 500-504) - fixed,
+    # structural (Kodi's parent/child tree can't be changed at runtime), so "moving" a control between
+    # roles means repositioning *its* wrapper, not re-parenting the list control itself.
+    HUB_WRAPPER_FOR_CONTROL = {400: 500, 401: 501, 402: 502, 403: 503, 404: 504}
+
+    # A row's own real rendered height (template-declared, pre-vscale units, from the row's own top -
+    # title label - down to the bottom of its art/labels), keyed by the same (display_type,
+    # text2lines) values getHubDisplayType()/getHubRenderFlags() already report. Was anchor-specific
+    # (ANCHOR_CONTENT_BOTTOM) back when only peek-below's own position depended on it; now every
+    # role's position depends on some neighboring row's own height (see _roleLocalY()'s stacking
+    # recurrence), so this applies uniformly regardless of which role currently hosts a given hub.
+    # Underlying arithmetic: 29 (list posy) + 72 (item posy) + inner-group offset + content bottom.
+    # Poster has no title label under its art at all, so its height doesn't depend on text2lines.
+    ROW_CONTENT_HEIGHT = {
         ('poster', False): 429, ('poster', True): 429,
         ('square', False): 395, ('square', True): 422,
         ('ar16x9', False): 450, ('ar16x9', True): 477,
     }
+
+    # Hub-switch slide animation (focus moving to an adjacent hub, either direction): group 51
+    # (anchor + peek-above + peek-below) is walked from its resting y towards whichever of peek-
+    # above/peek-below's current position matches the direction moved, over this many steps/total
+    # time - see _startHubSlide()/_settleHubSlide() and
+    # docs/notes/home-hub-fixed-focus-position-status.md. Unrelated to grouplist 50's own hero-art
+    # shift (script-plex-home.xml.tpl, control 50) - that one is a native, instant (time="0")
+    # Conditional animation, not eased, so there's nothing to keep this duration in sync with any
+    # more (there used to be - see that control's own comment for why an eased version of it caused
+    # visible desync against this Python-driven slide).
+    HUB_SLIDE_STEPS = 24
+    HUB_SLIDE_TIME = 0.15
+
+    # Signed y-shift (px) script-plex-home.xml.tpl's grouplist 50 applies to *itself* natively
+    # when hero art is showing - must match that file's own end="0,..." value on its one Conditional
+    # animation exactly (no-hero-art doesn't shift it at all - its base position already covers that
+    # case, see grouplist 50's own comment). Used by _group51RestOffset() to compute how far group
+    # 51 must counter-shift to keep the anchor's absolute position unchanged regardless of which
+    # state grouplist 50 is currently in. 321 = 431 (hero summary textbox's real absolute bottom -
+    # posy=155 group + posy=186 + height=90, see the "Focused hub item info overlay" comment) + 25
+    # (ROW_GAP) - 135 (grouplist 50's own base/clip posy).
+    HUB_SLIDE_CLIP_SHIFT_HERO = 321
 
     # Same box size pre_play.py's own CLEAR_LOGO_DIM requests, so the hero info overlay's clearlogo
     # matches pre_play's exactly (see script-plex-home.xml.tpl's hero info group).
@@ -744,6 +794,26 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         self._lastReachabilityCheck = 0
         self._lastPathMappingProbe = 0
         self._pathMappingTargets = []
+        self._hubSliding = False
+        self._hubSlideGen = 0
+        # Index into HUB_ROTATION_RING of whichever control is currently the anchor - starts
+        # pointing at HUB_CONTROL_ID (400), reset back to that on every full rebind (see
+        # _bindAllHubSlots()), advanced by _startHubSlide() on each move.
+        self._anchorRingPos = self.HUB_ROTATION_RING.index(self.HUB_CONTROL_ID)
+        # (wrapper_control, start_y, end_y) for whichever controls are mid-slide, so
+        # _settleHubSlide() can snap them straight to end_y without needing the slide's own local
+        # state - see _startHubSlide(). The wrap control (see that method's own comment) isn't
+        # included - its role is always the ring's extreme (±2), never inside grouplist 50's own
+        # clip range, so its content+position bind happens synchronously, not animated.
+        self._hubSlideMovers = []
+        # Last value _setNoHeroArt() actually applied - deliberately None (not False), never read
+        # from the no_hero_art window property itself: that property already reads as empty/False
+        # by default before this window has ever set it, which would make _setNoHeroArt()'s own
+        # no-op guard wrongly skip positioning group 51 the very first time a hero-art-eligible hub
+        # loads (property "already" matches False, but group 51 is still sitting at its untouched
+        # XML fallback offset, not the has-hero-art-compensated one). None never equals True/False,
+        # so the first real call always goes through regardless of which state it is.
+        self._lastNoHeroArt = None
 
         from . import windowutils
         windowutils.HOME = self
@@ -786,15 +856,17 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         self.serverList = kodigui.ManagedControlList(self, self.SERVER_LIST_ID, 10)
         self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5)
 
-        # Index 0 is the focused anchor (self.HUB_CONTROL_ID / 400) - every existing
-        # self.hubControls[controlID - self.HUB_CONTROL_ID] call site relies on that (controlID is
-        # always 400 for focus/selection-driven calls, since peek controls 401/402 are never
-        # focused). Indices 1/2 are the non-interactive peek-above/peek-below previews, bound by
-        # _bindPeekHubs() - see script-plex-home.xml.tpl's grouplist 501/502.
+        # Index i always holds control id HUB_CONTROL_ID+i (400-404) - every
+        # self.hubControls[controlID - self.HUB_CONTROL_ID] call site relies on that fixed mapping.
+        # Which one currently plays the focused anchor role rotates - see HUB_ROTATION_RING/
+        # _anchorControlId() - rather than always being index 0 - see script-plex-home.xml.tpl's
+        # controls 500-504.
         self.hubControls = (
             kodigui.ManagedControlList(self, self.HUB_CONTROL_ID, 5),
             kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 1, 3),
             kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 2, 3),
+            kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 3, 3),
+            kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 4, 3),
         )
         self.visibleHubs = []  # in-memory ordered list of hubs currently available to page through
         self.focusedHubIndex = 0  # pointer into visibleHubs for whichever hub is bound to the anchor
@@ -810,7 +882,6 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
         self.hookSignals()
         util.CRON.registerReceiver(self)
-        self.updateProperties()
         self.checkPlexDirectHosts(list(plexapp.SERVERMANAGER.serversByUuid.values()), source="stored")
 
     def closeWRecompileTpls(self):
@@ -867,10 +938,12 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             self._recheckPD = False
 
         if self.lastFocusID:
-            # try restoring focus to whichever hub was last focused. The physical control id is
-            # always self.HUB_CONTROL_ID now, so it can't tell us which hub that was - restore by
-            # identifier instead (self.lastFocusedHubIdentifier, set in onFocus).
-            if self.lastFocusID == self.HUB_CONTROL_ID:
+            # try restoring focus to whichever hub was last focused. The physical control id serving
+            # as anchor can be any of HUB_ROTATION_RING, not just HUB_CONTROL_ID - but
+            # _bindAllHubSlots() below always resets rotation back to its canonical start anyway
+            # (see its own comment), so restoring by identifier (which hub, not which control) is
+            # still all that's needed here.
+            if self.lastFocusID in self.HUB_ROTATION_RING:
                 idx = None
                 if self.lastFocusedHubIdentifier is not None:
                     is_home = not self.lastSection or self.lastSection.key is None
@@ -881,10 +954,10 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
                 if idx is not None:
                     self.focusedHubIndex = idx
-                    self._bindFocusedHub()
+                    self._bindAllHubSlots()
                     # this is basically just used for setting the background upon reinit
                     # fixme: declutter, separation of concerns
-                    self.checkHubItem(self.HUB_CONTROL_ID)
+                    self.checkHubItem(self._anchorControlId())
                 else:
                     util.DEBUG_LOG("Focus requested on a hub that's no longer available. Trying next hub")
                     self.focusFirstValidHub()
@@ -2311,12 +2384,11 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     @property
     def currentHub(self):
-        if self.hubControls and self.hubControls[0]:
-            return self.hubControls[0].dataSource
+        if self.hubControls:
+            control = self.hubControls[self._anchorControlId() - self.HUB_CONTROL_ID]
+            if control:
+                return control.dataSource
         return None
-
-    def updateProperties(self, *args, **kwargs):
-        self.setBoolProperty('bifurcation_lines', util.getSetting('hubs_bifurcation_lines'))
 
     def focusFirstValidHub(self, startIndex=None):
         # visibleHubs by construction only ever contains non-empty hubs, so any in-range index is
@@ -2327,11 +2399,12 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             return
 
         self.focusedHubIndex = max(0, min(startIndex if startIndex is not None else 0, len(self.visibleHubs) - 1))
-        self._bindFocusedHub()
-        if self.getFocusId() != self.HUB_CONTROL_ID:
+        self._bindAllHubSlots()
+        anchor_id = self._anchorControlId()
+        if self.getFocusId() != anchor_id:
             util.DEBUG_LOG("Focusing hub: %i" % self.focusedHubIndex)
-            self.setFocusId(self.HUB_CONTROL_ID)
-        self.checkHubItem(self.HUB_CONTROL_ID)
+            self.setFocusId(anchor_id)
+        self.checkHubItem(anchor_id)
 
     def applyInitialHubFocus(self):
         """One-time, on the very first Home hubs draw of this session: land in the first
@@ -2354,7 +2427,6 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         plexapp.util.APP.on('loaded:server_connections', self.checkPlexDirectHosts)
         plexapp.util.APP.on('account:response', self.displayServerAndUser)
         plexapp.util.APP.on('sli:reachability:received', self.displayServerAndUser)
-        plexapp.util.APP.on('change:hubs_bifurcation_lines', self.updateProperties)
         plexapp.util.APP.on('change:no_episode_spoilers4', self.setDirty)
         plexapp.util.APP.on('change:spoilers_allowed_genres2', self.setDirty)
         plexapp.util.APP.on('change:path_mapping_indicators', self.setDirty)
@@ -2387,7 +2459,6 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         plexapp.util.APP.off('loaded:server_connections', self.checkPlexDirectHosts)
         plexapp.util.APP.off('account:response', self.displayServerAndUser)
         plexapp.util.APP.off('sli:reachability:received', self.displayServerAndUser)
-        plexapp.util.APP.off('change:hubs_bifurcation_lines', self.updateProperties)
         plexapp.util.APP.off('change:no_episode_spoilers4', self.setDirty)
         plexapp.util.APP.off('change:spoilers_allowed_genres2', self.setDirty)
         plexapp.util.APP.off('change:path_mapping_indicators', self.setDirty)
@@ -2643,10 +2714,10 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             elif 399 < controlID < 500:
                 action_id = action.getId()
                 if action_id in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
-                    # There's only ever one physical hub-row control (this one) - up/down doesn't
+                    # The anchor (this one) is the only focusable hub-row control - up/down doesn't
                     # navigate to a different control (both are noop in the skin), it switches which
-                    # hub is logically focused and rebinds this control's content to it.
-                    self._switchFocusedHub(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
+                    # hub is logically focused and animates/rebinds this control's content to it.
+                    self._startHubSlide(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
                     return
                 if action_id in MOVE_SET or action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                     _continue = self.checkHubItem(controlID, action=action)
@@ -2763,8 +2834,8 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             # don't store focus for mini music player
             self.lastFocusID = controlID
 
-        if controlID == self.HUB_CONTROL_ID:
-            hub = self.hubControls[0].dataSource
+        if controlID in self.HUB_ROTATION_RING:
+            hub = self.hubControls[controlID - self.HUB_CONTROL_ID].dataSource
             if hub:
                 is_home = not self.lastSection or self.lastSection.key is None
                 self.lastFocusedHubIdentifier = hub.getCleanHubIdentifier(is_home=is_home)
@@ -3110,9 +3181,10 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         # carry over some props to the new window as we might end up showing a dialog not rendering the
         # underlying window. the new window class will invalidate the old one temporarily, though, as it seems
         # and the properties vanish, resulting in all text2lines enabled hubs to lose their title2 labels
-        if self.hubControls and self.hubControls[0].dataSource:
+        anchor_id = self._anchorControlId()
+        if self.hubControls and self.hubControls[anchor_id - self.HUB_CONTROL_ID].dataSource:
             # All hubs default to text2lines=True now
-            return {'hub.text2lines.400': '1'}
+            return {'hub.text2lines.{0}'.format(anchor_id): '1'}
 
     def sectionPinnedTypes(self, section):
         """Item types this library has pinned to the top bar as views of their own."""
@@ -3677,7 +3749,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         affected) to hide the whole treatment rather than show stale or placeholder art with text
         describing it.
         """
-        self.setBoolProperty('no_hero_art', not self._typeHasHeroArt(ds, hub=hub))
+        self._setNoHeroArt(not self._typeHasHeroArt(ds, hub=hub))
         result = self.updateBackgroundFrom(ds)
         self.setHeroInfo(ds)
         return result
@@ -3747,8 +3819,9 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         mli = control.getSelectedItem()
         is_valid_mli = mli and mli.getProperty('is.end') != '1'
         is_last_item = is_valid_mli and control.isLastItem(mli)
-        # controlID is always self.HUB_CONTROL_ID now, so it can't disambiguate which hub a stored
-        # round-robin position belongs to the way it used to (one control per hub) - key off the
+        # controlID no longer maps 1:1 to a single physical control the way it used to (one control
+        # per hub) - rotation means it can be any of HUB_ROTATION_RING, not always the same id - so
+        # it can't disambiguate which hub a stored round-robin position belongs to; key off the
         # hub's own identity instead.
         hub_key = id(control.dataSource)
 
@@ -3771,7 +3844,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             # updateBackgroundFrom unconditionally - replicate its property set here instead, so
             # no_hero_art stays correct without ignoring the setting.
             ds = mli.dataSource
-            self.setBoolProperty('no_hero_art', not self._typeHasHeroArt(ds, hub=control.dataSource))
+            self._setNoHeroArt(not self._typeHasHeroArt(ds, hub=control.dataSource))
             self.setHeroInfo(ds)
             self.updateBackgroundFrom(ds)
 
@@ -4065,8 +4138,9 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
                 util.DEBUG_LOG('Hub {0} updated - refreshing (slot {1}, is_home={2})'.format(
                     hub.hubIdentifier, hub_slot_index, is_home))
+                is_anchor = self._ringRoleOffset(self.HUB_CONTROL_ID + hub_slot_index) == 0
                 self.showHub(hub, items=items, reselect_pos=reselect_pos,
-                             is_home=is_home, hub_index=hub_slot_index)
+                             is_home=is_home, hub_index=hub_slot_index, is_anchor=is_anchor)
             else:
                 util.DEBUG_LOG('Hub {0} updated but not currently displayed'.format(hub.hubIdentifier))
 
@@ -4294,8 +4368,8 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
     def getCurrentHubsPositions(self, section):
         is_home = not section or section.key is None
-        # Seed with remembered positions for hubs not currently bound to the one physical control -
-        # with a single shared control, most hubs' positions only live here, not in a live control.
+        # Seed with remembered positions for hubs not currently bound to any of the 5 physical
+        # controls - most hubs' positions only live here, not in a live control.
         rp = dict(self._hubReselectPositions)
 
         # Overlay with the live selection of whichever hub is currently bound, if any
@@ -4421,9 +4495,10 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 self._hubReselectPositions.setdefault(k, v)
 
         # Collect all hubs currently available to page through - a soft data cap (the hub_count
-        # setting), not a physical row count: only one physical control ever exists, and whichever
-        # hub is logically focused gets bound into it (see _bindFocusedHub). Display-type/render-flag
-        # computation happens at bind time, only for whichever hub is actually shown.
+        # setting), not a physical row count: 5 physical controls exist (see HUB_ROTATION_RING), each
+        # always bound to whichever hub belongs at its own offset from focus (see
+        # _bindAllHubSlots()). Display-type/render-flag computation happens at bind time, only for
+        # whichever hubs are actually bound to a slot.
         max_hubs = util.getSetting('hub_count', 8)
         visible = []
 
@@ -4466,7 +4541,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
         if update:
             focused_identifier = None
-            if (self.getFocusId() == self.HUB_CONTROL_ID and self.visibleHubs
+            if (self.getFocusId() in self.HUB_ROTATION_RING and self.visibleHubs
                     and self.focusedHubIndex < len(self.visibleHubs)):
                 focused_identifier = self.visibleHubs[self.focusedHubIndex].getCleanHubIdentifier(is_home=is_home)
 
@@ -4476,7 +4551,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 for i, hub in enumerate(visible):
                     if hub.getCleanHubIdentifier(is_home=is_home) == focused_identifier:
                         self.focusedHubIndex = i
-                        self._bindFocusedHub()
+                        self._bindAllHubSlots()
                         break
                 else:
                     # the focused hub disappeared in this refresh - fall back to the next best one.
@@ -4487,91 +4562,222 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                     except Exception:
                         util.ERROR("Home: failed to restore focus after hub cleanup")
             else:
-                self._bindFocusedHub()
+                self._bindAllHubSlots()
         else:
             self.visibleHubs = visible
             self.focusedHubIndex = 0
-            self._bindFocusedHub()
+            self._bindAllHubSlots()
 
         self.storeLastBG()
 
-    def _updatePeekBelowGeometry(self, display_type, text2lines):
-        """Reposition/resize group 502 (peek-below's wrapper) off the anchor's actual
-        content bottom for (display_type, text2lines), instead of a single constant sized for the
-        tallest possible row (2-line ar16x9) - so a shorter row (poster/square) gets a tighter gap
-        before its peek-below preview instead of always reserving the tallest row's space."""
-        content_bottom = self.ANCHOR_CONTENT_BOTTOM.get(
-            (display_type, text2lines), self.ANCHOR_CONTENT_BOTTOM[('ar16x9', True)]
-        )
-        posy = content_bottom + self.PEEK_BELOW_GAP
-        control = self.getControl(self.PEEK_BELOW_WRAPPER_ID)
-        control.setPosition(0, util.vscale(posy, r=0))
-        control.setHeight(util.vscale(self.height - self.ANCHOR_ABS_Y - posy, r=0))
-
-    def _bindFocusedHub(self):
-        """Push self.visibleHubs[self.focusedHubIndex] into the one physical hub-row control.
-
-        Reuses showHub()/_showHub() unchanged - they already do control.replaceItems(...)
-        internally, so this is an instant swap by construction, no animation involved."""
-        if not self.visibleHubs:
-            self.hubControls[0].reset()
-            self.setProperty('hub.display.400', '')
-            self._updatePeekBelowGeometry('ar16x9', True)
-            self._bindPeekHubs()
-            return
-
-        self.focusedHubIndex = max(0, min(self.focusedHubIndex, len(self.visibleHubs) - 1))
-        hub = self.visibleHubs[self.focusedHubIndex]
+    def _hubRowHeight(self, hub):
+        """A row's own real rendered height (pre-vscale template units) for whichever hub it's
+        currently showing - used by _roleLocalY()'s stacking recurrence to work out every other
+        row's position relative to it, generalizing what used to be an anchor-only lookup (any role
+        can host any hub now). hub=None (nothing bound at some intermediate offset, e.g. the
+        empty-hubs case) falls back to the tallest real case (ar16x9, 2-line), same fallback
+        ROW_CONTENT_HEIGHT.get() itself already uses for an unrecognized (display_type, text2lines)."""
+        if hub is None:
+            return self.ROW_CONTENT_HEIGHT[('ar16x9', True)]
         is_home = not self.lastSection or self.lastSection.key is None
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
         display_type = self.getHubDisplayType(hub, identifier)
-        self.setProperty('hub.display.400', display_type)
-        self._updatePeekBelowGeometry(display_type, self.getHubRenderFlags(hub, identifier)['text2lines'])
-        self.showHub(hub, is_home=is_home, reselect_pos=self._hubReselectPositions.get(identifier),
-                     hub_index=0, force_reselect=True)
-        # Peek rows bind only after the anchor above - _showHub() seeds the hero background from
-        # the first item of whatever hub it populates the *first* time self.backgroundSet is False
-        # (home.py's _showHub, near its item loop); binding the anchor first means backgroundSet is
-        # already True by the time peek hubs populate, so their items can never hijack the hero
-        # background meant for the actually-focused hub.
-        self._bindPeekHubs()
+        text2lines = self.getHubRenderFlags(hub, identifier)['text2lines']
+        return self.ROW_CONTENT_HEIGHT.get(
+            (display_type, text2lines), self.ROW_CONTENT_HEIGHT[('ar16x9', True)]
+        )
 
-    def _bindPeekHubs(self):
-        """Populate the non-focusable peek-above/peek-below previews (hub_index 1/2) with the
-        previous/next hub in self.visibleHubs, and the hub.has_prev/hub.has_next properties their
-        XML visibility conditions key off (see script-plex-home.xml.tpl's grouplist 501/502).
+    def _roleLocalY(self, role_offset, focused_index):
+        """The local y-offset (within group 51's frame, pre-vscale template units) whichever control
+        currently plays role_offset (0 = anchor, negative = above it, positive = below) must sit at.
 
-        Must be called after the anchor (hub_index=0) has already been bound - see the comment at
-        this method's own call site in _bindFocusedHub()."""
-        prev_hub = self.visibleHubs[self.focusedHubIndex - 1] if self.focusedHubIndex > 0 else None
-        next_hub = (self.visibleHubs[self.focusedHubIndex + 1]
-                    if self.focusedHubIndex < len(self.visibleHubs) - 1 else None)
-        self.setBoolProperty('hub.has_prev', prev_hub is not None)
-        self.setBoolProperty('hub.has_next', next_hub is not None)
+        One recurrence, walked outward from the anchor (Y=0) in whichever direction role_offset
+        requires: Y(n+1) = Y(n) + H(n) + ROW_GAP, where H(n) is row n's own real content height
+        (_hubRowHeight()). Below the anchor (role_offset > 0) this reproduces the original peek-below
+        formula exactly - each step's gap is sized by the row already reached (H(n), the *inward*
+        neighbor). Above the anchor (role_offset < 0) it's the same equation solved for a different
+        edge - each step's gap is sized by the row being newly reached (H(n), now the row itself, not
+        its inward neighbor) - since that row's own bottom edge (not its neighbor's) is what needs to
+        land at the fixed gap distance. Not two separate formulas, just which side of the same
+        subtraction you're solving for.
 
-        is_home = not self.lastSection or self.lastSection.key is None
-        for hub, index in ((prev_hub, 1), (next_hub, 2)):
-            if hub is None:
+        focused_index is an int (self.focusedHubIndex, before or after a move - see
+        _startHubSlide()'s own comment on why start/end geometry just pass a different int here, not
+        a specific hub object) rather than a hub, since at |role_offset| > 1 the row needed to size an
+        intermediate step isn't always the anchor - self.visibleHubs[focused_index + i] is looked up
+        fresh for each step instead, out-of-range indices falling back to _hubRowHeight(None)."""
+        if role_offset == 0:
+            return 0
+        step = 1 if role_offset > 0 else -1
+        y = 0
+        for k in range(0, role_offset, step):
+            hub_index = focused_index + (k if step > 0 else k + step)
+            hub = self.visibleHubs[hub_index] if 0 <= hub_index < len(self.visibleHubs) else None
+            y += step * (self._hubRowHeight(hub) + self.ROW_GAP)
+        return y
+
+    def _setRoleGeometry(self, wrapper, role_offset, focused_index):
+        """Position (and, for peek-below, size) wrapper for role_offset - shared by
+        _bindAllHubSlots() and _startHubSlide(). Only peek-below's height is ever touched (sized to
+        reach exactly to the screen bottom); peek-above/anchor keep their XML-declared heights, which
+        don't do any clipping work themselves (see grouplist 50's own comment) so don't need it.
+
+        vscale() is applied uniformly to every role's Y now - previously only peek-below's was
+        scaled, silently correct only by coincidence (offset 0 is always y=0, scale-invariant, and
+        peek-above used to be a hand-picked constant already consistent with this file's other
+        raw-unscaled values); now that every role's Y is a real computed value, that asymmetry would
+        have been a live bug on any non-16:9 display. Returns the raw (pre-vscale) Y regardless,
+        since that's what _startHubSlide()'s interpolation needs to do its own math in consistent
+        (raw) units before vscale-ing each animated step."""
+        y = self._roleLocalY(role_offset, focused_index)
+        wrapper.setPosition(0, util.vscale(y, r=0))
+        if role_offset == 1:
+            wrapper.setHeight(util.vscale(self.height - self.ANCHOR_ABS_Y - y, r=0))
+        return y
+
+    def _anchorControlId(self):
+        """Whichever physical control (400-404) is currently serving the anchor role."""
+        return self.HUB_ROTATION_RING[self._anchorRingPos]
+
+    def _ringRoleOffset(self, control_id, ring_pos=None):
+        """control_id's current role-offset (-2 two-above / -1 peek-above / 0 anchor / +1 peek-below
+        / +2 two-below) relative to ring_pos (an index into HUB_ROTATION_RING - defaults to the
+        current anchor's own position, self._anchorRingPos, when not given)."""
+        if ring_pos is None:
+            ring_pos = self._anchorRingPos
+        ring = self.HUB_ROTATION_RING
+        half = len(ring) // 2
+        return ((ring.index(control_id) - ring_pos + half) % len(ring)) - half
+
+    def _group51RestOffset(self, no_hero_art):
+        """The local y-offset group 51 must be explicitly set to (via setPosition()) so the
+        anchor's absolute position stays at ANCHOR_ABS_Y (424), given whether the currently/about-
+        to-be-focused hub has hero art. GROUP51_BASELINE_OFFSET (289) is what group 51 would only
+        get "for free" from grouplist 50's own auto-stacking (see that constant's own comment) -
+        that has to be included explicitly every time this is called, not just the has-hero-art
+        compensation on top of it, since Python's own setPosition() calls replace group 51's
+        position outright rather than adding to whatever auto-stacking would otherwise give it.
+
+        no_hero_art=True (artless): grouplist 50 stays at its unshifted y=135 base, so group 51
+        needs no compensation - just the baseline. no_hero_art=False (has hero art): grouplist 50
+        is shifted down by HUB_SLIDE_CLIP_SHIFT_HERO (script-plex-home.xml.tpl's own Conditional
+        animation, keyed on no_hero_art alone - see its comment), so group 51 must counter-shift up
+        by exactly that amount to keep the anchor's absolute position unchanged."""
+        if no_hero_art:
+            return self.GROUP51_BASELINE_OFFSET
+        return self.GROUP51_BASELINE_OFFSET - self.HUB_SLIDE_CLIP_SHIFT_HERO
+
+    def _setNoHeroArt(self, no_hero_art):
+        """Single choke point for every no_hero_art write - always keeps group 51's own local
+        y-offset (_group51RestOffset()) in sync with the property, snapped instantly. Grouplist 50
+        (script-plex-home.xml.tpl, control 50) reacts to the very same property with its own native
+        Conditional slide, also instant (time="0") - not eased, deliberately: since this method's own
+        setPosition() call and the property write that triggers 50's animation happen synchronously,
+        right next to each other, "instant" on both sides means they land in the same rendered frame,
+        so their sum (the anchor's absolute position) never leaves ANCHOR_ABS_Y, not even for one
+        intermediate frame. An earlier eased (time="150") version of 50's own animation caused a real,
+        live-visible bug: with 51 snapping instantly but 50 still easing over 150ms, the two were out
+        of sync for that whole window and the entire row stack visibly swung through the full
+        HUB_SLIDE_CLIP_SHIFT_HERO-px difference before settling - see that control's own comment.
+
+        No-ops if no_hero_art already matches the last value *this method* applied - this is called
+        from checkHubItem() on every horizontal move too, and a hub's type/exclusions can't change
+        from browsing within it, so this keeps that the cheap no-op it should be. Deliberately
+        checked against self._lastNoHeroArt, not the no_hero_art window property itself - the
+        property already reads as empty/False by default before this method has ever run, which
+        would wrongly no-op (and skip positioning group 51 at all) the very first time a
+        hero-art-eligible hub loads."""
+        if no_hero_art == self._lastNoHeroArt:
+            return
+        self._lastNoHeroArt = no_hero_art
+        self.setBoolProperty('no_hero_art', no_hero_art)
+        g51 = self.getControl(51)
+        g51.setPosition(g51.getPosition()[0], util.vscale(self._group51RestOffset(no_hero_art), r=0))
+
+    def _bindAllHubSlots(self):
+        """Full rebuild: push self.visibleHubs[self.focusedHubIndex + offset] into all 5 physical
+        hub-row controls (HUB_ROTATION_RING) from scratch. Used for full-resync moments (initial
+        load, section/hub-list changes, background refresh) - NOT called by ordinary hub-to-hub moves
+        any more (see _startHubSlide()'s own comment for why its unconditional rebind would defeat
+        the whole point of the ring design - see HUB_ROTATION_RING's own comment).
+
+        Always resets self._anchorRingPos back to its canonical start (HUB_CONTROL_ID/400 = anchor) -
+        a full rebuild has no "sticky" content to preserve (everything gets rebound here regardless),
+        so there's no reason to carry forward prior rotation state, and resetting avoids any drift
+        between _anchorRingPos and reality. Settles any in-flight slide first, in case this races
+        with one (e.g. a background refresh landing mid-slide) - finish it cleanly rather than
+        resetting ring/position state out from under a running animation thread.
+
+        The anchor is always bound first - _showHub() seeds the hero background from the first item
+        of whatever hub it populates the *first* time self.backgroundSet is False; binding the
+        anchor first means backgroundSet is already True by the time the other slots populate, so
+        their items can never hijack the hero background meant for the actually-focused hub."""
+        self._settleHubSlide()
+        self._anchorRingPos = self.HUB_ROTATION_RING.index(self.HUB_CONTROL_ID)
+
+        if not self.visibleHubs:
+            for index in range(len(self.hubControls)):
                 self.hubControls[index].reset()
                 self.setProperty('hub.display.4{0:02d}'.format(index), '')
+            self.setBoolProperty('hub.has_prev', False)
+            self.setBoolProperty('hub.has_next', False)
+            self._setNoHeroArt(True)
+            self.setProperty('hub.anchor_id', str(self._anchorControlId()))
+            for control_id in self.HUB_ROTATION_RING:
+                role = self._ringRoleOffset(control_id)
+                wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
+                self._setRoleGeometry(wrapper, role, self.focusedHubIndex)
+            return
+
+        self.focusedHubIndex = max(0, min(self.focusedHubIndex, len(self.visibleHubs) - 1))
+        is_home = not self.lastSection or self.lastSection.key is None
+        anchor_hub = self.visibleHubs[self.focusedHubIndex]
+
+        ds = anchor_hub.items[0] if anchor_hub.items else None
+        self._setNoHeroArt(not self._typeHasHeroArt(ds, hub=anchor_hub))
+        self.setProperty('hub.anchor_id', str(self._anchorControlId()))
+
+        # Anchor (role 0) first - see docstring.
+        for control_id in sorted(self.HUB_ROTATION_RING, key=lambda cid: abs(self._ringRoleOffset(cid))):
+            role = self._ringRoleOffset(control_id)
+            index = control_id - self.HUB_CONTROL_ID
+            wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
+            self._setRoleGeometry(wrapper, role, self.focusedHubIndex)
+
+            hub_index = self.focusedHubIndex + role
+            if not (0 <= hub_index < len(self.visibleHubs)):
+                self.hubControls[index].reset()
+                self.setProperty('hub.display.4{0:02d}'.format(index), '')
+                if role == -1:
+                    self.setBoolProperty('hub.has_prev', False)
+                elif role == 1:
+                    self.setBoolProperty('hub.has_next', False)
                 continue
+
+            hub = self.visibleHubs[hub_index]
             identifier = hub.getCleanHubIdentifier(is_home=is_home)
-            self.setProperty('hub.display.4{0:02d}'.format(index), self.getHubDisplayType(hub, identifier))
-            # reselect_pos/force_reselect: show each peek hub at the same horizontally-scrolled
-            # position it last had as the anchor, so it reads as one continuous list as it moves
-            # between peek-above/anchor/peek-below rather than resetting to its first item every
-            # time it's rebound into a different physical control. force_reselect is required, not
-            # just reselect_pos - _showHub()'s reselect logic otherwise no-ops once
-            # self._anyItemAction is set (true for virtually all real usage after the first
-            # keypress), the same bug _bindFocusedHub's own anchor call above already works around.
+            display_type = self.getHubDisplayType(hub, identifier)
+            self.setProperty('hub.display.4{0:02d}'.format(index), display_type)
+            if role == -1:
+                self.setBoolProperty('hub.has_prev', True)
+            elif role == 1:
+                self.setBoolProperty('hub.has_next', True)
+
+            # reselect_pos/force_reselect: show each slot at the same horizontally-scrolled
+            # position it last had, so it reads as one continuous list as a hub moves between
+            # slots rather than resetting to its first item every time it's rebound into a
+            # different physical control. force_reselect is required, not just reselect_pos -
+            # _showHub()'s reselect logic otherwise no-ops once self._anyItemAction is set (true
+            # for virtually all real usage after the first keypress).
             self.showHub(hub, is_home=is_home, hub_index=index,
-                         reselect_pos=self._hubReselectPositions.get(identifier), force_reselect=True)
+                         reselect_pos=self._hubReselectPositions.get(identifier), force_reselect=True,
+                         is_anchor=(role == 0))
 
     def _captureHubPosition(self):
         """Snapshot the currently-bound hub's selection into self._hubReselectPositions before
-        switching away from it - otherwise it'd be lost, since navigating away rebinds the one
-        physical control to a different hub."""
-        control = self.hubControls[0]
+        switching away from it - otherwise it'd be lost, since navigating away rebinds the physical
+        control to a different hub."""
+        control = self.hubControls[self._anchorControlId() - self.HUB_CONTROL_ID]
         if not control.dataSource:
             return
         pos = control.getSelectedPos()
@@ -4584,21 +4790,244 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         identifier = control.dataSource.getCleanHubIdentifier(is_home=is_home)
         self._hubReselectPositions[identifier] = (str(mli.dataSource.ratingKey), pos)
 
-    def _switchFocusedHub(self, delta):
-        """Move the logical focus delta positions (-1/+1) and rebind the anchor to it. No-ops at
-        the top/bottom of the hub stack, matching the old per-row onup=noop / self-referencing
-        ondown behavior at the edges."""
+    def _startHubSlide(self, delta):
+        """Move the logical focus delta positions (+1 down / -1 up) and animate the transition.
+        No-ops at the top/bottom of the hub stack.
+
+        Content stays glued to whichever control it's already bound to; ROLE - and therefore each
+        control's own required position within group 51 - rotates instead (see HUB_ROTATION_RING's
+        own comment). Of the 5 controls, exactly one is "wrapping around" per move (its current data
+        isn't valid for any role in the new arrangement - the control currently at the extreme role
+        opposite the direction of travel, see _ringRoleOffset()) and needs a fresh content bind. Its
+        role is always the ring's own extreme (±half, where half=2 for this 5-ring), which is never
+        inside grouplist 50's own clip range regardless of which two controls currently hold it (only
+        ±1/0 ever are) - so that rebind is always safely off-screen and can happen synchronously,
+        immediately, with no collision-avoidance needed (an earlier 3-control version of this ring
+        needed a temporary off-screen park position and had to defer the landing to
+        _finishHubSlide(), precisely because its wrap role, ±1, *was* sometimes visible - not a
+        concern here).
+
+        The other 4 just reposition smoothly, content untouched (a single-step rotation guarantees
+        their existing content is already exactly correct for their new role - see
+        _ringRoleOffset()'s own math), each animating its own individual (start, end) local-Y pair
+        over the shared eased-progress loop - NOT a single shared delta the way group 51 used to
+        move as one block. Every role's Y now depends on real row content height (see
+        _roleLocalY()'s own stacking recurrence), which differs row to row, so a uniform shift
+        wouldn't land each control at its own new role's correct rest position.
+
+        Each mover's start/end Y is evaluated against two different focusedHubIndex values, not one
+        - old_focused_index (before this move) for its start, new_index (after) for its end - since
+        _roleLocalY()'s stacking recurrence needs to know which hub occupies every role between the
+        anchor and the one being positioned, and that set of hubs shifts by one with the move itself
+        (see _roleLocalY()'s own comment on why this takes an int, not a specific hub object).
+
+        Runs the interpolation on a background thread via repeated setPosition() calls, not a
+        native <animation> tag - see docs/notes/home-hub-fixed-focus-position-status.md for why
+        three separate native-animation attempts at animating this failed live. Guarded by
+        _hubSlideGen so a fast repeat press cancels cleanly (via _settleHubSlide(), called below
+        before this is reached again) - direction reversal mid-slide always fully completes whatever
+        is in flight first, never reverses an animation mid-motion."""
         if not self.visibleHubs:
             return
         new_index = self.focusedHubIndex + delta
         if not (0 <= new_index < len(self.visibleHubs)):
             return
-        self._captureHubPosition()
-        self.focusedHubIndex = new_index
-        self._bindFocusedHub()
-        self.checkHubItem(self.HUB_CONTROL_ID)
 
-    def showHub(self, hub, items=None, is_home=False, reselect_pos=None, hub_index=None, force_reselect=False):
+        # Finish any still-running slide from a fast preceding press first, so this transition
+        # always starts from a settled, consistent state instead of fighting or compounding with
+        # one already in flight.
+        self._settleHubSlide()
+
+        self._captureHubPosition()
+        old_focused_index = self.focusedHubIndex
+        self.focusedHubIndex = new_index
+
+        is_home = not self.lastSection or self.lastSection.key is None
+        old_ring_pos = self._anchorRingPos
+        new_ring_pos = (old_ring_pos + delta) % len(self.HUB_ROTATION_RING)
+        self._anchorRingPos = new_ring_pos
+        self.setProperty('hub.anchor_id', str(self._anchorControlId()))
+
+        self._prepareHubSlideHero()
+
+        # The one control wrapping around: currently at the extreme role opposite the direction of
+        # travel - its data isn't valid for any role in the new arrangement, so it needs a fresh
+        # content bind and a position snap to its new role. Done synchronously, immediately - see
+        # this method's own docstring for why its old and new roles (both ±half, the ring's own
+        # extremes) are never inside grouplist 50's clip regardless of which controls currently hold
+        # them, so there's nothing to collide with.
+        half = len(self.HUB_ROTATION_RING) // 2
+        wrap_role = -half if delta > 0 else half
+        wrap_control_id = next(cid for cid in self.HUB_ROTATION_RING
+                                if self._ringRoleOffset(cid, ring_pos=old_ring_pos) == wrap_role)
+        wrap_new_role = -wrap_role
+        wrap_index = wrap_control_id - self.HUB_CONTROL_ID
+        wrap_wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[wrap_control_id])
+        self._setRoleGeometry(wrap_wrapper, wrap_new_role, new_index)
+
+        wrap_hub_index = new_index + wrap_new_role
+        wrap_hub_exists = 0 <= wrap_hub_index < len(self.visibleHubs)
+        if wrap_hub_exists:
+            wrap_hub = self.visibleHubs[wrap_hub_index]
+            identifier = wrap_hub.getCleanHubIdentifier(is_home=is_home)
+            display_type = self.getHubDisplayType(wrap_hub, identifier)
+            self.setProperty('hub.display.4{0:02d}'.format(wrap_index), display_type)
+            # is_anchor=False always - the wrap control's new role (wrap_new_role) is always the
+            # ring's own extreme (±half), never 0.
+            self.showHub(wrap_hub, is_home=is_home, hub_index=wrap_index,
+                         reselect_pos=self._hubReselectPositions.get(identifier), force_reselect=True,
+                         is_anchor=False)
+        else:
+            self.hubControls[wrap_index].reset()
+            self.setProperty('hub.display.4{0:02d}'.format(wrap_index), '')
+        # No hub.has_prev/has_next update here - the wrap control's new role is always ±half (±2 for
+        # this 5-ring), never ±1, so it never owns that state; whichever mover below lands on ±1 does.
+
+        # The other 4 controls: reposition smoothly over the animation loop below, content untouched
+        # (already correct for their new role - see this method's own docstring).
+        movers = []
+        for cid in self.HUB_ROTATION_RING:
+            if cid == wrap_control_id:
+                continue
+            old_role = self._ringRoleOffset(cid, ring_pos=old_ring_pos)
+            new_role = self._ringRoleOffset(cid, ring_pos=new_ring_pos)
+            start_y = self._roleLocalY(old_role, old_focused_index)
+            end_y = self._roleLocalY(new_role, new_index)
+            wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[cid])
+            if new_role == 1:
+                wrapper.setHeight(util.vscale(self.height - self.ANCHOR_ABS_Y - end_y, r=0))
+                self.setBoolProperty('hub.has_next', True)
+            elif new_role == -1:
+                self.setBoolProperty('hub.has_prev', True)
+            movers.append((wrapper, start_y, end_y))
+
+        self._hubSlideMovers = movers
+
+        if self._closing:
+            # No animation thread will run to land these at end_y - snap directly, matching what
+            # run()'s own tail does, so nothing is left mid-transition if _closing somehow gets
+            # cleared later (defensive - in practice the window is tearing down regardless).
+            for wrapper, start_y, end_y in movers:
+                wrapper.setPosition(0, util.vscale(end_y, r=0))
+            self._hubSlideMovers = []
+            self._finishHubSlide()
+            return
+
+        self.setBoolProperty('hub.sliding', True)
+        self._hubSliding = True
+        self._hubSlideGen += 1
+        gen = self._hubSlideGen
+        steps = self.HUB_SLIDE_STEPS
+        step_time = self.HUB_SLIDE_TIME / float(steps)
+
+        def run():
+            for i in range(1, steps + 1):
+                if self._closing or self._hubSlideGen != gen:
+                    return
+                t = i / float(steps)
+                eased = t * t * (3 - 2 * t)  # smoothstep - approximates the old sine inout tween
+                for wrapper, start_y, end_y in movers:
+                    raw = int(round(start_y + (end_y - start_y) * eased))
+                    wrapper.setPosition(0, util.vscale(raw, r=0))
+                if util.MONITOR.waitFor(step_time):
+                    return
+            if self._closing or self._hubSlideGen != gen:
+                return
+            for wrapper, start_y, end_y in movers:
+                wrapper.setPosition(0, util.vscale(end_y, r=0))
+            self._hubSlideMovers = []
+            self._finishHubSlide()
+
+        threading.Thread(target=run, name='hubslide').start()
+
+    def _finishHubSlide(self):
+        """Slide-completion - deliberately NOT a full _bindAllHubSlots() rebuild (that would rebind
+        all 5 controls' content unconditionally, defeating the ring design's whole point - see
+        _startHubSlide()'s own comment). Both the wrap control and the movers' content/position are
+        already fully handled, synchronously, by _startHubSlide() itself - this just clears
+        hub.sliding (re-showing the anchor's own title label) and moves native Kodi focus/
+        checkHubItem to whichever control the ring now says is the anchor."""
+        self.setBoolProperty('hub.sliding', False)
+        self._hubSliding = False
+        anchor_id = self._anchorControlId()
+        if self.getFocusId() != anchor_id:
+            self.setFocusId(anchor_id)
+        self.checkHubItem(anchor_id)
+
+    def _settleHubSlide(self):
+        """If a hub-slide animation is currently in flight, snap it straight to completion instead
+        of leaving it to finish on its own background thread. Bumps _hubSlideGen first so that
+        thread's own next gen-check (whether mid-sleep or mid-loop) sees the mismatch and exits
+        without touching state itself - this method becomes the sole place that finishes it. Snaps
+        self._hubSlideMovers (set by _startHubSlide()) straight to their already-decided end
+        positions, then delegates to _finishHubSlide()."""
+        if not self._hubSliding:
+            return
+        self._hubSlideGen += 1
+        for wrapper, start_y, end_y in self._hubSlideMovers:
+            wrapper.setPosition(0, util.vscale(end_y, r=0))
+        self._hubSlideMovers = []
+        self._finishHubSlide()
+
+    def _prepareHubSlideHero(self):
+        """Sync the whole hero art/info overlay (no_hero_art, title/logo/summary/etc., background)
+        to the hub about to become the anchor (self.visibleHubs[self.focusedHubIndex] - the caller
+        already advanced focusedHubIndex to it) immediately, before the slide's own row movement
+        starts, rather than waiting for the normal end-of-slide checkHubItem() call - so the hero
+        block updates (or hides) at the exact same moment the scroll begins, in both directions.
+        Direction-agnostic - which hub is "about to become the anchor" doesn't depend on which way
+        focus came from.
+
+        Was hide-only (only acted when the incoming hub had no hero art, relying on
+        _finishHubSlide()'s own checkHubItem() call to reveal it otherwise) - found live: that made
+        losing hero art snap away instantly while gaining it only appeared after the row slide had
+        already finished, a visibly inconsistent asymmetry between the two directions. Now always
+        syncs, so both directions behave the same way.
+
+        Mirrors updateHeroFrom() rather than calling it directly, for the same reason checkHubItem()
+        keeps its own replica instead of calling updateHeroFrom() (see that method's own comment):
+        updateHeroFrom() always calls updateBackgroundFrom() unconditionally, ignoring the
+        dynamicBackgrounds setting - hero info (title/summary) should still update regardless of
+        that setting, only the background art panel itself is gated on it.
+
+        Uses _previewSelectedItem(), not new_hub.items[0] - this hub's remembered scroll position
+        (self._hubReselectPositions) is very often not item 0, and checkHubItem() won't correct this
+        preview to the real selected item until the slide finishes, ~150ms later - using items[0]
+        unconditionally showed the wrong item's title/summary/art for that whole window on every
+        move into a hub scrolled past its first item (found live)."""
+        new_hub = self.visibleHubs[self.focusedHubIndex]
+        new_ds = self._previewSelectedItem(new_hub)
+        self._setNoHeroArt(not self._typeHasHeroArt(new_ds, hub=new_hub))
+        self.setHeroInfo(new_ds)
+        self.updateBackgroundFrom(new_ds)
+
+    def _previewSelectedItem(self, hub):
+        """Best-effort guess at which item hub will actually end up focused on, for previewing the
+        hero block (_prepareHubSlideHero()) before the real reselect has happened - the physical
+        control this hub is about to land in may still hold different content at this point, so this
+        works directly off hub.items rather than a live control. Mirrors _showHub()'s own reselect
+        resolution (ratingKey first, then position), reading the same self._hubReselectPositions
+        entry _showHub() itself will use moments later. Falls back to the hub's first item when
+        there's no remembered position (never-visited hub) or it can't be resolved (e.g. a
+        still-unextended page) - checkHubItem() will correct this preview either way once the real
+        selection lands."""
+        if not hub.items:
+            return None
+        is_home = not self.lastSection or self.lastSection.key is None
+        identifier = hub.getCleanHubIdentifier(is_home=is_home)
+        reselect = self._hubReselectPositions.get(identifier)
+        if reselect:
+            rk, pos = reselect
+            if rk is not None:
+                for item in hub.items:
+                    if item.ratingKey and str(item.ratingKey) == rk:
+                        return item
+            if pos is not None and 0 <= pos < len(hub.items):
+                return hub.items[pos]
+        return hub.items[0]
+
+    def showHub(self, hub, items=None, is_home=False, reselect_pos=None, hub_index=None, force_reselect=False,
+                is_anchor=False):
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
 
         if hub_index is None:
@@ -4617,7 +5046,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             'text2lines': flags['text2lines'],
         }
         self._showHub(hub, hubitems=items, reselect_pos=reselect_pos, identifier=identifier,
-                      force_reselect=force_reselect, **kwargs)
+                      force_reselect=force_reselect, is_anchor=is_anchor, **kwargs)
         return True
 
     def createGrandparentedListItem(self, obj, thumb_w, thumb_h, with_grandparent_title=False):
@@ -4784,13 +5213,13 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             self.setProperty('hub.display.4{0:02d}'.format(i), '')
 
     def _showHub(self, hub, hubitems=None, reselect_pos=None, identifier=None, index=None, with_progress=False,
-                 with_art=False, ar16x9=False, text2lines=False, force_reselect=False, **kwargs):
+                 with_art=False, ar16x9=False, text2lines=False, force_reselect=False, is_anchor=False, **kwargs):
         control = self.hubControls[index]
         control.dataSource = hub
 
         if not hub.items and not hubitems:
             control.reset()
-            if self.lastFocusID == self.HUB_CONTROL_ID and not self._anyItemAction:
+            if self.lastFocusID in self.HUB_ROTATION_RING and not self._anyItemAction:
                 util.DEBUG_LOG("Hub {} was focused but is gone.", identifier)
                 self.focusFirstValidHub(self.focusedHubIndex)
             return
@@ -4829,7 +5258,12 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         hub_is_watchlist = hub.is_watchlist
 
         for obj in hubitems or hub.items:
-            if not self.backgroundSet and not use_reselect_pos:
+            # is_anchor: only the control actually playing the anchor role may drive the hero
+            # overlay/background - every other slot (peek rows, two-above/below, the slide's wrap
+            # control) gets reselected/rebound far more often than it becomes the anchor, and without
+            # this guard whichever of them happened to bind last would silently hijack the hero state
+            # meant for the focused hub (see docs/notes/home-hub-fixed-focus-position-status.md).
+            if is_anchor and not self.backgroundSet and not use_reselect_pos:
                 if self.updateHeroFrom(obj, hub=hub):
                     self.backgroundSet = True
 
@@ -4914,13 +5348,13 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
 
                 control.selectItem(last_pos)
                 self._lastSelectedItem = (id(hub), last_pos)
-                if last_pos < control.size() and self.updateHeroFrom(control[last_pos].dataSource, hub=hub):
+                if is_anchor and last_pos < control.size() and self.updateHeroFrom(control[last_pos].dataSource, hub=hub):
                     self.backgroundSet = True
                 return
 
             # during background hub updates, if the user manually selects a different item, do
             # nothing - but this guard doesn't apply to force_reselect, which is an explicit
-            # switch-to-this-hub-and-restore-its-position call (_bindFocusedHub), not a background
+            # switch-to-this-hub-and-restore-its-position call (_bindAllHubSlots), not a background
             # refresh that might otherwise fight the user's own in-progress navigation.
             if self._anyItemAction and not force_reselect:
                 return
@@ -4942,7 +5376,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                         else:
                             return
                 if rk_found:
-                    if pos < control.size() and self.updateHeroFrom(control[pos].dataSource, hub=hub):
+                    if is_anchor and pos < control.size() and self.updateHeroFrom(control[pos].dataSource, hub=hub):
                         self.backgroundSet = True
                     return
 
@@ -4955,7 +5389,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                 util.DEBUG_LOG("Hub {}: Reselect: We didn't find {} in list, or no item given. "
                                "Reselecting position {}", identifier, rk, pos)
                 control.selectItem(pos)
-                if pos < control.size() and self.updateHeroFrom(control[pos].dataSource, hub=hub):
+                if is_anchor and pos < control.size() and self.updateHeroFrom(control[pos].dataSource, hub=hub):
                     self.backgroundSet = True
             else:
                 if more:
@@ -4972,7 +5406,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
                     backgroundthread.BGThreader.addTask(task)
                 else:
                     control.selectItem(control.size() - 1)
-                    if self.updateHeroFrom(control[control.size() - 1].dataSource, hub=hub):
+                    if is_anchor and self.updateHeroFrom(control[control.size() - 1].dataSource, hub=hub):
                         self.backgroundSet = True
 
     def updateListItem(self, mli):

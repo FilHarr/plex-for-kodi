@@ -813,11 +813,6 @@ class Settings(object):
                              "use linearly sorted variants.")
                 ),
                 BoolSetting(
-                    'hubs_bifurcation_lines', T(32961, 'Show hub bifurcation lines'), False
-                ).description(
-                    T(32962, "Visually separate hubs horizontally using a thin line.")
-                ),
-                BoolSetting(
                     'path_mapping_indicators', T(33032, 'Show path mapping indicators'), True
                 ).description(
                     T(33033, "When path mapping is active for a library, display an indicator.")

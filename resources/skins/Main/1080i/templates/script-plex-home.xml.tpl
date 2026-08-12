@@ -1,230 +1,212 @@
 {% extends "default.xml.tpl" %}
 {% block content %}
-<!-- Single fixed-position hub row ("anchor"): whichever hub is logically focused always renders
-     here, at exactly row 0's old resting position - home.py rebinds this one physical control's
-     content (title, items, display type) as focus moves between hubs, rather than there being one
-     physical control per hub. See docs/notes/home-hub-fixed-focus-position-status.md for why: three
-     <animation>-based attempts failed (a control's clip rect follows its own animated position, so
-     nothing clipped correctly), and nesting hub rows as items inside one native vertical list is
-     impossible (Kodi gives item-template content no real, addressable control identity - confirmed
-     live, RuntimeError: Non-Existent Control). id="50" is kept on the outer control because
+<!-- Fixed-position hub row stack: whichever hub is logically focused always renders at the anchor's
+     fixed position (HomeWindow.ANCHOR_ABS_Y, 424) - home.py rotates which of 5 physical row
+     controls (403/401/400/402/404, permanently ordered offsets -2 to +2 from focus -
+     HomeWindow.HUB_ROTATION_RING) currently plays that role, and every other role, as focus moves,
+     rather than there being one physical control per hub actually scrolled, or content being
+     rebound to match a fixed role every move (an earlier version of this design did that, and paid
+     for it in visible texture-swap ghosting whenever a hub's data moved to a *different* physical
+     control - see docs/notes/home-hub-fixed-focus-position-status.md for the full history, including
+     three earlier <animation>-based attempts at a fixed clip line that failed, and why nesting hub
+     rows as items inside one native vertical list is impossible - Kodi gives item-template content
+     no real, addressable control identity, confirmed live, RuntimeError: Non-Existent Control).
+     Because content stays glued to whichever control it's already bound to, all 5 controls are kept
+     loaded at all times, so whichever one is about to become newly visible on any given transition
+     already holds correct, previously-loaded content. id="50" is kept on the outer control because
      default.xml.tpl's header controls target it directly via <ondown>50</ondown>. -->
-<control type="group" id="50">
-    <!-- Slide right while the sidebar rail is expanded (focused), so hub content doesn't sit under the labels -->
-    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+<!-- Outer clip: a grouplist (grouplist clips its children, a plain group doesn't - see
+     script-plex-episodes.xml.tpl:271's own comment). Base position is y=135 (not y=424, the
+     anchor's own resting position - see group 51's own posy below for how that's preserved) -
+     permanently wide enough to show peek-above (folded in as a child of group 51 below, at its own
+     fixed relative offset) - peek-above has no <visible> condition of its own any more; whether
+     it's shown falls out entirely from where this clip's own boundary currently sits (see its own
+     comment). Only the has-hero-art case still needs the clip to narrow *down* from this base (see
+     the animation below) - a control's clip rect reliably follows its own current position
+     (confirmed by this control's own behavior, and by the original pre-redesign row-0 mechanism),
+     which is why the clip and the row content deliberately live on separate controls (this one
+     clips, never moves on its own initiative beyond the one animation below; inner group 51 is what
+     Python actually slides - see HomeWindow._startHubSlide()/_settleHubSlide()).
+     Kept as id="50" since default.xml.tpl's header controls target it directly via
+     <ondown>50</ondown> - only needs to route focus into 51 via defaultcontrol, never itself
+     addressed from Python (grouplist controls aren't - see the id=502/Part 5 comment below). -->
+<control type="grouplist" id="50">
+    <!-- Keyed on no_hero_art alone, deliberately NOT also on hub.sliding: nudge the clip down from
+         its y=135 base to y=456 (a shift of +321) - 456 = 431 (hero summary textbox's real bottom -
+         see the "Focused hub item info overlay" comment in this file's header block) + a gap
+         (matching the HomeWindow.ROW_GAP convention used elsewhere) - so the sliding row's own
+         title/images, which otherwise briefly sweep through that band on their way past 424, never
+         render above summary's real bottom edge. No corresponding no-hero-art animation is needed -
+         the clip is already at its widest (y=135) by default, so there's nothing further to shift
+         to for that case.
 
-    <defaultcontrol>500</defaultcontrol>
+         Tying this to no_hero_art rather than hub.sliding is what makes it only ever animate when
+         hero-art status actually *changes* - for the overwhelmingly common case (moving between two
+         hubs that both have or both lack hero art), this control is already sitting at the correct
+         position from before the transition started, so it doesn't move at all during the slide.
+         Found live: gating this on hub.sliding as well made it re-evaluate on *every* vertical move
+         regardless of whether hero-art status changed, producing a spurious re-apply (harmless once
+         this is instant, but still pointless work) on ordinary same-state transitions.
+
+         time="0": this control's own move must be instant, not eased. This control shifts THIS
+         control (50), which 51 - the Python-positioned row content - is nested inside, so the shift
+         also adds directly to 51's own on-screen position (nested controls always render at
+         parent-position + own-local-offset). HomeWindow._setNoHeroArt() counter-shifts 51's own
+         local offset by this same signed amount, in the very same synchronous call that flips the
+         no_hero_art property this animation is keyed on - so as long as THIS animation is also
+         instant, both moves land in the same rendered frame and the anchor's absolute position never
+         leaves ANCHOR_ABS_Y, not even for one intermediate frame. Was time="150" tween="sine"
+         easing="inout" originally; with 51's own counter-shift applied instantly (see
+         _setNoHeroArt()) but this control still easing over 150ms, the two were out of sync for that
+         whole window - the entire row stack visibly swung through the full 321px difference before
+         settling, on top of whatever the ordinary hub-to-hub row slide was already doing. Precedent
+         for instant Conditional repositioning elsewhere in this codebase: seasons_meta_row.xml.tpl,
+         script-plex-seasons.xml.tpl:261. -->
+    <animation effect="slide" end="0,321" time="0"
+               condition="String.IsEmpty(Window.Property(no_hero_art))">Conditional</animation>
+
+    <defaultcontrol>51</defaultcontrol>
     <!-- posx=100, not 55: the sidebar rail is drawn on top (see its own comment in default.xml.tpl's
-         header block) - this leaves room for the collapsed rail's icon column. Row titles/
-         bifurcation lines and item layout insets below have their own posx reduced by the same 45px
-         this moved right, to keep resting positions unchanged (60->15, 55->10). -->
+         header block) - this leaves room for the collapsed rail's icon column. Row title/item
+         layout insets below have their own posx reduced by the same 45px this moved right, to keep
+         resting positions unchanged (60->15, 55->10). -->
     <posx>100</posx>
-    <posy>{{ vscale(424) }}</posy>
+    <posy>{{ vscale(135) }}</posy>
     <width>2085</width>
-    <height>{{ vscale(425) }}</height>
+    <!-- 945 = 1080 (screen bottom) - 135 (this control's own base posy) - reaches to the bottom of
+         the screen. Not compensated when the animation above shifts this control's own posy down
+         by 321 - height stays fixed, so the clip's bottom edge (456+945=1401) also shifts down,
+         comfortably past the screen bottom regardless, so nothing is newly clipped there. -->
+    <height>{{ vscale(945) }}</height>
     <usecontrolcoords>true</usecontrolcoords>
+    <orientation>vertical</orientation>
+    <itemgap>0</itemgap>
 
-    <control type="group" id="500">
-        <visible>Integer.IsGreater(Container(400).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
-        <defaultcontrol>400</defaultcontrol>
-        <width>1920</width>
+    <control type="group" id="51">
+        <!-- Slide right while the sidebar rail is expanded (focused), so hub content doesn't sit under the labels -->
+        <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+
+        <!-- posy is declared here for documentation only. group 51 is grouplist 50's only direct
+             child (no spacer sibling any more - a previous round used one to get this control's
+             resting offset "for free" from the grouplist's own auto-stacking, but that produced a
+             persistent ~289-308px too-low offset that survived even after every other variable was
+             eliminated, consistent with the grouplist's auto-stack re-applying its own computed
+             contribution on top of whatever this control's own posy already held, rather than
+             genuinely handing off control once Python had set it explicitly. HomeWindow now owns
+             this control's position unconditionally and exclusively - every bind/slide/settle call
+             (_bindAllHubSlots()/_startHubSlide()/_settleHubSlide()) always sets it explicitly via
+             setPosition(), from HomeWindow.GROUP51_BASELINE_OFFSET (289) as the true absolute
+             local-offset target, not a value added on top of anything else. The one gap this
+             leaves: before HomeWindow's first bind ever runs, grouplist 50 auto-stacks this,
+             its only child, flush to 0 (ignoring this declared posy, same as always) - a one-frame
+             flash at init, corrected the instant onFirstInit's own first bind runs. -->
+        <defaultcontrol>500</defaultcontrol>
+        <posx>0</posx>
+        <posy>{{ vscale(289) }}</posy>
+        <width>2085</width>
         <height>{{ vscale(425) }}</height>
-        <control type="image">
-            <visible>!String.IsEmpty(Window.Property(bifurcation_lines))</visible>
-            <posx>15</posx>
-            <posy>{{ vscale(12) }}</posy>
-            <width>1800</width>
-            <height>{{ vscale(2) }}</height>
-            <texture>script.plex/white-square.png</texture>
-            <colordiffuse>A0000000</colordiffuse>
-        </control>
-        <control type="label">
-            <posx>15</posx>
-            <posy>0</posy>
-            <width>1000</width>
-            <height>{{ vscale(87) }}</height>
-            <font>font13</font>
-            <align>left</align>
-            <aligny>center</aligny>
-            <textcolor>FFFFFFFF</textcolor>
-            <shadowcolor>66000000</shadowcolor>
-            <label>[B]$INFO[Window.Property(hub.400)][/B]</label>
-        </control>
-        <control type="list" id="400">
+        <usecontrolcoords>true</usecontrolcoords>
+
+        <!-- All 5 wrappers (500-504, wrapping list controls 400-404) share one uniform shape -
+             wrapper > "has items" inner group > title label + list - since under rotation any of
+             the 5 controls can end up playing any role (two-above/peek-above/anchor/peek-below/
+             two-below) at different times, not just its original one.
+
+             Position/height are Python-managed (HomeWindow._setRoleGeometry()/_roleLocalY(), called
+             from _bindAllHubSlots()/_startHubSlide()/_finishHubSlide()) - the posy/height declared
+             below are just the pre-bind fallback, matching whichever role this control starts in.
+             Every role's Y is computed by the same one recurrence, walked outward from the anchor
+             (fixed at HomeWindow.ANCHOR_ABS_Y, 424) in whichever direction is needed: each row's Y
+             is its neighbor's Y, plus or minus that neighbor's own real rendered content height
+             (HomeWindow.ROW_CONTENT_HEIGHT, keyed by display type) plus a fixed gap
+             (HomeWindow.ROW_GAP) - not a fixed constant for peek-above and a dynamic one for
+             peek-below, which is what this used to do and is exactly what made peek-above need a
+             separate, manual per-type crop to fake the same result a real clip already produces once
+             positions are consistent (see below).
+
+             This is also what crops peek-above's own content - not a manual per-type posy override
+             any more (removed; see hub_itemlayout_poster/square/ar16x9.xml.tpl and the matching
+             hub_focusedlayout_* files, each back down to one rendered variant). Once peek-above's Y
+             is computed by the same stacking rule peek-below already used, its *bottom* edge always
+             lands at exactly ANCHOR_ABS_Y - ROW_GAP regardless of the row's own real height (height
+             only ever affects the top edge) - and grouplist 50's own real clip (the only actual clip
+             in this whole hierarchy, y=135 to the screen bottom) cuts off whatever pokes out above
+             that, for free, at whatever position the row is *currently* at, every frame - no second,
+             separately-animated piece of state (a crop property) that could ever fall out of sync
+             with position, at any point mid-slide, the way the old per-type override could.
+
+             Title visibility only needs one remaining role signal: HomeWindow writes the currently-
+             focused control's own id to hub.anchor_id as roles rotate, and each title's own
+             condition compares against that (see below) - hidden only for the anchor's own title,
+             and only during a has-hero-art slide (protects the separate hero-summary-text overlay -
+             unrelated to cropping, still real even though hero art is currently force-disabled for
+             this testing phase). Peek-above's title needs no special hiding of its own any more
+             either - at H >= 364px (every real display type clears this with margin - tightest is
+             square/no-second-line at 395, a 31px margin worth keeping in mind if a shorter display
+             type is ever added), the title is naturally clipped away the same way the art is, for
+             the same reason. -->
+        {% for id, decl_posy, decl_height in ((503, -800, 277), (501, -289, 277), (500, 0, 425), (502, 489, 167), (504, 950, 167)) %}
+        <control type="group" id="{{ id }}">
             <posx>0</posx>
-            <posy>{{ vscale(29) }}</posy>
+            <posy>{{ vscale(decl_posy) }}</posy>
             <width>1920</width>
-            <height>{{ vscale(515) }}</height>
-            <!-- Vertical hub-to-hub navigation is handled entirely in Python (HomeWindow.onAction
-                 intercepts MOVE_UP/MOVE_DOWN before this native nav map would fire) - there is no
-                 other physical row control to hand focus to, so both are noop here. -->
-            <onup>noop</onup>
-            <ondown>noop</ondown>
-            <onright>noop</onright>
-            <onleft>9001</onleft>
-            <scrolltime>200</scrolltime>
-            <orientation>horizontal</orientation>
-            <preloaditems>4</preloaditems>
-
-            <!-- hub_id: the includes below key their conditions off Window.Property(hub.display.{{ hub_id }})
-                 - always 400 now, but they still need it in scope. -->
-            {% with hub_id = 400 %}
-            <!-- Conditional item layouts - Kodi selects layout based on condition attribute -->
-            {% include "includes/hub_itemlayout_poster.xml.tpl" %}
-            {% include "includes/hub_itemlayout_square.xml.tpl" %}
-            {% include "includes/hub_itemlayout_ar16x9.xml.tpl" %}
-            <!-- Conditional focused layouts - Kodi selects layout based on condition attribute -->
-            {% include "includes/hub_focusedlayout_poster.xml.tpl" %}
-            {% include "includes/hub_focusedlayout_square.xml.tpl" %}
-            {% include "includes/hub_focusedlayout_ar16x9.xml.tpl" %}
-            {% endwith %}
-        </control>
-    </control>
-
-    <!-- Peek rows: non-focusable previews of the previous/next hub, rendered with the exact same
-         itemlayout/focusedlayout includes as the anchor above (just a different hub_id/control id) -
-         they're meant to look identical to the focused row, not a simplified decorative version.
-         501 (peek-above) is wrapped in its own clipping grouplist (a plain group doesn't clip - see
-         script-plex-episodes.xml.tpl:271's own comment on this), since its crop boundary sits
-         mid-screen (the header's bottom edge) with no other control providing that cutoff. 502
-         (peek-below) is a plain group instead - its own crop boundary is always the physical bottom
-         of the screen itself (HomeWindow._updatePeekBelowGeometry() keeps its computed height ending
-         exactly at 1080 regardless of where it starts), which Kodi's own render surface already
-         cuts off with nothing further to draw beneath, so no separate clipping control is needed
-         there - and a plain group is required anyway, since getControl() (used to reposition/resize
-         it from Python - see below) raises "Unknown control type for python" for grouplist controls.
-         home.py's HomeWindow._bindPeekHubs() populates control ids 401/402 and drives the
-         hub.has_prev/hub.has_next visibility properties below. -->
-    <control type="grouplist" id="501">
-        <!-- Peek-above: only shown when the focused hub has no hero art - that's the only time the
-             band between the header and the anchor (y~135-424) is actually free; when hero art is
-             showing, that space is occupied by the title/meta/summary overlay (see
-             script-plex-home.xml.tpl's header block) and default_background.xml.tpl's art box,
-             which hide together via the same no_hero_art property.
-
-             No title label/bifurcation line here (unlike 502 below) - this preview is meant to read
-             as the *tail end* of the row above trailing into view, not a fresh row starting from its
-             own top: the item templates' outer-group posy is overridden to a per-type negative value
-             for hub_id 401 specifically (see hub_itemlayout_poster/square/ar16x9.xml.tpl), pushing
-             each item up so its own bottom edge lands flush with this wrapper's bottom (right above
-             the anchor) - the label, bifurcation line and top of the art fall above y=0 and are
-             clipped away by this grouplist, same mechanism as everything else being cropped here. -->
-        <visible>!String.IsEmpty(Window.Property(no_hero_art)) + !String.IsEmpty(Window.Property(hub.has_prev))</visible>
-        <posx>0</posx>
-        <!-- -289 = 135 (header's own bottom edge, absolute) - 424 (group 50's own absolute posy) -
-             top edge sits flush with the header, using the full available band down to the anchor. -->
-        <posy>{{ vscale(-289) }}</posy>
-        <width>1920</width>
-        <!-- 277 = 424 (anchor's absolute top) - 12 (gap) - 135 (header bottom). -->
-        <height>{{ vscale(277) }}</height>
-        <usecontrolcoords>true</usecontrolcoords>
-        <orientation>vertical</orientation>
-        <itemgap>0</itemgap>
-        <control type="group">
-            <visible>Integer.IsGreater(Container(401).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
-            <width>1920</width>
-            <height>{{ vscale(277) }}</height>
-            <control type="list" id="401">
-                <posx>0</posx>
-                <posy>0</posy>
+            <height>{{ vscale(decl_height) }}</height>
+            <usecontrolcoords>true</usecontrolcoords>
+            {% if id == 500 %}<defaultcontrol>400</defaultcontrol>{% endif %}
+            <control type="group">
+                <visible>Integer.IsGreater(Container({{ id - 100 }}).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
                 <width>1920</width>
-                <height>{{ vscale(277) }}</height>
-                <!-- Never focused - Python never targets this id via setFocusId, and nothing else's
-                     onup/ondown/onleft/onright points at it, so these are just defensive noops. -->
-                <onup>noop</onup>
-                <ondown>noop</ondown>
-                <onleft>noop</onleft>
-                <onright>noop</onright>
-                <scrolltime>200</scrolltime>
-                <orientation>horizontal</orientation>
-                <preloaditems>4</preloaditems>
+                <height>{{ vscale(decl_height) }}</height>
+                <control type="label">
+                    <!-- See this whole block's own comment above for the full reasoning. Visible
+                         unless this control is currently the anchor (hub.anchor_id) AND a
+                         has-hero-art slide is in progress - peek-above/peek-below never hide their
+                         title for this reason (String.IsEmpty(hub.sliding) | !String.IsEmpty(no_hero_art):
+                         only the has-hero-art case needs hiding during a slide - see grouplist 50's
+                         own comment for why the sweep-through-the-summary problem only exists then).
+                         Peek-above's title needs no separate hide at all any more - it's naturally
+                         clipped away the same way the art is (see this block's own comment). -->
+                    <visible>!String.IsEqual(Window.Property(hub.anchor_id), {{ id - 100 }}) | [String.IsEmpty(Window.Property(hub.sliding)) | !String.IsEmpty(Window.Property(no_hero_art))]</visible>
+                    <posx>15</posx>
+                    <posy>0</posy>
+                    <width>1000</width>
+                    <height>{{ vscale(87) }}</height>
+                    <font>font13</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <shadowcolor>66000000</shadowcolor>
+                    <label>[B]$INFO[Window.Property(hub.{{ id - 100 }})][/B]</label>
+                </control>
+                <control type="list" id="{{ id - 100 }}">
+                    <posx>0</posx>
+                    <posy>{{ vscale(29) }}</posy>
+                    <width>1920</width>
+                    <height>{{ vscale(515) }}</height>
+                    <!-- Vertical hub-to-hub navigation is handled entirely in Python
+                         (HomeWindow.onAction intercepts MOVE_UP/MOVE_DOWN before native nav fires).
+                         onleft exits to the sidebar - needed on all 5 now (any of them can be the
+                         anchor), not just whichever used to be control 400. -->
+                    <onup>noop</onup>
+                    <ondown>noop</ondown>
+                    <onleft>9001</onleft>
+                    <onright>noop</onright>
+                    <scrolltime>200</scrolltime>
+                    <orientation>horizontal</orientation>
+                    <preloaditems>4</preloaditems>
 
-                {% with hub_id = 401 %}
-                {% include "includes/hub_itemlayout_poster.xml.tpl" %}
-                {% include "includes/hub_itemlayout_square.xml.tpl" %}
-                {% include "includes/hub_itemlayout_ar16x9.xml.tpl" %}
-                {% include "includes/hub_focusedlayout_poster.xml.tpl" %}
-                {% include "includes/hub_focusedlayout_square.xml.tpl" %}
-                {% include "includes/hub_focusedlayout_ar16x9.xml.tpl" %}
-                {% endwith %}
+                    {% with hub_id = id - 100 %}
+                    {% include "includes/hub_itemlayout_poster.xml.tpl" %}
+                    {% include "includes/hub_itemlayout_square.xml.tpl" %}
+                    {% include "includes/hub_itemlayout_ar16x9.xml.tpl" %}
+                    {% include "includes/hub_focusedlayout_poster.xml.tpl" %}
+                    {% include "includes/hub_focusedlayout_square.xml.tpl" %}
+                    {% include "includes/hub_focusedlayout_ar16x9.xml.tpl" %}
+                    {% endwith %}
+                </control>
             </control>
         </control>
-    </control>
-
-    <control type="group" id="502">
-        <!-- Peek-below: shown whenever a next hub exists, independent of hero art state - the band
-             below the anchor is always free. Same top-anchored render as the anchor itself (title +
-             bifurcation line + top of the art, cropped at the bottom) - unlike 501 above, this one
-             reads as the *start* of the next row, so keeping its own title visible makes sense here.
-
-             A plain group, not a clipping grouplist - see the comment above 501 for why that's fine
-             here (its bottom boundary is always the physical screen edge) and required (grouplist
-             isn't addressable via Python's getControl()).
-
-             posy/height below are just the pre-bind fallback (worst case: 2-line ar16x9, the anchor's
-             declared height being a nominal figure only - a real 2-line ar16x9 label actually bottoms
-             out around 477, see hub_itemlayout_ar16x9.xml.tpl's own posy chain, well past the nominal
-             425, since the anchor is a plain, non-clipping group). HomeWindow._updatePeekBelowGeometry()
-             repositions/resizes this control via setPosition()/setHeight() at every anchor rebind,
-             using the anchor's *actual* display type/text2lines state instead of always reserving the
-             worst case - so poster/square rows get a tighter gap before this preview than ar16x9 does. -->
-        <visible>!String.IsEmpty(Window.Property(hub.has_next))</visible>
-        <posx>0</posx>
-        <posy>{{ vscale(489) }}</posy>
-        <width>1920</width>
-        <!-- 167 = 1080 (screen bottom) - 424 (group 50's own absolute posy) - 489 (this group's own
-             relative posy above) - reaches exactly to the bottom of the screen. Fallback only, see
-             the posy comment above. -->
-        <height>{{ vscale(167) }}</height>
-        <usecontrolcoords>true</usecontrolcoords>
-        <control type="group">
-            <visible>Integer.IsGreater(Container(402).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
-            <width>1920</width>
-            <height>{{ vscale(167) }}</height>
-            <control type="image">
-                <visible>!String.IsEmpty(Window.Property(bifurcation_lines))</visible>
-                <posx>15</posx>
-                <posy>{{ vscale(12) }}</posy>
-                <width>1800</width>
-                <height>{{ vscale(2) }}</height>
-                <texture>script.plex/white-square.png</texture>
-                <colordiffuse>A0000000</colordiffuse>
-            </control>
-            <control type="label">
-                <posx>15</posx>
-                <posy>0</posy>
-                <width>1000</width>
-                <height>{{ vscale(87) }}</height>
-                <font>font13</font>
-                <align>left</align>
-                <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <shadowcolor>66000000</shadowcolor>
-                <label>[B]$INFO[Window.Property(hub.402)][/B]</label>
-            </control>
-            <control type="list" id="402">
-                <posx>0</posx>
-                <posy>{{ vscale(29) }}</posy>
-                <width>1920</width>
-                <height>{{ vscale(515) }}</height>
-                <onup>noop</onup>
-                <ondown>noop</ondown>
-                <onleft>noop</onleft>
-                <onright>noop</onright>
-                <scrolltime>200</scrolltime>
-                <orientation>horizontal</orientation>
-                <preloaditems>4</preloaditems>
-
-                {% with hub_id = 402 %}
-                {% include "includes/hub_itemlayout_poster.xml.tpl" %}
-                {% include "includes/hub_itemlayout_square.xml.tpl" %}
-                {% include "includes/hub_itemlayout_ar16x9.xml.tpl" %}
-                {% include "includes/hub_focusedlayout_poster.xml.tpl" %}
-                {% include "includes/hub_focusedlayout_square.xml.tpl" %}
-                {% include "includes/hub_focusedlayout_ar16x9.xml.tpl" %}
-                {% endwith %}
-            </control>
-        </control>
+        {% endfor %}
     </control>
 </control>
 

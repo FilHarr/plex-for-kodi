@@ -4,11 +4,9 @@
         <!-- 10, not 55: compensates for the parent grouplist's posx moving from 55 to 100
              (see script-plex-home.xml.tpl) so this item's resting position is unchanged. -->
         <posx>10</posx>
-        <!-- hub_id 401 (peek-above): mirrors hub_itemlayout_ar16x9.xml.tpl's own copy of this
-             override exactly (same content/heights) - Kodi renders whichever item is *selected*
-             within a list via focusedlayout regardless of whether the list control itself has
-             window focus, so the previously-focused item needs this too, not just itemlayout. -->
-        <posy>{% if hub_id == 401 %}{{ vscale(-99) }}{% else %}{{ vscale(72) }}{% endif %}</posy>
+        <!-- Always top-anchored - see hub_itemlayout_poster.xml.tpl's own matching comment for why
+             peek-above's crop no longer needs a manual per-type posy override here. -->
+        <posy>{{ vscale(72) }}</posy>
         <control type="group">
             <animation effect="zoom" start="100" end="110" time="100" center="271,{{ vscale(149.5) }}" reversible="false">Focus</animation>
             <animation effect="zoom" start="110" end="100" time="100" center="271,{{ vscale(149.5) }}" reversible="false">UnFocus</animation>
