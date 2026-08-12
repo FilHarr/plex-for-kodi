@@ -141,8 +141,19 @@
                     <texture>script.plex/white-square.png</texture>
                     <colordiffuse>FFE5A00D</colordiffuse>
                 </control>
-                <!-- Section icon (always visible) -->
+                <!-- Section icon - dimmer while sidebar is collapsed -->
                 <control type="image">
+                    <visible>!ControlGroup(9000).HasFocus(0)</visible>
+                    <posx>26</posx>
+                    <posy>{{ vscale(30) }}</posy>
+                    <width>28</width>
+                    <height>{{ vscale(28) }}</height>
+                    <texture>$INFO[ListItem.Icon]</texture>
+                    <colordiffuse>26FFFFFF</colordiffuse>
+                </control>
+                <!-- Section icon - normal while sidebar is expanded -->
+                <control type="image">
+                    <visible>ControlGroup(9000).HasFocus(0)</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
@@ -232,9 +243,19 @@
                     <texture>$INFO[ListItem.Icon]</texture>
                     <colordiffuse>FFE5A00D</colordiffuse>
                 </control>
-                <!-- Section icon - normal when not focused and not active -->
+                <!-- Section icon - normal when not focused and not active, dimmer while sidebar is collapsed -->
                 <control type="image">
-                    <visible>!Control.HasFocus(9001) + String.IsEmpty(ListItem.Property(is.active))</visible>
+                    <visible>!ControlGroup(9000).HasFocus(0) + !Control.HasFocus(9001) + String.IsEmpty(ListItem.Property(is.active))</visible>
+                    <posx>26</posx>
+                    <posy>{{ vscale(30) }}</posy>
+                    <width>28</width>
+                    <height>{{ vscale(28) }}</height>
+                    <texture>$INFO[ListItem.Icon]</texture>
+                    <colordiffuse>26FFFFFF</colordiffuse>
+                </control>
+                <!-- Section icon - normal when not focused and not active, and sidebar is expanded -->
+                <control type="image">
+                    <visible>ControlGroup(9000).HasFocus(0) + !Control.HasFocus(9001) + String.IsEmpty(ListItem.Property(is.active))</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
