@@ -73,8 +73,7 @@ def render_templates(theme=None, templates=None, force=False):
                     "START": {
                         "INHERIT": watch_state_type,
                         "style": watch_state_type,
-                        "hide_aw_bg": getSetting('hide_aw_bg', False),
-                        "use_scaling": getSetting('scale_indicators', True)
+                        "hide_aw_bg": getSetting('hide_aw_bg', False)
                     }
                 },
             }

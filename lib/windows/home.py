@@ -569,8 +569,8 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
     # Poster has no title label under its art at all, so its height doesn't depend on text2lines.
     ROW_CONTENT_HEIGHT = {
         ('poster', False): 429, ('poster', True): 429,
-        ('square', False): 395, ('square', True): 422,
-        ('ar16x9', False): 450, ('ar16x9', True): 477,
+        ('square', False): 371, ('square', True): 398,
+        ('ar16x9', False): 349, ('ar16x9', True): 376,
     }
 
     # Hub-switch slide animation (focus moving to an adjacent hub, either direction): group 51
@@ -752,8 +752,8 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
     HERO_ART_TYPES = {'movie', 'show', 'season', 'episode'}
 
     THUMB_POSTER_DIM = util.scaleResolution(244, 361)
-    THUMB_AR16X9_DIM = util.scaleResolution(532, 299)
-    THUMB_SQUARE_DIM = util.scaleResolution(244, 244)
+    THUMB_AR16X9_DIM = util.scaleResolution(352, 198)
+    THUMB_SQUARE_DIM = util.scaleResolution(220, 220)
 
     def __init__(self, *args, **kwargs):
         kodigui.BaseWindow.__init__(self, *args, **kwargs)
@@ -4582,16 +4582,16 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         currently showing - used by _roleLocalY()'s stacking recurrence to work out every other
         row's position relative to it, generalizing what used to be an anchor-only lookup (any role
         can host any hub now). hub=None (nothing bound at some intermediate offset, e.g. the
-        empty-hubs case) falls back to the tallest real case (ar16x9, 2-line), same fallback
+        empty-hubs case) falls back to the tallest real case (poster), same fallback
         ROW_CONTENT_HEIGHT.get() itself already uses for an unrecognized (display_type, text2lines)."""
         if hub is None:
-            return self.ROW_CONTENT_HEIGHT[('ar16x9', True)]
+            return self.ROW_CONTENT_HEIGHT[('poster', False)]
         is_home = not self.lastSection or self.lastSection.key is None
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
         display_type = self.getHubDisplayType(hub, identifier)
         text2lines = self.getHubRenderFlags(hub, identifier)['text2lines']
         return self.ROW_CONTENT_HEIGHT.get(
-            (display_type, text2lines), self.ROW_CONTENT_HEIGHT[('ar16x9', True)]
+            (display_type, text2lines), self.ROW_CONTENT_HEIGHT[('poster', False)]
         )
 
     def _roleLocalY(self, role_offset, focused_index):
@@ -5145,6 +5145,11 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         mli = self.createSimpleListItem(obj, *self.THUMB_SQUARE_DIM)
         if obj.type == 'photo':
             mli.setLabel2(obj.originallyAvailableAt.asDatetime('%d %B %Y'))
+            # Real photos vary wildly in aspect ratio and shouldn't be cropped like posters/art -
+            # the template shows the whole image letterboxed instead when this is set (matches Plex's
+            # own photo hub behavior). Folders (photodirectory) keep the normal cropped-fill look
+            # since their thumb is a composite grid, not a single photo.
+            mli.setProperty('is.photo', '1')
         mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/photo.png')
         return mli
 

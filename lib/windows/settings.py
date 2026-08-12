@@ -701,11 +701,6 @@ class Settings(object):
                 ).description(
                     T(33025, "")
                 ),
-                BoolSetting(
-                    'scale_indicators', T(33077, ''), True, theme_relevant=True
-                ).description(
-                    T(33078, "")
-                ),
                 OptionsSetting(
                     'hub_count',
                     T(34087, 'Hub Count'),

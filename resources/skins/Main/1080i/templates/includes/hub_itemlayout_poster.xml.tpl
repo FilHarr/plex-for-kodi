@@ -41,18 +41,15 @@
                 </control>
             </control>
             <control type="image">
+                <!-- Native fallback= (not a separate stacked/masked control - see this include's
+                     own history) - Kodi shows this while ListItem.Thumb is empty/loading/failed,
+                     swapping seamlessly once it resolves, so there's only ever one masked layer for
+                     the art, never two independently-rounded corners that could misalign. -->
                 <posx>0</posx>
                 <posy>0</posy>
                 <width>220</width>
                 <height>{{ vscale(325) }}</height>
-                <texture diffuse="script.plex/masks/poster-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-            </control>
-            <control type="image">
-                <posx>0</posx>
-                <posy>0</posy>
-                <width>220</width>
-                <height>{{ vscale(325) }}</height>
-                <texture background="true" diffuse="script.plex/masks/poster-mask.png">$INFO[ListItem.Thumb]</texture>
+                <texture background="true" diffuse="script.plex/masks/poster-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                 <aspectratio scalediffuse="false">scale</aspectratio>
             </control>
             <control type="group">

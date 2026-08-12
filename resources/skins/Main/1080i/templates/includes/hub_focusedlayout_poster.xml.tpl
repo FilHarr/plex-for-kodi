@@ -50,18 +50,13 @@
                     </control>
                 </control>
                 <control type="image">
+                    <!-- See hub_itemlayout_poster.xml.tpl's own copy of this control for the full
+                         reasoning (native fallback=, not a separate stacked/masked control). -->
                     <posx>0</posx>
                     <posy>0</posy>
                     <width>220</width>
                     <height>{{ vscale(325) }}</height>
-                    <texture diffuse="script.plex/masks/poster-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-                </control>
-                <control type="image">
-                    <posx>0</posx>
-                    <posy>0</posy>
-                    <width>220</width>
-                    <height>{{ vscale(325) }}</height>
-                    <texture background="true" diffuse="script.plex/masks/poster-mask.png">$INFO[ListItem.Thumb]</texture>
+                    <texture background="true" diffuse="script.plex/masks/poster-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                     <aspectratio scalediffuse="false">scale</aspectratio>
                 </control>
                 <control type="group">
