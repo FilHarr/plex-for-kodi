@@ -196,7 +196,7 @@ class XMLBase(object):
 
 class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
     __slots__ = ("_closing", "_winID", "started", "finishedInit", "dialogProps", "isOpen", "_errored",
-                 "_closeSignalled", "_bgPainted", "_bgSyncGen")
+                 "_closeSignalled", "_bgPainted", "_bgSyncGen", "_panelLayer", "_panelColors")
     supportsAutoPlay = False
 
     def __init__(self, *args, **kwargs):
@@ -209,6 +209,8 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self.finishedInit = False
         self._bgPainted = False
         self._bgSyncGen = 0
+        self._panelLayer = 'a'
+        self._panelColors = ('', '', '', '')
         self.dialogProps = kwargs.get("dialog_props", None)
 
         carryProps = kwargs.get("window_props", None)
@@ -345,15 +347,45 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             # Video subclasses (Movie/Show/Season/Episode/Clip), absent entirely on e.g. Photo, and
             # PlexObject.get() would wrap a missing key in a truthy PlexValue instead of None.
             corners = util.backgroundPanelCorners(getattr(ds, 'ultraBlurColors', None))
-            for prop, corner in (('background_panel_tl', 'topLeft'), ('background_panel_tr', 'topRight'),
-                                  ('background_panel_bl', 'bottomLeft'), ('background_panel_br', 'bottomRight')):
-                # always set, even to '' - established hide-via-empty-property idiom this skin already
-                # uses, needed so a title with no ultraBlurColors clears colors left by a prior title.
-                self.setProperty(prop, corners.get(corner, ''))
+            self._setPanelCorners(corners)
             # opacity=100: this art is now a focal, vivid box next to its own color panel, not a
             # full-bleed wash with text floating on top anywhere - backgroundArtOpacityAmount2's
             # server-side dimming was designed for that older look and just reads as muddy here.
             return self.windowSetBackground(util.backgroundFromArt(art, width=self.width, height=self.height, opacity=100))
+
+    PANEL_CORNER_PROPS = (('background_panel_tl', 'topLeft'), ('background_panel_tr', 'topRight'),
+                           ('background_panel_bl', 'bottomLeft'), ('background_panel_br', 'bottomRight'))
+
+    def _setPanelCorners(self, corners):
+        """Cross-fades the 4-corner background color panel (default_background.xml.tpl) between
+        items instead of popping instantly. A control's <colordiffuse> has no fade of its own in
+        Kodi - unlike the hero art layers windowSetBackground drives, which crossfade because their
+        *texture* changes, only a control's own <visible> transition can be animated (via an
+        explicit <animation effect="fade">VisibleChange</animation>). So default_background.xml.tpl
+        duplicates the 4 corners into two layers (_a/_b, each a group gated on
+        background_panel_layer); this writes the new colors into whichever layer is currently
+        hidden, then flips background_panel_layer so the now-hidden old layer fades out while the
+        newly-shown one fades in.
+        """
+        values = tuple(corners.get(corner, '') for _, corner in self.PANEL_CORNER_PROPS)
+        if values == self._panelColors:
+            return
+        self._panelColors = values
+
+        if not util.addonSettings.dbgCrossfade:
+            for prop, corner in self.PANEL_CORNER_PROPS:
+                # always set, even to '' - established hide-via-empty-property idiom this skin
+                # already uses, needed so a title with no ultraBlurColors clears colors left by a
+                # prior title.
+                self.setProperty('{}_a'.format(prop), corners.get(corner, ''))
+            self.setProperty('background_panel_layer', 'a')
+            return
+
+        target = 'b' if self._panelLayer == 'a' else 'a'
+        for prop, corner in self.PANEL_CORNER_PROPS:
+            self.setProperty('{}_{}'.format(prop, target), corners.get(corner, ''))
+        self.setProperty('background_panel_layer', target)
+        self._panelLayer = target
 
     def windowSetBackground(self, value):
         if not util.addonSettings.dbgCrossfade:

@@ -39,46 +39,98 @@
          that corner has no color, falling back to the flat base fill above. Uses the same
          sibling-<colordiffuse>-plus-diffuse-mask pattern as the scrim control below - colordiffuse
          and diffuse= combined as attributes on one <texture> tag silently does nothing (see this
-         file's other working examples). -->
-    <control type="image">
-        <visible>!String.IsEmpty(Window.Property(background_panel_tl))</visible>
-        <fadetime>1000</fadetime>
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>1920</width>
-        <height>1080</height>
-        <texture diffuse="script.plex/masks/background-corner.png">script.plex/white-square.png</texture>
-        <colordiffuse>$INFO[Window.Property(background_panel_tl)]</colordiffuse>
+         file's other working examples).
+
+         Duplicated into two layers (_a/_b) rather than one set of 4 controls: a control's
+         <colordiffuse> has no fade of its own in Kodi, and - unlike what the old single-layer
+         version assumed - <fadetime> doesn't generically fade any control's <visible> transition
+         either; every other use of <fadetime> in this codebase is on a <control type="image">,
+         where it drives that control's own internal texture-crossfade-on-change, a narrower,
+         different feature. The generic way to fade a control (here, a group) across a <visible>
+         transition is an explicit <animation effect="fade">VisibleChange</animation>, same pattern
+         already used elsewhere in this skin (e.g. includes/sidebar.xml.tpl). BaseWindow.
+         _setPanelCorners (kodigui.py) writes each new item's colors into whichever layer is
+         currently hidden, then flips background_panel_layer, so that animation cross-fades
+         old->new the same way the hero art layers above already do via texture-change crossfade. -->
+    <control type="group">
+        <visible>String.IsEqual(Window.Property(background_panel_layer),a)</visible>
+        <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
+        <control type="image">
+            <visible>!String.IsEmpty(Window.Property(background_panel_tl_a))</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture diffuse="script.plex/masks/background-corner.png">script.plex/white-square.png</texture>
+            <colordiffuse>$INFO[Window.Property(background_panel_tl_a)]</colordiffuse>
+        </control>
+        <control type="image">
+            <visible>!String.IsEmpty(Window.Property(background_panel_tr_a))</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture diffuse="script.plex/masks/background-corner.png" flipx="true">script.plex/white-square.png</texture>
+            <colordiffuse>$INFO[Window.Property(background_panel_tr_a)]</colordiffuse>
+        </control>
+        <control type="image">
+            <visible>!String.IsEmpty(Window.Property(background_panel_bl_a))</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture diffuse="script.plex/masks/background-corner.png" flipy="true">script.plex/white-square.png</texture>
+            <colordiffuse>$INFO[Window.Property(background_panel_bl_a)]</colordiffuse>
+        </control>
+        <control type="image">
+            <visible>!String.IsEmpty(Window.Property(background_panel_br_a))</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture diffuse="script.plex/masks/background-corner.png" flipx="true" flipy="true">script.plex/white-square.png</texture>
+            <colordiffuse>$INFO[Window.Property(background_panel_br_a)]</colordiffuse>
+        </control>
     </control>
-    <control type="image">
-        <visible>!String.IsEmpty(Window.Property(background_panel_tr))</visible>
-        <fadetime>1000</fadetime>
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>1920</width>
-        <height>1080</height>
-        <texture diffuse="script.plex/masks/background-corner.png" flipx="true">script.plex/white-square.png</texture>
-        <colordiffuse>$INFO[Window.Property(background_panel_tr)]</colordiffuse>
-    </control>
-    <control type="image">
-        <visible>!String.IsEmpty(Window.Property(background_panel_bl))</visible>
-        <fadetime>1000</fadetime>
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>1920</width>
-        <height>1080</height>
-        <texture diffuse="script.plex/masks/background-corner.png" flipy="true">script.plex/white-square.png</texture>
-        <colordiffuse>$INFO[Window.Property(background_panel_bl)]</colordiffuse>
-    </control>
-    <control type="image">
-        <visible>!String.IsEmpty(Window.Property(background_panel_br))</visible>
-        <fadetime>1000</fadetime>
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>1920</width>
-        <height>1080</height>
-        <texture diffuse="script.plex/masks/background-corner.png" flipx="true" flipy="true">script.plex/white-square.png</texture>
-        <colordiffuse>$INFO[Window.Property(background_panel_br)]</colordiffuse>
+    <control type="group">
+        <visible>String.IsEqual(Window.Property(background_panel_layer),b)</visible>
+        <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
+        <control type="image">
+            <visible>!String.IsEmpty(Window.Property(background_panel_tl_b))</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture diffuse="script.plex/masks/background-corner.png">script.plex/white-square.png</texture>
+            <colordiffuse>$INFO[Window.Property(background_panel_tl_b)]</colordiffuse>
+        </control>
+        <control type="image">
+            <visible>!String.IsEmpty(Window.Property(background_panel_tr_b))</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture diffuse="script.plex/masks/background-corner.png" flipx="true">script.plex/white-square.png</texture>
+            <colordiffuse>$INFO[Window.Property(background_panel_tr_b)]</colordiffuse>
+        </control>
+        <control type="image">
+            <visible>!String.IsEmpty(Window.Property(background_panel_bl_b))</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture diffuse="script.plex/masks/background-corner.png" flipy="true">script.plex/white-square.png</texture>
+            <colordiffuse>$INFO[Window.Property(background_panel_bl_b)]</colordiffuse>
+        </control>
+        <control type="image">
+            <visible>!String.IsEmpty(Window.Property(background_panel_br_b))</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>1920</width>
+            <height>1080</height>
+            <texture diffuse="script.plex/masks/background-corner.png" flipx="true" flipy="true">script.plex/white-square.png</texture>
+            <colordiffuse>$INFO[Window.Property(background_panel_br_b)]</colordiffuse>
+        </control>
     </control>
     <!-- shrunk to ~64% and anchored top-right, matching official Plex's own pre_play framing.
          The vignette mask below is a rounded-rectangle falloff (flat sides, curved corners only),
