@@ -590,9 +590,16 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
     # animation exactly (no-hero-art doesn't shift it at all - its base position already covers that
     # case, see grouplist 50's own comment). Used by _group51RestOffset() to compute how far group
     # 51 must counter-shift to keep the anchor's absolute position unchanged regardless of which
-    # state grouplist 50 is currently in. 321 = 431 (hero summary textbox's real absolute bottom -
-    # posy=155 group + posy=186 + height=90, see the "Focused hub item info overlay" comment) + 25
-    # (ROW_GAP) - 135 (grouplist 50's own base/clip posy).
+    # state grouplist 50 is currently in.
+    #
+    # FIXED TARGET, not a live derivation: this shifts the clip to absolute y=456 (321 = 456 - 135,
+    # grouplist 50's own base/clip posy). 456 was originally chosen as 431 (hero summary textbox's
+    # real absolute bottom, at the time) + 25 (ROW_GAP), but that was a one-time starting point, not
+    # a relationship this constant tracks - the user explicitly wants y=456 kept as-is going forward
+    # regardless of where the hero-info detail elements (clearlogo/meta row/summary) end up as that
+    # layout keeps getting tuned. If the detail elements move again, do NOT recompute this value to
+    # match their new position - 456 only changes if someone deliberately decides the clip itself
+    # should move.
     HUB_SLIDE_CLIP_SHIFT_HERO = 321
 
     # Same box size pre_play.py's own CLEAR_LOGO_DIM requests, so the hero info overlay's clearlogo

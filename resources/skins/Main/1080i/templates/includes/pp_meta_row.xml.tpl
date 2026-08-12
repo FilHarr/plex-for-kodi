@@ -13,7 +13,7 @@
          any more. -->
     <control type="grouplist">
         <posx>60</posx>
-        <posy>{{ vscale(114) }}</posy>
+        <posy>{{ vscale(124) }}</posy>
         <width>708</width>
         <height>{{ vscale(30) }}</height>
         <align>left</align>
@@ -62,7 +62,7 @@
     </control>
     <control type="label">
         <posx>60</posx>
-        <posy>{{ vscale(146) }}</posy>
+        <posy>{{ vscale(156) }}</posy>
         <width>708</width>
         <height>{{ vscale(30) }}</height>
         <font>font10</font>

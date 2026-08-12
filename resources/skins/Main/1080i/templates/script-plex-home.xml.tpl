@@ -32,13 +32,16 @@
      addressed from Python (grouplist controls aren't - see the id=502/Part 5 comment below). -->
 <control type="grouplist" id="50">
     <!-- Keyed on no_hero_art alone, deliberately NOT also on hub.sliding: nudge the clip down from
-         its y=135 base to y=456 (a shift of +321) - 456 = 431 (hero summary textbox's real bottom -
-         see the "Focused hub item info overlay" comment in this file's header block) + a gap
-         (matching the HomeWindow.ROW_GAP convention used elsewhere) - so the sliding row's own
-         title/images, which otherwise briefly sweep through that band on their way past 424, never
-         render above summary's real bottom edge. No corresponding no-hero-art animation is needed -
-         the clip is already at its widest (y=135) by default, so there's nothing further to shift
-         to for that case.
+         its y=135 base to a FIXED y=456 (a shift of +321 - must match HomeWindow.HUB_SLIDE_CLIP_SHIFT_HERO
+         exactly) so the sliding row's own title/images, which otherwise briefly sweep through that
+         band on their way past 424, never render above the hero summary text. 456 was originally
+         chosen as the hero summary textbox's real bottom (431, at the time) + a gap (matching
+         HomeWindow.ROW_GAP) - but that's a one-time starting point, not a relationship this value
+         tracks: the user wants y=456 kept as-is even as the hero-info detail elements
+         (clearlogo/meta row/summary) keep getting repositioned - see HUB_SLIDE_CLIP_SHIFT_HERO's own
+         comment in home.py. Don't recompute 321 to match wherever the summary currently sits. No
+         corresponding no-hero-art animation is needed - the clip is already at its widest (y=135) by
+         default, so there's nothing further to shift to for that case.
 
          Tying this to no_hero_art rather than hub.sliding is what makes it only ever animate when
          hero-art status actually *changes* - for the overwhelmingly common case (moving between two
@@ -325,8 +328,6 @@
         <textcolor>FFFFFFFF</textcolor>
         <label>$INFO[System.Time]</label>
     </control>
-
-    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 </control>
 
 <control type="group">
@@ -439,6 +440,11 @@
 </control>
 
 
+<!-- TODO(consistency pass): posy was 155, matching pre_play's own group id=50 exactly (see below) -
+     now 135 (top edge flush with the header's own bottom) so the clearlogo/title can move up into
+     the freed space; meta row/summary were each bumped +20 to stay anchored at their old absolute
+     position. pre_play itself is untouched, so that parity claim is no longer true - decide whether
+     to nudge pre_play's own group to match, or drop the parity claim, next time this is revisited. -->
 <!-- Focused hub item info overlay - clearlogo/title, meta row and summary, matching pre_play's own
      details block (script-plex-pre_play.xml.tpl) exactly: same posx=52/posy=155 group offset as
      pre_play's own group id=50, same inner posx=60 controls, so this reads as the same UI language
@@ -460,7 +466,8 @@
          many Music artists/albums), rather than showing text describing art that isn't there. -->
     <visible>!String.IsEmpty(Window.Property(title)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
     <posx>52</posx>
-    <posy>{{ vscale(155) }}</posy>
+    <posy>{{ vscale(135) }}</posy>
+    <height>{{ vscale(296) }}</height>
     <control type="label">
         <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
         <posx>60</posx>
@@ -487,7 +494,7 @@
     {% include "includes/pp_meta_row.xml.tpl" %}
     <control type="textbox">
         <posx>60</posx>
-        <posy>{{ vscale(186) }}</posy>
+        <posy>{{ vscale(201) }}</posy>
         <width>708</width>
         <height>{{ vscale(90) }}</height>
         <font>font12</font>
@@ -501,4 +508,13 @@
 </control>
 
 {% include "includes/sidebar.xml.tpl" %}
+
+<!-- Moved here (was nested inside header group 200 above) so the server/user dropdown popouts
+     (groups 802/901) draw on top of the hero-info overlay and the sidebar rail, instead of behind
+     them - Kodi draws later-declared siblings on top, and this include used to be the last thing
+     inside group 200, which itself closes and gets painted over by every later block (hero-info
+     overlay, then the rail). Absolute posx/posy inside sidebar_dropdowns.xml.tpl are unchanged by
+     this move - group 200 was itself at posx=0/posy=0, so nothing there was actually relative to
+     it. -->
+{% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
