@@ -12,6 +12,13 @@
              currently at. -->
         <posy>{{ vscale(72) }}</posy>
         <control type="group">
+            <control type="image">
+                <posx>0</posx>
+                <posy>0</posy>
+                <width>244</width>
+                <height>{{ vscale(349) }}</height>
+                <texture border="24">script.plex/drop-shadow.png</texture>
+            </control>
             <posx>3</posx>
             <posy>3</posy>
             <control type="group">

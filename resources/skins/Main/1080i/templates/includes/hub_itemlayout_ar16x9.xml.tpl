@@ -8,6 +8,13 @@
              peek-above's crop no longer needs a manual per-type posy override here. -->
         <posy>{{ vscale(72) }}</posy>
         <control type="group">
+            <control type="image">
+                <posx>0</posx>
+                <posy>0</posy>
+                <width>376</width>
+                <height>{{ vscale(222) }}</height>
+                <texture border="24">script.plex/drop-shadow.png</texture>
+            </control>
             <posx>3</posx>
             <posy>3</posy>
             <control type="group">

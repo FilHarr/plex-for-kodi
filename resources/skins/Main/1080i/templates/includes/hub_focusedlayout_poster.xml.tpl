@@ -14,11 +14,11 @@
             <posy>0</posy>
             <control type="image">
                 <visible>Control.HasFocus({{ hub_id }})</visible>
-                <posx>-36</posx>
-                <posy>{{ vscale(-36) }}</posy>
-                <width>301</width>
-                <height>{{ vscale(406) }}</height>
-                <texture border="42">script.plex/drop-shadow.png</texture>
+                <posx>0</posx>
+                <posy>0</posy>
+                <width>244</width>
+                <height>{{ vscale(349) }}</height>
+                <texture border="24">script.plex/drop-shadow.png</texture>
             </control>
             <control type="group">
                 <posx>3</posx>
