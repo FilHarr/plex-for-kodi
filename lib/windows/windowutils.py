@@ -11,6 +11,11 @@ HOME = None
 class GoHomeMixin():
     def goHome(self, section=None, with_root=False):
         HOME.go_root = with_root
+        # closeWithCommand()/doClose() below only flips a flag on windows using the doModal()-emulation
+        # pattern (ControlledWindow/MultiWindow) - forceDismiss() is the real Kodi-native dismiss, so
+        # HOME.show() below always lands on a clean stack instead of pushing on top of self. No-op on
+        # window classes that don't need it (see BaseFunctions.forceDismiss()).
+        self.forceDismiss()
 
         if section:
             self.closeWithCommand('HOME:{0}'.format(section))
@@ -21,6 +26,7 @@ class GoHomeMixin():
 
     def goHomeRoot(self, *args, **kwargs):
         HOME.go_root = True
+        self.forceDismiss()
         self.closeWithCommand('HOME')
         HOME.show()
 
@@ -70,6 +76,17 @@ class SidebarMixin():
             if mli and mli.getProperty('is.active'):
                 sectionList.setSelectedItemByPos(i)
                 return
+
+    def openSidebarTarget(self, open_fn, *args, **kwargs):
+        """Open a sidebar-reached window (call `open_fn(*args, **kwargs)`, e.g.
+        opener.sectionClicked(section) or opener.handleOpen(playlists.PlaylistsWindow)) the way every
+        sidebar-driven hop should: force-dismiss self's real Kodi window first, so the new window
+        replaces it on Kodi's native stack instead of pushing on top of it - see forceDismiss() on
+        ControlledWindow/MultiWindow. self.doClose()'s own flag-only close still happens afterwards via
+        processCommand(), same as before, for the (possibly bubbled-up) exit command handling.
+        """
+        self.forceDismiss()
+        self.processCommand(open_fn(*args, **kwargs))
 
 
 class UtilMixin(GoHomeMixin):

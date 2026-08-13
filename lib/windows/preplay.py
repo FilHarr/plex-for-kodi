@@ -470,9 +470,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
         section = mli.dataSource
         if section.type == 'playlists':
-            self.processCommand(opener.handleOpen(playlists.PlaylistsWindow))
+            self.openSidebarTarget(opener.handleOpen, playlists.PlaylistsWindow)
         else:
-            self.processCommand(opener.sectionClicked(section))
+            self.openSidebarTarget(opener.sectionClicked, section)
 
     def displayServerAndUser(self):
         """Sidebar avatar/username and server icon/name. Mirrors library.py's

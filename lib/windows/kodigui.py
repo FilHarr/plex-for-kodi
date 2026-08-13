@@ -81,6 +81,13 @@ class BaseFunctions(object):
             self._winID = xbmcgui.getCurrentWindowId()
         xbmc.executebuiltin('ReplaceWindow({0})'.format(self._winID))
 
+    def forceDismiss(self):
+        # Default no-op: BaseWindow-only subclasses (e.g. SettingsWindow) and dialogs never override
+        # close() to be flag-only in the first place, so their own doClose() already does a real
+        # dismiss - nothing extra needed. ControlledWindow/MultiWindow (whose close() only flips
+        # self._closing, see ControlledBase.close()) override this with a real dismiss.
+        pass
+
     def mouseXTrans(self, val):
         return int((val / self.getWidth()) * self.width)
 
@@ -601,15 +608,21 @@ class ControlledWindow(ControlledBase, BaseWindow):
                     # flag, so the window can linger on the stack and swallow input. Force the
                     # real Kodi dismiss. Scoped to back-out, so go-home/playback teardown paths
                     # (different actions / non-opted windows) are never force-closed.
-                    try:
-                        xbmcgui.WindowXML.close(self)
-                    except Exception:
-                        pass
+                    self.forceDismiss()
                 return
         except:
             traceback.print_exc()
 
         BaseWindow.onAction(self, action)
+
+    def forceDismiss(self):
+        # Real dismiss, callable directly (not just from the dismissOnClose-gated NAV_BACK branch
+        # above) - needed by sidebar-focus-driven navigation, which must leave a window's real Kodi
+        # window closed *before* opening the next one instead of pushing on top of it.
+        try:
+            xbmcgui.WindowXML.close(self)
+        except Exception:
+            pass
 
 
 class ControlledDialog(ControlledBase, BaseDialog):
@@ -1159,6 +1172,7 @@ class MultiWindow(object):
         self._next = default_window or self._windows[0]
         self._properties = {}
         self._current = None
+        self._background = None
         self._allClosed = False
         self._closeSignalled = False
         self.exitCommand = None
@@ -1166,6 +1180,17 @@ class MultiWindow(object):
     def __getattr__(self, name):
         if self._current:
             return getattr(self._current, name)
+
+    def forceDismiss(self):
+        # _MWBackground never receives routed onAction (MultiWindow._setupCurrent() re-routes
+        # onAction/onFocus/onClick from the currently-showing concrete window to this object, not to
+        # _MWBackground - confirmed live, it never fires), so it can't rely on the dismissOnClose/
+        # onAction mechanism ControlledWindow.forceDismiss() otherwise uses; force-dismiss it directly
+        # here alongside whichever concrete window is currently showing.
+        if self._current:
+            self._current.forceDismiss()
+        if self._background:
+            self._background.forceDismiss()
 
     def onCloseSignal(self, *args, **kwargs):
         self._closeSignalled = True
@@ -1218,6 +1243,10 @@ class MultiWindow(object):
     def open(cls, **kwargs):
         mw = cls(**kwargs)
         b = _MWBackground(mw.bgXML, mw.path, mw.theme, mw.res, multi_window=mw)
+        # kept on mw (not just local) so forceDismiss() can still reach it later, including from
+        # within a nested call while b.modal() below is still on the stack (sidebar-focus-driven
+        # navigation force-dismisses mw before opening the next window) - see MultiWindow.forceDismiss().
+        mw._background = b
         b.modal()
         del b
         import gc

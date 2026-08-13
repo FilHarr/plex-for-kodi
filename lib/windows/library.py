@@ -784,9 +784,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return
 
         if section.type == 'playlists':
-            self.processCommand(opener.handleOpen(playlists.PlaylistsWindow))
+            self.openSidebarTarget(opener.handleOpen, playlists.PlaylistsWindow)
         else:
-            self.processCommand(opener.sectionClicked(section))
+            self.openSidebarTarget(opener.sectionClicked, section)
 
     def displayServerAndUser(self):
         """Sidebar avatar/username and server icon/name. Window properties are
