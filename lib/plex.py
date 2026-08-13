@@ -366,6 +366,19 @@ def onLocalModeChange(value=None, **kwargs):
     plexapp.refreshResources(True)
 
 
+# Captures Kodi's current input.enablemouse at process start, so our own
+# preference only applies for this PlexMod session - MOUSE_SETTING_CONTROL.restore()
+# on shutdown (see main.py) puts it back for whatever runs next (default skin, etc).
+MOUSE_SETTING_CONTROL = util.SettingControl('input.enablemouse', 'Mouse/touch input', disable_value=False)
+
+
+def onDisableMouseInputChange(value=None, **kwargs):
+    if value:
+        MOUSE_SETTING_CONTROL.disable()
+    else:
+        MOUSE_SETTING_CONTROL.restore()
+
+
 PLEX_INTERFACE = PlexInterface()
 plexapp.util.setInterface(PLEX_INTERFACE)
 plexapp.util.INTERFACE.playbackManager = PlaybackManager()
@@ -377,6 +390,8 @@ plexapp.util.APP.on('change:manual_ip_1', onManualIPChange)
 plexapp.util.APP.on('change:manual_port_0', onManualIPChange)
 plexapp.util.APP.on('change:manual_port_1', onManualIPChange)
 plexapp.util.APP.on('change:local_mode', onLocalModeChange)
+plexapp.util.APP.on('change:disable_mouse_input', onDisableMouseInputChange)
+onDisableMouseInputChange(value=util.getSetting('disable_mouse_input'))
 
 plexapp.util.CHECK_LOCAL = util.getSetting('smart_discover_local')
 plexapp.util.LOCAL_OVER_SECURE = util.getSetting('prefer_local')

@@ -1132,6 +1132,15 @@ class Settings(object):
                 ).description(T(34065, 'When Kodi starts its screensaver, and we are in a library view, '
                                        'return to home. This saves idle energy as the library views are very heavy '
                                        'on the CPU even on idle due to a Kodi bug.'),),
+                BoolSetting(
+                    'disable_mouse_input', T(35053, 'Ignore mouse and touch input'), True
+                ).description(T(35054, 'Turns off Kodi\'s "Enable mouse and touch screen support" setting while '
+                                       'PlexMod is running, so controls no longer highlight, focus, or activate on '
+                                       'mouseover/click/touch. The original setting is restored when PlexMod exits, '
+                                       'so other addons/skins are unaffected. Remote/keyboard navigation is '
+                                       'unaffected.\n\nWarning: Mouse/touch navigation isn\'t fully supported and '
+                                       'may cause PlexMod to behave unexpectedly. Leave this enabled unless you '
+                                       'have a specific reason to use mouse/touch.')),
                 OptionsSetting(
                     'action_on_sleep',
                     T(32700, 'Action on Sleep event'),

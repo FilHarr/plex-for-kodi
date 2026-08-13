@@ -1,3 +1,7 @@
+[-Unreleased-]
+- Settings: Add "Ignore mouse and touch input" setting (System) - disables Kodi's mouse/touch support while PlexMod is running, restoring it to whatever it was on exit. Defaults to ON (mouse/touch disabled), since mouse/touch navigation isn't fully supported and can cause PlexMod to behave unexpectedly. NOTE FOR RELEASE NOTES: this default flips existing users' mouse/touch behavior off on update, with no prior opt-in - call this out explicitly, it needs to be visible, not buried in a bullet list.
+
+
 [-1.0.5d-]
 - Core/Plex.direct: Only check native resolving of hostnames containing plex.direct
 - Core/Plex.direct: Reset mapped hosts if the user skips the confirmation dialog

@@ -367,6 +367,7 @@ def _main():
     finally:
         try:
             util.DEBUG_LOG('Main: SHUTTING DOWN...')
+            plex.MOUSE_SETTING_CONTROL.restore()
             dcm.storeDataCache()
             dcm.deinit()
             plexapp.util.INTERFACE.shutdownCache()
