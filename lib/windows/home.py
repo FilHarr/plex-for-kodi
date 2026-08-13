@@ -636,7 +636,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             hub_type = getattr(hub, 'type', None)
             if hub_type in ('episode', 'clip', 'video'):
                 return 'ar16x9'
-            elif hub_type in ('album', 'artist', 'photo', 'track'):
+            elif hub_type in ('album', 'artist', 'photo', 'track', 'playlist'):
                 return 'square'
 
         # Detect from hub content as fallback
@@ -645,8 +645,8 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
             # 16x9 content types - episodes, clips, videos
             if item_type in ('episode', 'clip', 'video'):
                 return 'ar16x9'
-            # Square content types - albums, artists, photos, tracks
-            elif item_type in ('album', 'artist', 'photo', 'track'):
+            # Square content types - albums, artists, photos, tracks, playlists
+            elif item_type in ('album', 'artist', 'photo', 'track', 'playlist'):
                 return 'square'
 
         # Default to poster for everything else (movies, shows, mixed content)
@@ -660,7 +660,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
     }
 
     # Hub identifier prefixes that indicate 16x9 display format
-    HUB_PREFIXES_16X9 = ('video.', 'playlists.video', 'music.videos.')
+    HUB_PREFIXES_16X9 = ('video.', 'music.videos.')
 
     # Hub identifiers that have mixed content (movies + episodes) - always use poster format
     HUBS_MIXED_CONTENT = {
@@ -1175,9 +1175,12 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         # Video hubs - ar16x9
         'video.': 'ar16x9',
         'hub.video.': 'ar16x9',
-        # Playlist hubs
+        # Playlist hubs - both square (name + item count below the art). 'playlists.audio'/
+        # 'playlists.video' are the Playlists library section's own two hubs; 'home.playlists' is
+        # the separate "recently viewed playlists" row Plex serves directly on the home screen.
         'playlists.audio': 'square',
-        'playlists.video': 'ar16x9',
+        'playlists.video': 'square',
+        'home.playlists': 'square',
         # Watchlist/discover hubs - always poster (mixed movies + episodes, matches Pannal's original intent)
         'watchlist.': 'poster',
         # Home merged hubs
@@ -1198,7 +1201,7 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
     }
 
     # Identifiers that indicate square display (contains these substrings)
-    HUB_SQUARE_KEYWORDS = ('album', 'artist', 'track', 'music', 'photo')
+    HUB_SQUARE_KEYWORDS = ('album', 'artist', 'track', 'music', 'photo', 'playlist')
 
     # Identifiers that indicate ar16x9 display (contains these substrings)
     HUB_16X9_KEYWORDS = ('episode', 'clip', 'video')
@@ -5164,16 +5167,16 @@ class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMix
         return mli
 
     def createPlaylistListItem(self, obj, wide=False):
-        if obj.playlistType == 'audio':
-            w, h = self.THUMB_SQUARE_DIM
-            thumb = obj.buildComposite(width=w, height=h, media='thumb')
-        else:
-            w, h = self.THUMB_AR16X9_DIM
-            thumb = obj.buildComposite(width=w, height=h, media='art')
+        w, h = self.THUMB_SQUARE_DIM
+        # 'thumb' matches what the playlist detail screen shows (playlist.py's playlist.thumb
+        # property uses composite.asTranscodedImageURL() with no media= param, i.e. PMS's default
+        # composite rendition) - was 'art' for video playlists back when this tile was ar16x9 and
+        # a backdrop-style image suited the wide shape; square tiles should match instead.
+        thumb = obj.buildComposite(width=w, height=h, media='thumb')
 
         mli = kodigui.ManagedListItem(
             obj.title or '',
-            util.durationToText(obj.duration.asInt()),
+            T(35055, '{0} items').format(obj.leafCount.asInt()),
             # thumbnailImage=obj.composite.asTranscodedImageURL(*self.THUMB_DIMS[obj.playlistType]['item.thumb']),
             thumbnailImage=thumb,
             data_source=obj

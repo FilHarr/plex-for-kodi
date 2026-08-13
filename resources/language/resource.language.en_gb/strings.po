@@ -3376,3 +3376,7 @@ msgstr ""
 msgctxt "#35054"
 msgid "Turns off Kodi's \"Enable mouse and touch screen support\" setting while PlexMod is running, so controls no longer highlight, focus, or activate on mouseover/click/touch. The original setting is restored when PlexMod exits, so other addons/skins are unaffected. Remote/keyboard navigation is unaffected.\n\nWarning: Mouse/touch navigation isn't fully supported and may cause PlexMod to behave unexpectedly. Leave this enabled unless you have a specific reason to use mouse/touch."
 msgstr ""
+
+msgctxt "#35055"
+msgid "{0} items"
+msgstr ""
