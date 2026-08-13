@@ -18,7 +18,7 @@
                 <posy>0</posy>
                 <width>244</width>
                 <height>{{ vscale(244) }}</height>
-                <texture border="24">script.plex/drop-shadow.png</texture>
+                <texture border="24">script.plex/drop-shadow-directional.png</texture>
             </control>
             <control type="group">
                 <posx>3</posx>
