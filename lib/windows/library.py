@@ -31,7 +31,6 @@ from . import kodigui
 from . import opener
 from . import videoplayer
 from . import optionsdialog
-from . import playlists
 from . import preplay
 from . import search
 from . import subitems
@@ -607,6 +606,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def onAction(self, action):
         try:
+            if self.getFocusId() == self.SECTION_LIST_ID:
+                self.checkSectionItem(action=action)
+
             if self.dragging:
                 if not action == xbmcgui.ACTION_MOUSE_DRAG:
                     self.dragging = False
@@ -766,27 +768,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.sectionList.reset()
         self.sectionList.addItems(items)
 
-    def sectionClicked(self):
-        mli = self.sectionList.getSelectedItem()
-        if not mli:
-            return
-
-        if mli.getProperty('is.search'):
-            self.searchButtonClicked()
-            return
-
-        if mli.getProperty('is.home'):
-            self.goHome()
-            return
-
-        section = mli.dataSource
-        if section.key == self.section.key:
-            return
-
-        if section.type == 'playlists':
-            self.openSidebarTarget(opener.handleOpen, playlists.PlaylistsWindow)
-        else:
-            self.openSidebarTarget(opener.sectionClicked, section)
+    # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
+    # this window's needs exactly (is.home -> goHome(), skip re-opening the already-shown section
+    # via lastSection tracking, playlists -> PlaylistsWindow, else -> opener.sectionClicked()).
 
     def displayServerAndUser(self):
         """Sidebar avatar/username and server icon/name. Window properties are
@@ -816,6 +800,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
+
+        if controlID == self.SECTION_LIST_ID:
+            self.checkSectionItem()
 
         if controlID == self.KEY_LIST_ID:
             self.selectKey()

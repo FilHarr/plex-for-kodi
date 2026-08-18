@@ -16,7 +16,6 @@ from . import dropdown
 from . import home
 from . import kodigui
 from . import opener
-from . import playlists
 from . import search
 from . import windowutils
 
@@ -222,6 +221,10 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
     def onAction(self, action):
         try:
             controlID = self.getFocusId()
+
+            if controlID == self.SECTION_LIST_ID:
+                self.checkSectionItem(action=action)
+
             if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                 self.doClose()
                 return
@@ -260,6 +263,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
+
+        if controlID == self.SECTION_LIST_ID:
+            self.checkSectionItem()
 
         if self.FILMOGRAPHY_LIST_ID <= controlID <= self.DISCOVER_LIST_BASE_ID + DISCOVER_HUB_SLOTS:
             self.setProperty('hub.focus', str(controlID - self.FILMOGRAPHY_LIST_ID))
@@ -658,24 +664,8 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.sectionList.reset()
         self.sectionList.addItems(items)
 
-    def sectionClicked(self):
-        mli = self.sectionList.getSelectedItem()
-        if not mli:
-            return
-
-        if mli.getProperty('is.search'):
-            self.searchButtonClicked()
-            return
-
-        if mli.getProperty('is.home'):
-            self.goHome()
-            return
-
-        section = mli.dataSource
-        if section.type == 'playlists':
-            self.processCommand(opener.handleOpen(playlists.PlaylistsWindow))
-        else:
-            self.processCommand(opener.sectionClicked(section))
+    # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
+    # this window's needs exactly.
 
     def displayServerAndUser(self):
         """Sidebar avatar/username and server icon/name. Mirrors library.py's/preplay.py's

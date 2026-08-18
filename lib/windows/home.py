@@ -764,8 +764,8 @@ class HomeWindow(kodigui.ControlledWindow, util.CronReceiver, CommonMixin, Spoil
         self.closeOption = None
         self.hubControls = None
         self.backgroundSet = False
-        self.sectionChangeThread = None
-        self.sectionChangeTimeout = 0
+        # sectionChangeThread/sectionChangeTimeout: lazy-initialized by
+        # SidebarMixin._ensureSidebarNavState() on first use, shared with every other sidebar window
         self.lastFocusID = None
         self.sectionHubs = {}
         self.updateHubs = {}
@@ -3694,16 +3694,11 @@ class HomeWindow(kodigui.ControlledWindow, util.CronReceiver, CommonMixin, Spoil
             self.librarySettings["order"] = [i.dataSource.key for i in self.sectionList.items if i.dataSource]
             self.saveLibrarySettings()
 
-    def checkSectionItem(self, force=False, action=None):
-        item = self.sectionList.getSelectedItem()
-        if not item or item.getProperty('is.search'):
-            return
-
+    def _onSectionItemFocused(self, item):
+        # SidebarMixin.checkSectionItem() hook - moved here verbatim from the old Home-only
+        # checkSectionItem() when the debounce machinery became shared.
         if item.getProperty('is.home'):
             self.storeLastBG()
-
-        if item.dataSource != self.lastSection or force:
-            self.sectionChanged(force=force)
 
     def _typeHasHeroArt(self, ds, hub=None):
         """Whether ds's item type is allowed to show the hero art/info treatment - movies/TV shows
@@ -3938,13 +3933,10 @@ class HomeWindow(kodigui.ControlledWindow, util.CronReceiver, CommonMixin, Spoil
     def cleanTasks(self):
         self.tasks = [t for t in self.tasks if t]
 
-    def sectionChanged(self, force=False):
-        if self._shuttingDown:
-            return
-
-        self.sectionChangeTimeout = time.time() + 0.5
-
-        # wait 2s at max if we're currently awaiting any hubs to reload
+    def _waitForPendingFetches(self):
+        # SidebarMixin.sectionChanged() hook - moved here verbatim from the old Home-only
+        # sectionChanged() when the debounce machinery became shared. wait 2s at max if we're
+        # currently awaiting any hubs to reload.
         # fixme: this can be done in a better way, probably
         waited = 0
         while any(self.tasks) and waited < util.MONITOR.waitAmount(2):
@@ -3954,41 +3946,12 @@ class HomeWindow(kodigui.ControlledWindow, util.CronReceiver, CommonMixin, Spoil
             waited += 1
         self.showBusy(False)
 
-        if force:
-            self.sectionChangeTimeout = None
-            self._sectionChanged(immediate=True)
-            return
-
-        if not self.sectionChangeThread or (self.sectionChangeThread and not self.sectionChangeThread.is_alive()):
-            self.sectionChangeThread = threading.Thread(target=self._sectionChanged, name="sectionchanged")
-            self.sectionChangeThread.start()
-
-    def _sectionChanged(self, immediate=False):
-        if self._shuttingDown:
-            return
-
-        if not immediate:
-            if not self.sectionChangeTimeout:
-                return
-            while not util.MONITOR.waitFor():
-                # timing issue
-                if not self.sectionChangeTimeout:
-                    return
-                if time.time() >= self.sectionChangeTimeout:
-                    break
-
-            # by the time the debounce settled, focus may have moved past the section list
-            # entirely (e.g. down onto the server/user button) - the selection it's about to
-            # read is stale in that case, so don't reload hubs for a section the user isn't
-            # even browsing anymore
-            if self.getFocusId() != self.SECTION_LIST_ID:
-                return
-
-        ds = self.sectionList.getSelectedItem().dataSource
-        if self.lastSection == ds:
-            return
-
-        self._sectionReallyChanged(ds)
+    def _dispatchSectionOpen(self, item):
+        # SidebarMixin._sectionChanged() hook: Home never opens a new window here (it never
+        # leaves itself via focus/debounce - only via an explicit click, see sectionClicked()
+        # below), it just keeps previewing in place via the existing _sectionReallyChanged(),
+        # which is also still called directly (processCommand()'s 'HOME:<section>' handling).
+        self._sectionReallyChanged(item.dataSource)
 
     def _sectionReallyChanged(self, section):
         with self.lock:
@@ -5457,6 +5420,7 @@ class HomeWindow(kodigui.ControlledWindow, util.CronReceiver, CommonMixin, Spoil
             self.sectionChangeTimeout = None
         elif section.type in ('playlists',):
             self.processCommand(opener.handleOpen(playlists.PlaylistsWindow))
+            self.sectionChangeTimeout = None
 
     def onNewServer(self, **kwargs):
         self.showServers(from_refresh=True)

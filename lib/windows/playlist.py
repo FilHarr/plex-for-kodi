@@ -18,7 +18,6 @@ from . import dropdown
 from . import home
 from . import kodigui
 from . import opener
-from . import playlists
 from . import search
 from . import videoplayer
 from . import windowutils
@@ -114,6 +113,9 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
+        if controlID == self.SECTION_LIST_ID:
+            self.checkSectionItem()
+
     # def onAction(self, action):
     #     try:
     #         if action in(xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_CONTEXT_MENU):
@@ -138,6 +140,9 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.video_progress[rk] = state
 
     def onAction(self, action):
+        if self.getFocusId() == self.SECTION_LIST_ID:
+            self.checkSectionItem(action=action)
+
         try:
             if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                 self.doClose()
@@ -288,24 +293,8 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.sectionList.reset()
         self.sectionList.addItems(items)
 
-    def sectionClicked(self):
-        mli = self.sectionList.getSelectedItem()
-        if not mli:
-            return
-
-        if mli.getProperty('is.search'):
-            self.searchButtonClicked()
-            return
-
-        if mli.getProperty('is.home'):
-            self.goHome()
-            return
-
-        section = mli.dataSource
-        if section.type == 'playlists':
-            self.processCommand(opener.handleOpen(playlists.PlaylistsWindow))
-        else:
-            self.processCommand(opener.sectionClicked(section))
+    # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
+    # this window's needs exactly.
 
     def displayServerAndUser(self):
         """Sidebar avatar/username and server icon/name. Mirrors library.py's/preplay.py's

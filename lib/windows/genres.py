@@ -9,7 +9,6 @@ from lib.util import T
 from . import home
 from . import kodigui
 from . import opener
-from . import playlists
 from . import search
 from . import windowutils
 
@@ -80,9 +79,18 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         elif controlID == self.GENRE_PANEL_ID:
             self.genreClicked()
 
+    def onAction(self, action):
+        if self.getFocusId() == self.SECTION_LIST_ID:
+            self.checkSectionItem(action=action)
+
+        kodigui.ControlledWindow.onAction(self, action)
+
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
+
+        if controlID == self.SECTION_LIST_ID:
+            self.checkSectionItem()
 
     def searchButtonClicked(self):
         self.processCommand(search.dialog(self, section_id=self.section.key))
@@ -167,24 +175,8 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         self.sectionList.reset()
         self.sectionList.addItems(items)
 
-    def sectionClicked(self):
-        mli = self.sectionList.getSelectedItem()
-        if not mli:
-            return
-
-        if mli.getProperty('is.search'):
-            self.searchButtonClicked()
-            return
-
-        if mli.getProperty('is.home'):
-            self.goHome()
-            return
-
-        section = mli.dataSource
-        if section.type == 'playlists':
-            self.openSidebarTarget(opener.handleOpen, playlists.PlaylistsWindow)
-        else:
-            self.openSidebarTarget(opener.sectionClicked, section)
+    # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
+    # this window's needs exactly.
 
     def displayServerAndUser(self):
         """Sidebar avatar/username and server icon/name. Mirrors library.py's/episodes.py's/

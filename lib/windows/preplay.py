@@ -20,7 +20,6 @@ from . import opener
 from . import optionsdialog
 from . import pagination
 from . import playersettings
-from . import playlists
 from . import search
 from . import videoplayer
 from . import windowutils
@@ -233,6 +232,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         try:
             controlID = self.getFocusId()
 
+            if controlID == self.SECTION_LIST_ID:
+                self.checkSectionItem(action=action)
+
             if not controlID and self.lastFocusID and not action == xbmcgui.ACTION_MOUSE_MOVE:
                 self.setFocusId(self.lastFocusID)
 
@@ -332,6 +334,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
+
+        if controlID == self.SECTION_LIST_ID:
+            self.checkSectionItem()
 
         if 399 < controlID < 500:
             self.setProperty('hub.focus', str(controlID - 400))
@@ -455,24 +460,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.sectionList.reset()
         self.sectionList.addItems(items)
 
-    def sectionClicked(self):
-        mli = self.sectionList.getSelectedItem()
-        if not mli:
-            return
-
-        if mli.getProperty('is.search'):
-            self.searchButtonClicked()
-            return
-
-        if mli.getProperty('is.home'):
-            self.goHome()
-            return
-
-        section = mli.dataSource
-        if section.type == 'playlists':
-            self.openSidebarTarget(opener.handleOpen, playlists.PlaylistsWindow)
-        else:
-            self.openSidebarTarget(opener.sectionClicked, section)
+    # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
+    # this window's needs exactly.
 
     def displayServerAndUser(self):
         """Sidebar avatar/username and server icon/name. Mirrors library.py's

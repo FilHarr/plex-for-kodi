@@ -10,7 +10,6 @@ from lib.util import T
 from . import busy
 from . import home
 from . import kodigui
-from . import opener
 from . import playlist
 from . import search
 from . import windowutils
@@ -63,8 +62,14 @@ class PlaylistsWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowuti
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
+        if controlID == self.SECTION_LIST_ID:
+            self.checkSectionItem()
+
     def onAction(self, action):
         try:
+            if self.getFocusId() == self.SECTION_LIST_ID:
+                self.checkSectionItem(action=action)
+
             if action == xbmcgui.ACTION_CONTEXT_MENU:
                 if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
                     self.setFocusId(self.OPTIONS_GROUP_ID)
@@ -172,24 +177,10 @@ class PlaylistsWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowuti
         self.sectionList.reset()
         self.sectionList.addItems(items)
 
-    def sectionClicked(self):
-        mli = self.sectionList.getSelectedItem()
-        if not mli:
-            return
-
-        if mli.getProperty('is.search'):
-            self.searchButtonClicked()
-            return
-
-        if mli.getProperty('is.home'):
-            self.goHome()
-            return
-
-        section = mli.dataSource
-        if section.type == 'playlists':
-            self.processCommand(opener.handleOpen(PlaylistsWindow))
-        else:
-            self.processCommand(opener.sectionClicked(section))
+    # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
+    # this window's needs exactly (including the section == self.lastSection skip, which now also
+    # covers clicking "Playlists" while already here - previously that reopened a redundant second
+    # PlaylistsWindow instance on top of this one).
 
     def displayServerAndUser(self):
         """Sidebar avatar/username and server icon/name. Mirrors library.py's/preplay.py's
