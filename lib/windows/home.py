@@ -507,7 +507,7 @@ class ServerListItem(kodigui.ManagedListItem):
         self.unHookSignals()
 
 
-class HomeWindow(kodigui.BaseWindow, util.CronReceiver, CommonMixin, SpoilersMixin, windowutils.SidebarMixin):
+class HomeWindow(kodigui.ControlledWindow, util.CronReceiver, CommonMixin, SpoilersMixin, windowutils.SidebarMixin):
     xmlFile = 'script-plex-home.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
