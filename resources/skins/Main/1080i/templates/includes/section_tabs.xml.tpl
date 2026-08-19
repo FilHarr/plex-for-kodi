@@ -7,8 +7,9 @@
    planned, never enough to need scroll-under-a-fixed-point behavior), so a simple left-anchored
    list is simpler and correct here.
 
-   posx=100: same sidebar-clearance floor used elsewhere content sits near the rail (e.g.
-   script-plex-recommended.xml.tpl's grouplist 50). Included directly into each site's real
+   posx=145: 45px past the usual sidebar-clearance floor used elsewhere content sits near the rail
+   (100 - e.g. script-plex-recommended.xml.tpl's grouplist 50) - shifted right on request, purely
+   cosmetic, not tied to any clearance requirement. Included directly into each site's real
    header body (library.xml.tpl, script-plex-recommended.xml.tpl) rather than via a block-name
    override - library.xml.tpl's own header block fully replaces default.xml.tpl's, so the
    default header_middle_add hook is never actually rendered there.
@@ -35,8 +36,13 @@
    anything in the header row (this included) needs its own copy to move with it instead of
    getting left behind under the expanded rail. #}
 <control type="list" id="320">
+    <!-- Hidden entirely for sections with no library-grid content at all (home_section, TYPE ==
+         'mixed' - see library.py's onFirstInit(), which sets this property unconditionally on
+         every swap) - nothing to switch between there, so a lone "Recommended" tab would be
+         misleading UI, not just unnecessary. -->
+    <visible>String.IsEmpty(Window.Property(hide.section_tabs))</visible>
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
-    <posx>100</posx>
+    <posx>145</posx>
     <posy>0</posy>
     <width>500</width>
     <height>{{ vscale(135) }}</height>

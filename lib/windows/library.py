@@ -418,6 +418,25 @@ class LibrarySettings(object):
 
         self._saveSettings()
 
+    def getContentMode(self):
+        """Persisted per-section tab choice ('library'/'recommended', quiet-orbiting-heron.md plan
+        item 0/"Same reasoning applies one level down" - tab selection sticky per-section, the same
+        way sort/filter/item-type already are). Unlike ITEM_TYPE, there's no module-level global to
+        keep in sync - contentMode only ever lives as a plain instance attribute
+        (LibraryWindow.contentMode) - so this is a straight read, no free-function call needed."""
+        if not self._settings or self.sectionID not in self._settings:
+            return None
+
+        return self._settings[self.sectionID].get('CONTENT_MODE')
+
+    def setContentMode(self, content_mode):
+        if self.sectionID not in self._settings:
+            self._settings[self.sectionID] = {}
+
+        self._settings[self.sectionID]['CONTENT_MODE'] = content_mode
+
+        self._saveSettings()
+
     def _saveSettings(self):
         jsonString = json.dumps(self._settings)
         util.setSetting('library.settings.{0}'.format(self.serverID), jsonString)
@@ -474,8 +493,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.subDir = kwargs.get('subDir')
         # 'library' (poster/grid, default) or 'recommended' (hubs) - a second swap dimension
         # alongside view-type (panel/panel2/.../list), not a replacement for it. See
-        # quiet-orbiting-heron.md's Stage A/B/C/D breakdown for Recommended-tab sharing.
-        self.contentMode = kwargs.get('content_mode', 'library')
+        # quiet-orbiting-heron.md's Stage A/B/C/D breakdown for Recommended-tab sharing. Real
+        # value determined below, once self.librarySettings exists (its persisted per-section
+        # choice is one of the inputs) - this placeholder never actually reaches reset() (which
+        # is what first reads it for real), just keeps the attribute defined this early in case
+        # anything between here and there looks at it.
+        self.contentMode = 'library'
         self.keyItems = {}
         self.firstOfKeyItems = {}
         self.tasks = backgroundthread.Tasks()
@@ -504,6 +527,24 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.cleared = True
         self.librarySettings = LibrarySettings(self.section,
                                                ignoreLibrarySettings=kwargs.get("ignoreLibrarySettings", False))
+
+        # Sections with no library-grid content at all (home_section, so far the only one - see
+        # its own TYPE comment, home.py) unconditionally force 'recommended' - 'library' is
+        # permanently empty there regardless of anything persisted (see openSection()'s identical
+        # check for the in-place-swap case, and its own longer comment for why this can't just be
+        # left to whatever was last saved). An explicit content_mode kwarg (no current caller
+        # passes one, but the parameter's existed since before this) wins next - a caller with a
+        # specific reason to land on a particular tab should get it, not the user's last choice.
+        # Otherwise, restore this section's own persisted choice (item 0's own "sticky per-section,
+        # same as sort/filter/item-type" design point, not built until now) - falling back to the
+        # 'library' default set above if this section has never had a tab choice saved yet.
+        if self.section and self.section.TYPE == 'mixed':
+            self.contentMode = 'recommended'
+        elif kwargs.get('content_mode'):
+            self.contentMode = kwargs['content_mode']
+        else:
+            self.contentMode = self.librarySettings.getContentMode() or self.contentMode
+
         self.reset()
 
         self.lock = threading.Lock()
@@ -616,6 +657,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # else bumps it on a content-mode/section swap that isn't itself a background change.
         self._bgSyncGen += 1
         self.contentMode = mode
+        # Persist per-section, same "sticky" treatment sort/filter/item-type already get - see
+        # LibrarySettings.getContentMode()'s own docstring. Unconditional even for a TYPE=='mixed'
+        # section (home_section) switching to 'library' (permanently empty there) - harmless to
+        # save, since openSection()'s own TYPE=='mixed' check always forces 'recommended' back on
+        # next entry regardless of what's persisted, never actually reads this value for such a
+        # section.
+        self.librarySettings.setContentMode(mode)
         self.reset()
         self.refill = True
 
@@ -679,24 +727,35 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.lastFocusID = None
         self.lastNonOptionsFocusID = None
 
+        # Rebuilt before contentMode is decided below, not after - the new section's own
+        # persisted tab choice (getContentMode()) has to come from *this* section's settings, not
+        # the outgoing one's.
+        self.librarySettings = LibrarySettings(
+            self.section, ignoreLibrarySettings=self.librarySettings.ignoreLibrarySettings)
+
         if self.section.TYPE == 'mixed':
             # Sections with no library-grid content at all (home_section, so far the only one -
             # see its own TYPE comment, home.py) have nothing to show on the 'library' tab -
-            # forcing 'recommended' here, not leaving contentMode whatever it already happened to
-            # be, is what makes folding home_section into this same in-place swap (rather than
-            # goHome()'s separate window) not a regression: without this, landing on Home while
-            # contentMode was still 'library' (the default, and the common case) would show a
-            # permanently empty grid instead of Home's real hub content. Must run before
-            # self.reset() below, which reads self.contentMode to pick VIEWS_RECOMMENDED vs.
-            # VIEWS_POSTER/VIEWS_SQUARE - setting it after would use the stale value for this
-            # swap's own reset() call. Ordinary sections (real library-grid content) are
-            # deliberately left alone here - contentMode carries over from whatever tab the user
-            # was already on, matching existing section-to-section behavior, unchanged by this
-            # fold-in.
+            # forcing 'recommended' here, unconditionally, regardless of anything persisted (a
+            # user could otherwise land on the permanently-empty grid if they'd last clicked
+            # Library while on Home, before ever navigating away and back), is what makes folding
+            # home_section into this same in-place swap (rather than goHome()'s separate window)
+            # not a regression: without this, landing on Home while contentMode was still
+            # 'library' would show an empty grid instead of Home's real hub content. Must run
+            # before self.reset() below, which reads self.contentMode to pick VIEWS_RECOMMENDED
+            # vs. VIEWS_POSTER/VIEWS_SQUARE - setting it after would use the stale value for this
+            # swap's own reset() call.
             self.contentMode = 'recommended'
+        else:
+            # Ordinary sections (real library-grid content): restore this section's own last tab
+            # choice, the same "sticky per-section" treatment sort/filter/item-type already get
+            # (LibrarySettings.getItemType() and friends) - falling back to whatever contentMode
+            # currently is (the previous section's tab) if this one's never had a choice saved,
+            # matching this method's original carry-over behavior for that specific case.
+            persisted = self.librarySettings.getContentMode()
+            if persisted:
+                self.contentMode = persisted
 
-        self.librarySettings = LibrarySettings(
-            self.section, ignoreLibrarySettings=self.librarySettings.ignoreLibrarySettings)
         self.reset()
         self.refill = True
         self.updateActiveSectionMarker(section)
@@ -737,6 +796,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def onFirstInit(self):
         pnUtil.APP.on("watchlist:modified", self.setWatchlistDirty)
         util.MONITOR.on("library.back_home", self.goHomeRoot)
+
+        # Sections with no library-grid content at all (TYPE == 'mixed' - home_section, so far the
+        # only one) have nothing to switch to - hiding the row entirely rather than showing a lone
+        # "Recommended" tab with nothing to switch between. Set unconditionally, every fresh
+        # onFirstInit() (i.e. every content-mode/section swap, not just once) - section_tabs.xml.tpl
+        # gates control 320's own <visible> on this; onAction()'s hub-row MOVE_UP interception below
+        # also checks it directly before redirecting focus there, since a hidden control can't
+        # usefully receive focus.
+        self.setBoolProperty('hide.section_tabs', self.section.TYPE == 'mixed')
 
         if self.sectionList is None:
             self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
@@ -926,7 +994,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                         # plays for grid content (library_posters.xml.tpl etc.), just done here in
                         # Python since hub-to-hub vertical nav is already fully Python-owned (see
                         # this branch's own docstring reference to home.py's onAction()).
-                        if action_id == xbmcgui.ACTION_MOVE_UP and self.focusedHubIndex == 0 and self.tabList:
+                        if (action_id == xbmcgui.ACTION_MOVE_UP and self.focusedHubIndex == 0
+                                and self.tabList and self.section.TYPE != 'mixed'):
                             self.setFocusId(self.TAB_LIST_ID)
                             return
                         self._startHubSlide(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
@@ -940,10 +1009,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # clear it, just leaves it unused). Live-confirmed as a native use-after-free
                 # crash navigating within the hub lists (MOVE_SET fires on every arrow key) -
                 # unlike onFocus()/onClick()/onReInit()'s equivalent guards, this one was missed
-                # the first time since it's not gated behind a single top-level if/elif. Real
-                # Recommended-tab navigation handling beyond hub-to-hub vertical moves (horizontal
-                # in-hub navigation, checkHubItem()) stays out of scope for D2 - see the plan's
-                # explicit scope boundaries.
+                # the first time since it's not gated behind a single top-level if/elif. So this
+                # branch still can't just fall into that code the way the non-recommended path
+                # does at the bottom of this method.
+                #
+                # A bare `return` here (the original D2 shape) went further than that guard
+                # needed, though - it's inside this method's own try: block, so it also skipped
+                # kodigui.MultiWindow.onAction(self, action) entirely, the base-class call at the
+                # very bottom of this method that forwards to self._currentOnAction(action) - the
+                # real native WindowXML.onAction() Kodi needs to actually move focus within a
+                # list. Horizontal in-hub navigation (left/right between items in the same hub
+                # row) was never actually reaching Kodi at all as a result - live-confirmed, not
+                # just "out of scope" the way checkHubItem()'s richer per-item behavior (hero-art
+                # updates, pagination, round-robin) genuinely still is. Calling the base
+                # implementation directly - skipping only this method's own grid-specific body in
+                # between - fixes that without reopening the crash the blanket return was
+                # protecting against.
+                kodigui.MultiWindow.onAction(self, action)
                 return
 
             if action.getId() in MOVE_SET:
@@ -1021,10 +1103,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return
 
         if self.contentMode == 'recommended':
-            # quiet-orbiting-heron.md Stage B: RecommendedWindow has none of the grid controls
-            # (POSTERS_PANEL_ID/KEY_LIST_ID/etc.) the elif chain below unconditionally checks
-            # against - live-confirmed as an AttributeError otherwise. Real Recommended-tab
-            # click handling (Stage C/D) replaces this branch.
+            # RecommendedWindow has none of the grid controls (POSTERS_PANEL_ID/KEY_LIST_ID/etc.)
+            # the elif chain below unconditionally checks against - live-confirmed as an
+            # AttributeError otherwise, so hub-row clicks need their own branch here rather than
+            # falling into that chain.
+            if 399 < controlID < 500:
+                self.hubItemClicked(controlID)
             return
 
         if controlID == self.POSTERS_PANEL_ID:
@@ -3219,6 +3303,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         ring = self.HUB_ROTATION_RING
         half = len(ring) // 2
         return ((ring.index(control_id) - ring_pos + half) % len(ring)) - half
+
+    def hubItemClicked(self, hub_control_id):
+        """Open whatever's focused in a hub row (controls 400-404). Minimal port of
+        HomeWindow.hubItemClicked() (home.py): generic opener.open() dispatch, since hub items
+        span many different types across different hubs, unlike the grid's own section-TYPE-
+        scoped showPanelClicked(). Deliberately narrower than the original for now - no
+        watchlist-specific extra_kwargs, no in-progress auto-resume, no season/episode-to-show
+        redirection for discover hubs, no hub-becomes-empty cleanup after the click (an item
+        removed/deleted, a watchlist item dropped on open, etc. leaving this row with fewer items
+        than before) - real gaps, not yet decided whether/when to close, see
+        quiet-orbiting-heron.md."""
+        control = self.hubControls[hub_control_id - self.HUB_CONTROL_ID]
+        mli = control.getSelectedItem()
+        if not mli or not mli.dataSource:
+            return
+
+        self.processCommand(opener.open(mli.dataSource))
 
     def _bindHubToControl(self, hub, control_index):
         """Populate physical hub-row control HUB_CONTROL_ID + control_index with hub's content -
