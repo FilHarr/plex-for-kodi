@@ -502,6 +502,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self.lock = threading.Lock()
 
+        # Stage C (quiet-orbiting-heron.md, Recommended-tab sharing): minimal state so the ported
+        # isHubHidden()/sortHubsByUserOrder()/getEnabledHubsForSection() below don't AttributeError
+        # if ever called - values match HomeWindow.__init__'s own initial values exactly (self.hubSettings
+        # = None, self.sectionHubs = {}). Nothing populates these from a live fetch yet - that's Stage D.
+        self.hubSettings = None
+        self.sectionHubs = {}
+
     def reset(self):
         PlaybackBtnMixin.reset(self)
         util.setGlobalProperty('sort', '')
@@ -2318,6 +2325,539 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
             self.tasks.add(task)
             backgroundthread.BGThreader.addTasksToFront([task])
+
+    # ------------------------------------------------------------------------------------------
+    # Stage C: ported from home.py's HomeWindow, Recommended-tab sharing (quiet-orbiting-heron.md)
+    # -- not yet wired into any call path (Stage D). Mechanical, verbatim-where-possible port of
+    # the display-type inference, hub-settings persistence, hub visibility/ordering, and per-item-
+    # type ListItem builder logic that's already section-generic in HomeWindow. Nothing below is
+    # called by anything yet outside this group of methods calling each other (e.g. createListItem()
+    # dispatching to the per-type builders). home.py itself is untouched - HomeWindow keeps its own
+    # copies, still the live Home experience today.
+    # ------------------------------------------------------------------------------------------
+
+    # Hub identifier prefixes that indicate 16x9 display format
+    HUB_PREFIXES_16X9 = ('video.', 'music.videos.')
+
+    # Hub identifiers that have mixed content (movies + episodes) - always use poster format
+    HUBS_MIXED_CONTENT = {
+        'continueWatching',  # Combined continue watching hub (modern Plex clients) - mixed movies/episodes
+        'home.ondeck',  # Old-style On Deck hub - uses show posters
+        'tv.inprogress', 'tv.ondeck', 'movie.inprogress',
+    }
+    # Note: home.continue (old Continue Watching) is NOT in HUBS_MIXED_CONTENT
+    # because it shows episodes only and should use 16x9 thumbnails
+
+    def getHubDisplayType(self, hub, identifier):
+        """Determine the display type for a hub: 'poster', 'ar16x9', or 'square'.
+
+        With dynamic hub templating, all hubs support all display types via
+        conditional visibility based on the hub.display.4XX window property.
+        """
+        # Mixed content hubs (like Continue Watching) always use poster
+        if identifier in self.HUBS_MIXED_CONTENT:
+            return 'poster'
+
+        # Check identifier prefixes first (works even if items not loaded yet)
+        if identifier:
+            for prefix, display_type in self.HUB_DISPLAY_DEFAULTS.items():
+                if identifier.startswith(prefix):
+                    return display_type
+
+            # Check for keywords in identifier (e.g., 'recentlyAddedAlbums' contains 'album')
+            identifier_lower = identifier.lower()
+            for keyword in self.HUB_SQUARE_KEYWORDS:
+                if keyword in identifier_lower:
+                    return 'square'
+            for keyword in self.HUB_16X9_KEYWORDS:
+                if keyword in identifier_lower:
+                    return 'ar16x9'
+
+        # Check hub's type attribute (Plex sets this to indicate content type)
+        if hub:
+            hub_type = getattr(hub, 'type', None)
+            if hub_type in ('episode', 'clip', 'video'):
+                return 'ar16x9'
+            elif hub_type in ('album', 'artist', 'photo', 'track', 'playlist'):
+                return 'square'
+
+        # Detect from hub content as fallback
+        if hub and hub.items:
+            item_type = getattr(hub.items[0], 'type', None)
+            # 16x9 content types - episodes, clips, videos
+            if item_type in ('episode', 'clip', 'video'):
+                return 'ar16x9'
+            # Square content types - albums, artists, photos, tracks, playlists
+            elif item_type in ('album', 'artist', 'photo', 'track', 'playlist'):
+                return 'square'
+
+        # Default to poster for everything else (movies, shows, mixed content)
+        return 'poster'
+
+    # Hub identifiers that should NOT show progress (watchlist/discovery hubs)
+    HUBS_NO_PROGRESS = {
+        'watchlist.continueWatching', 'watchlist.coming-soon', 'watchlist.recently-added',
+        'home.top_watchlisted', 'home.coming-soon', 'home.trending-friends',
+        'home.trending-for-you', 'home.new-for-you',
+    }
+
+    def getHubRenderFlags(self, hub, identifier):
+        """Get rendering flags for a hub based on identifier patterns and content.
+
+        Returns dict with: with_progress, do_updates, text2lines, ar16x9, with_art
+        All hubs get sensible defaults - no fixed index mapping.
+        """
+        # Default flags - most hubs want these
+        flags = {
+            'with_progress': True,
+            'do_updates': True,
+            'text2lines': True,
+            'ar16x9': False,
+            'with_art': False,
+        }
+
+        # Watchlist/discovery hubs don't show progress
+        if identifier in self.HUBS_NO_PROGRESS:
+            flags['with_progress'] = False
+
+        # Mixed content hubs (continue watching, on deck, in progress) always use poster
+        # Don't auto-detect from content as they contain both movies and episodes
+        if identifier in self.HUBS_MIXED_CONTENT:
+            return flags
+
+        # Check if identifier matches a known display type prefix
+        # This prevents content-based detection from overriding the intended display
+        identifier_has_known_prefix = False
+        if identifier:
+            # Check 16x9 prefixes first
+            for prefix in self.HUB_PREFIXES_16X9:
+                if identifier.startswith(prefix):
+                    flags['ar16x9'] = True
+                    flags['with_art'] = True  # 16x9 hubs use art/thumb images
+                    identifier_has_known_prefix = True
+                    break
+
+            # Check poster/square prefixes from HUB_DISPLAY_DEFAULTS
+            # Also set ar16x9 flags if the display type is ar16x9
+            if not identifier_has_known_prefix:
+                for prefix, display_type in self.HUB_DISPLAY_DEFAULTS.items():
+                    if identifier.startswith(prefix):
+                        identifier_has_known_prefix = True
+                        if display_type == 'ar16x9':
+                            flags['ar16x9'] = True
+                            flags['with_art'] = True
+                        break
+
+        # Only detect from hub content if identifier doesn't have a known prefix
+        # This prevents "tv.recentlyadded" (poster) from being detected as 16x9 due to episode content
+        if not identifier_has_known_prefix and not flags['ar16x9'] and hub and hub.items:
+            item_type = getattr(hub.items[0], 'type', None)
+            if item_type in ('episode', 'clip', 'video'):
+                flags['ar16x9'] = True
+                flags['with_art'] = True  # 16x9 hubs use art/thumb images
+
+        return flags
+
+    # Display type mapping for auto-detection based on item type
+    TYPE_TO_DISPLAY = {
+        # 16x9 wide format
+        'episode': 'ar16x9',
+        'clip': 'ar16x9',
+        'video': 'ar16x9',
+        # Square format
+        'album': 'square',
+        'artist': 'square',
+        'photo': 'square',
+        'track': 'square',
+        # Poster format (default for movies, shows, seasons)
+        'movie': 'poster',
+        'show': 'poster',
+        'season': 'poster',
+    }
+
+    @staticmethod
+    def inferDisplayType(hub):
+        """Infer display type from the first item in the hub."""
+        if not hub.items:
+            return "poster"  # Default fallback
+
+        item_type = hub.items[0].type
+        return LibraryWindow.TYPE_TO_DISPLAY.get(item_type, "poster")
+
+    # Display type defaults for known hub identifiers (by prefix)
+    # This ensures correct display regardless of hub content
+    HUB_DISPLAY_DEFAULTS = {
+        # TV/Show hubs - always poster (shows, not episodes)
+        'tv.': 'poster',
+        'show.': 'poster',
+        # Movie hubs - always poster
+        'movie.': 'poster',
+        # Music hubs - always square (various prefix patterns)
+        'music.': 'square',
+        'artist.': 'square',
+        'album.': 'square',
+        'hub.music.': 'square',
+        'track.': 'square',
+        # Photo hubs - square
+        'photo.': 'square',
+        'hub.photo.': 'square',
+        # Video hubs - ar16x9
+        'video.': 'ar16x9',
+        'hub.video.': 'ar16x9',
+        # Playlist hubs - both square (name + item count below the art). 'playlists.audio'/
+        # 'playlists.video' are the Playlists library section's own two hubs; 'home.playlists' is
+        # the separate "recently viewed playlists" row Plex serves directly on the home screen.
+        'playlists.audio': 'square',
+        'playlists.video': 'square',
+        'home.playlists': 'square',
+        # Watchlist/discover hubs - always poster (mixed movies + episodes, matches Pannal's original intent)
+        'watchlist.': 'poster',
+        # Home merged hubs
+        'home.television.': 'poster',
+        'home.movies.': 'poster',
+        'home.music.': 'square',
+        'home.photos.': 'square',
+        'home.videos.': 'ar16x9',
+        # Old-style split Continue Watching hub (episodes only)
+        'home.continue': 'ar16x9',
+        # Hub prefixed variants
+        'hub.tv.': 'poster',
+        'hub.show.': 'poster',
+        'hub.movie.': 'poster',
+        'hub.artist.': 'square',
+        'hub.album.': 'square',
+        'hub.track.': 'square',
+    }
+
+    # Identifiers that indicate square display (contains these substrings)
+    HUB_SQUARE_KEYWORDS = ('album', 'artist', 'track', 'music', 'photo', 'playlist')
+
+    # Identifiers that indicate ar16x9 display (contains these substrings)
+    HUB_16X9_KEYWORDS = ('episode', 'clip', 'video')
+
+    def loadHubSettings(self):
+        # NOTE: setting key is scoped by server uuid + account ID, not by window class - hub
+        # visibility/order preferences are meant to be user+server-wide, shared between Home and
+        # any section's Recommended tab, not per-window. Ported verbatim from HomeWindow; the key
+        # itself has no "home"-specific prefix (it's 'hub.settings.*', distinct from
+        # 'home.settings.*' used by loadLibrarySettings/saveLibrarySettings, which is NOT ported
+        # here since it's unrelated to hub rendering).
+        setting_key = 'hub.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID)
+        data = util.getSetting(setting_key, '')
+        self.hubSettings = {}
+        try:
+            loaded = json.loads(data)
+
+            # Convert "__home__" key back to None (JSON doesn't support None keys)
+            for key, value in loaded.items():
+                if key == '_version':
+                    continue  # Skip legacy version key
+                if key == '__home__':
+                    self.hubSettings[None] = value
+                else:
+                    self.hubSettings[key] = value
+        except ValueError:
+            pass
+        except:
+            util.ERROR()
+
+    def saveHubSettings(self):
+        setting_key = 'hub.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:],
+                                                  plexapp.ACCOUNT.ID)
+        # Convert None key to "__home__" for JSON storage
+        to_save = {}
+        for key, value in self.hubSettings.items():
+            if key is None:
+                to_save['__home__'] = value
+            else:
+                to_save[key] = value
+        json_str = json.dumps(to_save)
+        util.setSetting(setting_key, json_str)
+
+    def getEnabledHubsForSection(self, section_key):
+        """Get list of enabled hub catalog_ids for a section.
+
+        Not in Stage C's originally-requested method list, but ported alongside isHubHidden()
+        below since isHubHidden() calls self.getEnabledHubsForSection() directly - without this,
+        isHubHidden() would raise AttributeError on every call, not just when hubSettings is
+        unpopulated. Section-generic (reads only self.hubSettings/util.getSetting), same as the
+        methods explicitly requested - no HomeWindow-specific coupling.
+        """
+        if not self.hubSettings:
+            return None
+
+        # Normalize key to string (hubSettings uses string keys)
+        config_key = str(section_key) if section_key is not None else None
+        section_config = self.hubSettings.get(config_key)
+        if not section_config or not section_config.get('custom'):
+            return None
+
+        enabled = {h.get('catalog_id', h.get('identifier')) for h in section_config.get('hubs', [])}
+
+        # When CW mode changes, the hub identifiers change but saved config may have old ones.
+        # Map between them so hubs stay enabled after switching modes.
+        if section_key is None:  # Home section only
+            use_new_continue_watching = util.getSetting('hubs_use_new_continue_watching', False)
+            if use_new_continue_watching:
+                if 'home.continue' in enabled or 'home.ondeck' in enabled:
+                    enabled.add('continueWatching')
+            else:
+                if 'continueWatching' in enabled:
+                    enabled.add('home.continue')
+                    enabled.add('home.ondeck')
+
+        return enabled
+
+    def isHubHidden(self, identifier, section_key=None):
+        """Check if user has explicitly hidden this hub.
+
+        Args:
+            identifier: The clean hub identifier (e.g., 'movie.recentlyadded')
+            section_key: The section key to check configuration for
+        """
+        # Normalize key for config lookup
+        config_key = str(section_key) if section_key is not None else None
+        section_config = self.hubSettings.get(config_key) if self.hubSettings else None
+
+        if not section_config or not section_config.get('custom'):
+            # No custom config - show all native hubs from Plex
+            return False
+
+        # Build catalog_id for this hub in this section
+        if section_key is None:
+            catalog_id = identifier
+        else:
+            catalog_id = '{}:{}'.format(section_key, identifier)
+
+        # Use getEnabledHubsForSection so CW mode mapping is applied consistently.
+        # (e.g. config has 'continueWatching' but old mode expects 'home.continue'/'home.ondeck')
+        enabled = self.getEnabledHubsForSection(section_key)
+        if enabled is None:
+            return False
+        return catalog_id not in enabled
+
+    def sortHubsByUserOrder(self, hubs, is_home=False, section_key=None):
+        """Sort hubs by user-defined order, preserving server order for unordered hubs."""
+        # Normalize key to string (hubSettings uses string keys)
+        config_key = str(section_key) if section_key is not None else None
+
+        # Get section config if available (config_key can be None for Home)
+        section_config = None
+        if self.hubSettings:
+            section_config = self.hubSettings.get(config_key)
+
+        # Build lookup for user-defined order
+        user_order = {}
+        if section_config and section_config.get('custom'):
+            for idx, hub_config in enumerate(section_config.get('hubs', [])):
+                cat_id = hub_config.get('catalog_id', hub_config.get('identifier'))
+                user_order[cat_id] = hub_config.get('order', idx)
+
+        # When CW mode changes, map order between old/new identifiers so user ordering is preserved.
+        if section_key is None:  # Home section only
+            use_new_continue_watching = util.getSetting('hubs_use_new_continue_watching', False)
+            if use_new_continue_watching:
+                if 'home.continue' in user_order and 'continueWatching' not in user_order:
+                    user_order['continueWatching'] = user_order['home.continue']
+                elif 'home.ondeck' in user_order and 'continueWatching' not in user_order:
+                    user_order['continueWatching'] = user_order['home.ondeck']
+            else:
+                if 'continueWatching' in user_order:
+                    cw_order = user_order['continueWatching']
+                    if 'home.continue' not in user_order:
+                        user_order['home.continue'] = cw_order
+                    if 'home.ondeck' not in user_order:
+                        user_order['home.ondeck'] = cw_order + 0.5
+
+        # Pre-compute hub index lookup for O(1) access instead of O(n) per hub
+        hubs_list = list(hubs)
+        hub_index = {id(hub): idx for idx, hub in enumerate(hubs_list)}
+
+        def get_order(hub):
+            identifier = hub.getCleanHubIdentifier(is_home=is_home)
+
+            # Build catalog_id
+            if section_key is None:
+                catalog_id = identifier
+            else:
+                catalog_id = '{}:{}'.format(section_key, identifier)
+
+            # Check user-defined order
+            if catalog_id in user_order:
+                return (0, user_order[catalog_id])  # User-ordered hubs first
+
+            # Fall back to server order (use pre-computed index)
+            return (1, hub_index.get(id(hub), 999))
+
+        return sorted(hubs_list, key=get_order)
+
+    # Thumb dimensions for hub-tile ListItems specifically (Recommended tab / hub rows) - NOT the
+    # same as the module-level THUMB_POSTER_DIM/THUMB_AR16X9_DIM/THUMB_SQUARE_DIM near the top of
+    # this file (those size the library grid's own poster panel tiles). Ported verbatim from
+    # HomeWindow with the same names, deliberately scoped as self.THUMB_* / class attributes so
+    # they don't collide with the bare module-level names used elsewhere in this file.
+    THUMB_POSTER_DIM = util.scaleResolution(244, 361)
+    THUMB_AR16X9_DIM = util.scaleResolution(352, 198)
+    THUMB_SQUARE_DIM = util.scaleResolution(220, 220)
+
+    def createGrandparentedListItem(self, obj, thumb_w, thumb_h, with_grandparent_title=False):
+        if with_grandparent_title and obj.get('grandparentTitle') and obj.title:
+            title = u'{0} - {1}'.format(obj.grandparentTitle, obj.title)
+        else:
+            title = obj.get('grandparentTitle') or obj.get('parentTitle') or obj.title or ''
+        mli = kodigui.ManagedListItem(title, thumbnailImage=obj.defaultThumb.asTranscodedImageURL(thumb_w, thumb_h), data_source=obj)
+        return mli
+
+    def createParentedListItem(self, obj, thumb_w, thumb_h, with_parent_title=False):
+        if with_parent_title and obj.parentTitle and obj.title:
+            title = u'{0} - {1}'.format(obj.parentTitle, obj.title)
+        else:
+            title = obj.parentTitle or obj.title or ''
+
+        mli = kodigui.ManagedListItem(title, thumbnailImage=obj.defaultThumb.asTranscodedImageURL(thumb_w, thumb_h), data_source=obj)
+
+        return mli
+
+    def createSimpleListItem(self, obj, thumb_w, thumb_h):
+        mli = kodigui.ManagedListItem(obj.title or '', thumbnailImage=obj.defaultThumb.asTranscodedImageURL(thumb_w, thumb_h), data_source=obj)
+        return mli
+
+    def createEpisodeListItem(self, obj, wide=False):
+        mli = self.createGrandparentedListItem(obj, *(self.THUMB_AR16X9_DIM if wide else self.THUMB_POSTER_DIM))
+        if obj.index:
+            subtitle = u'{0} • {1}'.format(T(32310, 'S').format(obj.parentIndex), T(32311, 'E').format(obj.index))
+        else:
+            subtitle = obj.originallyAvailableAt.asDatetime('%m/%d/%y')
+
+        if wide:
+            mli.setLabel2(u'{0} - {1}'.format(util.shortenText(obj.title, 35), subtitle))
+        else:
+            mli.setLabel2(subtitle)
+
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/show.png')
+        if not obj.isWatched:
+            mli.setProperty('unwatched', '1')
+        mli.setBoolProperty('watched', obj.isFullyWatched)
+        return mli
+
+    def createSeasonListItem(self, obj, wide=False):
+        mli = self.createParentedListItem(obj, *self.THUMB_POSTER_DIM)
+        # mli.setLabel2('Season {0}'.format(obj.index))
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/show.png')
+        mli.setLabel2(obj.title)
+
+        if not obj.isWatched:
+            mli.setProperty('unwatched.count', str(obj.unViewedLeafCount))
+            mli.setBoolProperty('unwatched.count.large', obj.unViewedLeafCount > 999)
+        mli.setBoolProperty('watched', obj.isFullyWatched)
+        return mli
+
+    def createMovieListItem(self, obj, wide=False):
+        if wide:
+            thumb = obj.defaultArt.asTranscodedImageURL(*self.THUMB_AR16X9_DIM)
+        else:
+            thumb = obj.defaultThumb.asTranscodedImageURL(*self.THUMB_POSTER_DIM)
+        mli = kodigui.ManagedListItem(obj.defaultTitle, obj.year, thumbnailImage=thumb, data_source=obj)
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/movie.png')
+        if not obj.isWatched:
+            mli.setProperty('unwatched', '1')
+        mli.setBoolProperty('watched', obj.isFullyWatched)
+        return mli
+
+    def createShowListItem(self, obj, wide=False):
+        mli = self.createSimpleListItem(obj, *self.THUMB_POSTER_DIM)
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/show.png')
+        if not obj.isWatched:
+            mli.setProperty('unwatched.count', str(obj.unViewedLeafCount))
+            mli.setBoolProperty('unwatched.count.large', obj.unViewedLeafCount > 999)
+        mli.setBoolProperty('watched', obj.isFullyWatched)
+        return mli
+
+    def createAlbumListItem(self, obj, wide=False):
+        mli = self.createParentedListItem(obj, *self.THUMB_SQUARE_DIM)
+        mli.setLabel2(obj.title)
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/music.png')
+        return mli
+
+    def createTrackListItem(self, obj, wide=False):
+        mli = self.createGrandparentedListItem(obj, *self.THUMB_SQUARE_DIM)
+        mli.setLabel2(obj.title)
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/music.png')
+        return mli
+
+    def createPhotoListItem(self, obj, wide=False):
+        mli = self.createSimpleListItem(obj, *self.THUMB_SQUARE_DIM)
+        if obj.type == 'photo':
+            mli.setLabel2(obj.originallyAvailableAt.asDatetime('%d %B %Y'))
+            # Real photos vary wildly in aspect ratio and shouldn't be cropped like posters/art -
+            # the template shows the whole image letterboxed instead when this is set (matches Plex's
+            # own photo hub behavior). Folders (photodirectory) keep the normal cropped-fill look
+            # since their thumb is a composite grid, not a single photo.
+            mli.setProperty('is.photo', '1')
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/photo.png')
+        return mli
+
+    def createClipListItem(self, obj, wide=False):
+        mli = self.createGrandparentedListItem(obj, *self.THUMB_AR16X9_DIM, with_grandparent_title=True)
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/movie16x9.png')
+        return mli
+
+    def createArtistListItem(self, obj, wide=False):
+        mli = self.createSimpleListItem(obj, *self.THUMB_SQUARE_DIM)
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/music.png')
+        return mli
+
+    def createPlaylistListItem(self, obj, wide=False):
+        w, h = self.THUMB_SQUARE_DIM
+        # 'thumb' matches what the playlist detail screen shows (playlist.py's playlist.thumb
+        # property uses composite.asTranscodedImageURL() with no media= param, i.e. PMS's default
+        # composite rendition) - was 'art' for video playlists back when this tile was ar16x9 and
+        # a backdrop-style image suited the wide shape; square tiles should match instead.
+        thumb = obj.buildComposite(width=w, height=h, media='thumb')
+
+        mli = kodigui.ManagedListItem(
+            obj.title or '',
+            T(35055, '{0} items').format(obj.leafCount.asInt()),
+            # thumbnailImage=obj.composite.asTranscodedImageURL(*self.THUMB_DIMS[obj.playlistType]['item.thumb']),
+            thumbnailImage=thumb,
+            data_source=obj
+        )
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/{0}.png'.format(obj.playlistType == 'audio' and 'music' or 'movie'))
+        return mli
+
+    def createCollectionListItem(self, obj, wide=False):
+        w, h = self.THUMB_POSTER_DIM
+        # a collection often has no poster of its own; the library grid falls back to the
+        # composite of its members, so match that here
+        if obj.defaultThumb:
+            thumb = obj.defaultThumb.asTranscodedImageURL(w, h)
+        else:
+            thumb = obj.server.getImageTranscodeURL(obj.artCompositeURL(w * 2, h * 2), w, h)
+
+        mli = kodigui.ManagedListItem(obj.title or '', thumbnailImage=thumb, data_source=obj)
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/movie.png')
+        return mli
+
+    def unhandledHub(self, self2, obj, wide=False):
+        util.DEBUG_LOG('Unhandled Hub item: {0}', obj.type)
+
+    CREATE_LI_MAP = {
+        'episode': createEpisodeListItem,
+        'season': createSeasonListItem,
+        'movie': createMovieListItem,
+        'show': createShowListItem,
+        'album': createAlbumListItem,
+        'track': createTrackListItem,
+        'photo': createPhotoListItem,
+        'photodirectory': createPhotoListItem,
+        'clip': createClipListItem,
+        'artist': createArtistListItem,
+        'playlist': createPlaylistListItem,
+        'collection': createCollectionListItem
+    }
+
+    def createListItem(self, obj, wide=False):
+        return self.CREATE_LI_MAP.get(obj.type, self.unhandledHub)(self, obj, wide)
 
 
 class PostersWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
