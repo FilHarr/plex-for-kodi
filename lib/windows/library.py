@@ -189,6 +189,7 @@ SORT_KEYS = {
     },
     'photodirectory': {},
     'collection': {},
+    'mixed': {},  # home_section (home.py) - always an empty grid, so no sort options needed
     # watchlist
     'movies_shows': {
         'watchlistedAt': {'title': T(32351, 'By Date Added'), 'display': T(32352, 'Date Added'), 'defSortDesc': True},
@@ -387,6 +388,7 @@ class LibrarySettings(object):
             return
 
         if not self.sectionID:
+            self._settings = {}
             return
 
         jsonString = util.getSetting('library.settings.{0}'.format(self.serverID), '')
@@ -516,7 +518,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.CHUNK_SIZE = util.addonSettings.libraryChunkSize
 
         key = self.section.key
-        if not key.isdigit():
+        if not key or not key.isdigit():
             key = self.section.getLibrarySectionId()
         viewtype = util.getSetting('viewtype.{0}.{1}'.format(self.section.server.uuid, key))
 
@@ -526,6 +528,82 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.setWindows(VIEWS_POSTER.get('all'))
             self.setDefault(VIEWS_POSTER.get(viewtype))
+
+    def openSection(self, section, filter_=None):
+        """Swap this already-open window to a different section in place, reusing the same
+        outer LibraryWindow object rather than closing and reconstructing a new one - see the
+        Home-ControlledWindow plan's "One window, not two" / thread-safety discussion. Safe to
+        call from the sidebar debounce thread: this only mutates state and flags the current
+        view-type shell closed, the actual reconstruct-and-modal happens back on _open()'s own
+        loop, on whichever thread already owns it - never a new blocking .modal() call here.
+
+        Deliberately a no-op if a descendant window (opened via a poster/cast click etc.) is
+        currently on top of self: forceDismiss()-style dismissal only reaches self, not anything
+        pushed on top of it, so mutating section state here while a child is still holding
+        references into it (e.g. ShowWindow's parent_list=self.showPanelControl) would corrupt
+        that child's view rather than switch it cleanly. Actually unwinding a drill chain for a
+        sidebar-driven section switch is the generalized dispatch/bubble mechanism goHome()
+        already does for itself (closeWithCommand()'s exitCommand propagating through each
+        ancestor's processCommand() as their own .modal() calls return) - not yet generalized to
+        ordinary section switches, so this just declines rather than corrupting state in the
+        meantime.
+        """
+        try:
+            isCurrent = self.is_current_window
+        except AttributeError:
+            # _current already torn down for real (session/window closing) - decline the same
+            # as a descendant-on-top; nothing here to safely act on either way.
+            isCurrent = False
+
+        if not isCurrent:
+            util.DEBUG_LOG("Library: openSection() declined - {0} not current window (descendant open, or closing)", self)
+            return False
+
+        if section == self.section:
+            return False
+
+        self.tasks.kill()
+        # Bumped here, not just inside doRefill(), so a suspended call elsewhere that captured
+        # showPanelControl/mli.dataSource before this swap can detect the invalidation the moment
+        # it actually happens, not only once _open()'s loop gets back around to rebuilding.
+        self._listGeneration += 1
+
+        self.section = section
+        self.filter = filter_
+        self.subDir = None
+        self.keyItems = {}
+        self.firstOfKeyItems = {}
+        self.subOptionCache = {}
+        self._filterTypeByKey = {}
+        self.lastItem = None
+        self.lastFocusID = None
+        self.lastNonOptionsFocusID = None
+
+        self.librarySettings = LibrarySettings(
+            self.section, ignoreLibrarySettings=self.librarySettings.ignoreLibrarySettings)
+        self.reset()
+        self.refill = True
+        self.updateActiveSectionMarker(section)
+
+        util.DEBUG_LOG("Library: openSection() swapping in place to {0}", section)
+        self._current.doClose()
+        return True
+
+    def updateActiveSectionMarker(self, active_section):
+        """Update is.active on the persistent sectionList to highlight active_section, without
+        rebuilding the whole list - buildSectionList() only sets is.active once, at first build.
+        """
+        if not self.sectionList:
+            return
+
+        for i in range(self.sectionList.size()):
+            mli = self.sectionList[i]
+            if not mli:
+                continue
+            if mli.dataSource is not None and mli.dataSource.key == active_section.key:
+                mli.setProperty('is.active', '1')
+            elif mli.getProperty('is.active'):
+                mli.setProperty('is.active', '')
 
     def setWatchlistDirty(self, *args, **kwargs):
         if self.section.TYPE == 'movies_shows':
@@ -1314,7 +1392,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             win = self.nextWindow()
 
         key = self.section.key
-        if not key.isdigit():
+        if not key or not key.isdigit():
             key = self.section.getLibrarySectionId()
         util.setSetting('viewtype.{0}.{1}'.format(self.section.server.uuid, key), win.VIEWTYPE)
 

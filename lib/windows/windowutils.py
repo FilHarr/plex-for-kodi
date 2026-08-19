@@ -216,13 +216,23 @@ class SidebarMixin():
         section = item.dataSource
         if section == self.lastSection:
             return
-        self.lastSection = section
 
         from . import playlists
 
         if section.type == 'playlists':
+            self.lastSection = section
             self.openSidebarTarget(opener.handleOpen, playlists.PlaylistsWindow)
+        elif hasattr(self, 'openSection'):
+            # In-place swap (library.py's LibraryWindow.openSection()) - safe to call from the
+            # debounce thread, no new blocking .modal() call. Declines (returns False) rather
+            # than acting if a descendant window is currently open on top of self - see that
+            # method's own docstring. lastSection only advances on an actual swap, so a declined
+            # attempt gets retried on the next settled focus/click instead of being silently
+            # forgotten.
+            if self.openSection(section):
+                self.lastSection = section
         else:
+            self.lastSection = section
             self.openSidebarTarget(opener.sectionClicked, section)
 
     def sectionClicked(self):

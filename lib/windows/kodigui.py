@@ -1178,8 +1178,15 @@ class MultiWindow(object):
         self.exitCommand = None
 
     def __getattr__(self, name):
-        if self._current:
-            return getattr(self._current, name)
+        # dict lookup, not bare self._current - once _open()'s real teardown del's _current,
+        # a bare reference has nothing in __dict__, so Python re-enters __getattr__ to resolve
+        # it, recursing forever instead of raising. Also reached by openSection() (library.py)
+        # checking is_current_window from the debounce thread, possibly after teardown began -
+        # see the Home-ControlledWindow plan's "Uncommitted diagnostic-branch fixes" notes.
+        current = self.__dict__.get('_current')
+        if current:
+            return getattr(current, name)
+        raise AttributeError(name)
 
     def forceDismiss(self):
         # _MWBackground never receives routed onAction (MultiWindow._setupCurrent() re-routes

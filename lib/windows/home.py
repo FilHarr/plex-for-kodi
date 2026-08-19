@@ -351,6 +351,21 @@ class VirtualSection(object):
     def server(self):
         return plexapp.SERVERMANAGER.selectedServer
 
+    def getServer(self):
+        # LibrarySettings.__init__ (library.py) calls this unconditionally on whatever section
+        # it's given, real or virtual - PlexObject.getServer() is just `return self.server`, so
+        # mirror that here rather than requiring every VirtualSection to be a real PlexObject.
+        return self.server
+
+
+class _EmptySectionResultType(object):
+    # Just enough of section.all()/.folder()'s real return shape for LibraryWindow.fill()'s
+    # totalSize.asInt() check to see zero items and take its own existing empty-content path.
+    totalSize = plexobjects.PlexValue('0')
+
+
+_EmptySectionResult = _EmptySectionResultType()
+
 
 class HomeSection(VirtualSection):
     key = None
@@ -359,6 +374,44 @@ class HomeSection(VirtualSection):
 
     locations = []
     isMapped = False
+
+    # Enough of a real-section surface for LibraryWindow's construction path (LibrarySettings,
+    # reset()'s TYPE/DEFAULT_SORT/key handling) to not crash when opening home_section as
+    # LibraryWindow(section=home_section). Deliberately hand-written rather than subclassing
+    # LibrarySection/PlexObject - Home has no poster-grid query to inherit, its content is
+    # entirely hub-based (SectionHubsTask), so none of that machinery would ever be used.
+    TYPE = 'mixed'
+    DEFAULT_SORT = 'titleSort'
+    DEFAULT_SORT_DESC = False
+    # LibraryWindow.fill()'s own collectionMode lookup (self.section.settings.get(...)) expects
+    # every real LibrarySection's live server-fetched dict. Home has no such settings to fetch -
+    # empty means "always take the fallback default" there, harmless since Home's Library-tab
+    # content is a placeholder until Recommended-tab sharing lands.
+    settings = {}
+
+    def getLibrarySectionId(self):
+        # key stays None - that's Home's identity sentinel throughout this file's hub logic, not
+        # something to change here. This is only reached by LibraryWindow.reset()'s
+        # viewtype-setting-key fallback, so any stable literal works.
+        return 'home'
+
+    # LibraryWindow's poster-grid content-fetch surface (fill(), library.py) - Home has no
+    # poster-grid query at all, so these are a deliberate, permanent "no content" stand-in:
+    # opening LibraryWindow(home_section) shows a clean empty Library tab rather than crashing.
+    # Real content there is Recommended-tab sharing's job (porting SectionHubsTask into
+    # LibraryWindow's own tabs) - until then, Home's actual content isn't reachable through this
+    # window at all.
+    def jumpList(self, *args, **kwargs):
+        # None -> library.py's fill() already falls back to all() below when a jump list is
+        # unavailable for the current sort/type combo - the exact same fallback a real section
+        # takes when the server's own jumpList endpoint doesn't support it.
+        return None
+
+    def all(self, *args, **kwargs):
+        return _EmptySectionResult
+
+    def folder(self, *args, **kwargs):
+        return _EmptySectionResult
 
 
 home_section = HomeSection()
@@ -2652,6 +2705,14 @@ class HomeWindow(kodigui.ControlledWindow, util.CronReceiver, CommonMixin, Spoil
             if self._skipNextAction:
                 util.DEBUG_LOG("Home: Skipping next action")
                 self._skipNextAction = False
+                return
+
+            # TEMP DEBUG - quiet-orbiting-heron.md spike: manual trigger (Info/'i') for
+            # LibraryWindow(section=home_section) construction, independent of the real Home
+            # navigation path. Remove once the container/swap piece supersedes this.
+            if action == xbmcgui.ACTION_SHOW_INFO:
+                util.DEBUG_LOG("Home: TEMP DEBUG - opening LibraryWindow(home_section)")
+                opener.sectionClicked(home_section)
                 return
 
             if not controlID and not action == xbmcgui.ACTION_MOUSE_MOVE:

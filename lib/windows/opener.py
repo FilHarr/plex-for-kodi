@@ -159,7 +159,7 @@ def sectionClicked(section, filter_=None, **kwargs):
     # deliberate, PlexObject.__getattr__ invents an empty attribute for anything asked of it
     library.ITEM_TYPE = section.__dict__.get('itemType') or section.TYPE
     key = section.key
-    if not key.isdigit():
+    if not key or not key.isdigit():
         key = section.getLibrarySectionId()
     viewtype = util.getSetting('viewtype.{0}.{1}'.format(section.server.uuid, key))
     if section.TYPE in ('artist', 'photo', 'photodirectory'):
