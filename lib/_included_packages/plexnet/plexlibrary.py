@@ -606,6 +606,16 @@ class Collection(media.MediaItem):
     DEFAULT_SORT = 'titleSort'
     DEFAULT_SORT_DESC = False
 
+    def _setData(self, data):
+        # MediaItem itself never extracts this (only Video._setData() does, video.py) - Collection
+        # isn't a Video subclass, so it never picked this up even though the server does return
+        # <UltraBlurColors> for collections too (confirmed directly against the server, not
+        # assumed) - without this, updateBackgroundFrom()'s getattr(ds, 'ultraBlurColors', None)
+        # always silently returned None for a Collection ds, falling back to the flat default
+        # panel color instead of a real per-item tint.
+        media.MediaItem._setData(self, data)
+        self.ultraBlurColors = self._findUltraBlurColors(data)
+
     def __repr__(self):
         title = self.title.replace(' ', '.')[0:20]
         return '<{0}:{1}:{2}>'.format(self.__class__.__name__, self.key, title)

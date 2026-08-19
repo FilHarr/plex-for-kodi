@@ -152,14 +152,16 @@
         <posy>0</posy>
         <width>1229</width>
         <height>691</height>
-        <!-- 500ms, not instant: this layer sits statically behind the crossfading one below for most
+        <!-- 250ms, not instant: this layer sits statically behind the crossfading one below for most
              of its life, but BaseWindow._scheduleBackgroundStaticSync() (kodigui.py) catches it up to
-             match roughly 0.5s after every change, once that crossfade settles - see that method's own
-             comment for why. Without a fadetime here, that catch-up was itself an abrupt, visible
-             texture-reload pop despite the top layer already showing the same art by then; fading it
-             folds the catch-up into something that reads as a continuation of the original crossfade
-             rather than a second, separate flash. -->
-        <fadetime>500</fadetime>
+             match roughly 0.25s after every change, once that crossfade settles - see that method's own
+             comment for why, and keep it in sync with that timer if this ever changes again. Without a
+             fadetime here, that catch-up was itself an abrupt, visible texture-reload pop despite the
+             top layer already showing the same art by then; fading it folds the catch-up into something
+             that reads as a continuation of the original crossfade rather than a second, separate flash.
+             Shortened from an original 500ms/0.5s pairing on request - shorter reads as less of the
+             previous item's art visibly lingering/blending under the new one during the transition. -->
+        <fadetime>250</fadetime>
         <texture background="true" diffuse="script.plex/masks/background-vignette.png">$INFO[Window.Property(background_static)]</texture>
         {% include "includes/scale_background.xml.tpl" %}
     </control>
@@ -169,7 +171,7 @@
         <posy>0</posy>
         <width>1229</width>
         <height>691</height>
-        <fadetime>500</fadetime>
+        <fadetime>250</fadetime>
         <texture background="true" diffuse="script.plex/masks/background-vignette.png">{{ background_source|default("$INFO[Window.Property(background)]") }}</texture>
         {% include "includes/scale_background.xml.tpl" %}
     </control>

@@ -573,6 +573,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._hubSlideMovers = []
         self._hubSliding = False
         self._hubSlideThread = None
+        # Hero art (plan item 11) - ported verbatim from HomeWindow.__init__'s own initial value
+        # (home.py). None, not False - _setNoHeroArt()'s own no-op guard checks identity against
+        # "never set yet", not just "currently False", so the very first real call (True or False)
+        # always actually applies rather than being wrongly treated as a no-op.
+        self._lastNoHeroArt = None
         # Built once per LibraryWindow lifetime, then rebound via newControl() on every later
         # 'recommended' entry - see onFirstInit()'s own comment for why (a fresh discard-and-
         # recreate every entry, the original shape here, is the one remaining structural
@@ -648,14 +653,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # no-op when contentMode isn't 'recommended' (self._hubSliding is only ever True there).
         self._settleHubSlide()
         self._listGeneration += 1
-        # Also invalidate any in-flight _scheduleBackgroundStaticSync() timer (kodigui.py): its
-        # own guard checks self._closing, which on a MultiWindow-hosted object like this one
-        # always delegates live to whatever self._current currently is, not a snapshot of the
-        # window it was actually scheduled for - never true right after a swap to something
-        # fresh. Live-confirmed as "Window id does not exist" otherwise. _bgSyncGen doesn't
-        # suffer the same delegation issue (see that method's own comment for why), but nothing
-        # else bumps it on a content-mode/section swap that isn't itself a background change.
-        self._bgSyncGen += 1
         self.contentMode = mode
         # Persist per-section, same "sticky" treatment sort/filter/item-type already get - see
         # LibrarySettings.getContentMode()'s own docstring. Unconditional even for a TYPE=='mixed'
@@ -712,9 +709,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # showPanelControl/mli.dataSource before this swap can detect the invalidation the moment
         # it actually happens, not only once _open()'s loop gets back around to rebuilding.
         self._listGeneration += 1
-        # Also invalidate any in-flight _scheduleBackgroundStaticSync() timer (kodigui.py) -
-        # see switchTab()'s identical line for why self._closing alone doesn't catch this.
-        self._bgSyncGen += 1
 
         self.section = section
         self.filter = filter_
@@ -843,6 +837,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # rest of this one-time setup.
             self.loadHubSettings()
 
+            # Reset every fresh entry, not just at __init__ - _setNoHeroArt()'s own no-op guard
+            # (self._lastNoHeroArt) exists for HomeWindow, a persistent window whose control 51
+            # never gets destroyed - there, "state unchanged since last time" really does mean
+            # "already positioned correctly, skip redundant work". This shell's control 51 is
+            # brand new every 'recommended' entry (RecommendedWindow gets torn down and
+            # reconstructed by switchTab()/openSection() like any other view-type swap), so
+            # self._lastNoHeroArt surviving from whatever the *previous* section's Recommended tab
+            # last had is stale, not a real "nothing to do" signal - live-confirmed: if the new
+            # hub's hero-art state happened to match the stale value, the guard skipped
+            # _setNoHeroArt()'s real setPosition() call entirely, leaving this fresh control 51
+            # wherever it defaulted to (visibly wrong row position) until a hub-to-hub move
+            # produced a genuinely different value and finally forced the real positioning to run.
+            self._lastNoHeroArt = None
+
             # Built once (self.hubControls starts None, see __init__), rebound via newControl()
             # on every later 'recommended' entry - same shape self.tabList/self.sectionList
             # already use just below, live-proven safe across 20+ plain section-to-section swaps.
@@ -948,6 +956,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.setProperty('media.type', TYPE_PLURAL.get(ITEM_TYPE or self.section.TYPE, self.section.TYPE))
         self.setProperty('media', self.section.TYPE)
         self.setProperty('hide.filteroptions', hideFilterOptions and '1' or '')
+        # Library grid screens never want the sharp top-right hero-art box
+        # (default_background.xml.tpl) - only Recommended's hub-focused item does. no_hero_art is
+        # otherwise only ever written by the Recommended-tab hero-art code (updateHeroFrom()/
+        # _setNoHeroArt(), only reachable from contentMode == 'recommended'), so without this,
+        # whatever a previous visit to Recommended last left the property at just persists
+        # unchanged into library mode - not reliably hidden, just whatever it happened to be.
+        # Plain setBoolProperty(), not _setNoHeroArt() - that method also repositions control 51,
+        # which doesn't exist in any library-grid template (RuntimeError: Non-Existent Control).
+        self.setBoolProperty('no_hero_art', True)
 
         self.setTitle()
         self.setBoolProperty("initialized", True)
@@ -1000,6 +1017,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                             return
                         self._startHubSlide(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
                         return
+                    elif action_id in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
+                        # Plan item 11: sync hero art/info to the item this move is landing on.
+                        # Reads getSelectedItem() directly, same as MOVE_SET's own dynamic-
+                        # background update below does for the grid - Kodi's native container
+                        # cursor is already at the new position by the time onAction() runs (that
+                        # existing, proven pattern is what this one's modeled on), not the old one,
+                        # so no special before/after ordering is needed here. Deliberately doesn't
+                        # return - the actual cursor movement is Kodi's own native list behavior,
+                        # not something this method does; falls through to
+                        # kodigui.MultiWindow.onAction() below like anything else unhandled here.
+                        self._updateHeroFromFocusedHubItem(controlID)
 
                 # quiet-orbiting-heron.md Stage B: everything below this point (MOVE_SET,
                 # mouse-drag, context-menu handling) reaches into grid-specific state
@@ -3231,20 +3259,28 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     ANCHOR_ABS_Y = 424
     # The local y-offset group 51 must always be explicitly set to via setPosition() to sit at
     # its correct resting position - ported verbatim from HomeWindow.GROUP51_BASELINE_OFFSET.
-    # HomeWindow uses this as the "no hero art" case of _group51RestOffset() (the other case,
-    # has-hero-art, subtracts HUB_SLIDE_CLIP_SHIFT_HERO - not ported here, since D2 has no
-    # hero-art concept and the "no hero art" case - grouplist 50 unshifted at its XML base y=135
-    # - is the template's only reachable state anyway, see script-plex-recommended.xml.tpl's own
-    # Conditional animation on grouplist 50, keyed on no_hero_art, which is never written here so
-    # always evaluates String.IsEmpty(...)=true, i.e. permanently the unshifted case). Set
-    # unconditionally, once per fresh bind, in _recommendedHubsCallback() below - group 51 has no
-    # correct position at all until Python explicitly sets it (see that control's own comment in
-    # the template for why grouplist 50's auto-stacking can't be relied on for this).
+    # Used as the "no hero art" case of _group51RestOffset() below (the other case, has-hero-art,
+    # subtracts HUB_SLIDE_CLIP_SHIFT_HERO - real again as of the hero-art port, plan item 11; D2
+    # itself never reached this case, always forcing no_hero_art=True). Set unconditionally, once
+    # per fresh bind, in _recommendedHubsCallback() below - group 51 has no correct position at
+    # all until Python explicitly sets it (see that control's own comment in the template for why
+    # grouplist 50's auto-stacking can't be relied on for this).
     GROUP51_BASELINE_OFFSET = 289
     # Hub-switch slide animation step count/total time - ported verbatim from
     # HomeWindow.HUB_SLIDE_STEPS/HUB_SLIDE_TIME.
     HUB_SLIDE_STEPS = 24
     HUB_SLIDE_TIME = 0.15
+    # Hero art/info overlay (plan item 11) - ported verbatim from HomeWindow's own constants
+    # (home.py). HUB_SLIDE_CLIP_SHIFT_HERO: how far grouplist 50 shifts down (script-plex-
+    # recommended.xml.tpl's own Conditional animation, keyed on no_hero_art) to make room for the
+    # hero overlay when it's showing - _group51RestOffset() below counter-shifts group 51 by the
+    # same amount so the anchor's own absolute position (ANCHOR_ABS_Y) never moves regardless of
+    # hero-art state. HERO_ART_TYPES: which item types are eligible at all (see
+    # _typeHasHeroArt()'s own docstring for why type-based, not art-field-presence-based).
+    # CLEAR_LOGO_DIM: the clearlogo image's own render bounds.
+    HUB_SLIDE_CLIP_SHIFT_HERO = 321
+    HERO_ART_TYPES = {'movie', 'show', 'season', 'episode'}
+    CLEAR_LOGO_DIM = util.scaleResolution(616, 109)
 
     def _hubRowHeight(self, hub):
         """A row's own real rendered height (pre-vscale template units) for whichever hub it's
@@ -3287,6 +3323,160 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if role_offset == 1:
             wrapper.setHeight(util.vscale(self.height - self.ANCHOR_ABS_Y - y, r=0))
         return y
+
+    # ------------------------------------------------------------------------------------------
+    # Plan item 11 (quiet-orbiting-heron.md): hero art/info overlay (title/clearlogo/meta-row/
+    # summary for the focused hub item), ported from HomeWindow's own _typeHasHeroArt()/
+    # updateHeroFrom()/setHeroInfo()/_group51RestOffset()/_setNoHeroArt() (home.py). Sequenced
+    # after item 10 (hub interactivity) deliberately - hero art has to update as the focused
+    # *item* changes, not just the focused hub, which needs item 10's horizontal-move handling to
+    # exist first. The background art box itself (default_background.xml.tpl) is shared
+    # infrastructure every window already includes via default.xml.tpl - only the text overlay
+    # (title/logo/summary) needed porting into script-plex-recommended.xml.tpl; nothing here
+    # needed template changes beyond that one block.
+    # ------------------------------------------------------------------------------------------
+
+    def _typeHasHeroArt(self, ds, hub=None):
+        """Whether ds's item type is allowed to show the hero art/info treatment - movies/TV shows
+        only (self.HERO_ART_TYPES). Type-based rather than art-field-presence-based - see
+        HomeWindow._typeHasHeroArt()'s own docstring (home.py) for the full reasoning, ported
+        verbatim including the hub-based exclusions (Other Videos library items report as
+        type='movie', the same type real Movie libraries use).
+
+        is_home adapted per this file's own convention throughout (self.section.key is None;
+        LibraryWindow has no self.lastSection concept, self.section already is "whatever's
+        currently shown") - same substitution _hubRowHeight()/_bindHubToControl() already use."""
+        if not ds or getattr(ds, 'type', None) not in self.HERO_ART_TYPES:
+            return False
+        if hub is not None:
+            is_home = self.section.key is None
+            identifier = hub.getCleanHubIdentifier(is_home=is_home)
+            if identifier and any(kw in identifier.lower() for kw in ('clip', 'video')):
+                return False
+            if getattr(hub, 'type', None) in ('clip', 'video'):
+                return False
+            if hub.items and getattr(hub.items[0], 'type', None) in ('clip', 'video'):
+                return False
+        return True
+
+    def updateHeroFrom(self, ds, hub=None):
+        """Like updateBackgroundFrom, but also drives the hero info overlay (clearlogo/title, meta
+        row, summary) from the same item, and sets no_hero_art via _typeHasHeroArt(). Ported
+        verbatim from HomeWindow.updateHeroFrom() (home.py) - see that method's own docstring for
+        why this wraps updateBackgroundFrom rather than folding into it."""
+        self._setNoHeroArt(not self._typeHasHeroArt(ds, hub=hub))
+        result = self.updateBackgroundFrom(ds)
+        self.setHeroInfo(ds)
+        return result
+
+    def setHeroInfo(self, ds):
+        """Populates the Window properties script-plex-recommended.xml.tpl's own hero-overlay
+        block reads. Ported verbatim from HomeWindow.setHeroInfo() (home.py) - see that method's
+        own docstring for why every field is read defensively (hub items aren't always Video
+        subclasses)."""
+        if not ds:
+            return
+
+        self.setProperty('title', getattr(ds, 'title', '') or '')
+        self.setProperty('clear.logo', util.clearLogoFrom(ds, *self.CLEAR_LOGO_DIM))
+
+        duration = getattr(ds, 'duration', None)
+        self.setProperty('duration', duration and util.durationToText(duration.asInt()) or '')
+
+        summary = getattr(ds, 'summary', None)
+        self.setProperty('summary', summary and str(summary).strip().replace('\t', ' ') or '')
+
+        year = getattr(ds, 'year', None)
+        self.setProperty('date', year and str(year) or '')
+
+        content_rating = getattr(ds, 'contentRating', None)
+        self.setProperty('content.rating', content_rating and str(content_rating).split('/', 1)[-1] or '')
+
+        genres_attr = getattr(ds, 'genres', None)
+        genres = ''
+        try:
+            if genres_attr is not None and not isinstance(genres_attr, plexobjects.PlexValue):
+                genre_list = genres_attr()
+                if genre_list:
+                    genres = u' / '.join([g.tag for g in genre_list][:3])
+        except Exception:
+            util.DEBUG_LOG('setHeroInfo: genres failed for {}', ds)
+        self.setProperty('info', genres)
+
+        self.setProperty('studios', getattr(ds, 'studio', None) or '')
+
+        view_offset = getattr(ds, 'viewOffset', None)
+        remaining = ''
+        if view_offset is not None:
+            try:
+                if view_offset.asInt():
+                    remaining = T(33615, "{time} left").format(time=ds.remainingTimeString)
+            except Exception:
+                util.DEBUG_LOG('setHeroInfo: remainingTime failed for {}', ds)
+        self.setProperty('remainingTime', remaining)
+
+    def _group51RestOffset(self, no_hero_art):
+        """The local y-offset group 51 must be explicitly set to (via setPosition()) so the
+        anchor's absolute position stays at ANCHOR_ABS_Y, given whether the currently/about-to-be-
+        focused hub has hero art. Ported verbatim from HomeWindow._group51RestOffset() (home.py)."""
+        if no_hero_art:
+            return self.GROUP51_BASELINE_OFFSET
+        return self.GROUP51_BASELINE_OFFSET - self.HUB_SLIDE_CLIP_SHIFT_HERO
+
+    def _setNoHeroArt(self, no_hero_art):
+        """Single choke point for every no_hero_art write - keeps group 51's own local y-offset
+        (_group51RestOffset()) in sync with the property, snapped instantly (time="0", not eased -
+        see HomeWindow._setNoHeroArt()'s own docstring, home.py, for the live-visible sync bug an
+        earlier eased version caused: this Python setPosition() call and the native Conditional
+        animation the property write triggers on grouplist 50 must land in the same rendered
+        frame, or the whole row stack visibly swings through the full HUB_SLIDE_CLIP_SHIFT_HERO-px
+        difference before settling). Ported verbatim, including the self._lastNoHeroArt no-op
+        guard (not the window property itself, which reads empty/False before this has ever run -
+        checking that would wrongly no-op, skipping group 51's position entirely, the very first
+        time a hero-art-eligible hub loads)."""
+        if no_hero_art == self._lastNoHeroArt:
+            return
+        self._lastNoHeroArt = no_hero_art
+        self.setBoolProperty('no_hero_art', no_hero_art)
+        g51 = self.getControl(51)
+        g51.setPosition(g51.getPosition()[0], util.vscale(self._group51RestOffset(no_hero_art), r=0))
+
+    def _prepareHubSlideHero(self):
+        """Sync the hero art/info overlay to the hub about to become the anchor
+        (self.visibleHubs[self.focusedHubIndex] - the caller already advanced focusedHubIndex to
+        it), immediately, before the slide's own row movement starts - see
+        HomeWindow._prepareHubSlideHero()'s own docstring (home.py) for why (both directions need
+        to update at the same moment the scroll begins, not just the losing-hero-art one).
+
+        Simplified from the original: uses new_hub.items[0] directly rather than
+        _previewSelectedItem()/self._hubReselectPositions - D2 never ported reselect-position
+        memory (_startHubSlide()'s own docstring), so every hub row always starts at item 0 here,
+        there's no remembered scroll position to guess at."""
+        new_hub = self.visibleHubs[self.focusedHubIndex]
+        new_ds = new_hub.items[0] if new_hub.items else None
+        self._setNoHeroArt(not self._typeHasHeroArt(new_ds, hub=new_hub))
+        self.setHeroInfo(new_ds)
+        self.updateBackgroundFrom(new_ds)
+
+    def _updateHeroFromFocusedHubItem(self, control_id):
+        """Sync the hero art/info overlay to whichever item is currently selected in hub-row
+        control_id - called on horizontal (left/right) movement within a hub row. Minimal port of
+        the hero-art-relevant slice of HomeWindow.checkHubItem() (home.py) - that method also
+        handles pagination (ExtendHubTask), round-robin wraparound, and reselect-position memory,
+        none of which are built here (see plan item 10's own scope notes) - just the hero-info
+        replica update, mirroring updateHeroFrom() rather than calling it directly for the same
+        reason checkHubItem() does (own docstring, home.py): updateHeroFrom() always calls
+        updateBackgroundFrom() unconditionally, ignoring the dynamicBackgrounds setting - hero
+        info (title/summary) should still update regardless of that setting, only the background
+        art panel itself is gated on it."""
+        control = self.hubControls[control_id - self.HUB_CONTROL_ID]
+        mli = control.getSelectedItem()
+        if not mli or not mli.dataSource:
+            return
+        ds = mli.dataSource
+        self._setNoHeroArt(not self._typeHasHeroArt(ds, hub=control.dataSource))
+        self.setHeroInfo(ds)
+        self.updateBackgroundFrom(ds)
 
     def _anchorControlId(self):
         """Whichever physical control (400-404) is currently serving the anchor role. Ported
@@ -3438,23 +3628,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self._anchorRingPos = self.HUB_ROTATION_RING.index(self.HUB_CONTROL_ID)
 
             # Group 51 has no correct position at all until this is set explicitly - see
-            # GROUP51_BASELINE_OFFSET's own comment above. Unconditional, every fresh bind (this
-            # only ever runs once per swap into 'recommended', so this is also the one-time
-            # "corrected the instant onFirstInit's own first bind runs" moment HomeWindow's
-            # template comment describes for its own equivalent control).
-            g51 = self.getControl(51)
-            g51.setPosition(g51.getPosition()[0], util.vscale(self.GROUP51_BASELINE_OFFSET, r=0))
-
-            # Must be set explicitly, not left unwritten: script-plex-recommended.xml.tpl's
-            # grouplist 50 has <animation ... end="0,321" condition="String.IsEmpty(Window.
-            # Property(no_hero_art))">Conditional</animation> - the shift-down-by-321 applies
-            # while the condition is TRUE. A property that's never been written at all reads as
-            # empty in Kodi, same as explicitly set to '' - which matches has-hero-art's *empty*
-            # state (setBoolProperty(..., False) writes ''), not no-hero-art's '1'. Leaving this
-            # unwritten therefore defaults into the shifted-down (has hero art) position, not the
-            # unshifted base one D2 actually wants (no hero-art support exists yet) - live-
-            # confirmed as content rendering ~321px too low on screen otherwise.
-            self.setBoolProperty('no_hero_art', True)
+            # GROUP51_BASELINE_OFFSET's own comment above. _setNoHeroArt() below now handles this
+            # (it's the single choke point for group 51's position, keyed on hero-art state) -
+            # previously done unconditionally here, forcing no_hero_art=True, back when D2 had no
+            # hero-art concept at all (see that block's own former comment, still relevant
+            # context: a property that's never been written at all reads as empty in Kodi, same
+            # as explicitly set to '' - which matches has-hero-art's *empty* state, not no-hero-
+            # art's '1' - so no_hero_art must always be written explicitly, never left implicit,
+            # in every branch below, not just this one).
 
             if not sorted_hubs:
                 for index in range(len(self.hubControls)):
@@ -3462,6 +3643,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     self.setProperty('hub.display.4{0:02d}'.format(index), '')
                 self.setBoolProperty('hub.has_prev', False)
                 self.setBoolProperty('hub.has_next', False)
+                self._setNoHeroArt(True)
                 self.setProperty('hub.anchor_id', str(self._anchorControlId()))
                 for control_id in self.HUB_ROTATION_RING:
                     role = self._ringRoleOffset(control_id)
@@ -3472,9 +3654,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
             self.setProperty('hub.anchor_id', str(self._anchorControlId()))
 
-            # Anchor (role 0) first, same order _bindAllHubSlots() uses - no hero-art background
-            # to seed here (that's the actual reason HomeWindow orders it this way), but kept for
-            # shape-fidelity with the ported original rather than reordering without a reason to.
+            # Seed hero art/info from the anchor hub's first item before binding any controls -
+            # same ordering HomeWindow._bindAllHubSlots() uses and for the same reason (own
+            # comment there): binding the anchor first means the hero state is already settled by
+            # the time the other slots populate, so nothing else can race it. Real now (plan item
+            # 11) - previously this comment said "no hero-art background to seed here", back when
+            # D2 forced no_hero_art=True unconditionally instead.
+            anchor_hub = sorted_hubs[self.focusedHubIndex]
+            anchor_ds = anchor_hub.items[0] if anchor_hub.items else None
+            self.updateHeroFrom(anchor_ds, hub=anchor_hub)
+
             for control_id in sorted(self.HUB_ROTATION_RING, key=lambda cid: abs(self._ringRoleOffset(cid))):
                 role = self._ringRoleOffset(control_id)
                 index = control_id - self.HUB_CONTROL_ID
@@ -3510,10 +3699,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         a fresh content bind, always safely off-screen).
 
         Deliberately drops _captureHubPosition()/self._hubReselectPositions (reselect-position
-        memory) and _prepareHubSlideHero() (hero-art sync) entirely - not stubbed, just not
-        called, same scope boundary as _recommendedHubsCallback()/_bindHubToControl() above.
-        Calls self._bindHubToControl() for the wrap control's fresh bind instead of
-        HomeWindow.showHub().
+        memory) entirely - not stubbed, just not called, same scope boundary as
+        _recommendedHubsCallback()/_bindHubToControl() above. _prepareHubSlideHero() (hero-art
+        sync) is real again as of plan item 11 - see that method's own docstring. Calls
+        self._bindHubToControl() for the wrap control's fresh bind instead of HomeWindow.showHub().
 
         Staleness guard (Stage D2 addition, no HomeWindow equivalent needed - HomeWindow is a
         single persistent window, never swapped out from under its own background thread): snap-
@@ -3527,7 +3716,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         the moment it's read - after a mid-slide swap away from 'recommended', that's a fresh,
         just-opened window with _closing=False, not the 'recommended' window this slide actually
         belongs to. This is exactly the same delegation trap the plan's "Known interim gaps" bug
-        (3) already found and fixed for _scheduleBackgroundStaticSync() - self._listGeneration
+        (3) already found and fixed for _scheduleBackgroundStaticSync() (kodigui.py - that method
+        and the self._bgSyncGen counter it needed are since removed entirely, no longer relevant
+        beyond this lesson - see windowSetBackground()'s own current comment for why) -
+        self._listGeneration
         (bumped synchronously by switchTab()/openSection() before they close anything) is the
         correct, non-delegated signal for "a swap happened out from under this", same idiom
         _chunkCallbackFor()/_recommendedHubsCallbackFor() already use.
@@ -3552,6 +3744,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         new_ring_pos = (old_ring_pos + delta) % len(self.HUB_ROTATION_RING)
         self._anchorRingPos = new_ring_pos
         self.setProperty('hub.anchor_id', str(self._anchorControlId()))
+
+        self._prepareHubSlideHero()
 
         # The one control wrapping around: currently at the extreme role opposite the direction
         # of travel - its data isn't valid for any role in the new arrangement, so it needs a

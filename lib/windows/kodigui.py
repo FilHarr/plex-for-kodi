@@ -203,7 +203,7 @@ class XMLBase(object):
 
 class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
     __slots__ = ("_closing", "_winID", "started", "finishedInit", "dialogProps", "isOpen", "_errored",
-                 "_closeSignalled", "_bgPainted", "_bgSyncGen", "_panelLayer", "_panelColors")
+                 "_closeSignalled", "_bgPainted", "_panelLayer", "_panelColors")
     supportsAutoPlay = False
 
     def __init__(self, *args, **kwargs):
@@ -215,7 +215,6 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self.started = False
         self.finishedInit = False
         self._bgPainted = False
-        self._bgSyncGen = 0
         self._panelLayer = 'a'
         self._panelColors = ('', '', '', '')
         self.dialogProps = kwargs.get("dialog_props", None)
@@ -422,35 +421,21 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             self.setProperty("background", value)
 
         elif LAST_BG_URL != value:
-            self.setProperty("background_static", LAST_BG_URL)
+            # Both layers move together now, on request: the previous item's art should be gone
+            # the instant focus moves off it, not held solid as a backdrop for the crossfading
+            # layer above to blend against (the original reason for staggering these - see git
+            # history for the old two-stage version and its now-removed _scheduleBackgroundStaticSync()
+            # catch-up timer). What's actually behind default_background.xml.tpl's hero-art box
+            # isn't black, it's the already-crossfading 4-corner tinted color panel (same file,
+            # above this box) - so setting background_static here loses its own held-old-art
+            # backdrop and the two layers' <fadetime> crossfades now run in lockstep, but neither
+            # exposes a blank/black gap; the tinted panel shows through the shared transparent
+            # moments instead.
+            self.setProperty("background_static", value)
             self.setProperty("background", value)
-            self._scheduleBackgroundStaticSync(value)
 
         LAST_BG_URL = value
         return value
-
-    def _scheduleBackgroundStaticSync(self, value):
-        # default_background.xml.tpl's crossfading 'background' layer and its slower-fading
-        # 'background_static' counterpart underneath both use the exact same edge-fading vignette
-        # mask, so once the fade above finishes, background_static needs to catch up to the same
-        # value - otherwise it's left permanently one change behind, and its still-partially-
-        # transparent edges keep showing that now-stale (previous item's) art bleeding through
-        # forever, not just during the transition. Most noticeable when something re-fires this in
-        # quick succession (e.g. scrolling across Home's hub rows) rather than the rarer once-per-
-        # window-open case this crossfade was originally tuned for. 0.5s matches that file's own
-        # <fadetime>500</fadetime> on the crossfading layer; the generation counter drops this sync
-        # if another background change (or window close) supersedes it before it fires - this timer
-        # thread runs detached from the main thread, so 'value' may already be stale by the time it
-        # wakes up.
-        self._bgSyncGen += 1
-        gen = self._bgSyncGen
-
-        def sync():
-            if self._closing or self._bgSyncGen != gen:
-                return
-            self.setProperty("background_static", value)
-
-        threading.Timer(0.5, sync).start()
 
     def doClose(self, **kw):
         force = kw.get('force', True)
