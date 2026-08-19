@@ -688,6 +688,32 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # Recommended-tab rendering (Stage C/D) replaces this branch entirely, it doesn't
             # call doRefill() at all.
             self.refill = False
+
+            # Stage D (quiet-orbiting-heron.md): fire exactly once per swap into 'recommended' -
+            # onFirstInit() only runs when _setupCurrent() constructs a fresh _current, which for
+            # this content mode only happens on a switchTab()/openSection() swap (VIEWS_RECOMMENDED
+            # has a single view type, so nothing else re-triggers it). Built here (main thread,
+            # same as HomeWindow builds its own self.hubControls in its onFirstInit) rather than
+            # inside the background callback - see _recommendedHubsCallback()'s own comment for why.
+            # Index i always holds control id HUB_CONTROL_ID+i (400-404), same fixed mapping
+            # HomeWindow.hubControls uses - no rotation here (deliberately out of scope), so this
+            # mapping is also the final one for this swap's whole lifetime.
+            self.hubControls = (
+                kodigui.ManagedControlList(self, self.HUB_CONTROL_ID, 5),
+                kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 1, 3),
+                kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 2, 3),
+                kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 3, 3),
+                kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 4, 3),
+            )
+
+            # Snapshot now (main thread, same moment the task is scheduled) so the callback can
+            # tell a stale fetch (a swap landed before it ran) from a current one - same idiom as
+            # _chunkCallbackFor()'s _listGeneration snapshot.
+            generation = self._listGeneration
+            hubsTask = home.SectionHubsTask().setup(self.section, self._recommendedHubsCallbackFor(generation))
+            self.tasks.add(hubsTask)
+            backgroundthread.BGThreader.addTask(hubsTask)
+
             self.setBoolProperty("initialized", True)
         elif self.showPanelControl and not self.refill:
             self.showPanelControl.newControl(self)
@@ -2858,6 +2884,94 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def createListItem(self, obj, wide=False):
         return self.CREATE_LI_MAP.get(obj.type, self.unhandledHub)(self, obj, wide)
+
+    # ------------------------------------------------------------------------------------------
+    # Stage D (quiet-orbiting-heron.md): minimal fetch-and-bind for the Recommended tab. NOT a
+    # port of HomeWindow.sectionHubsCallback()/showHubs()/_showHubs() - deliberately much
+    # smaller: one fetch, one static bind of up to 5 hubs into the 5 physical row controls, no
+    # rotation ring, no staleness/refresh polling, no cross-section blending. See this plan
+    # file's "Next step: Recommended-tab sharing" section for the full scoping rationale.
+    # ------------------------------------------------------------------------------------------
+
+    def _recommendedHubsCallbackFor(self, generation):
+        """Wraps _recommendedHubsCallback() with the _listGeneration snapshot taken when the
+        hub fetch was scheduled (onFirstInit(), 'recommended' branch), so a fetch that finishes
+        after a swap away (switchTab()/openSection() bump _listGeneration immediately, but
+        self.tasks.kill() can't preempt a fetch already past its own isCanceled() check) gets
+        recognized as stale and discarded instead of writing into a window that's moved on -
+        same idiom as _chunkCallbackFor() above.
+        """
+        def callback(section, hubs, reselect_pos_dict=None):
+            self._recommendedHubsCallback(section, hubs, generation)
+        return callback
+
+    def _recommendedHubsCallback(self, section, hubs, generation):
+        """SectionHubsTask's callback - runs on a background thread, not the main thread. Must
+        not assume self.contentMode is still 'recommended' or that self.section/self._current is
+        still what it was when the fetch was scheduled - a swap (or a real close) can land in
+        between. Checked twice: once before doing any work, once more right after acquiring
+        self.lock, since acquiring the lock itself isn't instant and a swap doesn't need it to
+        happen (switchTab()/openSection() run on the main thread and never take self.lock).
+
+        Builds self.hubControls itself only on the main thread (onFirstInit(), see there) rather
+        than here - constructing a ManagedControlList calls getControl(), a Kodi native call;
+        every other place in this file that touches control state from a background thread
+        (_chunkCallback()) does so through a control object already built on the main thread,
+        not one built fresh off-thread. Followed here for the same reason, not reinvented.
+        """
+        def stale():
+            return (generation != self._listGeneration or self.closing
+                    or self.contentMode != 'recommended')
+
+        if stale():
+            util.DEBUG_LOG("Library: _recommendedHubsCallback() declined - stale (gen {0} != {1}, "
+                           "closing={2}, mode={3})", generation, self._listGeneration, self.closing,
+                           self.contentMode)
+            return
+
+        with self.lock:
+            if stale():
+                util.DEBUG_LOG("Library: _recommendedHubsCallback() declined post-lock - stale")
+                return
+
+            is_home = section.key is None
+            sorted_hubs = self.sortHubsByUserOrder(hubs, is_home=is_home, section_key=section.key)
+            self.sectionHubs[section.key] = sorted_hubs
+
+            for index, control in enumerate(self.hubControls):
+                if index >= len(sorted_hubs):
+                    # Fewer than 5 hubs: leave this row's list control empty. The template's own
+                    # wrapper visibility (script-plex-recommended.xml.tpl, groups 500-504) is
+                    # gated on Container({{ id - 100 }}).NumItems > 0, so an empty control already
+                    # hides its row without any Python-side visibility handling - verified against
+                    # the template, not assumed.
+                    control.reset()
+                    self.setProperty('hub.display.4{0:02d}'.format(index), '')
+                    continue
+
+                hub = sorted_hubs[index]
+                identifier = hub.getCleanHubIdentifier(is_home=is_home)
+                display_type = self.getHubDisplayType(hub, identifier)
+                flags = self.getHubRenderFlags(hub, identifier)
+                title = hub.__dict__.get('_displayTitle') or hub.title or ''
+
+                # Row title label reads $INFO[Window.Property(hub.{{ id - 100 }})] (id 500-504,
+                # so property name is hub.400 .. hub.404) - same property name/format
+                # HomeWindow._showHub() sets (home.py). hub.display.4NN drives which of
+                # hub_itemlayout_{poster,square,ar16x9}.xml.tpl actually renders each item -
+                # without it every itemlayout's <itemlayout condition="..."> is false and the
+                # list shows no visible content even with items bound.
+                self.setProperty('hub.display.4{0:02d}'.format(index), display_type)
+                self.setProperty('hub.4{0:02d}'.format(index), title)
+                self.setProperty('hub.text2lines.4{0:02d}'.format(index), flags['text2lines'] and '1' or '')
+
+                control.dataSource = hub
+                items = [mli for mli in
+                        (self.createListItem(obj, wide=flags['with_art']) for obj in hub.items) if mli]
+                control.replaceItems(items)
+
+            util.DEBUG_LOG("Library: _recommendedHubsCallback() bound {0} hub(s) for {1}",
+                           min(len(sorted_hubs), len(self.hubControls)), section.key)
 
 
 class PostersWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
