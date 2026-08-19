@@ -89,8 +89,10 @@
         <height>{{ vscale(865) }}</height>
         <!-- Not onup=200: group 200 has no focusable descendant of its own once
              header_topleft/header_defaultcontrol are gone (see filteropts_grouplist's own
-             comment above) other than the audio-widget button, so target that/the sidebar
-             directly rather than relying on Kodi finding a default descendant of 200. -->
+             comment above) other than the audio-widget button and the section tabs, so target
+             those/the sidebar directly rather than relying on Kodi finding a default descendant
+             of 200. -->
+        <onup condition="Control.IsVisible(320)">320</onup>
         <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
         <onup>9000</onup>
         <onleft>9000</onleft>

@@ -20,6 +20,7 @@
     <onleft>9000</onleft>
     <onright>300</onright>
     <ondown>101</ondown>
+    <onup condition="Control.IsVisible(320)">320</onup>
     <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
     <control type="button" id="311">
         <enable>false</enable>

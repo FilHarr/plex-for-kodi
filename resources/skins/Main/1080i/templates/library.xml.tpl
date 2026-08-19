@@ -1,6 +1,19 @@
 {% extends "default.xml.tpl" %}
 {% block headers %}<defaultcontrol>100</defaultcontrol>{% endblock %}
 
+{# Blanked, same as script-plex-episodes.xml.tpl: the sidebar (header_sidebar below) already
+   provides Search and Home as its own first two entries (LibraryWindow.buildSectionList()),
+   making these icons a pure duplicate left over from before the sidebar existed - safe to drop
+   for the section-tabs row's sake (quiet-orbiting-heron.md, plan item 0), not a functionality
+   loss. #}
+{% block header_topleft %}{% endblock %}
+
+{# header_middle_add is default.xml.tpl's hook, but the header block below fully replaces
+   default.xml.tpl's header body (see {% block header %} immediately following) and never
+   references header_middle_add - so overriding that block name here would be dead code,
+   never rendered. Inlined directly into the real body instead (right after the audio-widget
+   group, before filteropts_grouplist), same as script-plex-recommended.xml.tpl does. #}
+
 {% block header %}
 <control type="group" id="200">
     {% block header_animation %}<animation effect="slide" end="0,{{ vscale(-135) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + !ControlGroup(200).HasFocus(0) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>{% endblock %}
@@ -119,6 +132,7 @@
             <info>Player.Progress</info>
         </control>
     </control>
+    {% with tab_ondown = 101 %}{% include "includes/section_tabs.xml.tpl" %}{% endwith %}
     {% block filteropts_grouplist %}
     <control type="grouplist"{% block filteropts_grouplist_attrs %} id="600"{% endblock %}>
         <visible>String.IsEmpty(Window.Property(hide.filteroptions))</visible>
@@ -137,7 +151,7 @@
         {% block header_filteropts_onleft_nocontent %}<onleft>9000</onleft>{% endblock %}
         <onright>300</onright>
         <ondown>101</ondown>
-        {% block header_filteropts_onup %}<onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>{% endblock %}
+        {% block header_filteropts_onup %}<onup condition="Control.IsVisible(320)">320</onup><onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>{% endblock %}
         <control type="button" id="311">
             <enable>false</enable>
             <width max="300">auto</width>

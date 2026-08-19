@@ -348,6 +348,12 @@
         <textcolor>FFFFFFFF</textcolor>
         <label>$INFO[System.Time]</label>
     </control>
+    {# quiet-orbiting-heron.md plan item 0: ondown=50 targets grouplist 50's own <defaultcontrol>
+       chain (already relied on elsewhere in this template) rather than a specific hub-list id -
+       the rotation ring means which physical control is actually the anchor moves, so following
+       the same defaultcontrol resolution the rest of this template already uses is more robust
+       than hardcoding one. #}
+    {% with tab_ondown = 50 %}{% include "includes/section_tabs.xml.tpl" %}{% endwith %}
 </control>
 
 <control type="group">

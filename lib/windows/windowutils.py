@@ -10,6 +10,32 @@ from . import opener
 
 HOME = None
 
+# Confirmed upstream Kodi core bug (xbmc/xbmc#27552, consolidated into #27239, fix proposed in
+# xbmc/xbmc#28928, not yet merged/released as of this writing): CGUIWindow::OnAction() walks the
+# focused control's parent chain, and if a skin/window reload (our doClose()-then-reconstruct
+# in-place-swap pattern - openSection()/switchTab(), library.py) happens *nested underneath that
+# same OnAction() call* - i.e. triggered synchronously, inline, from a native onClick()/onAction()
+# callback - the control can be freed mid-walk, and the next dereference is a native access
+# violation. A Kodi maintainer's ASAN trace confirmed this is single-threaded reentrancy (all on
+# the main thread, T0), not a cross-thread data race: the reload gets processed from inside the
+# very OnAction() call it then crashes underneath, once the loop unwinds back into it.
+#
+# This can't be fixed from the addon side - it's inside Kodi's own CGUIWindow::OnAction(), not
+# anything we control - but it CAN be avoided: never trigger a swap synchronously, inline, from a
+# native callback. Deferring the actual call via threading.Timer (a real, if small, time delay -
+# not just a different Python thread with no delay, which doesn't reliably guarantee Kodi's own
+# call stack has unwound by the time it runs) lets Kodi's engine fully return to idle first. Live-
+# confirmed as the fix for a native crash that otherwise recurred at the exact same faulting
+# address across independent crash dumps - i.e. one deterministic bug, not generic corruption.
+#
+# The addon's existing sidebar focus-settle debounce (sectionChanged()/_sectionChanged() below,
+# 0.5s) already provides this delay incidentally, which is almost certainly why swapping sections
+# via arrow-key/settled-focus navigation has always been reliable - this constant is for direct-
+# click dispatch paths (sectionClicked(), library.py's tab-list onClick()) that had no delay at
+# all before this was diagnosed. Short enough to feel instant to a user, long enough (many frames
+# at any realistic refresh rate) to be a real safety margin, not a token gesture.
+SKIN_RELOAD_DEFER_SECONDS = 0.15
+
 
 class GoHomeMixin():
     def goHome(self, section=None, with_root=False):
@@ -223,14 +249,23 @@ class SidebarMixin():
             self.lastSection = section
             self.openSidebarTarget(opener.handleOpen, playlists.PlaylistsWindow)
         elif hasattr(self, 'openSection'):
-            # In-place swap (library.py's LibraryWindow.openSection()) - safe to call from the
-            # debounce thread, no new blocking .modal() call. Declines (returns False) rather
-            # than acting if a descendant window is currently open on top of self - see that
-            # method's own docstring. lastSection only advances on an actual swap, so a declined
-            # attempt gets retried on the next settled focus/click instead of being silently
-            # forgotten.
-            if self.openSection(section):
-                self.lastSection = section
+            # In-place swap (library.py's LibraryWindow.openSection()) - safe to call from any
+            # thread, no new blocking .modal() call. Declines (returns False) rather than acting
+            # if a descendant window is currently open on top of self - see that method's own
+            # docstring. lastSection only advances on an actual swap, so a declined attempt gets
+            # retried on the next settled focus/click instead of being silently forgotten.
+            #
+            # Deferred, not called inline: this method is reached directly from onClick()
+            # (sectionClicked() above) on a genuine click, unlike the settled-focus debounce path
+            # (sectionChanged()/_sectionChanged() below) that already runs this same call off a
+            # background thread with a real delay. Calling openSection() (and its doClose()) here
+            # inline would nest the resulting skin/window reload underneath the very onClick()/
+            # OnAction() call handling this click - see SKIN_RELOAD_DEFER_SECONDS' own comment
+            # above for why that's a confirmed Kodi core crash, not a theoretical one.
+            def _deferredOpenSection():
+                if self.openSection(section):
+                    self.lastSection = section
+            threading.Timer(SKIN_RELOAD_DEFER_SECONDS, _deferredOpenSection).start()
         else:
             self.lastSection = section
             self.openSidebarTarget(opener.sectionClicked, section)

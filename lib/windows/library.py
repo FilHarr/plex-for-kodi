@@ -459,6 +459,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     DEFAULT_ITEMS_CHUNK_SIZE = 250
     DEFAULT_ITEMS_CHUNK_SIZE_BIG = 500
 
+    # Plan item 0 (quiet-orbiting-heron.md): section-tabs row control id (includes/
+    # section_tabs.xml.tpl). Defined directly on LibraryWindow (the outer, persisting object),
+    # not on a specific inner shell class - unlike e.g. POSTERS_PANEL_ID, this control exists
+    # identically in every content-mode's template, so it doesn't need per-shell delegation.
+    TAB_LIST_ID = 320
+
     def __init__(self, *args, **kwargs):
         PlaybackBtnMixin.__init__(self)
         kodigui.MultiWindow.__init__(self, *args, **kwargs)
@@ -525,6 +531,21 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._hubSlideGen = 0
         self._hubSlideMovers = []
         self._hubSliding = False
+        self._hubSlideThread = None
+        # Built once per LibraryWindow lifetime, then rebound via newControl() on every later
+        # 'recommended' entry - see onFirstInit()'s own comment for why (a fresh discard-and-
+        # recreate every entry, the original shape here, is the one remaining structural
+        # difference from self.tabList/self.sectionList's proven-safe repeated-newControl()
+        # pattern - live-confirmed 20+ plain section-to-section swaps clean, only 'recommended'
+        # entries ever crash).
+        self.hubControls = None
+
+        # Plan item 0 (quiet-orbiting-heron.md): the section-tabs row (Library/Recommended).
+        # Built once per LibraryWindow lifetime in onFirstInit() (same pattern as
+        # self.sectionList) - the underlying native control gets torn down/rebuilt on every
+        # content-mode swap, but the ManagedControlList/its items persist across that via
+        # newControl(), same as the sidebar's own list does.
+        self.tabList = None
 
     def reset(self):
         PlaybackBtnMixin.reset(self)
@@ -579,6 +600,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return False
 
         self.tasks.kill()
+        # Settle any in-flight hub-slide animation (its own background thread, see
+        # _startHubSlide()) before doClose() below tears the native window down for real -
+        # otherwise that thread can still be mid-setPosition() on a control that's about to stop
+        # existing. Live-confirmed as a native invalid-pointer-read crash otherwise. Harmless
+        # no-op when contentMode isn't 'recommended' (self._hubSliding is only ever True there).
+        self._settleHubSlide()
         self._listGeneration += 1
         # Also invalidate any in-flight _scheduleBackgroundStaticSync() timer (kodigui.py): its
         # own guard checks self._closing, which on a MultiWindow-hosted object like this one
@@ -630,6 +657,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return False
 
         self.tasks.kill()
+        # Settle any in-flight hub-slide animation before doClose() below - see switchTab()'s
+        # identical call for why (this section may currently be showing its own Recommended tab).
+        self._settleHubSlide()
         # Bumped here, not just inside doRefill(), so a suspended call elsewhere that captured
         # showPanelControl/mli.dataSource before this swap can detect the invalidation the moment
         # it actually happens, not only once _open()'s loop gets back around to rebuilding.
@@ -699,6 +729,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.sectionList.newControl(self)
 
+        if self.tabList is None:
+            self.tabList = kodigui.ManagedControlList(self, self.TAB_LIST_ID, 5)
+            self.buildTabList()
+        else:
+            self.tabList.newControl(self)
+            self.updateActiveTabMarker()
+
         if self.contentMode == 'recommended':
             # quiet-orbiting-heron.md Stage B: RecommendedWindow has none of the poster-grid
             # controls (POSTERS_PANEL_ID/KEY_LIST_ID) doRefill() below binds against - real
@@ -706,15 +743,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # call doRefill() at all.
             self.refill = False
 
-            # Stage D (quiet-orbiting-heron.md): fire exactly once per swap into 'recommended' -
+            # Stage D (quiet-orbiting-heron.md): fires every swap into 'recommended' -
             # onFirstInit() only runs when _setupCurrent() constructs a fresh _current, which for
             # this content mode only happens on a switchTab()/openSection() swap (VIEWS_RECOMMENDED
-            # has a single view type, so nothing else re-triggers it). Built here (main thread,
-            # same as HomeWindow builds its own self.hubControls in its onFirstInit) rather than
-            # inside the background callback - see _recommendedHubsCallback()'s own comment for why.
-            # Index i always holds control id HUB_CONTROL_ID+i (400-404), same fixed mapping
-            # HomeWindow.hubControls uses - no rotation here (deliberately out of scope), so this
-            # mapping is also the final one for this swap's whole lifetime.
+            # has a single view type, so nothing else re-triggers it). Index i always holds control
+            # id HUB_CONTROL_ID+i (400-404), same fixed mapping HomeWindow.hubControls uses - no
+            # rotation here (deliberately out of scope), so this mapping is also the final one for
+            # this swap's whole lifetime.
 
             # Populates self.hubSettings from the user's already-saved hub visibility/order
             # preferences (Stage C's ported loadHubSettings(), never called until now) so
@@ -724,13 +759,28 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # rest of this one-time setup.
             self.loadHubSettings()
 
-            self.hubControls = (
-                kodigui.ManagedControlList(self, self.HUB_CONTROL_ID, 5),
-                kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 1, 3),
-                kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 2, 3),
-                kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 3, 3),
-                kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 4, 3),
-            )
+            # Built once (self.hubControls starts None, see __init__), rebound via newControl()
+            # on every later 'recommended' entry - same shape self.tabList/self.sectionList
+            # already use just below, live-proven safe across 20+ plain section-to-section swaps.
+            # This used to unconditionally discard and freshly construct all 5
+            # ManagedControlLists on every single entry - the one remaining structural difference
+            # from tabList/sectionList once that comparison was actually run, and live-confirmed
+            # as the fix for a native access-violation crash (heap/vtable corruption) that
+            # otherwise built up over a handful of 'recommended' round trips with no consistent
+            # trigger point (sometimes right after the bind, sometimes on the way back out,
+            # sometimes mid-click - the hallmark of accumulating corruption rather than a single
+            # deterministic bug).
+            if self.hubControls is None:
+                self.hubControls = (
+                    kodigui.ManagedControlList(self, self.HUB_CONTROL_ID, 5),
+                    kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 1, 3),
+                    kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 2, 3),
+                    kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 3, 3),
+                    kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 4, 3),
+                )
+            else:
+                for hc in self.hubControls:
+                    hc.newControl(self)
 
             # Snapshot now (main thread, same moment the task is scheduled) so the callback can
             # tell a stale fetch (a swap landed before it ran) from a current one - same idiom as
@@ -755,8 +805,26 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                             if mli.dataSource and mli.dataSource.key and mli.dataSource.key.isdigit()]
             hubsTask = home.SectionHubsTask().setup(self.section, self._recommendedHubsCallbackFor(generation),
                                                      section_keys)
-            self.tasks.add(hubsTask)
-            backgroundthread.BGThreader.addTask(hubsTask)
+            # Run inline (main thread), not dispatched to BGThreader: _recommendedHubsCallback()
+            # (below) does real Control geometry mutation (getControl().setPosition()/setHeight()
+            # via _setRoleGeometry()), not just ListItem property updates like _chunkCallback()'s
+            # own background-thread work elsewhere in this file - live-confirmed as a native
+            # access violation (heap/vtable corruption - EXCEPTION_ACCESS_VIOLATION with a DEP/
+            # execute-noncanonical-address signature, not a simple bad read) after a small handful
+            # of switchTab() round trips into and back out of 'recommended', with the deferred-
+            # close fix (onClick(), TAB_LIST_ID) already in place and no hub-to-hub navigation
+            # involved at all - narrowing it to this one-time bind, the only remaining background-
+            # thread Control mutation Stage D2 added. HomeWindow's own _bindAllHubSlots() (home.py)
+            # does the identical thing from its own SectionHubsTask callback and has apparently
+            # gotten away with it, but HomeWindow is a persistent window that's realistically never
+            # rebound this many times in a short span the way switchTab() cycling does - if this is
+            # a rare, cumulative heap-corruption bug rather than an immediate one, infrequent reuse
+            # would explain why it's never surfaced there. Blocking here costs whatever the fetch
+            # itself takes (~100-200ms observed) before the window finishes initializing - the
+            # hubs were never rendered before this returned anyway (this is still the *first* bind,
+            # not a background refresh), so nothing that used to be visible earlier is lost, just
+            # shifted before the window shows instead of popping in after.
+            hubsTask.run()
 
             self.setBoolProperty("initialized", True)
         elif self.showPanelControl and not self.refill:
@@ -814,13 +882,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def onAction(self, action):
         try:
-            # TEMP DEBUG - quiet-orbiting-heron.md Stage A: manual trigger (Info/'i') for
-            # LibraryWindow.switchTab(), independent of any real tab UI (Stage B). Remove once
-            # a real tab control supersedes this.
-            if action == xbmcgui.ACTION_SHOW_INFO:
-                self.switchTab('recommended' if self.contentMode == 'library' else 'library')
-                return
-
             if self.getFocusId() == self.SECTION_LIST_ID:
                 self.checkSectionItem(action=action)
 
@@ -843,6 +904,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 if 399 < controlID < 500 and self.contentMode == 'recommended':
                     action_id = action.getId()
                     if action_id in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
+                        # Topmost hub, pressing up: exit the rotation ring entirely into the
+                        # section-tabs row (plan item 0) instead of the silent no-op
+                        # _startHubSlide() falls into at focusedHubIndex 0 - same role XML onup
+                        # plays for grid content (library_posters.xml.tpl etc.), just done here in
+                        # Python since hub-to-hub vertical nav is already fully Python-owned (see
+                        # this branch's own docstring reference to home.py's onAction()).
+                        if action_id == xbmcgui.ACTION_MOVE_UP and self.focusedHubIndex == 0 and self.tabList:
+                            self.setFocusId(self.TAB_LIST_ID)
+                            return
                         self._startHubSlide(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
                         return
 
@@ -913,6 +983,25 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def onClick(self, controlID):
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
+            return
+
+        if controlID == self.TAB_LIST_ID:
+            # Plan item 0 (quiet-orbiting-heron.md): TAB_LIST_ID exists identically in every
+            # content-mode's template, so this is checked before the contentMode=='recommended'
+            # bypass below, same as SECTION_LIST_ID above.
+            mli = self.tabList.getSelectedItem()
+            if mli:
+                # Not a direct switchTab() call: confirmed as xbmc/xbmc#27552/#27239, an upstream
+                # Kodi core bug, not anything specific to this control - CGUIWindow::OnAction()'s
+                # focused-control parent walk crashes if the window/skin gets reloaded nested
+                # underneath the very OnAction()/onClick() call that triggered it. switchTab()'s
+                # doClose() is exactly that kind of reload, so it must never run synchronously,
+                # inline, from this callback - see windowutils.SKIN_RELOAD_DEFER_SECONDS' own
+                # comment for the full diagnosis and why a real time delay (not just a different
+                # thread with no delay - live-confirmed as insufficient on its own) is what
+                # actually avoids it.
+                mode = mli.getProperty('content.mode')
+                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.switchTab, args=(mode,)).start()
             return
 
         if self.contentMode == 'recommended':
@@ -1022,6 +1111,42 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self.sectionList.reset()
         self.sectionList.addItems(items)
+
+    def buildTabList(self):
+        """Populate the section-tabs row (Recommended/Library) - plan item 0
+        (quiet-orbiting-heron.md). Built once per LibraryWindow lifetime (see onFirstInit()),
+        not rebuilt on every content-mode swap - only which item is marked 'current' changes
+        (updateActiveTabMarker()), same relationship buildSectionList()/is.active has to the
+        sidebar. Plain hardcoded English labels for now, not T()-translated - no existing
+        translation string to reuse, and adding new ones is a separate concern from this pass.
+        """
+        items = []
+        for mode, label in (('recommended', 'Recommended'), ('library', 'Library')):
+            mli = kodigui.ManagedListItem(label)
+            mli.setProperty('item', '1')
+            mli.setProperty('content.mode', mode)
+            items.append(mli)
+
+        self.tabList.reset()
+        self.tabList.addItems(items)
+        self.updateActiveTabMarker()
+
+    def updateActiveTabMarker(self):
+        """Update 'current' on the tab list items to highlight self.contentMode's active tab -
+        same key-matched-property pattern updateActiveSectionMarker() uses for the sidebar,
+        called both right after buildTabList() and whenever switchTab() changes contentMode.
+        """
+        if not self.tabList:
+            return
+
+        for i in range(self.tabList.size()):
+            mli = self.tabList[i]
+            if not mli:
+                continue
+            if mli.getProperty('content.mode') == self.contentMode:
+                mli.setProperty('current', '1')
+            elif mli.getProperty('current'):
+                mli.setProperty('current', '')
 
     # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
     # this window's needs exactly (is.home -> goHome(), skip re-opening the already-shown section
@@ -3119,18 +3244,33 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         return callback
 
     def _recommendedHubsCallback(self, section, hubs, generation):
-        """SectionHubsTask's callback - runs on a background thread, not the main thread. Must
-        not assume self.contentMode is still 'recommended' or that self.section/self._current is
-        still what it was when the fetch was scheduled - a swap (or a real close) can land in
-        between. Checked twice: once before doing any work, once more right after acquiring
-        self.lock, since acquiring the lock itself isn't instant and a swap doesn't need it to
-        happen (switchTab()/openSection() run on the main thread and never take self.lock).
+        """SectionHubsTask's callback. Called synchronously, inline, on the main thread -
+        onFirstInit()'s 'recommended' branch calls hubsTask.run() directly rather than dispatching
+        it to BGThreader. This was tried as a fix for a native crash entering/leaving
+        'recommended' (heap/vtable corruption, not a simple bad read), on the theory that the
+        Control geometry mutation below (getControl(), _setRoleGeometry()'s setPosition()/
+        setHeight() calls) running off the main thread was the cause - live-tested and ruled out
+        (the crash persisted, at the exact same faulting address, even with all of this loop's
+        geometry mutation skipped entirely in a separate diagnostic pass). The real cause turned
+        out to be upstream: xbmc/xbmc#27552/#27239, a confirmed Kodi core bug where
+        CGUIWindow::OnAction() crashes if a skin/window reload happens nested underneath the same
+        OnAction() call that triggered it - see windowutils.SKIN_RELOAD_DEFER_SECONDS for the full
+        diagnosis and the actual fix (deferring switchTab()/openSection() itself, not anything in
+        here). Left running inline on the main thread anyway now that it's already this shape -
+        no reason to revert a harmless simplification just because it wasn't the fix, and it still
+        avoids background-thread Control mutation as a matter of general caution.
+
+        Historical note: this used to run on a genuine background thread (BGThreader), same shape
+        HomeWindow's own SectionHubsTask callback (_bindAllHubSlots(), home.py) still uses safely -
+        that always was fine, since it was never the actual bug. The self.lock/double-stale-check
+        shape below predates this change and is no longer strictly load-bearing (nothing else can
+        run between scheduling and this call any more, since it's synchronous) but is kept as
+        cheap, harmless defensiveness rather than removed.
 
         Builds self.hubControls itself only on the main thread (onFirstInit(), see there) rather
-        than here - constructing a ManagedControlList calls getControl(), a Kodi native call;
-        every other place in this file that touches control state from a background thread
-        (_chunkCallback()) does so through a control object already built on the main thread,
-        not one built fresh off-thread. Followed here for the same reason, not reinvented.
+        than here - constructing a ManagedControlList calls getControl(), a Kodi native call, and
+        every control-list mapping is fixed for this swap's whole lifetime regardless of which
+        thread eventually binds hub content into it.
 
         Stage D2: this is the only place a fresh 'recommended' bind ever happens (fired exactly
         once per swap, see onFirstInit()'s own comment) - the anchor-centered role-based bind
@@ -3377,7 +3517,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self._hubSlideMovers = []
             self._finishHubSlide()
 
-        threading.Thread(target=run, name='hubslide').start()
+        t = threading.Thread(target=run, name='hubslide')
+        self._hubSlideThread = t
+        t.start()
 
     def _finishHubSlide(self):
         """Slide-completion - deliberately NOT a full _recommendedHubsCallback() rebuild (that
@@ -3398,11 +3540,31 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """If a hub-slide animation is currently in flight, snap it straight to completion
         instead of leaving it to finish on its own background thread. Bumps _hubSlideGen first
         so that thread's own next gen-check (whether mid-sleep or mid-loop) sees the mismatch and
-        exits without touching state itself - this method becomes the sole place that finishes
-        it. Ported verbatim from HomeWindow._settleHubSlide() (home.py)."""
+        exits without touching state itself - not ported verbatim from HomeWindow._settleHubSlide()
+        (home.py) any more, though: HomeWindow is a single persistent window that's never
+        destroyed out from under this thread (see _startHubSlide()'s own docstring), but
+        LibraryWindow's is - switchTab()/openSection() call this right before doClose() tears the
+        native window down for real. Bumping the gen alone only stops the thread from touching
+        controls on its *next* loop check; a call already past that check (mid-setPosition(), or
+        about to make one for the current step) can still land after the native window is gone -
+        a real, theoretically-possible race, tried as a fix for a native crash switching back out
+        of Recommended (this was in place before that crash's actual cause - xbmc/xbmc#27552/
+        #27239, see windowutils.SKIN_RELOAD_DEFER_SECONDS - was diagnosed; the crash persisted
+        after this fix alone, at the same faulting address, so this specific race was likely never
+        what was actually firing). join()ing it here, before this method's own final setPosition()
+        snap, still closes a real (if apparently unobserved) window: once join() returns, no other
+        thread can still be calling into these controls, so the snap below is provably the last
+        write. HUB_SLIDE_TIME is 0.15s total, so a bounded wait is cheap insurance either way, not
+        a real stall - left in place as legitimate defensiveness, not reverted just because it
+        wasn't the actual fix.
+        """
         if not self._hubSliding:
             return
         self._hubSlideGen += 1
+        thread = self._hubSlideThread
+        if thread and thread.is_alive():
+            thread.join(1.0)
+        self._hubSlideThread = None
         for wrapper, start_y, end_y in self._hubSlideMovers:
             wrapper.setPosition(0, util.vscale(end_y, r=0))
         self._hubSlideMovers = []
