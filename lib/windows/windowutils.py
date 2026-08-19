@@ -217,28 +217,25 @@ class SidebarMixin():
 
     def _dispatchSectionOpen(self, item):
         """What happens once the debounce settles on a genuinely different section (also reused by
-        sectionClicked() below for the immediate click path). Default shape matches every
-        non-Home sectionClicked() this was factored out of: is.home -> goHome(), skip if it's the
+        sectionClicked() below for the immediate click path). is.home is no longer special-cased
+        up front (Home-ControlledWindow plan, item 1 - "fold home_section into openSection()"):
+        home_section is just another section value now, indistinguishable from a real one, to any
+        window with in-place swap support (openSection() - LibraryWindow). Skips if it's the
         section this window already shows (see _ensureSidebarNavState()'s lastSection seeding -
         this replaces library.py's old explicit `section.key == self.section.key` check), playlists
         -> open PlaylistsWindow, else -> opener.sectionClicked(). HomeWindow overrides this entirely
         (preview only, never opens a window).
 
-        is.home is deliberately click-only for now (Home-ControlledWindow rebuild, staged
-        reintroduction of this commit's focus-driven nav): a genuine click always arrives here on
-        threading.main_thread() (Kodi's own onClick() callback); a settled-focus debounce always
-        arrives on the background thread sectionChanged() below spawns (named "sectionchanged").
-        Gating goHome() on main-thread-only keeps ordinary sections reachable by settled focus
-        (this stage's actual test) while leaving "is jumping to Home from a debounce thread safe
-        now that HomeWindow is a ControlledWindow" as a separate, later, independently-tested
-        step - see the plan discussion this branch is built from.
+        The one remaining is.home special case (final elif below) is for windows *without*
+        openSection() - ShowWindow/PrePlayWindow's own independent sidebar (see the plan's "Known
+        interim gaps"/"Descendant windows" note - untouched by this work). Home has no equivalent
+        "open a fresh window for this section" the way ordinary sections do via
+        opener.sectionClicked() (there is no standalone HomeWindow-equivalent to open freshly), so
+        it still needs goHome()'s real, separate-window navigation there. Still click-only (main-
+        thread-gated): goHome() itself still makes a new blocking .modal() call (HOME.show()) - the
+        exact reentrancy-unsafe shape this whole plan exists to eliminate - unrelated to this
+        fold-in and not yet solved for these descendant-sidebar windows specifically.
         """
-        if item.getProperty('is.home'):
-            if threading.current_thread() is not threading.main_thread():
-                return
-            self.goHome()
-            return
-
         section = item.dataSource
         if section == self.lastSection:
             return
@@ -250,7 +247,9 @@ class SidebarMixin():
             self.openSidebarTarget(opener.handleOpen, playlists.PlaylistsWindow)
         elif hasattr(self, 'openSection'):
             # In-place swap (library.py's LibraryWindow.openSection()) - safe to call from any
-            # thread, no new blocking .modal() call. Declines (returns False) rather than acting
+            # thread, no new blocking .modal() call, home_section included (openSection() forces
+            # contentMode to 'recommended' when the target section has no library-grid content at
+            # all - see that method's own comment). Declines (returns False) rather than acting
             # if a descendant window is currently open on top of self - see that method's own
             # docstring. lastSection only advances on an actual swap, so a declined attempt gets
             # retried on the next settled focus/click instead of being silently forgotten.
@@ -266,6 +265,10 @@ class SidebarMixin():
                 if self.openSection(section):
                     self.lastSection = section
             threading.Timer(SKIN_RELOAD_DEFER_SECONDS, _deferredOpenSection).start()
+        elif item.getProperty('is.home'):
+            if threading.current_thread() is not threading.main_thread():
+                return
+            self.goHome()
         else:
             self.lastSection = section
             self.openSidebarTarget(opener.sectionClicked, section)

@@ -679,6 +679,22 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.lastFocusID = None
         self.lastNonOptionsFocusID = None
 
+        if self.section.TYPE == 'mixed':
+            # Sections with no library-grid content at all (home_section, so far the only one -
+            # see its own TYPE comment, home.py) have nothing to show on the 'library' tab -
+            # forcing 'recommended' here, not leaving contentMode whatever it already happened to
+            # be, is what makes folding home_section into this same in-place swap (rather than
+            # goHome()'s separate window) not a regression: without this, landing on Home while
+            # contentMode was still 'library' (the default, and the common case) would show a
+            # permanently empty grid instead of Home's real hub content. Must run before
+            # self.reset() below, which reads self.contentMode to pick VIEWS_RECOMMENDED vs.
+            # VIEWS_POSTER/VIEWS_SQUARE - setting it after would use the stale value for this
+            # swap's own reset() call. Ordinary sections (real library-grid content) are
+            # deliberately left alone here - contentMode carries over from whatever tab the user
+            # was already on, matching existing section-to-section behavior, unchanged by this
+            # fold-in.
+            self.contentMode = 'recommended'
+
         self.librarySettings = LibrarySettings(
             self.section, ignoreLibrarySettings=self.librarySettings.ignoreLibrarySettings)
         self.reset()
@@ -1149,8 +1165,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 mli.setProperty('current', '')
 
     # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
-    # this window's needs exactly (is.home -> goHome(), skip re-opening the already-shown section
-    # via lastSection tracking, playlists -> PlaylistsWindow, else -> opener.sectionClicked()).
+    # this window's needs exactly: home_section is just another section value here (LibraryWindow
+    # has openSection(), so is.home no longer gets any special treatment - see that method's own
+    # is.home-equivalent TYPE == 'mixed' check for how it lands on the right tab), skip re-opening
+    # the already-shown section via lastSection tracking, playlists -> PlaylistsWindow, else ->
+    # opener.sectionClicked().
 
     def displayServerAndUser(self):
         """Sidebar avatar/username and server icon/name. Window properties are
