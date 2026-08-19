@@ -509,6 +509,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.hubSettings = None
         self.sectionHubs = {}
 
+        # Stage D2 (quiet-orbiting-heron.md): rotation-ring/anchor positioning state, ported
+        # from HomeWindow's own __init__ (home.py) - same names, no reason to rename. These are
+        # just safe pre-bind defaults, not meaningful positions - _recommendedHubsCallback()
+        # resets visibleHubs/focusedHubIndex/_anchorRingPos on every fresh bind anyway, matching
+        # HomeWindow._bindAllHubSlots()'s own behavior. _anchorRingPos can't be seeded from
+        # HUB_ROTATION_RING.index(self.HUB_CONTROL_ID) here the way HomeWindow's own __init__
+        # does it - self.HUB_CONTROL_ID only resolves via MultiWindow.__getattr__ delegation to
+        # whichever concrete window self._current currently is, and self._current is still None
+        # this early in construction - so 0 is just a placeholder, always overwritten before
+        # it's ever read for real.
+        self.visibleHubs = []
+        self.focusedHubIndex = 0
+        self._anchorRingPos = 0
+        self._hubSlideGen = 0
+        self._hubSlideMovers = []
+        self._hubSliding = False
+
     def reset(self):
         PlaybackBtnMixin.reset(self)
         util.setGlobalProperty('sort', '')
@@ -698,6 +715,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # Index i always holds control id HUB_CONTROL_ID+i (400-404), same fixed mapping
             # HomeWindow.hubControls uses - no rotation here (deliberately out of scope), so this
             # mapping is also the final one for this swap's whole lifetime.
+
+            # Populates self.hubSettings from the user's already-saved hub visibility/order
+            # preferences (Stage C's ported loadHubSettings(), never called until now) so
+            # _recommendedHubsCallback()'s isHubHidden() filter below has real data to check
+            # against, instead of always seeing "nothing hidden" (self.hubSettings starts None).
+            # Synchronous (a single setting read), fine on the main thread here alongside the
+            # rest of this one-time setup.
+            self.loadHubSettings()
+
             self.hubControls = (
                 kodigui.ManagedControlList(self, self.HUB_CONTROL_ID, 5),
                 kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 1, 3),
@@ -710,7 +736,25 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # tell a stale fetch (a swap landed before it ran) from a current one - same idiom as
             # _chunkCallbackFor()'s _listGeneration snapshot.
             generation = self._listGeneration
-            hubsTask = home.SectionHubsTask().setup(self.section, self._recommendedHubsCallbackFor(generation))
+
+            # SectionHubsTask's 3rd arg (section_keys, passed to the server as section_ids)
+            # restricts which sections' hubs get included in a home_section fetch -
+            # HomeWindow.wantedSections's whole purpose (home.py), built from the same
+            # navSettings-based hidden-section check buildSectionList() above already applies
+            # for its own sidebar list. Leaving this unset (server default: no restriction)
+            # live-confirmed as sections hidden from the sidebar still contributing hub rows -
+            # more rows than the real Home screen shows, one of them empty (a hidden section
+            # with no visible content), which native Kodi list-focus can land geometry on but
+            # not actually focus, needing an extra press to skip past. self.sectionList is
+            # already built by this point (see the branch above) and already filtered the same
+            # way - reused directly rather than re-deriving navSettings here. Real library
+            # section keys are purely numeric strings (same key.isdigit() distinction already
+            # used elsewhere in this file), which naturally excludes the Search/Home/Watchlist/
+            # Playlists/pinned-type entries also in this list.
+            section_keys = [mli.dataSource.key for mli in self.sectionList
+                            if mli.dataSource and mli.dataSource.key and mli.dataSource.key.isdigit()]
+            hubsTask = home.SectionHubsTask().setup(self.section, self._recommendedHubsCallbackFor(generation),
+                                                     section_keys)
             self.tasks.add(hubsTask)
             backgroundthread.BGThreader.addTask(hubsTask)
 
@@ -786,6 +830,22 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     self.setBoolProperty('dragging', self.dragging)
 
             if self.contentMode == 'recommended':
+                # Stage D2 (quiet-orbiting-heron.md): up/down on a hub-row control switches
+                # which hub is logically focused (rotation-ring slide) instead of falling
+                # through to the blanket return below - same interception HomeWindow's own
+                # onAction() does (home.py, `elif 399 < controlID < 500:`). Explicitly re-checks
+                # contentMode == 'recommended' here too (redundant with the outer if, but this
+                # whole branch is exactly the kind of contentMode-independent-handler risk the
+                # plan's "Known interim gaps"/item 9 flagged - control ids 400-404 only exist in
+                # RecommendedWindow's template, so this is defensive, not reachable any other way
+                # today, but cheap insurance against a future control-id collision).
+                controlID = self.getFocusId()
+                if 399 < controlID < 500 and self.contentMode == 'recommended':
+                    action_id = action.getId()
+                    if action_id in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
+                        self._startHubSlide(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
+                        return
+
                 # quiet-orbiting-heron.md Stage B: everything below this point (MOVE_SET,
                 # mouse-drag, context-menu handling) reaches into grid-specific state
                 # (self.showPanelControl, a ManagedControlList still bound to the old library
@@ -795,7 +855,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # crash navigating within the hub lists (MOVE_SET fires on every arrow key) -
                 # unlike onFocus()/onClick()/onReInit()'s equivalent guards, this one was missed
                 # the first time since it's not gated behind a single top-level if/elif. Real
-                # Recommended-tab navigation handling (Stage C/D) replaces this branch.
+                # Recommended-tab navigation handling beyond hub-to-hub vertical moves (horizontal
+                # in-hub navigation, checkHubItem()) stays out of scope for D2 - see the plan's
+                # explicit scope boundaries.
                 return
 
             if action.getId() in MOVE_SET:
@@ -2886,12 +2948,163 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         return self.CREATE_LI_MAP.get(obj.type, self.unhandledHub)(self, obj, wide)
 
     # ------------------------------------------------------------------------------------------
-    # Stage D (quiet-orbiting-heron.md): minimal fetch-and-bind for the Recommended tab. NOT a
-    # port of HomeWindow.sectionHubsCallback()/showHubs()/_showHubs() - deliberately much
-    # smaller: one fetch, one static bind of up to 5 hubs into the 5 physical row controls, no
-    # rotation ring, no staleness/refresh polling, no cross-section blending. See this plan
-    # file's "Next step: Recommended-tab sharing" section for the full scoping rationale.
+    # Stage D2 (quiet-orbiting-heron.md): the rotation-ring/anchor positioning engine, ported
+    # from HomeWindow's own _bindAllHubSlots()/_startHubSlide()/_finishHubSlide()/
+    # _settleHubSlide()/_roleLocalY()/etc. (home.py). Replaces D1's flat, non-rotating static
+    # bind (index i always held hub i, rendered at raw template fallback coordinates) with the
+    # real anchor-centered model: self.focusedHubIndex (which hub is logically focused)
+    # determines which of the 5 physical controls (HUB_ROTATION_RING) plays which ROLE
+    # (anchor/peek-above/peek-below/two-above/two-below), rotating as focus moves rather than
+    # rebinding content on every move - see HUB_ROTATION_RING's own comment below.
+    #
+    # Deliberately NOT a port of showHub()/_showHub() (hero-art/spoiler/cache-clearing logic far
+    # beyond what's needed here - see _bindHubToControl() below), _captureHubPosition()/
+    # self._hubReselectPositions (reselect-position memory - a hub rebound to a different
+    # physical control resets to its first item, not the scroll position it last had), or
+    # _prepareHubSlideHero()/_setNoHeroArt()/_typeHasHeroArt()/updateHeroFrom() (hero-art
+    # background sync - LibraryWindow has no hero-art concept yet at all). See this plan file's
+    # "Next step: Recommended-tab sharing" section (Stage D2) for the full scoping rationale.
     # ------------------------------------------------------------------------------------------
+
+    # Permanent geometric order of the 5 physical controls (see
+    # docs/notes/home-hub-fixed-focus-position-status.md for the full history behind this design
+    # - ported verbatim from HomeWindow.HUB_ROTATION_RING, home.py). Which ROLE (-2 two-above /
+    # -1 peek-above / 0 anchor / +1 peek-below / +2 two-below) a given control id currently plays
+    # rotates as focus moves - tracked by self._anchorRingPos (index into this tuple) - rather
+    # than roles being permanently glued to one control id with content rebound to match every
+    # move. A control that already has correct, already-rendered content for a hub keeps it and
+    # just repositions; only the one control "wrapping around" per move (see _startHubSlide())
+    # ever needs a fresh content bind, and since that control's role is always the extreme (±2),
+    # which is never inside grouplist 50's own clip range regardless of which two controls
+    # currently hold it, that rebind is always safely off-screen, never visible.
+    HUB_ROTATION_RING = (403, 401, 400, 402, 404)
+    # Each ring control's own wrapper control id (script-plex-recommended.xml.tpl groups
+    # 500-504) - fixed, structural, so "moving" a control between roles means repositioning
+    # *its* wrapper, not re-parenting the list control itself. Ported verbatim from
+    # HomeWindow.HUB_WRAPPER_FOR_CONTROL.
+    HUB_WRAPPER_FOR_CONTROL = {400: 500, 401: 501, 402: 502, 403: 503, 404: 504}
+
+    # A row's own real rendered height (template-declared, pre-vscale units), keyed by the same
+    # (display_type, text2lines) values getHubDisplayType()/getHubRenderFlags() already report.
+    # Ported verbatim from HomeWindow.ROW_CONTENT_HEIGHT - see that constant's own comment
+    # (home.py) for the underlying arithmetic.
+    ROW_CONTENT_HEIGHT = {
+        ('poster', False): 429, ('poster', True): 429,
+        ('square', False): 371, ('square', True): 398,
+        ('ar16x9', False): 349, ('ar16x9', True): 376,
+    }
+    # Fixed gap between any two adjacent rows, either direction - used by _roleLocalY()'s
+    # stacking recurrence. Ported verbatim from HomeWindow.ROW_GAP.
+    ROW_GAP = 25
+    # The anchor's own absolute resting position (script-plex-recommended.xml.tpl's group 51,
+    # local y-offset GROUP51_BASELINE_OFFSET below, sitting inside grouplist 50 at its base
+    # posy=135 - 135 + 289 = 424). Ported verbatim from HomeWindow.ANCHOR_ABS_Y; used by
+    # _setRoleGeometry() to size peek-below's clip height to reach exactly to the screen bottom.
+    ANCHOR_ABS_Y = 424
+    # The local y-offset group 51 must always be explicitly set to via setPosition() to sit at
+    # its correct resting position - ported verbatim from HomeWindow.GROUP51_BASELINE_OFFSET.
+    # HomeWindow uses this as the "no hero art" case of _group51RestOffset() (the other case,
+    # has-hero-art, subtracts HUB_SLIDE_CLIP_SHIFT_HERO - not ported here, since D2 has no
+    # hero-art concept and the "no hero art" case - grouplist 50 unshifted at its XML base y=135
+    # - is the template's only reachable state anyway, see script-plex-recommended.xml.tpl's own
+    # Conditional animation on grouplist 50, keyed on no_hero_art, which is never written here so
+    # always evaluates String.IsEmpty(...)=true, i.e. permanently the unshifted case). Set
+    # unconditionally, once per fresh bind, in _recommendedHubsCallback() below - group 51 has no
+    # correct position at all until Python explicitly sets it (see that control's own comment in
+    # the template for why grouplist 50's auto-stacking can't be relied on for this).
+    GROUP51_BASELINE_OFFSET = 289
+    # Hub-switch slide animation step count/total time - ported verbatim from
+    # HomeWindow.HUB_SLIDE_STEPS/HUB_SLIDE_TIME.
+    HUB_SLIDE_STEPS = 24
+    HUB_SLIDE_TIME = 0.15
+
+    def _hubRowHeight(self, hub):
+        """A row's own real rendered height (pre-vscale template units) for whichever hub it's
+        currently showing - used by _roleLocalY()'s stacking recurrence. hub=None (nothing bound
+        at some intermediate offset, e.g. the empty-hubs case) falls back to the tallest real
+        case (poster). Ported from HomeWindow._hubRowHeight() (home.py) - is_home adapted per
+        this file's own convention (self.section.key is None; LibraryWindow has no
+        self.lastSection concept, self.section already is "whatever's currently shown")."""
+        if hub is None:
+            return self.ROW_CONTENT_HEIGHT[('poster', False)]
+        is_home = self.section.key is None
+        identifier = hub.getCleanHubIdentifier(is_home=is_home)
+        display_type = self.getHubDisplayType(hub, identifier)
+        text2lines = self.getHubRenderFlags(hub, identifier)['text2lines']
+        return self.ROW_CONTENT_HEIGHT.get(
+            (display_type, text2lines), self.ROW_CONTENT_HEIGHT[('poster', False)]
+        )
+
+    def _roleLocalY(self, role_offset, focused_index):
+        """The local y-offset (within group 51's frame, pre-vscale template units) whichever
+        control currently plays role_offset (0 = anchor, negative = above it, positive = below
+        it) must sit at. Ported verbatim from HomeWindow._roleLocalY() (home.py) - see that
+        method's own docstring for the full stacking-recurrence reasoning."""
+        if role_offset == 0:
+            return 0
+        step = 1 if role_offset > 0 else -1
+        y = 0
+        for k in range(0, role_offset, step):
+            hub_index = focused_index + (k if step > 0 else k + step)
+            hub = self.visibleHubs[hub_index] if 0 <= hub_index < len(self.visibleHubs) else None
+            y += step * (self._hubRowHeight(hub) + self.ROW_GAP)
+        return y
+
+    def _setRoleGeometry(self, wrapper, role_offset, focused_index):
+        """Position (and, for peek-below, size) wrapper for role_offset - shared by the initial
+        bind (_recommendedHubsCallback()) and _startHubSlide(). Ported verbatim from
+        HomeWindow._setRoleGeometry() (home.py)."""
+        y = self._roleLocalY(role_offset, focused_index)
+        wrapper.setPosition(0, util.vscale(y, r=0))
+        if role_offset == 1:
+            wrapper.setHeight(util.vscale(self.height - self.ANCHOR_ABS_Y - y, r=0))
+        return y
+
+    def _anchorControlId(self):
+        """Whichever physical control (400-404) is currently serving the anchor role. Ported
+        verbatim from HomeWindow._anchorControlId() (home.py)."""
+        return self.HUB_ROTATION_RING[self._anchorRingPos]
+
+    def _ringRoleOffset(self, control_id, ring_pos=None):
+        """control_id's current role-offset (-2 two-above / -1 peek-above / 0 anchor / +1
+        peek-below / +2 two-below) relative to ring_pos (an index into HUB_ROTATION_RING -
+        defaults to the current anchor's own position, self._anchorRingPos, when not given).
+        Ported verbatim from HomeWindow._ringRoleOffset() (home.py)."""
+        if ring_pos is None:
+            ring_pos = self._anchorRingPos
+        ring = self.HUB_ROTATION_RING
+        half = len(ring) // 2
+        return ((ring.index(control_id) - ring_pos + half) % len(ring)) - half
+
+    def _bindHubToControl(self, hub, control_index):
+        """Populate physical hub-row control HUB_CONTROL_ID + control_index with hub's content -
+        the properties/dataSource/items population D1's flat _recommendedHubsCallback() did
+        inline for every control unconditionally, factored out here since both the initial full
+        bind and _startHubSlide()'s wrap-control rebind need to do exactly this for one control
+        at a time. Deliberately NOT HomeWindow.showHub()/_showHub() - those also handle
+        reselect-position restoration and hero-art/spoiler/cache-clearing, all out of scope for
+        D2 (see this block's own header comment)."""
+        is_home = self.section.key is None
+        identifier = hub.getCleanHubIdentifier(is_home=is_home)
+        display_type = self.getHubDisplayType(hub, identifier)
+        flags = self.getHubRenderFlags(hub, identifier)
+        title = hub.__dict__.get('_displayTitle') or hub.title or ''
+
+        # Row title label reads $INFO[Window.Property(hub.{{ id - 100 }})] (id 500-504, so
+        # property name is hub.400 .. hub.404) - same property name/format
+        # HomeWindow._showHub() sets (home.py). hub.display.4NN drives which of
+        # hub_itemlayout_{poster,square,ar16x9}.xml.tpl actually renders each item - without it
+        # every itemlayout's <itemlayout condition="..."> is false and the list shows no visible
+        # content even with items bound.
+        self.setProperty('hub.display.4{0:02d}'.format(control_index), display_type)
+        self.setProperty('hub.4{0:02d}'.format(control_index), title)
+        self.setProperty('hub.text2lines.4{0:02d}'.format(control_index), flags['text2lines'] and '1' or '')
+
+        control = self.hubControls[control_index]
+        control.dataSource = hub
+        items = [mli for mli in
+                (self.createListItem(obj, wide=flags['with_art']) for obj in hub.items) if mli]
+        control.replaceItems(items)
 
     def _recommendedHubsCallbackFor(self, generation):
         """Wraps _recommendedHubsCallback() with the _listGeneration snapshot taken when the
@@ -2918,6 +3131,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         every other place in this file that touches control state from a background thread
         (_chunkCallback()) does so through a control object already built on the main thread,
         not one built fresh off-thread. Followed here for the same reason, not reinvented.
+
+        Stage D2: this is the only place a fresh 'recommended' bind ever happens (fired exactly
+        once per swap, see onFirstInit()'s own comment) - the anchor-centered role-based bind
+        (HomeWindow._bindAllHubSlots()'s own shape, home.py) replaces D1's flat per-index bind.
+        Always resets self.focusedHubIndex/self._anchorRingPos to their canonical start, same as
+        _bindAllHubSlots() - a fresh bind has no "sticky" rotation state to preserve.
         """
         def stale():
             return (generation != self._listGeneration or self.closing
@@ -2935,43 +3154,259 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 return
 
             is_home = section.key is None
-            sorted_hubs = self.sortHubsByUserOrder(hubs, is_home=is_home, section_key=section.key)
+            # A hub can be returned by the server with zero current items (e.g. a personalized/
+            # dynamic hub with nothing to show right now) - same filter PinnedTypeHubsTask.run()
+            # (home.py) already applies for the same reason. Left in, such a hub would still
+            # occupy a role slot in the rotation (the geometry math below has no item-count
+            # check), so its control would have a real position but zero bound ListItems -
+            # live-confirmed as "Control 403 ... has been asked to focus, but it can't" (the
+            # wrapper's own <visible> is gated on Container(...).NumItems>0, so an empty-but-
+            # positioned row can never actually be focused, needing an extra press to skip past).
+            #
+            # isHubHidden() applies the user's own saved hub visibility preferences (Stage C's
+            # ported method, self.hubSettings now populated by onFirstInit()'s loadHubSettings()
+            # call) - same filter HomeWindow._showHubs() applies (home.py, right next to its own
+            # "skip hubs with no content" check this mirrors). Without it, a hub the user has
+            # explicitly hidden from their real Home screen still showed up here - live-confirmed
+            # (pinnedContentDirectoryID is identical between HomeWindow's own requests and this
+            # one, so the fetch itself was never the difference; the missing filter was).
+            sorted_hubs = [hub for hub in self.sortHubsByUserOrder(hubs, is_home=is_home, section_key=section.key)
+                          if hub.items and not self.isHubHidden(hub.getCleanHubIdentifier(is_home=is_home), section.key)]
             self.sectionHubs[section.key] = sorted_hubs
+            self.visibleHubs = sorted_hubs
+            self.focusedHubIndex = 0
+            self._anchorRingPos = self.HUB_ROTATION_RING.index(self.HUB_CONTROL_ID)
 
-            for index, control in enumerate(self.hubControls):
-                if index >= len(sorted_hubs):
-                    # Fewer than 5 hubs: leave this row's list control empty. The template's own
-                    # wrapper visibility (script-plex-recommended.xml.tpl, groups 500-504) is
-                    # gated on Container({{ id - 100 }}).NumItems > 0, so an empty control already
-                    # hides its row without any Python-side visibility handling - verified against
-                    # the template, not assumed.
-                    control.reset()
+            # Group 51 has no correct position at all until this is set explicitly - see
+            # GROUP51_BASELINE_OFFSET's own comment above. Unconditional, every fresh bind (this
+            # only ever runs once per swap into 'recommended', so this is also the one-time
+            # "corrected the instant onFirstInit's own first bind runs" moment HomeWindow's
+            # template comment describes for its own equivalent control).
+            g51 = self.getControl(51)
+            g51.setPosition(g51.getPosition()[0], util.vscale(self.GROUP51_BASELINE_OFFSET, r=0))
+
+            # Must be set explicitly, not left unwritten: script-plex-recommended.xml.tpl's
+            # grouplist 50 has <animation ... end="0,321" condition="String.IsEmpty(Window.
+            # Property(no_hero_art))">Conditional</animation> - the shift-down-by-321 applies
+            # while the condition is TRUE. A property that's never been written at all reads as
+            # empty in Kodi, same as explicitly set to '' - which matches has-hero-art's *empty*
+            # state (setBoolProperty(..., False) writes ''), not no-hero-art's '1'. Leaving this
+            # unwritten therefore defaults into the shifted-down (has hero art) position, not the
+            # unshifted base one D2 actually wants (no hero-art support exists yet) - live-
+            # confirmed as content rendering ~321px too low on screen otherwise.
+            self.setBoolProperty('no_hero_art', True)
+
+            if not sorted_hubs:
+                for index in range(len(self.hubControls)):
+                    self.hubControls[index].reset()
                     self.setProperty('hub.display.4{0:02d}'.format(index), '')
+                self.setBoolProperty('hub.has_prev', False)
+                self.setBoolProperty('hub.has_next', False)
+                self.setProperty('hub.anchor_id', str(self._anchorControlId()))
+                for control_id in self.HUB_ROTATION_RING:
+                    role = self._ringRoleOffset(control_id)
+                    wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
+                    self._setRoleGeometry(wrapper, role, self.focusedHubIndex)
+                util.DEBUG_LOG("Library: _recommendedHubsCallback() bound 0 hubs for {0}", section.key)
+                return
+
+            self.setProperty('hub.anchor_id', str(self._anchorControlId()))
+
+            # Anchor (role 0) first, same order _bindAllHubSlots() uses - no hero-art background
+            # to seed here (that's the actual reason HomeWindow orders it this way), but kept for
+            # shape-fidelity with the ported original rather than reordering without a reason to.
+            for control_id in sorted(self.HUB_ROTATION_RING, key=lambda cid: abs(self._ringRoleOffset(cid))):
+                role = self._ringRoleOffset(control_id)
+                index = control_id - self.HUB_CONTROL_ID
+                wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
+                self._setRoleGeometry(wrapper, role, self.focusedHubIndex)
+
+                hub_index = self.focusedHubIndex + role
+                if not (0 <= hub_index < len(sorted_hubs)):
+                    self.hubControls[index].reset()
+                    self.setProperty('hub.display.4{0:02d}'.format(index), '')
+                    if role == -1:
+                        self.setBoolProperty('hub.has_prev', False)
+                    elif role == 1:
+                        self.setBoolProperty('hub.has_next', False)
                     continue
 
-                hub = sorted_hubs[index]
-                identifier = hub.getCleanHubIdentifier(is_home=is_home)
-                display_type = self.getHubDisplayType(hub, identifier)
-                flags = self.getHubRenderFlags(hub, identifier)
-                title = hub.__dict__.get('_displayTitle') or hub.title or ''
+                self._bindHubToControl(sorted_hubs[hub_index], index)
+                if role == -1:
+                    self.setBoolProperty('hub.has_prev', True)
+                elif role == 1:
+                    self.setBoolProperty('hub.has_next', True)
 
-                # Row title label reads $INFO[Window.Property(hub.{{ id - 100 }})] (id 500-504,
-                # so property name is hub.400 .. hub.404) - same property name/format
-                # HomeWindow._showHub() sets (home.py). hub.display.4NN drives which of
-                # hub_itemlayout_{poster,square,ar16x9}.xml.tpl actually renders each item -
-                # without it every itemlayout's <itemlayout condition="..."> is false and the
-                # list shows no visible content even with items bound.
-                self.setProperty('hub.display.4{0:02d}'.format(index), display_type)
-                self.setProperty('hub.4{0:02d}'.format(index), title)
-                self.setProperty('hub.text2lines.4{0:02d}'.format(index), flags['text2lines'] and '1' or '')
+            util.DEBUG_LOG("Library: _recommendedHubsCallback() bound {0} hub(s) for {1}, anchor={2}",
+                           min(len(sorted_hubs), len(self.hubControls)), section.key,
+                           self._anchorControlId())
 
-                control.dataSource = hub
-                items = [mli for mli in
-                        (self.createListItem(obj, wide=flags['with_art']) for obj in hub.items) if mli]
-                control.replaceItems(items)
+    def _startHubSlide(self, delta):
+        """Move the logical focus delta positions (+1 down / -1 up) and animate the transition.
+        No-ops at the top/bottom of the hub stack. Ported from HomeWindow._startHubSlide()
+        (home.py) - see that method's own docstring for the full rotation-ring reasoning (content
+        stays glued to whichever control it's already bound to; ROLE rotates instead; exactly one
+        control - the ring's extreme opposite the direction of travel - "wraps around" and needs
+        a fresh content bind, always safely off-screen).
 
-            util.DEBUG_LOG("Library: _recommendedHubsCallback() bound {0} hub(s) for {1}",
-                           min(len(sorted_hubs), len(self.hubControls)), section.key)
+        Deliberately drops _captureHubPosition()/self._hubReselectPositions (reselect-position
+        memory) and _prepareHubSlideHero() (hero-art sync) entirely - not stubbed, just not
+        called, same scope boundary as _recommendedHubsCallback()/_bindHubToControl() above.
+        Calls self._bindHubToControl() for the wrap control's fresh bind instead of
+        HomeWindow.showHub().
+
+        Staleness guard (Stage D2 addition, no HomeWindow equivalent needed - HomeWindow is a
+        single persistent window, never swapped out from under its own background thread): snap-
+        shots self._listGeneration (list_gen) here, at the moment this move is still definitely
+        valid, alongside the usual self._hubSlideGen repeat-press-cancellation snapshot. The
+        background animation loop below checks both, plus self.closing (the whole session
+        ending), before every setPosition() call - NOT self._closing (no leading underscore vs.
+        with - self.closing is LibraryWindow's own instance attribute for "session ending";
+        self._closing doesn't exist on LibraryWindow itself and resolves, via
+        MultiWindow.__getattr__, to whichever concrete window self._current currently *is* at
+        the moment it's read - after a mid-slide swap away from 'recommended', that's a fresh,
+        just-opened window with _closing=False, not the 'recommended' window this slide actually
+        belongs to. This is exactly the same delegation trap the plan's "Known interim gaps" bug
+        (3) already found and fixed for _scheduleBackgroundStaticSync() - self._listGeneration
+        (bumped synchronously by switchTab()/openSection() before they close anything) is the
+        correct, non-delegated signal for "a swap happened out from under this", same idiom
+        _chunkCallbackFor()/_recommendedHubsCallbackFor() already use.
+        """
+        if not self.visibleHubs:
+            return
+        new_index = self.focusedHubIndex + delta
+        if not (0 <= new_index < len(self.visibleHubs)):
+            return
+
+        list_gen = self._listGeneration
+
+        # Finish any still-running slide from a fast preceding press first, so this transition
+        # always starts from a settled, consistent state instead of fighting or compounding with
+        # one already in flight.
+        self._settleHubSlide()
+
+        old_focused_index = self.focusedHubIndex
+        self.focusedHubIndex = new_index
+
+        old_ring_pos = self._anchorRingPos
+        new_ring_pos = (old_ring_pos + delta) % len(self.HUB_ROTATION_RING)
+        self._anchorRingPos = new_ring_pos
+        self.setProperty('hub.anchor_id', str(self._anchorControlId()))
+
+        # The one control wrapping around: currently at the extreme role opposite the direction
+        # of travel - its data isn't valid for any role in the new arrangement, so it needs a
+        # fresh content bind and a position snap to its new role. Done synchronously,
+        # immediately - see this method's own docstring for why its old and new roles (both
+        # ±half, the ring's own extremes) are never inside grouplist 50's clip regardless of
+        # which controls currently hold them, so there's nothing to collide with.
+        half = len(self.HUB_ROTATION_RING) // 2
+        wrap_role = -half if delta > 0 else half
+        wrap_control_id = next(cid for cid in self.HUB_ROTATION_RING
+                                if self._ringRoleOffset(cid, ring_pos=old_ring_pos) == wrap_role)
+        wrap_new_role = -wrap_role
+        wrap_index = wrap_control_id - self.HUB_CONTROL_ID
+        wrap_wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[wrap_control_id])
+        self._setRoleGeometry(wrap_wrapper, wrap_new_role, new_index)
+
+        wrap_hub_index = new_index + wrap_new_role
+        wrap_hub_exists = 0 <= wrap_hub_index < len(self.visibleHubs)
+        if wrap_hub_exists:
+            self._bindHubToControl(self.visibleHubs[wrap_hub_index], wrap_index)
+        else:
+            self.hubControls[wrap_index].reset()
+            self.setProperty('hub.display.4{0:02d}'.format(wrap_index), '')
+        # No hub.has_prev/has_next update here - the wrap control's new role is always ±half (±2
+        # for this 5-ring), never ±1, so it never owns that state; whichever mover below lands on
+        # ±1 does.
+
+        # The other 4 controls: reposition smoothly over the animation loop below, content
+        # untouched (already correct for their new role - see this method's own docstring).
+        movers = []
+        for cid in self.HUB_ROTATION_RING:
+            if cid == wrap_control_id:
+                continue
+            old_role = self._ringRoleOffset(cid, ring_pos=old_ring_pos)
+            new_role = self._ringRoleOffset(cid, ring_pos=new_ring_pos)
+            start_y = self._roleLocalY(old_role, old_focused_index)
+            end_y = self._roleLocalY(new_role, new_index)
+            wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[cid])
+            if new_role == 1:
+                wrapper.setHeight(util.vscale(self.height - self.ANCHOR_ABS_Y - end_y, r=0))
+                self.setBoolProperty('hub.has_next', True)
+            elif new_role == -1:
+                self.setBoolProperty('hub.has_prev', True)
+            movers.append((wrapper, start_y, end_y))
+
+        self._hubSlideMovers = movers
+
+        if self.closing or self._listGeneration != list_gen:
+            # No animation thread will run to land these at end_y - snap directly, matching what
+            # the loop's own tail does, so nothing is left mid-transition. self.closing (not
+            # self._closing - see this method's own docstring) is the real "tearing down for
+            # real" signal here; self._listGeneration != list_gen would mean a swap already
+            # landed between the checks above and here, on the same synchronous call - not
+            # expected (nothing yields control in between), but cheap to also cover.
+            for wrapper, start_y, end_y in movers:
+                wrapper.setPosition(0, util.vscale(end_y, r=0))
+            self._hubSlideMovers = []
+            self._finishHubSlide()
+            return
+
+        self.setBoolProperty('hub.sliding', True)
+        self._hubSliding = True
+        self._hubSlideGen += 1
+        gen = self._hubSlideGen
+        steps = self.HUB_SLIDE_STEPS
+        step_time = self.HUB_SLIDE_TIME / float(steps)
+
+        def run():
+            for i in range(1, steps + 1):
+                if self.closing or self._hubSlideGen != gen or self._listGeneration != list_gen:
+                    return
+                t = i / float(steps)
+                eased = t * t * (3 - 2 * t)  # smoothstep - approximates the old sine inout tween
+                for wrapper, start_y, end_y in movers:
+                    raw = int(round(start_y + (end_y - start_y) * eased))
+                    wrapper.setPosition(0, util.vscale(raw, r=0))
+                if util.MONITOR.waitFor(step_time):
+                    return
+            if self.closing or self._hubSlideGen != gen or self._listGeneration != list_gen:
+                return
+            for wrapper, start_y, end_y in movers:
+                wrapper.setPosition(0, util.vscale(end_y, r=0))
+            self._hubSlideMovers = []
+            self._finishHubSlide()
+
+        threading.Thread(target=run, name='hubslide').start()
+
+    def _finishHubSlide(self):
+        """Slide-completion - deliberately NOT a full _recommendedHubsCallback() rebuild (that
+        would rebind all 5 controls' content unconditionally, defeating the ring design's whole
+        point). Both the wrap control and the movers' content/position are already fully
+        handled, synchronously, by _startHubSlide() itself - this just clears hub.sliding
+        (re-showing the anchor's own title label) and moves native Kodi focus to whichever
+        control the ring now says is the anchor. Ported from HomeWindow._finishHubSlide()
+        (home.py), minus its checkHubItem(anchor_id) call - horizontal in-hub navigation/
+        reselect-preview is out of scope for D2."""
+        self.setBoolProperty('hub.sliding', False)
+        self._hubSliding = False
+        anchor_id = self._anchorControlId()
+        if self.getFocusId() != anchor_id:
+            self.setFocusId(anchor_id)
+
+    def _settleHubSlide(self):
+        """If a hub-slide animation is currently in flight, snap it straight to completion
+        instead of leaving it to finish on its own background thread. Bumps _hubSlideGen first
+        so that thread's own next gen-check (whether mid-sleep or mid-loop) sees the mismatch and
+        exits without touching state itself - this method becomes the sole place that finishes
+        it. Ported verbatim from HomeWindow._settleHubSlide() (home.py)."""
+        if not self._hubSliding:
+            return
+        self._hubSlideGen += 1
+        for wrapper, start_y, end_y in self._hubSlideMovers:
+            wrapper.setPosition(0, util.vscale(end_y, r=0))
+        self._hubSlideMovers = []
+        self._finishHubSlide()
 
 
 class PostersWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
