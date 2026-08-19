@@ -466,6 +466,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.section = kwargs.get('section')
         self.filter = kwargs.get('filter_')
         self.subDir = kwargs.get('subDir')
+        # 'library' (poster/grid, default) or 'recommended' (hubs) - a second swap dimension
+        # alongside view-type (panel/panel2/.../list), not a replacement for it. See
+        # quiet-orbiting-heron.md's Stage A/B/C/D breakdown for Recommended-tab sharing.
+        self.contentMode = kwargs.get('content_mode', 'library')
         self.keyItems = {}
         self.firstOfKeyItems = {}
         self.tasks = backgroundthread.Tasks()
@@ -522,12 +526,51 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             key = self.section.getLibrarySectionId()
         viewtype = util.getSetting('viewtype.{0}.{1}'.format(self.section.server.uuid, key))
 
-        if self.section.TYPE in ('artist', 'photo', 'photodirectory'):
+        if self.contentMode == 'recommended':
+            self.setWindows(VIEWS_RECOMMENDED.get('all'))
+            self.setDefault(VIEWS_RECOMMENDED.get('panel'))
+        elif self.section.TYPE in ('artist', 'photo', 'photodirectory'):
             self.setWindows(VIEWS_SQUARE.get('all'))
             self.setDefault(VIEWS_SQUARE.get(viewtype))
         else:
             self.setWindows(VIEWS_POSTER.get('all'))
             self.setDefault(VIEWS_POSTER.get(viewtype))
+
+    def switchTab(self, mode):
+        """Swap this already-open window between content modes ('library' grid vs.
+        'recommended' hubs) in place, the same construct-fresh-via-_open()'s-loop pattern
+        openSection() already uses for section swaps - see that method's own docstring for why
+        in-place mutation, not a fresh object, is the safe shape here.
+        """
+        try:
+            isCurrent = self.is_current_window
+        except AttributeError:
+            isCurrent = False
+
+        if not isCurrent:
+            util.DEBUG_LOG("Library: switchTab() declined - {0} not current window (descendant open, or closing)", self)
+            return False
+
+        if mode == self.contentMode:
+            return False
+
+        self.tasks.kill()
+        self._listGeneration += 1
+        # Also invalidate any in-flight _scheduleBackgroundStaticSync() timer (kodigui.py): its
+        # own guard checks self._closing, which on a MultiWindow-hosted object like this one
+        # always delegates live to whatever self._current currently is, not a snapshot of the
+        # window it was actually scheduled for - never true right after a swap to something
+        # fresh. Live-confirmed as "Window id does not exist" otherwise. _bgSyncGen doesn't
+        # suffer the same delegation issue (see that method's own comment for why), but nothing
+        # else bumps it on a content-mode/section swap that isn't itself a background change.
+        self._bgSyncGen += 1
+        self.contentMode = mode
+        self.reset()
+        self.refill = True
+
+        util.DEBUG_LOG("Library: switchTab() swapping in place to {0}", mode)
+        self._current.doClose()
+        return True
 
     def openSection(self, section, filter_=None):
         """Swap this already-open window to a different section in place, reusing the same
@@ -567,6 +610,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # showPanelControl/mli.dataSource before this swap can detect the invalidation the moment
         # it actually happens, not only once _open()'s loop gets back around to rebuilding.
         self._listGeneration += 1
+        # Also invalidate any in-flight _scheduleBackgroundStaticSync() timer (kodigui.py) -
+        # see switchTab()'s identical line for why self._closing alone doesn't catch this.
+        self._bgSyncGen += 1
 
         self.section = section
         self.filter = filter_
@@ -629,7 +675,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.sectionList.newControl(self)
 
-        if self.showPanelControl and not self.refill:
+        if self.contentMode == 'recommended':
+            # quiet-orbiting-heron.md Stage B: RecommendedWindow has none of the poster-grid
+            # controls (POSTERS_PANEL_ID/KEY_LIST_ID) doRefill() below binds against - real
+            # Recommended-tab rendering (Stage C/D) replaces this branch entirely, it doesn't
+            # call doRefill() at all.
+            self.refill = False
+            self.setBoolProperty("initialized", True)
+        elif self.showPanelControl and not self.refill:
             self.showPanelControl.newControl(self)
             self.keyListControl.newControl(self)
             self.showPanelControl.selectItem(0)
@@ -677,13 +730,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.setFocusId(self.POSTERS_PANEL_ID)
 
     def onReInit(self):
-        if self.refill:
+        if self.refill and self.contentMode != 'recommended':
             self.doRefill()
         if player.PLAYER.bgmPlaying:
             player.PLAYER.stopAndWait(fade=util.addonSettings.themeMusicFade, deferred=True)
 
     def onAction(self, action):
         try:
+            # TEMP DEBUG - quiet-orbiting-heron.md Stage A: manual trigger (Info/'i') for
+            # LibraryWindow.switchTab(), independent of any real tab UI (Stage B). Remove once
+            # a real tab control supersedes this.
+            if action == xbmcgui.ACTION_SHOW_INFO:
+                self.switchTab('recommended' if self.contentMode == 'library' else 'library')
+                return
+
             if self.getFocusId() == self.SECTION_LIST_ID:
                 self.checkSectionItem(action=action)
 
@@ -691,6 +751,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 if not action == xbmcgui.ACTION_MOUSE_DRAG:
                     self.dragging = False
                     self.setBoolProperty('dragging', self.dragging)
+
+            if self.contentMode == 'recommended':
+                # quiet-orbiting-heron.md Stage B: everything below this point (MOVE_SET,
+                # mouse-drag, context-menu handling) reaches into grid-specific state
+                # (self.showPanelControl, a ManagedControlList still bound to the old library
+                # window's control 101) unconditionally - RecommendedWindow's template has no
+                # such control at all, and self.showPanelControl is stale (switchTab() doesn't
+                # clear it, just leaves it unused). Live-confirmed as a native use-after-free
+                # crash navigating within the hub lists (MOVE_SET fires on every arrow key) -
+                # unlike onFocus()/onClick()/onReInit()'s equivalent guards, this one was missed
+                # the first time since it's not gated behind a single top-level if/elif. Real
+                # Recommended-tab navigation handling (Stage C/D) replaces this branch.
+                return
 
             if action.getId() in MOVE_SET:
                 mli = self.showPanelControl.getSelectedItem()
@@ -745,7 +818,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def onClick(self, controlID):
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
-        elif controlID == self.POSTERS_PANEL_ID:
+            return
+
+        if self.contentMode == 'recommended':
+            # quiet-orbiting-heron.md Stage B: RecommendedWindow has none of the grid controls
+            # (POSTERS_PANEL_ID/KEY_LIST_ID/etc.) the elif chain below unconditionally checks
+            # against - live-confirmed as an AttributeError otherwise. Real Recommended-tab
+            # click handling (Stage C/D) replaces this branch.
+            return
+
+        if controlID == self.POSTERS_PANEL_ID:
             self.showPanelClicked()
         elif controlID == self.KEY_LIST_ID:
             self.keyClicked()
@@ -881,6 +963,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         if controlID == self.SECTION_LIST_ID:
             self.checkSectionItem()
+
+        if self.contentMode == 'recommended':
+            # quiet-orbiting-heron.md Stage B: RecommendedWindow has no KEY_LIST_ID (or any
+            # other grid control) - live-confirmed as an AttributeError otherwise, since this
+            # runs on every focus change, not just KEY_LIST_ID's own. Real Recommended-tab focus
+            # handling (Stage C/D) replaces this branch.
+            return
 
         if controlID == self.KEY_LIST_ID:
             self.selectKey()
@@ -1877,12 +1966,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if not keep_focus:
             self.setFocusId(self.POSTERS_PANEL_ID)
 
+        generation = self._listGeneration
         tasks = []
         for startChunkPosition in range(0, totalSize, self.CHUNK_SIZE):
             tasks.append(
                 ChunkRequestTask().setup(
-                    self.section, startChunkPosition, self.CHUNK_SIZE, self._chunkCallback, filter_=self.getFilterOpts(),
-                    sort=self.getSortOpts(), subDir=self.subDir, bool_filters=bool_filters
+                    self.section, startChunkPosition, self.CHUNK_SIZE, self._chunkCallbackFor(generation),
+                    filter_=self.getFilterOpts(), sort=self.getSortOpts(), subDir=self.subDir, bool_filters=bool_filters
                 )
             )
 
@@ -2044,7 +2134,27 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.lock.release()
             break
 
-    def _chunkCallback(self, items, start):
+    def _chunkCallbackFor(self, generation):
+        """Wraps _chunkCallback() with the _listGeneration snapshot taken when the chunk fetch
+        was scheduled, so a chunk that finishes after an openSection()/switchTab() in-place swap
+        (bumps _listGeneration immediately, but self.tasks.kill() can't preempt a fetch that's
+        already past its own isCanceled() check and mid-callback) gets recognized as stale and
+        discarded, instead of writing into/setting background properties on a window that's
+        moved on - live-confirmed as "Window id does not exist" errors otherwise (the swap's
+        new/closing window not having a valid native id at that exact moment). self.closing
+        (checked below) only covers the whole LibraryWindow session ending, not an in-place
+        swap - this is the missing check for that case specifically.
+        """
+        def callback(items, start):
+            self._chunkCallback(items, start, generation)
+        return callback
+
+    def _chunkCallback(self, items, start, generation=None):
+        if generation is not None and generation != self._listGeneration:
+            util.DEBUG_LOG("Library: _chunkCallback() declined - stale generation ({0} != {1})",
+                           generation, self._listGeneration)
+            return
+
         if not self.showPanelControl or not items or self.closing:
             return
 
@@ -2203,8 +2313,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # Keep track of the chunks we've already fetched by storing the chunk's starting position
             self.alreadyFetchedChunkList.add(startChunkPosition)
             task = ChunkRequestTask().setup(self.section, startChunkPosition, self.CHUNK_SIZE,
-                                            self._chunkCallback, filter_=self.getFilterOpts(), sort=self.getSortOpts(),
-                                            subDir=self.subDir, bool_filters=self.boolFilters)
+                                            self._chunkCallbackFor(self._listGeneration), filter_=self.getFilterOpts(),
+                                            sort=self.getSortOpts(), subDir=self.subDir, bool_filters=self.boolFilters)
 
             self.tasks.add(task)
             backgroundthread.BGThreader.addTasksToFront([task])
@@ -2301,4 +2411,31 @@ VIEWS_SQUARE = {
     'panel': SquaresWindow,
     'list': ListViewSquareWindow,
     'all': (SquaresWindow, ListViewSquareWindow)
+}
+
+
+class RecommendedWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
+    # Stage B (quiet-orbiting-heron.md, Recommended-tab sharing) - real template (near-verbatim
+    # copy of script-plex-home.xml.tpl's hub row stack + hero-info overlay), no Python-side
+    # hub-fetch/rendering logic wired to it yet (Stage C/D). Renders as an empty hub area until
+    # then - every Container(...)/Window.Property(...) reference in the template evaluates
+    # empty/false with nothing populating them.
+    xmlFile = 'script-plex-recommended.xml'
+    path = util.ADDON.getAddonInfo('path')
+    theme = 'Main'
+    res = '1080i'
+    width = 1920
+    height = 1080
+
+    # Matches script-plex-home.xml.tpl's own control ids - not yet read by any Python logic
+    # here (Stage C/D's job), declared now so Stage C/D wiring has them ready.
+    PLAYER_STATUS_BUTTON_ID = 204
+    HUB_CONTROL_ID = 400
+
+    MULTI_WINDOW_ID = 0
+
+
+VIEWS_RECOMMENDED = {
+    'panel': RecommendedWindow,
+    'all': (RecommendedWindow,)
 }

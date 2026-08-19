@@ -456,6 +456,15 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         force = kw.get('force', True)
         plexapp.util.APP.off('close.windows', self.onCloseSignal)
         util.DEBUG_LOG("{}: doClose called, force: {}", self.__class__.__name__, force)
+        if self._closing:
+            # Already told to close - self.close() (native) is not safe to call twice on the
+            # same window; the old `if not self.isOpen and not force` guard below only protected
+            # non-force callers, but force=True is the default every caller actually uses, so it
+            # never applied in practice. Found live: openSection()/switchTab() (library.py) can
+            # both be triggered a second time before _open()'s loop (kodigui.py) has caught up
+            # and reassigned self._current to a new object - a native crash with no Python
+            # exception to show for it, since self.close() failing isn't Python-catchable.
+            return
         if not self.isOpen and not force:
             return
         self._closing = True
