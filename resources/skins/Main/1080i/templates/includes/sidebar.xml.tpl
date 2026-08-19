@@ -99,25 +99,27 @@
              The pitch change below does almost all the work here, not this. -->
         <posy>{{ vscale(118) }}</posy>
         <width>300</width>
-        <!-- height=792 (9 items x 88), not 860: matches the real content height under the new pitch
-             below - cosmetic, 860 wasn't causing any visible problem, just more slack than needed. -->
-        <height>{{ vscale(792) }}</height>
+        <!-- height=880 (10 items x 88): raised from 792 (9 items) to fit a 10th sidebar entry - the
+             hard ceiling before overlapping the server button (id 201, posy=1009) is 1009-118=891 (this
+             list's own posy is 118), so 880 leaves 11px of margin, no pitch/icon shrink needed. -->
+        <height>{{ vscale(880) }}</height>
         <onright>50</onright>
         <onup>202</onup>
         <ondown>201</ondown>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
         <focusposition>3</focusposition>
-        <!-- movement=5, not 6: fixedlist's own cursor math is maxCursor = min(focusposition + movement,
-             itemsPerPage) (Kodi's GUIFixedListContainer::GetCursorRange), but valid row slots only run
-             0..itemsPerPage-1 - with itemsPerPage=9 (792/88) and movement=6, maxCursor lands on 9, one
-             past the last real slot. SelectItem() then pins the last item's cursor at that invalid slot
-             9 instead of clamping to 8, which renders it below the control's own clip rect - invisible,
-             not scrolled into view. Confirmed against Kodi's actual C++ source, not guessed. Never
-             surfaced before because every section list this sidebar has shipped with so far topped out
-             at 9 items - exactly the itemsPerPage this list was tuned for - so the 10th-item overflow
-             path never ran. movement=5 caps maxCursor at 8 (itemsPerPage-1), the last valid slot. -->
-        <movement>5</movement>
+        <!-- movement=6, not higher: fixedlist's own cursor math is maxCursor = min(focusposition +
+             movement, itemsPerPage) (Kodi's GUIFixedListContainer::GetCursorRange), but valid row slots
+             only run 0..itemsPerPage-1 - with itemsPerPage now 10 (880/88) and movement=7, maxCursor
+             would land on 10, one past the last real slot. SelectItem() then pins an 11th+ item's cursor
+             at that invalid slot instead of clamping to 9, which renders it below the control's own clip
+             rect - invisible, not scrolled into view. Confirmed against Kodi's actual C++ source, not
+             guessed - re-derived here from itemsPerPage=9/movement=5's identical reasoning when this
+             list only fit 9 items; re-verify this same math again if itemsPerPage ever changes further
+             (e.g. an 11th+ sidebar entry needing this list to scroll instead of grow). movement=6 caps
+             maxCursor at 9 (itemsPerPage-1), the last valid slot. -->
+        <movement>6</movement>
         <pagecontrol>0</pagecontrol>
         <!-- SIDEBAR ITEM LAYOUT (unfocused list) -->
         <!-- height=88, not 72: measured against official Plex, icon-to-icon pitch is a very consistent
