@@ -4,6 +4,7 @@ import json
 import os
 import random
 import threading
+import time
 
 import plexnet
 import six
@@ -24,6 +25,7 @@ from lib import player
 from lib import util
 from lib import shuffle
 from lib.util import T
+from . import background
 from . import busy
 from . import dropdown
 from . import home
@@ -545,6 +547,29 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.contentMode = self.librarySettings.getContentMode() or self.contentMode
 
+        # Session-lifecycle surface (quiet-orbiting-heron.md's Cold Start + windowutils.HOME
+        # migration plan) - ported from HomeWindow, which owns all of this today. closeOption is
+        # read by main.py's outer loop once this window's session ends (quit/exit/restart/update/
+        # recompile/sign-out/switch/etc. - see shutdown()/closeWRecompileTpls() below for the
+        # methods that set it). _shuttingDown is read directly, unguarded, by player.py's
+        # playQueueCallback() and checked by SidebarMixin's own sectionChanged()/_sectionChanged()
+        # - must exist before anything else can run, not just before shutdown() is ever called.
+        # go_root/_goRootHoldUntil are consumed by onReInit()/onAction()/onFocus() below - see
+        # those for the full mechanism, ported from HomeWindow's own go_root handling.
+        self.closeOption = None
+        self._shuttingDown = False
+        self.go_root = False
+        self._goRootHoldUntil = 0
+        # One-shot: onFirstInit() below clears the cold-start busy spinner (background.setBusy())
+        # the moment the first real content is confirmed showing, same timing main.py's old
+        # create()+waitForOpen() two-step gave HomeWindow - but only once, not on every later
+        # section/tab swap's own onFirstInit() re-entry (self._openBaseWinID stays set for this
+        # instance's whole life, this flag doesn't).
+        self._coldStartSignaled = False
+        # Reentrancy guard for the exit-confirmation dialog (onAction()'s NAV_BACK handling,
+        # confirmExit() below) - ported from HomeWindow's identical guard (home.py).
+        self._checkingForExit = False
+
         self.reset()
 
         self.lock = threading.Lock()
@@ -592,6 +617,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # content-mode swap, but the ManagedControlList/its items persist across that via
         # newControl(), same as the sidebar's own list does.
         self.tabList = None
+
+    def onColdStart(self):
+        """Called once, only when this construction is the app's top-level, session-owning window
+        (MultiWindow.open()'s base_win_id contract - see main.py's cold-start call, Stage 2 of
+        quiet-orbiting-heron.md's Cold Start plan). Mirrors HomeWindow.__init__'s own identical
+        self-registration (home.py) - other modules resolve this window via windowutils.HOME
+        (main.py, monitor.py, player.py, mixins/tasks.py, kodigui.py's recompile-recovery path,
+        windowutils.py's own GoHomeMixin/shutdownHome()). Deliberately NOT done unconditionally in
+        __init__: opener.handleOpen()'s ordinary sidebar-navigation path constructs/discards many
+        short-lived LibraryWindow instances per session (entering any library section from
+        outside), and stomping the real singleton on every one of those would break every other
+        module's windowutils.HOME reference the moment the user left the section again.
+        """
+        windowutils.HOME = self
 
     def reset(self):
         PlaybackBtnMixin.reset(self)
@@ -787,7 +826,96 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.tasks.kill()
         kodigui.MultiWindow.doClose(self)
 
+    def closeWRecompileTpls(self):
+        """Ported from HomeWindow (home.py) - see quiet-orbiting-heron.md's Cold Start plan.
+        Reached indirectly for every non-cold-start window via windowutils.HOME.
+        closeWRecompileTpls() (kodigui.py's XMLBase.onInit() recompile-recovery path) once this
+        window is windowutils.HOME - unlike HomeWindow, LibraryWindow's own inner shells never
+        take that code's direct self.closeWRecompileTpls() branch themselves (self there is always
+        the concrete inner shell, e.g. RecommendedWindow, never this outer object - confirmed by
+        reading XMLBase.onInit(), no separate fix needed on that side).
+        """
+        self._shuttingDown = True
+        self.closeOption = "recompile"
+        self.doClose()
+
+    def stopRetryingRequests(self, state=True):
+        """Ported from HomeWindow (home.py) - a plain toggle on a global, not a TasksMixin method.
+        mixins/tasks.py's TasksMixin.doClose() (used by EpisodesWindow/PrePlayWindow/SubItemsWindow)
+        calls windowutils.HOME.stopRetryingRequests() directly - resolves here once this window is
+        windowutils.HOME.
+        """
+        util.DEBUG_LOG("{} request retries", state and "Disabling" or "Enabling")
+        plexnet.asyncadapter.STOP_RETRYING_REQUESTS = state
+
+    def shutdown(self):
+        """Ported from HomeWindow.shutdown() (home.py) - see quiet-orbiting-heron.md's Cold Start
+        plan. HomeWindow's own version also resets its serverList control and calls storeLastBG()
+        (persists the focused hub's background art for next cold start) here - both depend on
+        sidebar/hub-rendering state that doesn't exist on LibraryWindow yet (the user-options-menu/
+        server-popup UI, Stage 3, and a LibraryWindow-shaped equivalent of Home's visibleHubs-based
+        background persistence). Deliberately not ported until that state exists to port it onto.
+        """
+        util.DEBUG_LOG("Library: shutdown called")
+        self._shuttingDown = True
+        self.stopRetryingRequests()
+
+    def processCommand(self, command):
+        """UtilMixin.processCommand() (windowutils.py) - live-confirmed regression, fixed here.
+        Every real descendant a 'HOME'/'HOME:<section>' command bubbles through (ShowWindow,
+        EpisodesWindow, PrePlayWindow, ... via openItem()/openWindow()) is meant to close itself
+        on the way back - that's the base class's own, still-correct behavior, unchanged below.
+        But once the bubble reaches back up to whichever ancestor opened the chain, and that
+        ancestor is US (the cold-start root, windowutils.HOME), the command has arrived, not "left
+        home too" - goHome()/goHomeRoot() (windowutils.py's GoHomeMixin/SidebarMixin) already reset
+        us via go_root/show() before the bubble even started. Falling into the base class's
+        self.doClose() here would tear down the whole session, since nothing sits underneath this
+        window anymore the way HomeWindow used to. Live-confirmed: pressing the Home button from a
+        descendant briefly flashed this window back up, then closed the whole addon, before this.
+        """
+        if command and command.startswith('HOME') and self is windowutils.HOME:
+            return
+        windowutils.UtilMixin.processCommand(self, command)
+
+    def confirmExit(self):
+        """Ported verbatim from HomeWindow.confirmExit() (home.py) - self-contained, no
+        Home-specific state. See onAction()'s NAV_BACK handling below for the caller."""
+        lBtnExit = T(32336, 'Exit')
+        lBtnQuit = T(32704, 'Quit Kodi')
+        modifier = util.getSetting('exit_default_is_quit') and "quit" or "exit"
+
+        ret = plexnet.util.AttributeDict(button=None, modifier=modifier)
+
+        def actionCallback(dialog, actionID, controlID):
+            if actionID == xbmcgui.ACTION_CONTEXT_MENU and controlID == dialog.BUTTON_IDS[0]:
+                control = dialog.getControl(controlID)
+                if control.getLabel() == lBtnExit:
+                    control.setLabel(lBtnQuit)
+                    ret.modifier = "quit"
+                else:
+                    control.setLabel(lBtnExit)
+                    ret.modifier = "exit"
+
+        button = optionsdialog.show(
+            T(32334, 'Confirm Exit'),
+            T(32335, 'Are you ready to exit Plex?'),
+            modifier == "exit" and lBtnExit or lBtnQuit,
+            T(32924, 'Minimize'),
+            T(32337, 'Cancel'),
+            action_callback=actionCallback
+        )
+        ret.button = button
+        return ret
+
     def onFirstInit(self):
+        if self._openBaseWinID is not None and not self._coldStartSignaled:
+            # Cold start (main.py) - the first real content is now confirmed showing (this native
+            # onInit() callback only fires once Kodi has actually activated the window), so this is
+            # the equivalent moment main.py's old create()+waitForOpen() two-step used to clear the
+            # busy spinner at, just driven by the real event instead of a separate poll.
+            self._coldStartSignaled = True
+            background.setBusy(False)
+
         pnUtil.APP.on("watchlist:modified", self.setWatchlistDirty)
         util.MONITOR.on("library.back_home", self.goHomeRoot)
 
@@ -975,13 +1103,133 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.setFocusId(self.POSTERS_PANEL_ID)
 
+    def goHome(self, section=None, with_root=False):
+        """GoHomeMixin.goHome() (windowutils.py) assumes self is some OTHER (descendant) window
+        handing off to a separate Home singleton elsewhere: force-dismiss self, bubble a close
+        command, then HOME.show(). Live-confirmed broken once self already IS that singleton
+        (windowutils.HOME) - self.forceDismiss() there ALSO force-dismisses self._background (the
+        _MWBackground hosting this whole session's outer blocking .modal() call,
+        MultiWindow.open(), kodigui.py), and closeWithCommand() unconditionally self.doClose()s -
+        both prematurely kill the entire session instead of just resetting to the root. Reached
+        via MultiWindow.goHomeAction() (Home-button remote mapping, kodigui.py) and the
+        "library.back_home" monitor event (onFirstInit() below) firing goHomeRoot() directly on
+        this window, not a descendant - both hit this exact bug before this fix. Just reset root
+        state and reactivate in that case instead of falling into the base class's
+        descendant-oriented dance; fall through to it unchanged for genuine descendants.
+        """
+        if self is windowutils.HOME:
+            if section and section != self.section:
+                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection, args=(section,)).start()
+            if with_root:
+                self.go_root = True
+                self.show()
+            return
+        windowutils.GoHomeMixin.goHome(self, section=section, with_root=with_root)
+
+    def goHomeRoot(self, *args, **kwargs):
+        if self is windowutils.HOME:
+            self.go_root = True
+            self.show()
+            return
+        windowutils.GoHomeMixin.goHomeRoot(self, *args, **kwargs)
+
+    def show(self, **kwargs):
+        """MultiWindow has no native show() of its own (kodigui.py) - unlike HomeWindow's own
+        show() override (home.py), which just calls super().show() then checks go_root inline.
+        Delegate to whichever concrete shell is currently active (the closest equivalent to
+        "reactivate this window"), then run the same go_root check - monitor.py's actionHome() and
+        windowutils.py's GoHomeMixin/SidebarMixin.goHomeRoot() all just set self.go_root and call
+        self.show(), expecting exactly this contract. Guarded on self._current existing: show()
+        can be reached (windowutils.HOME.show()) after real teardown has already del'd it.
+        """
+        if self._current:
+            self._current.show(**kwargs)
+        if self.go_root:
+            self.onReInit()
+
     def onReInit(self):
+        if self.go_root:
+            # Ported from HomeWindow's onReInit() go_root handling (home.py) - see
+            # quiet-orbiting-heron.md's Cold Start plan. Consumed by the Home-button action
+            # (MultiWindow.goHomeAction(), kodigui.py) and goHome()/goHomeRoot()
+            # (windowutils.py's GoHomeMixin/SidebarMixin) - all three just set self.go_root and
+            # call self.show(), same contract HomeWindow's version already has.
+            self.go_root = False
+            if self.section != home.home_section:
+                # Deferred, not called inline: openSection()'s doClose()-based swap, nested
+                # synchronously under this native onReInit() callback, is the same shape as the
+                # confirmed Kodi core OnAction() reentrancy crash this plan's "Known Kodi core bug"
+                # section documents (SKIN_RELOAD_DEFER_SECONDS, windowutils.py) - untested whether
+                # onReInit() is actually exposed to it the same way OnAction() is, so deferring
+                # here too rather than assuming it's safe.
+                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection,
+                                 args=(home.home_section,)).start()
+            else:
+                self.setFocusId(self.SECTION_LIST_ID)
+            # Set at the end, same as HomeWindow's own version - openSection() above is deferred
+            # and can itself take a while (hub fetch/render) once it fires, so measuring the 150ms
+            # hold from here (not from go_root's entry) is what keeps it long enough to actually
+            # catch the stray reactivation focus event once the swap lands.
+            self._goRootHoldUntil = time.time() + 0.15
+            return
+
         if self.refill and self.contentMode != 'recommended':
             self.doRefill()
         if player.PLAYER.bgmPlaying:
             player.PLAYER.stopAndWait(fade=util.addonSettings.themeMusicFade, deferred=True)
 
+    def _dispatchNativeAction(self, action):
+        """onAction() below funnels both its branches through here instead of calling
+        kodigui.MultiWindow.onAction() directly, to intercept NAV_BACK/PREVIOUS_MENU before that
+        base class's own default handling (self.doClose(), kodigui.py) - correct for an ordinary
+        in-session LibraryWindow (closing just reveals whatever opened it, e.g. Home used to be),
+        wrong once this IS the cold-start root (windowutils.HOME): there's nothing left underneath
+        to reveal, so a bare doClose() here silently exits the whole addon. Live-confirmed
+        regression (pressing back exited with no confirmation), fixed here - ported from
+        HomeWindow's own NAV_BACK handling (home.py's onAction()).
+        """
+        if (action == xbmcgui.ACTION_PREVIOUS_MENU or action == xbmcgui.ACTION_NAV_BACK) and self is windowutils.HOME:
+            if self.section != home.home_section:
+                # Not at the true root yet - treat back as "go home" (same contract goHome()
+                # itself uses), not "exit anything".
+                self.go_root = True
+                self.show()
+                return
+
+            if self._checkingForExit or util.getSetting('disable_exit_on_back', False):
+                return
+
+            try:
+                self._checkingForExit = True
+                ex = self.confirmExit()
+                # 0 = exit; 1 = minimize; 2/None = cancel
+                if ex.button in (2, None):
+                    return
+                elif ex.button == 1:
+                    util.setGlobalProperty('is_active', '')
+                    xbmc.executebuiltin('ActivateWindow(10000)')
+                    return
+                elif ex.button == 0:
+                    self._shuttingDown = True
+                    background.setShutdown()
+                    self.closeOption = "quit" if ex.modifier == "quit" else "exit"
+                    self.doClose()
+                    return
+            finally:
+                self._checkingForExit = False
+            return
+
+        kodigui.MultiWindow.onAction(self, action)
+
     def onAction(self, action):
+        if self._shuttingDown:
+            return
+
+        # belt: any real user input ends the post-go_root hold window early - ported from
+        # HomeWindow's identical onAction() guard (home.py). See onReInit()'s go_root handling.
+        if self._goRootHoldUntil:
+            self._goRootHoldUntil = 0
+
         try:
             if self.getFocusId() == self.SECTION_LIST_ID:
                 self.checkSectionItem(action=action)
@@ -1043,17 +1291,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 #
                 # A bare `return` here (the original D2 shape) went further than that guard
                 # needed, though - it's inside this method's own try: block, so it also skipped
-                # kodigui.MultiWindow.onAction(self, action) entirely, the base-class call at the
-                # very bottom of this method that forwards to self._currentOnAction(action) - the
-                # real native WindowXML.onAction() Kodi needs to actually move focus within a
-                # list. Horizontal in-hub navigation (left/right between items in the same hub
-                # row) was never actually reaching Kodi at all as a result - live-confirmed, not
-                # just "out of scope" the way checkHubItem()'s richer per-item behavior (hero-art
-                # updates, pagination, round-robin) genuinely still is. Calling the base
-                # implementation directly - skipping only this method's own grid-specific body in
-                # between - fixes that without reopening the crash the blanket return was
+                # _dispatchNativeAction(action) entirely (the base-class/NAV_BACK dispatch at the
+                # very bottom of this method, which forwards ordinary actions to
+                # self._currentOnAction(action)) - the real native WindowXML.onAction() Kodi needs
+                # to actually move focus within a list. Horizontal in-hub navigation (left/right
+                # between items in the same hub row) was never actually reaching Kodi at all as a
+                # result - live-confirmed, not just "out of scope" the way checkHubItem()'s richer
+                # per-item behavior (hero-art updates, pagination, round-robin) genuinely still is.
+                # Calling the dispatch directly - skipping only this method's own grid-specific
+                # body in between - fixes that without reopening the crash the blanket return was
                 # protecting against.
-                kodigui.MultiWindow.onAction(self, action)
+                self._dispatchNativeAction(action)
                 return
 
             if action.getId() in MOVE_SET:
@@ -1104,7 +1352,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         except:
             util.ERROR()
 
-        kodigui.MultiWindow.onAction(self, action)
+        self._dispatchNativeAction(action)
 
     def onClick(self, controlID):
         if controlID == self.SECTION_LIST_ID:
@@ -1309,6 +1557,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.setProperty('server.iconmod2', '')
 
     def onFocus(self, controlID):
+        # Within the 150ms hold window after go_root, any non-section-list focus event is the
+        # stray Kodi fires when this window reactivates with its previously-focused control still
+        # recorded. Snap it back and consume the deadline so real user input (which arrives well
+        # after the window closes) passes through unblipped. Ported from HomeWindow's identical
+        # onFocus() guard (home.py) - see onReInit()'s go_root handling.
+        if (time.time() < self._goRootHoldUntil
+                and 100 < controlID < 500 and controlID != self.SECTION_LIST_ID):
+            self._goRootHoldUntil = 0
+            self.setFocusId(self.SECTION_LIST_ID)
+            return
+
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 

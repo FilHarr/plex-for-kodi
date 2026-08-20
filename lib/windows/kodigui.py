@@ -1170,6 +1170,11 @@ class MultiWindow(object):
         self._allClosed = False
         self._closeSignalled = False
         self.exitCommand = None
+        # Set by open() when a caller (main.py's cold start) needs the same "did it actually
+        # become the current window" guarantee BaseWindow.waitForOpen() gives non-MultiWindow
+        # callers - see open()/_open() below. None means no caller asked for the check.
+        self._openBaseWinID = None
+        self._openFailed = False
 
     def __getattr__(self, name):
         # dict lookup, not bare self._current - once _open()'s real teardown del's _current,
@@ -1241,8 +1246,25 @@ class MultiWindow(object):
         self._current.onAction = self.onAction
 
     @classmethod
-    def open(cls, **kwargs):
+    def open(cls, base_win_id=None, **kwargs):
+        """base_win_id: same contract as BaseWindow.waitForOpen()'s own kwarg - pass the winID a
+        caller needs this MultiWindow to reach or exceed before treating it as genuinely open (main
+        .py's cold start, replacing HomeWindow's old create()+waitForOpen()+modal() three-step).
+        Checked once, on the very first inner shell _open() constructs - see _open() below. Omit
+        for the ordinary sidebar-navigation case (opener.handleOpen()), which never needed this -
+        that swap is always into an already-running session.
+        """
         mw = cls(**kwargs)
+        mw._openBaseWinID = base_win_id
+        if base_win_id is not None:
+            # base_win_id is only ever passed by the one caller opening this as the app's
+            # top-level, session-owning window (main.py's cold start) - never by ordinary
+            # sidebar-navigation opens (opener.handleOpen(), which construct/discard many
+            # short-lived instances per session). onColdStart() is a no-op here; LibraryWindow
+            # overrides it to self-register as windowutils.HOME - doing that unconditionally in
+            # __init__ instead would have every incidental in-session LibraryWindow construction
+            # stomp the real singleton.
+            mw.onColdStart()
         b = _MWBackground(mw.bgXML, mw.path, mw.theme, mw.res, multi_window=mw)
         # kept on mw (not just local) so forceDismiss() can still reach it later, including from
         # within a nested call while b.modal() below is still on the stack (sidebar-focus-driven
@@ -1255,8 +1277,23 @@ class MultiWindow(object):
         return mw
 
     def _open(self):
+        firstOpen = True
         while not MONITOR.abortRequested() and not self._allClosed:
             self._setupCurrent(self._next)
+
+            if firstOpen:
+                firstOpen = False
+                if self._openBaseWinID is not None:
+                    # Mirrors BaseWindow.waitForOpen()'s own retry loop, reused directly since each
+                    # concrete shell already IS a BaseWindow subclass - no need to reimplement the
+                    # polling here. On failure, break without calling .modal(): the loop-exit cleanup
+                    # below still runs (doClose() on whatever _current is), same as a normal close.
+                    self._current.show()
+                    if not self._current.waitForOpen(base_win_id=self._openBaseWinID):
+                        util.LOG("MultiWindow: {} never became the current window, aborting open()", self._current)
+                        self._openFailed = True
+                        break
+
             self._current.modal()
 
         self._current.doClose()
@@ -1287,6 +1324,13 @@ class MultiWindow(object):
             self.goHome(with_root=True)
             return True
         return
+
+    def onColdStart(self):
+        """Called once from open(), only when base_win_id was passed - i.e. only for the one
+        construction meant to be the app's top-level, session-owning window. No-op here; override
+        for whatever singleton-registration/session-lifecycle setup that owner needs (see
+        LibraryWindow's override, quiet-orbiting-heron.md's Cold Start plan)."""
+        pass
 
     def onFirstInit(self):
         pass

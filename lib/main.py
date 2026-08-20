@@ -26,7 +26,7 @@ from . import localmode
 
 from plexnet import plexapp
 from .templating import render_templates
-from .windows import background, userselect, home, windowutils, kodigui, busy
+from .windows import background, userselect, home, library, windowutils, kodigui, busy
 from . import player
 from . import backgroundthread
 from . import util
@@ -276,22 +276,40 @@ def _main():
                         if plexapp.util.LOCAL_MODE and not plexapp.ACCOUNT.isSignedIn and selectedServer:
                             localmode.seedUsersFromServer(selectedServer)
 
-                        windowutils.HOME = home.HomeWindow.create()
+                        # LibraryWindow.open() (MultiWindow.open(), kodigui.py) is a single
+                        # blocking call - construct, show, run the whole session, return only once
+                        # everything's closed - unlike HomeWindow's old create()+waitForOpen()+
+                        # modal() three-step. base_win_id gives it the same "did it actually become
+                        # the current window" check waitForOpen() used to give this call directly;
+                        # see MultiWindow._open()'s own comment for how that's implemented (reuses
+                        # the first inner shell's own waitForOpen(), doesn't reimplement polling).
+                        # windows=/default_window=VIEWS_RECOMMENDED are the semantically correct
+                        # values for home_section anyway (its TYPE == 'mixed' forces contentMode to
+                        # 'recommended' regardless - library.py's LibraryWindow.__init__), but
+                        # reset() (called at the end of __init__, before this call ever blocks)
+                        # recomputes both from self.section/self.contentMode unconditionally, so
+                        # whatever's passed here is only needed to satisfy MultiWindow.__init__'s
+                        # self._next = default_window or self._windows[0] before reset() overwrites
+                        # it - not load-bearing beyond that.
+                        mw = library.LibraryWindow.open(
+                            base_win_id=BACKGROUND._winID,
+                            section=home.home_section,
+                            windows=library.VIEWS_RECOMMENDED.get('all'),
+                            default_window=library.VIEWS_RECOMMENDED.get('panel'),
+                        )
 
-                        if windowutils.HOME.waitForOpen(base_win_id=BACKGROUND._winID):
-                            background.setBusy(False)
-                            windowutils.HOME.modal()
-                        else:
+                        if mw._openFailed:
                             util.LOG("Couldn't open home window, exiting")
                             return
-                        util.CRON.cancelReceiver(windowutils.HOME)
 
-                        if not windowutils.HOME.closeOption or windowutils.HOME.closeOption in ("quit", "exit"):
-                            if windowutils.HOME.closeOption == "quit":
+                        util.CRON.cancelReceiver(mw)
+
+                        if not mw.closeOption or mw.closeOption in ("quit", "exit"):
+                            if mw.closeOption == "quit":
                                 quitKodi = True
                             return
 
-                        closeOption = windowutils.HOME.closeOption
+                        closeOption = mw.closeOption
 
                         windowutils.shutdownHome()
 
