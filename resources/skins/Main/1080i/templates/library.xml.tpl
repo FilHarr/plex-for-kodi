@@ -334,4 +334,9 @@
     </control>
 </control>
 {% endblock %}
+
+{# Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - declared last, same reasoning as
+   script-plex-recommended.xml.tpl's own copy of this include: the server/user dropdown popouts
+   (groups 802/901) need to draw on top of everything else in this block, not behind it. #}
+{% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}

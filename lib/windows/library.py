@@ -618,6 +618,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # newControl(), same as the sidebar's own list does.
         self.tabList = None
 
+        # Stage 3 (quiet-orbiting-heron.md's Cold Start plan): user-options dropdown (control 250,
+        # includes/sidebar_dropdowns.xml.tpl - shared, generic markup, already wired into every
+        # content-mode template). Built once per LibraryWindow lifetime in onFirstInit(), same
+        # pattern as self.sectionList/self.tabList above.
+        self.userList = None
+
     def onColdStart(self):
         """Called once, only when this construction is the app's top-level, session-owning window
         (MultiWindow.open()'s base_win_id contract - see main.py's cold-start call, Stage 2 of
@@ -872,8 +878,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.doClose() here would tear down the whole session, since nothing sits underneath this
         window anymore the way HomeWindow used to. Live-confirmed: pressing the Home button from a
         descendant briefly flashed this window back up, then closed the whole addon, before this.
+
+        One exception: _closeSessionWithOption() (below) primes self.closeOption directly before
+        starting this same bubble, for a nested LibraryWindow instance (e.g. a movie collection)
+        whose own user-options-menu close action needs to end the real session, not just itself -
+        live-confirmed regression, choosing Exit from within a collection only closed the
+        collection. closeOption already being set (still None on an ordinary "just go home"
+        bubble) is the signal this arrived HOME to actually close, not merely to reset root.
         """
         if command and command.startswith('HOME') and self is windowutils.HOME:
+            if self.closeOption is not None:
+                self.doClose()
             return
         windowutils.UtilMixin.processCommand(self, command)
 
@@ -906,6 +921,160 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         )
         ret.button = button
         return ret
+
+    def showUserMenu(self, mouse=False):
+        """Ported from HomeWindow.showUserMenu() (home.py) - see quiet-orbiting-heron.md's Cold
+        Start plan, Stage 3. Builds/shows the shared user-options dropdown (control 250,
+        includes/sidebar_dropdowns.xml.tpl) - already wired into every content-mode template, no
+        markup changes needed."""
+        items = []
+        if util.getGlobalProperty("update_available"):
+            items.append(kodigui.ManagedListItem(T(33670, 'Update available'), data_source='update'))
+        if plexapp.ACCOUNT.isSignedIn:
+            if not len(plexapp.ACCOUNT.homeUsers) and not util.addonSettings.cacheHomeUsers:
+                plexapp.ACCOUNT.updateHomeUsers(refreshSubscription=True)
+
+            if len(plexapp.ACCOUNT.homeUsers) > 1:
+                items.append(kodigui.ManagedListItem(T(32342, 'Switch User'), data_source='switch'))
+            else:
+                items.append(kodigui.ManagedListItem(T(32980, 'Refresh Users'), data_source='refresh_users'))
+        elif plexapp.ACCOUNT.isOffline and plexapp.util.LOCAL_MODE:
+            from lib import localmode
+            if len(plexapp.ACCOUNT.homeUsers) > 1:
+                items.append(kodigui.ManagedListItem(T(32342, 'Switch User'), data_source='switch'))
+            if localmode.isAccountLess():
+                items.append(kodigui.ManagedListItem(T(35042, 'Local users'), data_source='local_users'))
+        items.append(kodigui.ManagedListItem(T(32343, 'Settings'), data_source='settings'))
+        if plexapp.ACCOUNT.isSignedIn:
+            items.append(kodigui.ManagedListItem(T(35019, 'Go local'), data_source='go_local'))
+            items.append(kodigui.ManagedListItem(T(32344, 'Sign Out'), data_source='signout'))
+        elif plexapp.ACCOUNT.isOffline:
+            if plexapp.util.LOCAL_MODE:
+                items.append(kodigui.ManagedListItem(T(35020, 'Go online'), data_source='go_online'))
+            else:
+                items.append(kodigui.ManagedListItem(T(32459, 'Offline Mode'), data_source='go_online'))
+        else:
+            items.append(kodigui.ManagedListItem(T(32460, 'Sign In'), data_source='signin'))
+        items.append(kodigui.ManagedListItem(T(32924, 'Minimize'), data_source='minimize'))
+        items.append(kodigui.ManagedListItem(T(32336, 'Exit'), data_source='exit'))
+
+        if len(items) > 1:
+            items[0].setProperty('first', '1')
+            items[-1].setProperty('last', '1')
+        else:
+            items[0].setProperty('only', '1')
+        # somehow dynamically setting the list height here doesn't work. We need a height that's
+        # bigger than our possible available items in the template
+
+        self.userList.reset()
+        self.userList.addItems(items)
+        itemHeight = util.vscale(66, r=0)
+
+        self.userList.setHeight((len(items) * itemHeight))
+        self.getControl(self.USER_MENU_GROUP_ID).setHeight((len(items) * itemHeight))
+        self.getControl(self.USER_MENU_BG_ID).setHeight((len(items) * itemHeight) + 80)
+
+        if not mouse:
+            self.setFocusId(self.USER_LIST_ID)
+
+    def _closeSessionWithOption(self, option, shutting_down=False):
+        """Every doUserOption() branch that ends a session (go_online while local, signout, exit,
+        the switch/signin/go_local catch-all) needs to act on the TRUE top-level session
+        (windowutils.HOME), not necessarily self. Live-confirmed regression, fixed here: self is a
+        fresh, non-cold-start LibraryWindow instance whenever it was opened for a movie collection
+        or similar (opener.collectionClicked()/sectionClicked() always construct a new instance,
+        never an in-place swap onto the real session - home_section is the one exception, folded
+        into openSection() already). Choosing Exit from within a collection just closed that
+        nested instance, revealing the library grid underneath instead of actually exiting.
+        """
+        target = windowutils.HOME
+        if shutting_down:
+            target._shuttingDown = True
+            util.DEBUG_LOG("Library: Initiating shutdown, setting background")
+            background.setShutdown()
+        else:
+            util.DEBUG_LOG("Killing last background image")
+            kodigui.LAST_BG_URL = None
+            target.windowSetBackground(None)
+
+        target.closeOption = option
+
+        if self is target:
+            self.doClose()
+            return
+
+        # Bubble via the same forceDismiss()+closeWithCommand('HOME') chain goHome() already uses
+        # to unwind every ancestor back to the real session (proven safe/correct - this is exactly
+        # how pressing Home from a descendant already works, and 'HOME' is the one bubble command
+        # every window class's processCommand() already knows to propagate, unlike a bespoke
+        # command string that only LibraryWindow's own override would understand). processCommand()
+        # below sees closeOption already set once the bubble reaches windowutils.HOME, and actually
+        # closes instead of the ordinary swallow-and-stay-open behavior a plain "go home" HOME
+        # bubble gets.
+        self.goHome()
+
+    def doUserOption(self, force_option=None):
+        """Ported from HomeWindow.doUserOption() (home.py) - see quiet-orbiting-heron.md's Cold
+        Start plan, Stage 3. Adaptations: dialog_props reads carriedProps defensively (getattr,
+        CommonMixin's own pattern) since LibraryWindow doesn't define it; storeLastBG() stays
+        unported (see shutdown()'s own comment) - HomeWindow's version isn't called from here
+        anyway, only from confirmExit()'s minimize branch and shutdown() itself, neither of which
+        call it here either; every session-ending branch routes through _closeSessionWithOption()
+        above instead of closing self directly - see that method's own comment for why.
+        """
+        if not force_option:
+            mli = self.userList.getSelectedItem()
+            if not mli:
+                return
+
+            option = mli.dataSource
+        else:
+            option = force_option
+
+        self.setFocusId(self.USER_BUTTON_ID)
+
+        if option == 'settings':
+            from . import settings
+            settings.openWindow()
+        elif option == 'update':
+            self.setBoolProperty('show.options', False)
+            self.setProperty('busy', '1')
+            self.setFocusId(self.SECTION_LIST_ID)
+            util.setGlobalProperty('update_requested', '1', wait=True)
+        elif option == 'go_online':
+            if plexapp.util.LOCAL_MODE:
+                # leave local mode via a clean re-init (re-verifies the account or opens sign-in)
+                self._closeSessionWithOption(option)
+                return
+            plexapp.ACCOUNT.refreshAccount()
+        elif option == 'refresh_users':
+            plexapp.ACCOUNT.updateHomeUsers(refreshSubscription=True)
+            return True
+        elif option == 'local_users':
+            from lib import localmode
+            localmode.seedUsersFromServer(reselect=True)
+            return True
+        elif option == 'signout':
+            button = optionsdialog.show(
+                T(32344, 'Sign Out'),
+                T(33669, 'Really sign out?'),
+                T(32329, 'No'),
+                T(32328, 'Yes'),
+                dialog_props=getattr(self, 'carriedProps', None)
+            )
+
+            if button != 1:
+                return
+            self._closeSessionWithOption(option)
+        elif option == 'exit':
+            self._closeSessionWithOption("exit", shutting_down=True)
+            return
+        elif option == 'minimize':
+            util.setGlobalProperty('is_active', '')
+            xbmc.executebuiltin('ActivateWindow(10000)')
+            return
+        else:
+            self._closeSessionWithOption(option)
 
     def onFirstInit(self):
         if self._openBaseWinID is not None and not self._coldStartSignaled:
@@ -941,6 +1110,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.tabList.newControl(self)
             self.updateActiveTabMarker()
+
+        if self.userList is None:
+            self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5)
+        else:
+            self.userList.newControl(self)
 
         if self.contentMode == 'recommended':
             # quiet-orbiting-heron.md Stage B: RecommendedWindow has none of the poster-grid
@@ -1231,8 +1405,30 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self._goRootHoldUntil = 0
 
         try:
-            if self.getFocusId() == self.SECTION_LIST_ID:
+            controlID = self.getFocusId()
+            if controlID == self.SECTION_LIST_ID:
                 self.checkSectionItem(action=action)
+            elif controlID == self.USER_BUTTON_ID:
+                # Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - ported from HomeWindow's
+                # identical USER_BUTTON_ID handling (home.py's onAction()).
+                if action == xbmcgui.ACTION_SELECT_ITEM:
+                    self.showUserMenu()
+                    return
+                elif action == xbmcgui.ACTION_CONTEXT_MENU and util.getSetting('previous_user'):
+                    # fast-switch to the previous user, if not protected
+                    uid = util.getSetting('previous_user')
+                    if uid == plexapp.ACCOUNT.ID:
+                        return
+                    user = plexapp.ACCOUNT.getHomeUser(uid)
+                    if not user or user.isProtected:
+                        self.doUserOption(force_option="switch")
+                        return
+                    self.doUserOption(force_option={"fast_switch": user.id})
+                    return
+                elif action == xbmcgui.ACTION_MOUSE_LEFT_CLICK:
+                    self.showUserMenu(mouse=True)
+                    self.setBoolProperty('show.options', True)
+                    return
 
             if self.dragging:
                 if not action == xbmcgui.ACTION_MOUSE_DRAG:
@@ -1376,6 +1572,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # actually avoids it.
                 mode = mli.getProperty('content.mode')
                 threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.switchTab, args=(mode,)).start()
+            return
+
+        if controlID == self.USER_LIST_ID:
+            # Stage 3: shared across every content mode, same reasoning as SECTION_LIST_ID/
+            # TAB_LIST_ID above - checked before the contentMode=='recommended' bypass below.
+            # Ported from HomeWindow's identical USER_LIST_ID handling (home.py's onClick()) -
+            # minus self._skipNextAction, input-suppression state LibraryWindow doesn't have and
+            # only matters for the refresh_users/local_users options staying "open".
+            self.doUserOption()
+            self.setBoolProperty('show.options', False)
+            self.setFocusId(self.USER_BUTTON_ID)
             return
 
         if self.contentMode == 'recommended':
