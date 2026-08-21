@@ -162,7 +162,7 @@ def sectionClicked(section, filter_=None, **kwargs):
     if not key or not key.isdigit():
         key = section.getLibrarySectionId()
     viewtype = util.getSetting('viewtype.{0}.{1}'.format(section.server.uuid, key))
-    if section.TYPE in ('artist', 'photo', 'photodirectory'):
+    if section.TYPE in ('artist', 'photo', 'photodirectory', 'playlists'):
         default = library.VIEWS_SQUARE.get(viewtype)
         return handleOpen(
             library.LibraryWindow, windows=library.VIEWS_SQUARE.get('all'), default_window=default, section=section, filter_=filter_, **kwargs

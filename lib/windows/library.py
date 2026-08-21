@@ -24,6 +24,7 @@ from lib import backgroundthread
 from lib import player
 from lib import util
 from lib import shuffle
+from lib.path_mapping import pmm
 from lib.util import T
 from . import background
 from . import busy
@@ -192,6 +193,11 @@ SORT_KEYS = {
     'photodirectory': {},
     'collection': {},
     'mixed': {},  # home_section (home.py) - always an empty grid, so no sort options needed
+    # playlists_section (Playlists port) - same "no real sort options" shape; hideFilterOptions
+    # (doRefill()) hides the sort button entirely, but SORT_KEYS[self.section.TYPE] is indexed
+    # unconditionally in a few places regardless, so this still needs to resolve. DEFAULT_SORT
+    # ('titleSort', PlaylistsSection) falls back cleanly to SORT_KEYS['movie']['titleSort'].
+    'playlists': {},
     # watchlist
     'movies_shows': {
         'watchlistedAt': {'title': T(32351, 'By Date Added'), 'display': T(32352, 'Date Added'), 'defSortDesc': True},
@@ -581,6 +587,35 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.hubSettings = None
         self.sectionHubs = {}
 
+        # Stage 3 (section-item context menu + Manage Hubs dialog): navSettings holds the same
+        # per-section show/hide/pin/order preferences buildSectionList() already read as a local,
+        # throwaway dict on every call - promoted to real state (loadNavSettings()/
+        # saveNavSettings() below) so sectionMenu() can mutate and persist it. Ported from
+        # HomeWindow.librarySettings (home.py) under a different attribute name: self.librarySettings
+        # is already taken on this window by the per-section LibrarySettings object (sort/filter/
+        # content-mode state, see __init__ above) - an unrelated thing despite the name collision
+        # with HomeWindow's dict.
+        self.navSettings = None
+        # Hub catalog for the Manage Hubs dialog - every hub from every section, not just whichever
+        # one the user has actually visited (self.sectionHubs only ever holds those). Populated
+        # lazily by _discoverHubsSync() the first time Manage Hubs opens, same lazy-discovery path
+        # HomeWindow itself falls back to (home.py) - the eager, always-on background
+        # DiscoverHubsTask HomeWindow also has isn't ported here: nothing else on this window needs
+        # an up-front catalog, so paying for it only when the user actually opens Manage Hubs is
+        # narrower and sufficient.
+        self.availableHubs = {}
+        # All sections (including hidden ones), keyed by str(section.key) - populated alongside
+        # availableHubs by _discoverHubsSync(), used only by _ensureCustomConfigExists()'s backfill
+        # path to label a hub whose section isn't in availableHubs yet.
+        self.allSections = {}
+        # Section-reorder ("Move") mode - ported from HomeWindow's identical state (home.py).
+        self.movingSection = False
+        self._initialMovingSectionPos = None
+        # Set while sectionMenu()'s modal dropdown is up - guards SidebarMixin._sectionChanged()
+        # (windowutils.py) against its debounce thread settling on a section change while the menu
+        # is still open, same race HomeWindow's identical flag (home.py) guards against there.
+        self.block_section_change = False
+
         # Stage D2 (quiet-orbiting-heron.md): rotation-ring/anchor positioning state, ported
         # from HomeWindow's own __init__ (home.py) - same names, no reason to rename. These are
         # just safe pre-bind defaults, not meaningful positions - _recommendedHubsCallback()
@@ -603,6 +638,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # "never set yet", not just "currently False", so the very first real call (True or False)
         # always actually applies rather than being wrongly treated as a no-op.
         self._lastNoHeroArt = None
+        # One-shot, ported from HomeWindow's identical flag (home.py) - consumed by
+        # onFirstInit()'s 'recommended' branch below. Without this, cold start left focus on the
+        # sidebar's Search entry (buildSectionList()'s default native list position) instead of
+        # the first hub - live-confirmed regression, HomeWindow avoided it via this exact
+        # mechanism (applyInitialHubFocus()) that never got ported when Recommended-tab sharing
+        # (Stage C/D) was built.
+        self._initialHubFocusApplied = False
         # Built once per LibraryWindow lifetime, then rebound via newControl() on every later
         # 'recommended' entry - see onFirstInit()'s own comment for why (a fresh discard-and-
         # recreate every entry, the original shape here, is the one remaining structural
@@ -624,6 +666,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # pattern as self.sectionList/self.tabList above.
         self.userList = None
 
+        # Stage 3: server-switch dropdown (control 260, same shared include). Same
+        # build-once-in-onFirstInit() pattern as self.userList above. changingServer mirrors
+        # HomeWindow's identical flag (home.py) - selectServer()/onSelectedServerChange() below
+        # use it to suppress the normal back-navigation/exit-confirm handling mid-switch.
+        self.serverList = None
+        self.changingServer = False
+
     def onColdStart(self):
         """Called once, only when this construction is the app's top-level, session-owning window
         (MultiWindow.open()'s base_win_id contract - see main.py's cold-start call, Stage 2 of
@@ -642,6 +691,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         PlaybackBtnMixin.reset(self)
         util.setGlobalProperty('sort', '')
         util.setGlobalProperty('sort.alpha', '')
+
+        if self.section.TYPE == 'playlists' and ITEM_TYPE not in ('audio', 'video'):
+            # LibrarySettings._loadSettings() only corrects ITEM_TYPE from persisted state or
+            # forcedItemType - on a genuine first-ever visit (nothing persisted yet) it falls back
+            # to the bare module global, which is whatever the *previously* open section (e.g.
+            # 'movie'/'collection') left it at. fillPlaylists() filters by playlistType == ITEM_TYPE,
+            # so an uncorrected stale value would silently show zero playlists. Corrected here,
+            # once, before anything below reads ITEM_TYPE - setItemType() persists it too, so this
+            # only ever fires on that first visit. Ported from the Sidebar-Tab-Unification branch's
+            # identical fix (commit f0e6340f).
+            self.librarySettings.setItemType('audio')
+
         # Active boolean filters as {filter_key: True}. Start clean on upgrade: old
         # filter.unwatched/filter.hdr/filter.dovi keys are intentionally not read.
         self.boolFilters = self.librarySettings.getSetting('filter.bools', {}) or {}
@@ -665,7 +726,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if self.contentMode == 'recommended':
             self.setWindows(VIEWS_RECOMMENDED.get('all'))
             self.setDefault(VIEWS_RECOMMENDED.get('panel'))
-        elif self.section.TYPE in ('artist', 'photo', 'photodirectory'):
+        elif self.section.TYPE in ('artist', 'photo', 'photodirectory', 'playlists'):
             self.setWindows(VIEWS_SQUARE.get('all'))
             self.setDefault(VIEWS_SQUARE.get(viewtype))
         else:
@@ -713,7 +774,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._current.doClose()
         return True
 
-    def openSection(self, section, filter_=None):
+    def openSection(self, section, filter_=None, force=False):
         """Swap this already-open window to a different section in place, reusing the same
         outer LibraryWindow object rather than closing and reconstructing a new one - see the
         Home-ControlledWindow plan's "One window, not two" / thread-safety discussion. Safe to
@@ -731,6 +792,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         ancestor's processCommand() as their own .modal() calls return) - not yet generalized to
         ordinary section switches, so this just declines rather than corrupting state in the
         meantime.
+
+        force=True skips the "already on this section" no-op below - for serverRefresh() (Stage
+        3's server-switch popup): a server switch can leave `section` pointing at the exact same
+        Section object (home_section is a shared singleton, and switching servers while already
+        on Home is the common case) while the actual content underneath it has completely
+        changed. Live-confirmed as a bug without this: the sidebar rebuilt correctly for the new
+        server, but the content pane never reloaded, and Home stayed silently stale until the
+        user detoured through a different section first (which, being genuinely != self.section,
+        did trigger a real reload and incidentally left self.section pointing at the new server's
+        data, making Home reachable again from there).
         """
         try:
             isCurrent = self.is_current_window
@@ -743,7 +814,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             util.DEBUG_LOG("Library: openSection() declined - {0} not current window (descendant open, or closing)", self)
             return False
 
-        if section == self.section:
+        if not force and section == self.section:
             return False
 
         self.tasks.kill()
@@ -756,6 +827,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._listGeneration += 1
 
         self.section = section
+        # Keep SidebarMixin's own change-tracking in sync too (windowutils.py's
+        # _dispatchSectionOpen()/_sectionChanged() gate every sidebar click/settled-focus on
+        # `section == self.lastSection`) - not just whichever caller happened to reach this
+        # in-place swap through that path. Live-confirmed regression without this: back-navigating
+        # to Home (onReInit()'s go_root branch, which calls openSection() directly, not through
+        # the sidebar dispatch) updated self.section correctly but left self.lastSection stale at
+        # whatever section was showing before - so re-clicking that same section in the sidebar
+        # afterward hit `section == self.lastSection` and silently no-opped, until a genuinely
+        # different section was clicked first (which finally advanced lastSection for real).
+        self.lastSection = section
         self.filter = filter_
         self.subDir = None
         self.keyItems = {}
@@ -856,15 +937,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def shutdown(self):
         """Ported from HomeWindow.shutdown() (home.py) - see quiet-orbiting-heron.md's Cold Start
-        plan. HomeWindow's own version also resets its serverList control and calls storeLastBG()
-        (persists the focused hub's background art for next cold start) here - both depend on
-        sidebar/hub-rendering state that doesn't exist on LibraryWindow yet (the user-options-menu/
-        server-popup UI, Stage 3, and a LibraryWindow-shaped equivalent of Home's visibleHubs-based
-        background persistence). Deliberately not ported until that state exists to port it onto.
+        plan. unhookSignals() now ported too (Stage 3's server popup). HomeWindow's own version
+        also resets its serverList control and calls storeLastBG() (persists the focused hub's
+        background art for next cold start) here - storeLastBG() depends on a LibraryWindow-shaped
+        equivalent of Home's visibleHubs-based background persistence that doesn't exist yet, and
+        the serverList reset isn't needed - this window's own serverList is rebuilt wholesale by
+        showServers() on next open, never assumed empty in between the way HomeWindow's is.
         """
         util.DEBUG_LOG("Library: shutdown called")
         self._shuttingDown = True
         self.stopRetryingRequests()
+        self.unhookSignals()
 
     def processCommand(self, command):
         """UtilMixin.processCommand() (windowutils.py) - live-confirmed regression, fixed here.
@@ -1076,6 +1159,205 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self._closeSessionWithOption(option)
 
+    def hookSignals(self):
+        """Server-list-relevant subset of HomeWindow.hookSignals() (home.py) - only what
+        showServers()/selectServer() below actually need to stay live: new/removed/reachable
+        servers update the open dropdown's contents, change:selectedServer drives the real
+        post-switch refresh (serverRefresh() below). HomeWindow's much larger signal set also
+        covers hub-rendering/theme/spoiler/wake-sleep concerns that don't apply to this narrower
+        port - out of scope here, not an oversight. Called once, only for the true root
+        (onFirstInit()'s guard below) - a nested LibraryWindow instance's own server dropdown
+        still works (selectServer() below operates on whichever self opened it), it just doesn't
+        live-update while open, and doesn't drive its own refresh - see selectServer()'s own
+        comment for why only windowutils.HOME reacting to the actual switch is correct.
+        """
+        plexapp.SERVERMANAGER.on('new:server', self.onNewServer)
+        plexapp.SERVERMANAGER.on('remove:server', self.onRemoveServer)
+        plexapp.SERVERMANAGER.on('reachable:server', self.onReachableServer)
+        plexapp.SERVERMANAGER.on('reachable:server', self.displayServerAndUser)
+        plexapp.util.APP.on('change:selectedServer', self.onSelectedServerChange)
+
+    def unhookSignals(self):
+        plexapp.SERVERMANAGER.off('new:server', self.onNewServer)
+        plexapp.SERVERMANAGER.off('remove:server', self.onRemoveServer)
+        plexapp.SERVERMANAGER.off('reachable:server', self.onReachableServer)
+        plexapp.SERVERMANAGER.off('reachable:server', self.displayServerAndUser)
+        plexapp.util.APP.off('change:selectedServer', self.onSelectedServerChange)
+
+    def showServers(self, from_refresh=False, mouse=False):
+        """Ported from HomeWindow.showServers() (home.py) - see quiet-orbiting-heron.md's Cold
+        Start plan, Stage 3. Builds/shows the shared server-switch dropdown (control 260,
+        includes/sidebar_dropdowns.xml.tpl) - same include showUserMenu() above already uses."""
+        with self.lock:
+            selection = None
+            if from_refresh:
+                mli = self.serverList.getSelectedItem()
+                if mli:
+                    selection = mli.uuid
+
+            servers = sorted(
+                plexapp.SERVERMANAGER.getServers(),
+                key=lambda x: (x.owned and '0' or '1') + x.name.lower()
+            )
+
+            if plexapp.util.LOCAL_MODE:
+                # local mode can only ever use servers with a plain LAN connection
+                servers = [s for s in servers if s.hasLocalModeConnection()]
+
+            items = []
+            for s in servers:
+                item = home.ServerListItem(s.name, not s.owned and s.owner or '', data_source=s)
+                item.uuid = s.uuid
+                item.onUpdate()
+                if plexapp.SERVERMANAGER.selectedServer:
+                    item.setProperty('current', plexapp.SERVERMANAGER.selectedServer.uuid == s.uuid and '1' or '')
+                items.append(item)
+
+            if len(items) > 1:
+                items[0].setProperty('first', '1')
+                items[-1].setProperty('last', '1')
+            elif items:
+                items[0].setProperty('only', '1')
+
+            self.serverList.replaceItems(items)
+            itemHeight = util.vscale(100, r=0)
+
+            listHeight = min(len(items), 9) * itemHeight
+            self.getControl(self.SERVER_MENU_BG_ID).setHeight(listHeight + 80)
+
+            # Position dropdown so it grows upward from the server button area
+            buttonY = util.vscale(990, r=0)
+            dropdownY = buttonY - listHeight
+            self.getControl(self.SERVER_MENU_GROUP_ID).setPosition(80, dropdownY)
+
+            for item in items:
+                if item.dataSource != kodigui.DUMMY_DATA_SOURCE:
+                    item.hookSignals()
+
+            if selection:
+                for mli in self.serverList:
+                    if mli.uuid == selection:
+                        self.serverList.selectItem(mli.pos())
+
+            if not from_refresh and items and not mouse:
+                self.setFocusId(self.SERVER_LIST_ID)
+
+            if not from_refresh:
+                plexapp.refreshResources()
+
+    def selectServer(self, uuid=None):
+        """Ported from HomeWindow.selectServer() (home.py). One addition HomeWindow never
+        needed: it was always the one true root, so the change:selectedServer signal this
+        triggers (hooked only on windowutils.HOME - see hookSignals()) always landed back on the
+        same object that called this. Here self can be a nested, non-root LibraryWindow instance
+        (e.g. a movie collection) - the busy/focus/reachability calls below still run harmlessly
+        on whichever self invoked this, but once a real switch actually happens, unwind back to
+        the root the same way goHome() already does elsewhere, with_root=True so its own
+        go_root/onReInit() machinery lands on home_section once HOME is current again.
+        serverRefresh() below may fire first (via the signal, synchronously, before this method's
+        own unwind call at the end) while HOME is still backgrounded behind this nested instance -
+        its own openSection() call just declines harmlessly then, the same guard every other
+        in-place section swap already relies on - the goHome(with_root=True) unwind below is what
+        actually completes the landing, once HOME is current again.
+        """
+        if self._shuttingDown:
+            return
+
+        if not uuid:
+            mli = self.serverList.getSelectedItem()
+            if not mli:
+                return
+            server = mli.dataSource
+        else:
+            server = plexapp.SERVERMANAGER.getServer(uuid)
+            if not server:
+                return
+
+        prevUUID = plexapp.SERVERMANAGER.selectedServer.uuid
+
+        self.changingServer = True
+        self.setFocusId(self.SECTION_LIST_ID)
+
+        if not self._shuttingDown and not server.isReachable():
+            if server.pendingReachabilityRequests > 0:
+                util.messageDialog(T(32339, 'Server is not accessible'), T(32340, 'Connection tests are in '
+                                                                                  'progress. Please wait.'))
+            else:
+                util.messageDialog(
+                    T(32339, 'Server is not accessible'), T(32341, 'Server is not accessible. Please sign into '
+                                                                   'your server and check your connection.')
+                )
+            self.changingServer = False
+            return
+
+        changed = False
+        with busy.BusySignalContext(plexapp.util.APP, "change:selectedServer") as bc:
+            changed = plexapp.SERVERMANAGER.setSelectedServer(server, force=True)
+            if not changed:
+                bc.ignoreSignal = True
+                self.changingServer = False
+            else:
+                util.setSetting('previous_server.{}'.format(plexapp.ACCOUNT.ID), prevUUID)
+
+        if changed and self is not windowutils.HOME:
+            self.goHome(with_root=True)
+
+    def onNewServer(self, **kwargs):
+        self.showServers(from_refresh=True)
+
+    def onRemoveServer(self, **kwargs):
+        self.onNewServer()
+
+    def onReachableServer(self, server=None, **kwargs):
+        for mli in self.serverList:
+            if mli.uuid == server.uuid:
+                mli.unHookSignals()
+                mli.dataSource = server
+                mli.hookSignals()
+                mli.onUpdate()
+                return
+        else:
+            self.onNewServer()
+
+    def onSelectedServerChange(self, **kwargs):
+        if self.serverRefresh():
+            self.setFocusId(self.SECTION_LIST_ID)
+            self.changingServer = False
+
+    def serverRefresh(self, section=None):
+        """LibraryWindow-shaped equivalent of HomeWindow.serverRefresh() (home.py) - that
+        version's @busy.dialog()-wrapped fullyRefreshHome()/loadLibrarySettings() rebuild Home's
+        own hub-fetching state, none of which exists here. What a server switch actually needs on
+        this window is narrower: refresh the sidebar avatar/server labels, rebuild the section
+        list for the new server's libraries, and land on a section that still exists there
+        (home_section, same default fullyRefreshHome() itself uses) - openSection() below is the
+        same in-place swap every other section change already goes through, so it inherits that
+        method's own is_current_window decline guard for free (see selectServer()'s comment for
+        why that matters here).
+
+        force=True on the openSection() call below - live-confirmed regression without it:
+        switching servers while already on Home (the common case, since selectServer()'s own
+        goHome(with_root=True) unwind also lands here) leaves `target == self.section` true
+        (home_section is a shared singleton), so openSection()'s own "already there" no-op guard
+        silently skipped the reload - sidebar rebuilt correctly for the new server, but the
+        content pane stayed on the old server's stale hubs, and clicking Home again did nothing
+        (same equality check, same no-op) until the user detoured through a different section
+        first.
+        """
+        with self.lock:
+            self.displayServerAndUser()
+            if not plexapp.SERVERMANAGER.selectedServer:
+                self.setFocusId(self.USER_BUTTON_ID)
+                return False
+
+            self.loadHubSettings()
+            self.loadNavSettings()
+            self.buildSectionList()
+
+            target = section or home.home_section
+            self.openSection(target, force=True)
+            return True
+
     def onFirstInit(self):
         if self._openBaseWinID is not None and not self._coldStartSignaled:
             # Cold start (main.py) - the first real content is now confirmed showing (this native
@@ -1098,6 +1380,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.setBoolProperty('hide.section_tabs', self.section.TYPE == 'mixed')
 
         if self.sectionList is None:
+            self.loadNavSettings()
             self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
             self.buildSectionList()
             self.displayServerAndUser()
@@ -1115,6 +1398,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5)
         else:
             self.userList.newControl(self)
+
+        if self.serverList is None:
+            self.serverList = kodigui.ManagedControlList(self, self.SERVER_LIST_ID, 10)
+            if self is windowutils.HOME:
+                # Only the true root reacts to server-list-relevant signals - see hookSignals()'s
+                # own comment for why a nested instance's dropdown still works without them.
+                self.hookSignals()
+        else:
+            self.serverList.newControl(self)
 
         if self.contentMode == 'recommended':
             # quiet-orbiting-heron.md Stage B: RecommendedWindow has none of the poster-grid
@@ -1220,6 +1512,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # shifted before the window shows instead of popping in after.
             hubsTask.run()
 
+            if not self._initialHubFocusApplied:
+                # Ported from HomeWindow.applyInitialHubFocus() (home.py) - one-time, on the very
+                # first hubs draw of this LibraryWindow instance's session: land in the first
+                # hub's first item instead of leaving focus on the sidebar's Search entry.
+                # hubsTask.run() above is synchronous/inline, so self.visibleHubs is already
+                # populated by the time this runs (or empty, if the fetch found nothing) - no
+                # callback timing to race, unlike HomeWindow's own background-thread version.
+                # Only acts if focus is still on the sidebar list (the native default this window
+                # construction starts with) - if the user already moved focus elsewhere by the
+                # time this fires, leave it alone.
+                self._initialHubFocusApplied = True
+                if self.getFocusId() == self.SECTION_LIST_ID and self.visibleHubs:
+                    self.setFocusId(self._anchorControlId())
+
             self.setBoolProperty("initialized", True)
         elif self.showPanelControl and not self.refill:
             self.showPanelControl.newControl(self)
@@ -1236,7 +1542,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._listGeneration += 1
         self.showPanelControl = kodigui.ManagedControlList(self, self.POSTERS_PANEL_ID, 5)
 
-        hideFilterOptions = self.section.TYPE == 'photodirectory' or self.section.TYPE == 'collection'
+        # 'playlists' deliberately excluded (unlike photodirectory/collection): it still needs the
+        # ITEM_TYPE (Audio/Video) button visible - script-plex-squares.xml.tpl's own control 312
+        # visibility handles that, and controls 211/311/310 (genre/category filters, which playlists
+        # have no concept of) are hidden there directly by checking Window.Property(media) instead.
+        hideFilterOptions = self.section.TYPE in ('photodirectory', 'collection')
 
         self.keyListControl = kodigui.ManagedControlList(self, self.KEY_LIST_ID, 27)
         self.setProperty('disable_playback', self.section.TYPE == 'movies_shows' and '1' or '')
@@ -1363,6 +1673,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         HomeWindow's own NAV_BACK handling (home.py's onAction()).
         """
         if (action == xbmcgui.ACTION_PREVIOUS_MENU or action == xbmcgui.ACTION_NAV_BACK) and self is windowutils.HOME:
+            if self.changingServer:
+                # fixme: cheap way of avoiding an early exit after a server change - ported from
+                # HomeWindow's identical guard (home.py's onAction()).
+                return
+
             if self.section != home.home_section:
                 # Not at the true root yet - treat back as "go home" (same contract goHome()
                 # itself uses), not "exit anything".
@@ -1407,7 +1722,47 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         try:
             controlID = self.getFocusId()
             if controlID == self.SECTION_LIST_ID:
+                if self.movingSection:
+                    # Section-reorder ("Move") mode - ported from HomeWindow's identical routing
+                    # (home.py's onAction()). sectionMover() owns every action while active; nothing
+                    # below in this method (checkSectionItem()/context menu) should also react.
+                    self.sectionMover(self.movingSection, action)
+                    return
+                if action == xbmcgui.ACTION_CONTEXT_MENU:
+                    # Section-item context menu - ported from HomeWindow's identical routing
+                    # (home.py's onAction()). block_section_change (see __init__'s/
+                    # SidebarMixin._sectionChanged()'s own comments) guards against a debounce
+                    # thread already in flight from focus movement just before this settling on a
+                    # section change while the modal dropdown is up.
+                    try:
+                        self.block_section_change = True
+                        show_section = self.sectionMenu()
+                    finally:
+                        self.block_section_change = False
+                    if not show_section:
+                        return
+                    self.serverRefresh(section=show_section)
+                    return
                 self.checkSectionItem(action=action)
+            elif controlID == self.SERVER_BUTTON_ID:
+                # Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - ported from HomeWindow's
+                # identical SERVER_BUTTON_ID handling (home.py's onAction()). selectServer() below
+                # is deferred, not called inline: it can end in an openSection()/doClose()-based
+                # swap once the resulting change:selectedServer signal reaches serverRefresh() -
+                # same reentrancy reasoning as switchTab()'s own deferred dispatch (see
+                # windowutils.SKIN_RELOAD_DEFER_SECONDS).
+                if action == xbmcgui.ACTION_SELECT_ITEM:
+                    self.showServers()
+                    return
+                elif action == xbmcgui.ACTION_CONTEXT_MENU and util.getUserSetting('previous_server', None):
+                    uuid = util.getUserSetting('previous_server', None)
+                    if uuid != plexapp.SERVERMANAGER.selectedServer.uuid:
+                        threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.selectServer, args=(uuid,)).start()
+                    return
+                elif action == xbmcgui.ACTION_MOUSE_LEFT_CLICK:
+                    self.showServers(mouse=True)
+                    self.setBoolProperty('show.servers', True)
+                    return
             elif controlID == self.USER_BUTTON_ID:
                 # Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - ported from HomeWindow's
                 # identical USER_BUTTON_ID handling (home.py's onAction()).
@@ -1428,6 +1783,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 elif action == xbmcgui.ACTION_MOUSE_LEFT_CLICK:
                     self.showUserMenu(mouse=True)
                     self.setBoolProperty('show.options', True)
+                    return
+            elif controlID == self.SERVER_LIST_ID:
+                if action == xbmcgui.ACTION_SELECT_ITEM:
+                    self.setFocusId(self.SERVER_BUTTON_ID)
                     return
 
             if self.dragging:
@@ -1472,6 +1831,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                         # not something this method does; falls through to
                         # kodigui.MultiWindow.onAction() below like anything else unhandled here.
                         self._updateHeroFromFocusedHubItem(controlID)
+                    elif action == xbmcgui.ACTION_CONTEXT_MENU:
+                        # Hub-item context menu - ported from HomeWindow's identical routing
+                        # (home.py's onAction(), `elif action == xbmcgui.ACTION_CONTEXT_MENU:`
+                        # inside its own `elif 399 < controlID < 500:` branch). Same return-value
+                        # -> serverRefresh() handoff sectionMenu()'s own trigger uses above.
+                        show_section = self.hubMenu(controlID)
+                        if not show_section:
+                            return
+                        self.serverRefresh(section=show_section)
+                        return
 
                 # quiet-orbiting-heron.md Stage B: everything below this point (MOVE_SET,
                 # mouse-drag, context-menu handling) reaches into grid-specific state
@@ -1552,7 +1921,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def onClick(self, controlID):
         if controlID == self.SECTION_LIST_ID:
-            self.sectionClicked()
+            # Ported from HomeWindow's identical guard (home.py's onClick()) - while
+            # self.movingSection is set, sectionMover() owns ACTION_SELECT_ITEM itself (via
+            # onAction() above) to finalize the move; an ordinary click-dispatch here on the same
+            # press would otherwise also try to open whatever's now selected.
+            if not self.movingSection:
+                self.sectionClicked()
             return
 
         if controlID == self.TAB_LIST_ID:
@@ -1583,6 +1957,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.doUserOption()
             self.setBoolProperty('show.options', False)
             self.setFocusId(self.USER_BUTTON_ID)
+            return
+
+        if controlID == self.SERVER_LIST_ID:
+            # Stage 3: same shared-across-content-modes reasoning as USER_LIST_ID above. Deferred,
+            # not called inline - see the SERVER_BUTTON_ID onAction() branch's own comment for why
+            # selectServer() can't run synchronously from a native callback.
+            self.setBoolProperty('show.servers', False)
+            threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.selectServer).start()
             return
 
         if self.contentMode == 'recommended':
@@ -1623,6 +2005,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         helper before a third consumer exists risked locking in the wrong shape.
         """
         items = []
+        # Native list-control cursor position of whichever item ends up marked is.active below -
+        # set once, after addItems(), so the sidebar's own selected position already reflects the
+        # active section the very first time focus ever lands there (Kodi otherwise defaults an
+        # unset list control's position to 0/Search). Live-confirmed regression without this: at
+        # cold start (self.section is home_section), moving focus into the sidebar for the first
+        # time landed on Search, not Home - is.active was never set on homemli either, in the
+        # cold-start case, since it was only ever set inside the sections-only loop below (which
+        # never includes home_section itself).
+        active_pos = None
 
         searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
         searchmli.setProperty('is.search', '1')
@@ -1633,15 +2024,35 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                                           data_source=home.home_section)
         homemli.setProperty('is.home', '1')
         homemli.setProperty('item', '1')
+        if home.home_section.key == self.section.key:
+            homemli.setProperty('is.active', '1')
+            active_pos = len(items)
         items.append(homemli)
 
-        setting_key = 'home.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID)
-        try:
-            navSettings = json.loads(util.getSetting(setting_key, '')) or {}
-        except ValueError:
-            navSettings = {}
+        # self.navSettings is real, mutable state (loadNavSettings()/saveNavSettings()) rather than
+        # a fresh read here, so sectionMenu()'s hide/show/pin/order changes are picked up on the
+        # very next rebuild without a redundant settings round-trip. Defensive load if somehow not
+        # populated yet - onFirstInit()/serverRefresh() are the normal call sites.
+        if self.navSettings is None:
+            self.loadNavSettings()
+        navSettings = self.navSettings
 
         sections = []
+
+        # home.watchlist_section only ever got constructed by HomeWindow.showSections() (home.py) -
+        # dead code on this branch, since HomeWindow is never instantiated once main.py boots
+        # straight into LibraryWindow (Stage 2). Left unfixed, home.watchlist_section stays None
+        # forever, and the check below always short-circuits there regardless of whether the
+        # account's watchlist actually has data - live-confirmed: watchlist never appeared in the
+        # sidebar at all. Constructed fresh here instead, same construction HomeWindow's own
+        # (dead) version used, gated by the same offline/setting checks to avoid a needless network
+        # call when the feature's disabled - this is the only place in the live codebase that reads
+        # home.watchlist_section, so it's also the only place that needs to populate it.
+        if not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True):
+            from plexnet import plexlibrary
+            home.watchlist_section = plexlibrary.WatchlistSection(
+                None, server=plexapp.SERVERMANAGER.getDiscoverServer())
+            home.watchlist_section.title = T(34000, 'Watchlist')
 
         if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True) and home.watchlist_section
                 and home.watchlist_section.has_data()
@@ -1676,6 +2087,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
             sections = sorted(sections, key=orderPos)
 
+        # self.section.key alone only matches a sidebar entry when self.section IS one - a
+        # collection or a folder drilled into via sectionClicked() carries its own key (the
+        # collection's, or the folder's parent's already-collection-shaped key), never a real
+        # section's - live-confirmed regression: opening a collection from a nested LibraryWindow
+        # left nothing highlighted in its own sidebar at all. getLibrarySectionId() (present on
+        # every section-shaped object this window's self.section can be, per its own existing use
+        # a few lines above for viewtype lookups) still resolves back to the real owning library's
+        # key in that case, so fall back to it rather than leaving nothing highlighted. Ported from
+        # the Sidebar-Tab-Unification branch's identical fix (commit f0e6340f), which found the
+        # same bug independently - that branch's own pooled-window architecture isn't ported here,
+        # just this small, self-contained highlight fix.
+        getActiveLibraryId = getattr(self.section, 'getLibrarySectionId', None)
+        activeLibraryId = getActiveLibraryId() if getActiveLibraryId else None
+
         for section in sections:
             mli = kodigui.ManagedListItem(section.title,
                                           iconImage='script.plex/home/type/{0}.png'.format(section.type),
@@ -1688,12 +2113,320 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 mli.setIconImage('script.plex/home/type/watchlist.png')
             elif isinstance(section, home.PinnedTypeSection):
                 mli.setProperty('is.pinned.type', section.itemType)
-            if section.key == self.section.key:
+            if section.key == self.section.key or (activeLibraryId and section.key == activeLibraryId):
                 mli.setProperty('is.active', '1')
+                active_pos = len(items)
             items.append(mli)
 
         self.sectionList.reset()
         self.sectionList.addItems(items)
+        if active_pos is not None:
+            self.sectionList.selectItem(active_pos)
+
+    def sectionPinnedTypes(self, section):
+        """Item types this library has pinned to the top bar as views of their own - ported from
+        HomeWindow.sectionPinnedTypes() (home.py), self.librarySettings -> self.navSettings."""
+        if not self.navSettings or isinstance(section, home.PinnedTypeSection):
+            return []
+
+        # playlists and the watchlist are plain virtual sections without a TYPE
+        pinnable = home.PINNABLE_TYPES.get(str(getattr(section, 'TYPE', None)), ())
+        stored = self.navSettings.get(section.key, {}).get('pinned_types') or []
+        return [t for t in stored if t in pinnable]
+
+    def setSectionPinned(self, section, item_type, pinned):
+        settings = self.navSettings.setdefault(section.key, {})
+        types = [t for t in settings.get('pinned_types') or [] if t != item_type]
+        if pinned:
+            types.append(item_type)
+        settings['pinned_types'] = types
+        self.saveNavSettings()
+
+    def sectionMenu(self):
+        """Context menu (ACTION_CONTEXT_MENU) for the sidebar's currently-focused section item -
+        ported from HomeWindow.sectionMenu() (home.py), adapted to this window's own state:
+        self.librarySettings (home.py's per-section show/hide/pin/order dict) -> self.navSettings
+        (see __init__'s comment for the name-collision reason), self.saveLibrarySettings() ->
+        self.saveNavSettings(). Triggered from onAction()'s SECTION_LIST_ID/ACTION_CONTEXT_MENU
+        branch, which also owns the block_section_change guard and the return-value ->
+        serverRefresh() handoff - see that branch's own comment for why.
+        """
+        item = self.sectionList.getSelectedItem()
+        if not item or not item.getProperty('item') or item.getProperty('is.search'):
+            return
+
+        section = item.dataSource
+        choice = None
+        if isinstance(section, home.PinnedTypeSection):
+            choice = dropdown.showDropdown(
+                [{'key': 'unpin', 'display': T(35045, "Unpin collections from the top bar")},
+                 {'key': 'move', 'display': T(33039, "Move")}],
+                pos=(660, 441),
+                close_direction='none',
+                set_dropdown_prop=False,
+                header=T(33030, 'Choose action for: {}').format(section.title),
+                select_index=0,
+                align_items="left",
+                dialog_props=getattr(self, 'carriedProps', None)
+            )
+
+        elif not section.key:
+            # home section
+            sections = [home.playlists_section] + plexapp.SERVERMANAGER.selectedServer.library.sections()
+            options = []
+
+            use_sep = False
+            if "order" in self.navSettings and self.navSettings["order"]:
+                options.append({'key': 'reset_order', 'display': T(33040, "Reset library order")})
+                use_sep = True
+
+            if util.getSetting('cache_requests'):
+                options.append({'key': 'cache_reset', 'display': T(33720, "Clear all caches")})
+                use_sep = True
+
+            if use_sep:
+                options.append(dropdown.SEPARATOR)
+
+            for s in sections:
+                section_settings = self.navSettings.get(s.key)
+                if section_settings and not section_settings.get("show", True):
+                    options.append({'key': 'show',
+                                    'section_id': s.key,
+                                    'display': T(33029, "Show library: {}").format(s.title)
+                                    }
+                                   )
+
+            # hack for an inexistant watchlist due to it being hidden
+            if util.getUserSetting("use_watchlist", True) and not self.navSettings.get(
+                    "/library/sections/watchlist", {}).get("show", True):
+                options.append({'key': 'show',
+                                'section_id': "/library/sections/watchlist",
+                                'display': T(33029, "Show library: {}").format(T(34000, 'Watchlist'))
+                                })
+
+            # Add Manage Hubs and Refresh Hubs options
+            if options:
+                options.append(dropdown.SEPARATOR)
+            options.append({'key': 'manage_hubs', 'display': T(34080, "Manage Hubs")})
+            options.append({'key': 'refresh_hubs', 'display': T(34096, "Refresh Hubs")})
+
+            if options:
+                choice = dropdown.showDropdown(
+                    options,
+                    pos=(660, 441),
+                    close_direction='none',
+                    set_dropdown_prop=False,
+                    header=T(33034, "Library settings"),
+                    select_index=0,
+                    align_items="left",
+                    dialog_props=getattr(self, 'carriedProps', None)
+                )
+
+        else:
+            options = []
+
+            if plexapp.ACCOUNT.isAdmin and section not in (home.watchlist_section, home.playlists_section):
+                options = [{'key': 'refresh', 'display': T(33082, "Scan Library Files")},
+                           {'key': 'emptyTrash', 'display': T(33083, "Empty Trash")},
+                           {'key': 'analyze', 'display': T(33084, "Analyze")},
+                           dropdown.SEPARATOR]
+
+            if section.locations and util.getSetting('path_mapping'):
+                for loc in section.locations:
+                    source, target = section.getMappedPath(loc)
+                    loc_is_mapped = source and target
+                    options.append(
+                        {'key': 'map', 'mapped': loc_is_mapped, 'path': loc, 'display': T(33026,
+                                                                                          "Map path: {}").format(loc)
+                            if not loc_is_mapped else T(33027, "Remove mapping: {}").format(target)
+                         }
+                    )
+
+                options.append(dropdown.SEPARATOR)
+
+            if 'collection' in home.PINNABLE_TYPES.get(str(getattr(section, 'TYPE', None)), ()) \
+                    and 'collection' not in self.sectionPinnedTypes(section):
+                options.append({'key': 'pin_collections',
+                                'display': T(35044, "Pin collections to the top bar")})
+
+            options.append({'key': 'hide', 'display': T(33028, "Hide library")})
+            options.append({'key': 'move', 'display': T(33039, "Move")})
+            options.append(dropdown.SEPARATOR)
+
+            if 'libraries' in util.getSetting('cache_requests') and section != home.watchlist_section:
+                options.append({'key': 'section_cache_reset', 'display': T(33721, "Clear library cache (not items)")})
+                options.append(dropdown.SEPARATOR)
+
+            # Add Manage Hubs and Refresh Hubs options (not applicable to watchlist)
+            if section != home.watchlist_section:
+                options.append(dropdown.SEPARATOR)
+                options.append({'key': 'manage_hubs', 'display': T(34080, "Manage Hubs")})
+                options.append({'key': 'refresh_hubs', 'display': T(34096, "Refresh Hubs")})
+
+            choice = dropdown.showDropdown(
+                options,
+                pos=(660, 441),
+                close_direction='none',
+                set_dropdown_prop=False,
+                header=T(33030, 'Choose action for: {}').format(section.title),
+                select_index=0,
+                align_items="left",
+                dialog_props=getattr(self, 'carriedProps', None)
+            )
+
+        if not choice:
+            return
+
+        if choice["key"] == "map":
+            is_mapped = choice.get("mapped")
+            if is_mapped:
+                # show deletion
+                source, target = section.getMappedPath(choice["path"])
+                section.deleteMapping(target)
+                return self.lastSection
+
+            else:
+                # show fb - select loc to map
+                d = xbmcgui.Dialog().browse(0, T(33031, "Select Kodi source for {}").format(choice["path"]), "files")
+                if not d:
+                    return
+                pmm.addPathMapping(d, choice["path"])
+                return self.lastSection
+        elif choice["key"] == "pin_collections":
+            self.setSectionPinned(section, 'collection', True)
+            return section
+        elif choice["key"] == "unpin":
+            self.setSectionPinned(section.librarySection, section.itemType, False)
+            return section.librarySection
+        elif choice["key"] == "hide":
+            if section.key not in self.navSettings:
+                self.navSettings[section.key] = {}
+            self.navSettings[section.key]['show'] = False
+            self.saveNavSettings()
+            return self.sectionList[self.sectionList.prev()].dataSource
+        elif choice["key"] == "show":
+            if "section_id" in choice:
+                if choice["section_id"] in self.navSettings:
+                    self.navSettings[choice["section_id"]]['show'] = True
+                    self.saveNavSettings()
+                    return self.lastSection
+        elif choice["key"] == "move":
+            self.sectionMover(item, "init")
+        elif choice["key"] == "reset_order":
+            if "order" in self.navSettings:
+                del self.navSettings["order"]
+                self.saveNavSettings()
+                return self.lastSection
+        elif choice["key"] == "refresh":
+            with busy.BusyContext(delay=True, delay_time=0.2):
+                section.refresh()
+            return self.lastSection
+        elif choice["key"] == "emptyTrash":
+            button = optionsdialog.show(
+                T(33083, 'Empty Trash'),
+                section.title,
+                T(32328, 'Yes'),
+                T(32329, 'No'),
+                dialog_props=getattr(self, 'carriedProps', None)
+            )
+            if button == 0:
+                with busy.BusyContext(delay=True, delay_time=0.2):
+                    section.emptyTrash()
+                return self.lastSection
+        elif choice["key"] == "analyze":
+            with busy.BusyContext(delay=True, delay_time=0.2):
+                section.analyze()
+            return
+
+        elif choice["key"] == "cache_reset":
+            try:
+                plexapp.util.INTERFACE.clearRequestsCache()
+            except Exception as e:
+                util.DEBUG_LOG("Couldn't clear requests cache: {}", e)
+
+        elif choice["key"] == "section_cache_reset":
+            try:
+                util.DEBUG_LOG('Clearing requests cache for section {}...', section.title)
+                section.clearCache()
+            except Exception as e:
+                util.DEBUG_LOG("Couldn't clear library cache: {}", e)
+
+        elif choice["key"] == "manage_hubs":
+            self.showHubSettingsDialog(section)
+            # showHubSettingsDialog() has no HomeWindow-style showHubs() call to fall back on here
+            # (no equivalent exists on this window) - reopening the section below, via the caller's
+            # serverRefresh(section=...) handoff, is this window's own refresh mechanism, so only
+            # ask for it when something actually changed.
+            if self._hubsSettingsChanged:
+                return self.lastSection
+            return
+
+        elif choice["key"] == "refresh_hubs":
+            return self.lastSection
+
+    def sectionMover(self, item, action):
+        """Sidebar section-reorder ("Move") mode - ported verbatim from HomeWindow.sectionMover()
+        (home.py). Entered via sectionMenu()'s 'move' choice; onAction()/onClick() route input here
+        instead of their normal handling while self.movingSection is set - see those methods' own
+        comments.
+        """
+        def stop_moving(reset=False):
+            # set everything to non-moving and re-insert search + home items
+            self.movingSection = False
+            self.setBoolProperty("moving", False)
+            item.setBoolProperty("moving", False)
+            searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
+            searchmli.setProperty('is.search', '1')
+            searchmli.setProperty('item', '1')
+            homemli = kodigui.ManagedListItem(T(32332, 'Home'), iconImage='script.plex/home/type/home.png',
+                                              data_source=home.home_section)
+            homemli.setProperty('is.home', '1')
+            homemli.setProperty('item', '1')
+            if reset:
+                if self._initialMovingSectionPos is not None:
+                    self.sectionList.moveItem(item, self._initialMovingSectionPos)
+                self._initialMovingSectionPos = None
+            self.sectionList.insertItem(0, homemli)
+            self.sectionList.insertItem(0, searchmli)
+            if reset:
+                self.sectionList.selectItem(1)  # Home
+            self.sectionChanged()
+
+        if action == "init":
+            self.movingSection = item
+            self.setBoolProperty("moving", True)
+            self._initialMovingSectionPos = self.sectionList.getSelectedPos() - 2  # account for search + home
+
+            # remove search + home items
+            self.sectionList.removeItem(0)  # search
+            self.sectionList.removeItem(0)  # home (shifted to 0)
+            self.sectionList.setSelectedItem(item)
+
+            item.setBoolProperty("moving", True)
+
+        elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
+            stop_moving(reset=True)
+
+        elif action in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
+            direction = "left" if action == xbmcgui.ACTION_MOVE_UP else "right"
+            index = self.sectionList.getManagedItemPosition(item)
+            last_index = len(self.sectionList) - 1
+            next_index = min(max(0, index - 1 if direction == "left" else index + 1), last_index)
+            if index == 0 and direction == "left":
+                next_index = last_index
+                self.sectionList.selectItem(last_index)
+            elif index == last_index and direction == "right":
+                next_index = 0
+                self.sectionList.selectItem(0)
+
+            self.sectionList.moveItem(item, next_index)
+            self.sectionList.selectItem(next_index)
+
+        elif action == xbmcgui.ACTION_SELECT_ITEM:
+            stop_moving()
+            # store section order
+            self.navSettings["order"] = [i.dataSource.key for i in self.sectionList.items if i.dataSource]
+            self.saveNavSettings()
 
     def buildTabList(self):
         """Populate the section-tabs row (Recommended/Library) - plan item 0
@@ -1738,7 +2471,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # the already-shown section via lastSection tracking, playlists -> PlaylistsWindow, else ->
     # opener.sectionClicked().
 
-    def displayServerAndUser(self):
+    def displayServerAndUser(self, **kwargs):
         """Sidebar avatar/username and server icon/name. Window properties are
         per-window, so home.py's own displayServerAndUser() (which this mirrors)
         never reaches this window - see home.py:3622.
@@ -1778,7 +2511,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
-        if controlID == self.SECTION_LIST_ID:
+        if controlID == self.SECTION_LIST_ID and not self.changingServer and not self.movingSection:
+            # changingServer guard: ported from HomeWindow's identical onFocus() check (home.py) -
+            # selectServer() below sets focus to SECTION_LIST_ID itself as its very first step,
+            # well before the switch actually completes - without this, that focus event would
+            # fire checkSectionItem() immediately and re-trigger a section reload mid-switch.
+            # movingSection guard: same reasoning, also ported from HomeWindow (home.py) - focus
+            # moves within the list constantly during a reorder (moveItem()/selectItem() calls in
+            # sectionMover() itself), none of which should be treated as "settle on this section".
             self.checkSectionItem()
 
         if self.contentMode == 'recommended':
@@ -2120,6 +2860,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         elif self.section.TYPE == 'movies_shows':
             for t in ('movies_shows', 'movie', 'show'):
                 options.append({'type': t, 'display': TYPE_PLURAL.get(t, t)})
+        elif self.section.TYPE == 'playlists':
+            options.append({'type': 'audio', 'display': T(32048, 'Audio')})
+            options.append({'type': 'video', 'display': T(32053, 'Video')})
         else:
             return
 
@@ -2504,7 +3247,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def showPanelClicked(self):
         mli = self.showPanelControl.getSelectedItem()
-        if not mli or not mli.dataSource:
+        # dataSource truthiness can't be used here: BasePlaylist.__len__() returns
+        # len(self._items), which is empty until a playlist's contents are actually loaded, so a
+        # freshly-listed (unopened) Playlist object is falsy even though it's a real dataSource - an
+        # explicit None-check is required or every playlist click no-ops. Ported from the
+        # Sidebar-Tab-Unification branch's identical fix (commit f0e6340f), found live-testing that
+        # branch's own Playlists port.
+        if not mli or mli.dataSource is None:
             return
 
         sectionType = self.section.TYPE
@@ -2563,6 +3312,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self.processCommand(opener.handleOpen(subitems.ArtistWindow, media_item=mli.dataSource, parent_list=self.showPanelControl))
         elif self.section.TYPE in ('photo', 'photodirectory'):
             self.showPhoto(mli.dataSource)
+        elif self.section.TYPE == 'playlists':
+            # Mirrors the 'collection' branch above - opener.open()'s existing playlist-TYPE
+            # branch (opener.py) already routes to playlist.PlaylistWindow correctly.
+            self.processCommand(opener.open(mli.dataSource))
 
         if self._closeSignalled:
             return
@@ -2639,6 +3392,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         if self.section.TYPE in ('photo', 'photodirectory'):
             self.fillPhotos()
+        elif self.section.TYPE == 'playlists':
+            self.fillPlaylists(keep_focus=keep_focus)
         else:
             self.fillShows(keep_focus=keep_focus)
 
@@ -2849,6 +3604,80 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             settings.append('{0}'.format(photo.media[0].exposure))
         mli.setProperty('camera.settings', u' \u2022 '.join(settings))
         mli.setProperty('photo.summary', photo.get('summary'))
+
+    def createPlaylistGridListItem(self, obj):
+        # Square tiles for both audio/video, 'thumb' composite (matches what the playlist detail
+        # screen shows, not the old 'art' backdrop-style video rendering), item count instead of
+        # duration. Ported from the Sidebar-Tab-Unification branch's identical method (commit
+        # f0e6340f), which itself mirrors HomeWindow.createPlaylistListItem() (home.py, f69b1e7e).
+        # Named distinctly from the pre-existing createPlaylistListItem() (below,
+        # CREATE_LI_MAP/createListItem()'s hub-tile dispatch, a different rendering context - hub
+        # rows use self.THUMB_SQUARE_DIM at 220x220, this grid view uses the module-level
+        # THUMB_SQUARE_DIM at 355x355, same dimension every other grid-view create*ListItem() uses)
+        # - same method name on the same class would have silently shadowed one or the other.
+        w, h = THUMB_SQUARE_DIM
+        thumb = obj.buildComposite(width=w, height=h, media='thumb')
+
+        itemCount = T(35055, '{0} items').format(obj.leafCount.asInt())
+        mli = kodigui.ManagedListItem(
+            obj.title or '',
+            itemCount,
+            thumbnailImage=thumb,
+            data_source=obj
+        )
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/{0}.png'.format(
+            obj.playlistType == 'audio' and 'music' or 'movie'))
+        # script-plex-squares.xml.tpl's own item template reads the tile's second line from the
+        # album.artist property (not ListItem.Label2, unlike the listview-square template, which
+        # does use Label2 - set above too, for that view). Reusing the same property/mechanism the
+        # Artist grid already renders rather than touching the shared squares template's layout.
+        mli.setProperty('album.artist', itemCount)
+        return mli
+
+    @busy.dialog()
+    def fillPlaylists(self, keep_focus=False):
+        # Playlists were never a paginated library query (see the old playlists.py's own fill()) -
+        # a single small synchronous fetch, filtered client-side by the current tab (ITEM_TYPE:
+        # 'audio'/'video'), populating showPanelControl directly rather than going through
+        # fillShows()'s section.all()/jumpList()/ChunkRequestTask machinery, none of which applies.
+        # Ported from the Sidebar-Tab-Unification branch's identical method (commit f0e6340f).
+        self.setBoolProperty('no.content', False)
+        self.setBoolProperty('no.content.filtered', False)
+        self.setBoolProperty('content.filling', True)
+
+        playlists = [pl for pl in plexapp.SERVERMANAGER.selectedServer.playlists()
+                    if pl.playlistType == ITEM_TYPE]
+
+        self.showPanelControl.reset()
+        self.keyListControl.reset()
+        util.setGlobalProperty('sort.alpha', '')
+        self.setProperty("items.count", str(len(playlists)))
+
+        if not playlists:
+            self.setBoolProperty('no.content', True)
+            self.setBoolProperty('content.filling', False)
+            return
+
+        items = []
+        for idx, pl in enumerate(playlists):
+            mli = self.createPlaylistGridListItem(pl)
+            mli.setProperty('index', str(idx))
+            items.append(mli)
+
+        if not self.backgroundSet:
+            # setBackground()/updateBackgroundFrom() key off ds.get('art', ...), which playlists
+            # don't have - mirrors the old playlists.py's own fill(), which set 'background' directly
+            # from .composite instead for the same reason.
+            self.setProperty('background', util.backgroundFromArt(
+                random.choice(playlists).composite, width=self.width, height=self.height))
+            self.backgroundSet = True
+
+        self.showPanelControl.addItems(items)
+        self.showPanelControl.selectItem(0)
+        if not keep_focus:
+            self.setFocusId(self.POSTERS_PANEL_ID)
+
+        self.setBoolProperty('content.filling', False)
 
     @busy.dialog()
     def fillPhotos(self):
@@ -3115,7 +3944,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.setBoolProperty('content.filling', False)
 
     def requestChunk(self, start):
-        if util.addonSettings.retrieveAllMediaUpFront:
+        if util.addonSettings.retrieveAllMediaUpFront or self.section.TYPE == 'playlists':
+            # fillPlaylists() always fetches the whole (small, unpaginated) list synchronously up
+            # front - there's never a further chunk to request, and PlaylistsSection has no all()
+            # for ChunkRequestTask to call (confirmed by the Sidebar-Tab-Unification branch's own
+            # live test: AttributeError otherwise, triggered by ordinary focus movement in the
+            # panel).
             return
 
         # Calculate the correct starting chunk position for the item they passed in
@@ -3345,6 +4179,28 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # Identifiers that indicate ar16x9 display (contains these substrings)
     HUB_16X9_KEYWORDS = ('episode', 'clip', 'video')
 
+    def loadNavSettings(self):
+        """Per-section show/hide/pin/order preferences - ported from HomeWindow.loadLibrarySettings()
+        (home.py) under a new name, see __init__'s own comment for why. Same setting key
+        buildSectionList() used to read directly, every call, as a throwaway local - this makes it
+        real state sectionMenu() can mutate and persist.
+        """
+        setting_key = 'home.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID)
+        data = util.getSetting(setting_key, '')
+        self.navSettings = {}
+        try:
+            self.navSettings = json.loads(data)
+        except ValueError:
+            pass
+        except:
+            util.ERROR()
+
+    def saveNavSettings(self):
+        if self.navSettings:
+            setting_key = 'home.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:],
+                                                        plexapp.ACCOUNT.ID)
+            util.setSetting(setting_key, json.dumps(self.navSettings))
+
     def loadHubSettings(self):
         # NOTE: setting key is scoped by server uuid + account ID, not by window class - hub
         # visibility/order preferences are meant to be user+server-wide, shared between Home and
@@ -3500,6 +4356,620 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return (1, hub_index.get(id(hub), 999))
 
         return sorted(hubs_list, key=get_order)
+
+    def _discoverHubsSync(self):
+        """Synchronous hub discovery for the Manage Hubs dialog - ported from
+        HomeWindow._discoverHubsSync() (home.py), called lazily the first time
+        showHubSettingsDialog() runs and self.availableHubs is still empty. Also builds
+        self.allSections (not part of HomeWindow's own version - see __init__'s comment), needed by
+        _ensureCustomConfigExists()'s backfill path. HomeWindow additionally keeps an eager,
+        always-on background DiscoverHubsTask that pre-populates availableHubs before the user ever
+        opens Manage Hubs - not ported, see __init__'s own comment for why paying for discovery only
+        when the dialog actually opens is sufficient here.
+        """
+        if not plexapp.SERVERMANAGER.selectedServer:
+            return
+
+        sections_to_query = [home.home_section]
+
+        try:
+            library_sections = plexapp.SERVERMANAGER.selectedServer.library.sections()
+            sections_to_query.extend(library_sections)
+        except:
+            return
+
+        try:
+            pl = plexapp.SERVERMANAGER.selectedServer.playlists()
+            if pl:
+                sections_to_query.append(home.playlists_section)
+        except:
+            pass
+
+        availableHubs = {}
+        allSections = {}
+
+        for section in sections_to_query:
+            if section.key is not None:
+                allSections[str(section.key)] = section
+            try:
+                section_key = section.key
+                section_type = getattr(section, 'type', 'unknown')
+                section_title = getattr(section, 'title', T(32411, 'Unknown'))
+
+                hubs = section.server.hubs(section_key, count=home.HUB_PAGE_SIZE)
+
+                for hub in hubs:
+                    clean_identifier = hub.getCleanHubIdentifier(is_home=(section_key is None))
+
+                    if section_key is None:
+                        catalog_id = clean_identifier
+                    else:
+                        catalog_id = '{}:{}'.format(section_key, clean_identifier)
+
+                    native_display = 'poster'
+                    if hub.items:
+                        item_type = hub.items[0].type
+                        native_display = self.TYPE_TO_DISPLAY.get(item_type, 'poster')
+
+                    hub_title = hub.title
+                    if not hub_title:
+                        hub_title = home.PLAYLIST_HUB_TITLES.get(clean_identifier, clean_identifier)
+
+                    if catalog_id not in availableHubs:
+                        availableHubs[catalog_id] = {
+                            'catalog_id': str(catalog_id),
+                            'identifier': str(clean_identifier),
+                            'title': str(hub_title),
+                            'hubIdentifier': str(hub.hubIdentifier),
+                            'source_section_key': section_key,
+                            'source_section_title': str(section_title) if section_title else T(32411, 'Unknown'),
+                            'source_section_type': str(section_type) if section_type else 'unknown',
+                            'native_display': native_display,
+                            'item_count': len(hub.items) if hub.items else 0,
+                        }
+
+            except plexnet.exceptions.BadRequest:
+                pass
+            except Exception:
+                pass
+
+        self.availableHubs = availableHubs
+        self.allSections = allSections
+
+    def _ensureCustomConfigExists(self, section_key):
+        """Ensure custom hub config exists for a section, initializing with defaults if needed.
+        Returns True if config was just created, False if it already existed. Ported verbatim from
+        HomeWindow._ensureCustomConfigExists() (home.py)."""
+        if not self.hubSettings:
+            self.hubSettings = {}
+
+        config_key = str(section_key) if section_key is not None else None
+
+        if config_key in self.hubSettings and self.hubSettings[config_key].get('custom'):
+            return False
+
+        if config_key not in self.hubSettings:
+            self.hubSettings[config_key] = {'custom': False, 'hubs': []}
+
+        section_config = self.hubSettings[config_key]
+        section_config['custom'] = True
+        section_config['hubs'] = []
+
+        is_home = config_key is None
+        cached_hubs = self.sectionHubs.get(section_key, [])
+
+        for hub in cached_hubs:
+            hub_identifier = hub.getCleanHubIdentifier(is_home=is_home)
+            if is_home:
+                cat_id = hub_identifier
+            else:
+                cat_id = '{}:{}'.format(section_key, hub_identifier)
+
+            section_config['hubs'].append({
+                'catalog_id': cat_id,
+                'identifier': hub_identifier,
+                'order': len(section_config['hubs'])
+            })
+
+            if cat_id not in self.availableHubs:
+                source_title = T(32332, 'Home')
+                source_type = 'home'
+                if section_key is not None:
+                    source_section = self.allSections.get(str(section_key))
+                    if source_section:
+                        source_title = str(source_section.title)
+                        source_type = str(source_section.type)
+
+                self.availableHubs[cat_id] = {
+                    'catalog_id': str(cat_id),
+                    'identifier': str(hub_identifier),
+                    'title': str(hub.title) if hub.title else home.PLAYLIST_HUB_TITLES.get(hub_identifier, hub_identifier),
+                    'hubIdentifier': str(hub.hubIdentifier) if hub.hubIdentifier else hub_identifier,
+                    'source_section_key': section_key,
+                    'source_section_title': source_title,
+                    'source_section_type': source_type,
+                    'native_display': self.TYPE_TO_DISPLAY.get(hub.items[0].type, 'poster') if hub.items else 'poster',
+                    'item_count': len(hub.items) if hub.items else 0,
+                }
+
+        self.saveHubSettings()
+        self._hubsSettingsChanged = True
+        return True
+
+    def _disableHub(self, catalog_id, section_key):
+        """Disable a hub by removing it from the enabled list. Ported verbatim from
+        HomeWindow._disableHub() (home.py)."""
+        if not self.hubSettings:
+            return
+
+        config_key = str(section_key) if section_key is not None else None
+        section_config = self.hubSettings.get(config_key)
+        if not section_config or not section_config.get('custom'):
+            return
+
+        hubs = section_config.get('hubs', [])
+        for hub_config in hubs[:]:
+            if hub_config.get('catalog_id') == catalog_id:
+                hubs.remove(hub_config)
+                break
+
+        for idx, hub_config in enumerate(hubs):
+            hub_config['order'] = idx
+
+        self.saveHubSettings()
+
+    def _canMoveHub(self, catalog_id, section_key):
+        """Check if a hub can move up or down in the order. Ported verbatim from
+        HomeWindow._canMoveHub() (home.py)."""
+        config_key = str(section_key) if section_key is not None else None
+
+        if self.hubSettings:
+            section_config = self.hubSettings.get(config_key)
+            if section_config and section_config.get('custom'):
+                hubs = section_config.get('hubs', [])
+                if len(hubs) <= 1:
+                    return False, False
+
+                current_idx = None
+                for idx, hub_config in enumerate(hubs):
+                    if hub_config.get('catalog_id') == catalog_id:
+                        current_idx = idx
+                        break
+
+                if current_idx is None:
+                    return False, False
+
+                can_move_up = current_idx > 0
+                can_move_down = current_idx < len(hubs) - 1
+                return can_move_up, can_move_down
+
+        cached_hubs = self.sectionHubs.get(section_key, [])
+        can_move = len(cached_hubs) > 1
+        return can_move, can_move
+
+    def _moveHubToPosition(self, catalog_id, section_key, from_visual_pos, to_visual_pos, optionsList):
+        """Move a hub from one visual position to another - ported verbatim from
+        HomeWindow._moveHubToPosition() (home.py)."""
+        if not self.hubSettings or from_visual_pos == to_visual_pos:
+            return
+
+        config_key = str(section_key) if section_key is not None else None
+        section_config = self.hubSettings.get(config_key)
+        if not section_config or not section_config.get('custom'):
+            return
+
+        hubs = section_config.get('hubs', [])
+
+        from_idx = from_visual_pos
+        to_idx = to_visual_pos
+
+        if from_idx < 0 or from_idx >= len(hubs):
+            return
+        if to_idx < 0 or to_idx >= len(hubs):
+            return
+
+        hub = hubs.pop(from_idx)
+        hubs.insert(to_idx, hub)
+
+        for idx, hub_config in enumerate(hubs):
+            hub_config['order'] = idx
+
+    def _restoreHubOrder(self, section_key, optionsList):
+        """Restore hub order from saved settings after a cancelled move - ported verbatim from
+        HomeWindow._restoreHubOrder() (home.py)."""
+        self.loadHubSettings()
+        if optionsList:
+            self._refreshHubSettingsDialog(optionsList, section_key)
+
+    def resetSectionHubs(self, section_key):
+        """Reset hub configuration for a section to defaults - ported verbatim from
+        HomeWindow.resetSectionHubs() (home.py)."""
+        config_key = str(section_key) if section_key is not None else None
+        if self.hubSettings and config_key in self.hubSettings:
+            del self.hubSettings[config_key]
+            self.saveHubSettings()
+
+    def _buildHubSettingsOptions(self, section_key, section_title):
+        """Build the list of option dicts for the hub settings dialog - ported verbatim from
+        HomeWindow._buildHubSettingsOptions() (home.py)."""
+        config_key = str(section_key) if section_key is not None else None
+        section_config = self.hubSettings.get(config_key, {}) if self.hubSettings else {}
+        has_custom_config = section_config.get('custom', False)
+        configured_hubs = section_config.get('hubs', []) if has_custom_config else []
+
+        configured_catalog_ids = {h.get('catalog_id', h.get('identifier')) for h in configured_hubs}
+
+        hub_states = {}
+        for catalog_id, hub_info in self.availableHubs.items():
+            if has_custom_config:
+                is_enabled = catalog_id in configured_catalog_ids
+            else:
+                hub_source_key = hub_info.get('source_section_key')
+                if section_key is None:
+                    is_enabled = (hub_source_key is None)
+                else:
+                    is_enabled = (str(hub_source_key) == str(section_key) if hub_source_key is not None else False)
+            hub_states[catalog_id] = (is_enabled, hub_info)
+
+        def make_option(catalog_id, hub_info, is_enabled, position=None):
+            base_title = hub_info.get('title', catalog_id)
+            if 'collection' in hub_info.get('identifier', ''):
+                base_title = u'{} ({})'.format(base_title, T(32382, 'Collection'))
+            source_label = hub_info.get('source_section_title', T(32411, 'Unknown'))
+            if position is not None:
+                display_title = u'{}. {} [{}]'.format(position, base_title, source_label)
+            else:
+                display_title = u'{} [{}]'.format(base_title, source_label)
+            indicator = 'script.plex/indicators/circle-19.png' if is_enabled else ''
+            return {
+                'key': 'toggle_hub',
+                'catalog_id': catalog_id,
+                'identifier': hub_info.get('identifier', catalog_id),
+                'hub_info': hub_info,
+                'enabled': is_enabled,
+                'display': display_title,
+                'indicator': indicator,
+                'has_submenu': is_enabled,
+            }
+
+        options = []
+        enabled_hubs_shown = set()
+        if has_custom_config and configured_hubs:
+            for idx, hub_config in enumerate(configured_hubs):
+                cat_id = hub_config.get('catalog_id', hub_config.get('identifier'))
+                if cat_id in hub_states:
+                    is_enabled, hub_info = hub_states[cat_id]
+                    if is_enabled:
+                        options.append(make_option(cat_id, hub_info, True, position=idx + 1))
+                        enabled_hubs_shown.add(cat_id)
+        else:
+            ordered_catalog_ids = []
+            cached_hubs = self.sectionHubs.get(section_key, [])
+            is_home = section_key is None
+            for hub in cached_hubs:
+                identifier = hub.getCleanHubIdentifier(is_home=is_home)
+                if is_home:
+                    catalog_id = identifier
+                else:
+                    catalog_id = '{}:{}'.format(section_key, identifier)
+                if catalog_id in hub_states:
+                    is_enabled, hub_info = hub_states[catalog_id]
+                    if is_enabled:
+                        ordered_catalog_ids.append((catalog_id, hub_info))
+            for idx, (catalog_id, hub_info) in enumerate(ordered_catalog_ids):
+                options.append(make_option(catalog_id, hub_info, True, position=idx + 1))
+                enabled_hubs_shown.add(catalog_id)
+
+        if options:
+            options.append(dropdown.SEPARATOR)
+
+        hubs_by_source = {}
+        for catalog_id, (is_enabled, hub_info) in hub_states.items():
+            if catalog_id in enabled_hubs_shown:
+                continue
+            source = hub_info.get('source_section_title', T(32411, 'Unknown'))
+            if source not in hubs_by_source:
+                hubs_by_source[source] = []
+            hubs_by_source[source].append((catalog_id, hub_info, is_enabled))
+
+        def source_sort_key(x):
+            if str(x) == str(section_title):
+                return (0, str(x))
+            if str(x) == 'Home':
+                return (1, str(x))
+            return (2, str(x))
+
+        sorted_sources = sorted(hubs_by_source.keys(), key=source_sort_key)
+        for source in sorted_sources:
+            if options and options[-1] != dropdown.SEPARATOR:
+                options.append(dropdown.SEPARATOR)
+            for catalog_id, hub_info, is_enabled in sorted(hubs_by_source[source], key=lambda x: x[1].get('title', '')):
+                options.append(make_option(catalog_id, hub_info, is_enabled))
+
+        options.append(dropdown.SEPARATOR)
+        options.append({'key': 'refresh_hubs', 'display': T(34093, "Refresh Hub List")})
+        options.append({'key': 'reset_hubs', 'display': T(34081, "Reset to Default")})
+
+        return options
+
+    def showHubSettingsDialog(self, section):
+        """Show dialog to manage hubs for the given section - ported from
+        HomeWindow.showHubSettingsDialog() (home.py), minus its own trailing showHubs() refresh call
+        (no equivalent on this window - sectionMenu()'s 'manage_hubs' caller handles the refresh
+        instead, via self._hubsSettingsChanged - see that branch's own comment)."""
+        self._managingHubsForSection = section.key
+        self._hubsSettingsChanged = False
+
+        if not self.availableHubs:
+            with busy.BusyContext(delay=True, delay_time=0.2):
+                self._discoverHubsSync()
+            if not self.availableHubs:
+                return
+
+        section_key = section.key
+        section_title = section.title if hasattr(section, 'title') else 'Home'
+        self._managingHubsForSectionTitle = section_title
+
+        config_key = str(section_key) if section_key is not None else None
+
+        section_config = self.hubSettings.get(config_key, {}) if self.hubSettings else {}
+        has_custom_config = section_config.get('custom', False)
+        configured_hubs = section_config.get('hubs', []) if has_custom_config else []
+
+        if section_key is None and has_custom_config and configured_hubs:
+            use_new_continue_watching = util.getSetting('hubs_use_new_continue_watching', False)
+            configured_ids = {h.get('catalog_id', h.get('identifier')) for h in configured_hubs}
+            if use_new_continue_watching and ('home.continue' in configured_ids or 'home.ondeck' in configured_ids) \
+                    and 'continueWatching' not in configured_ids:
+                old_entries = [h for h in configured_hubs
+                               if h.get('catalog_id') in ('home.continue', 'home.ondeck')]
+                min_order = min(h.get('order', 999) for h in old_entries)
+                new_hubs = [h for h in configured_hubs
+                            if h.get('catalog_id') not in ('home.continue', 'home.ondeck')]
+                new_hubs.append({'catalog_id': 'continueWatching', 'order': min_order})
+                new_hubs.sort(key=lambda h: h.get('order', 999))
+                for i, h in enumerate(new_hubs):
+                    h['order'] = i
+                section_config['hubs'] = new_hubs
+                self.saveHubSettings()
+            elif not use_new_continue_watching and 'continueWatching' in configured_ids \
+                    and 'home.continue' not in configured_ids and 'home.ondeck' not in configured_ids:
+                cw_entry = next(h for h in configured_hubs if h.get('catalog_id') == 'continueWatching')
+                cw_order = cw_entry.get('order', 0)
+                new_hubs = [h for h in configured_hubs if h.get('catalog_id') != 'continueWatching']
+                new_hubs.append({'catalog_id': 'home.continue', 'order': cw_order})
+                new_hubs.append({'catalog_id': 'home.ondeck', 'order': cw_order + 0.5})
+                new_hubs.sort(key=lambda h: h.get('order', 999))
+                for i, h in enumerate(new_hubs):
+                    h['order'] = i
+                section_config['hubs'] = new_hubs
+                self.saveHubSettings()
+
+        options = self._buildHubSettingsOptions(section_key, section_title)
+        if not options:
+            return
+
+        try:
+            dropdown.showDropdown(
+                options,
+                pos=(460, 200),
+                close_direction='none',
+                set_dropdown_prop=False,
+                with_indicator=True,
+                header=T(34082, "Manage Hubs: {}").format(section_title),
+                align_items="left",
+                close_only_with_back=True,
+                options_callback=self.onHubSettingToggle,
+                suboption_callback=self._hubSubOptionCallback,
+                dialog_props=getattr(self, 'carriedProps', None),
+                move_mode_callback=self._onHubMoveCallback,
+            )
+        except Exception as e:
+            util.ERROR('Hub Settings: Error showing dropdown: {}'.format(e))
+            return
+
+    def _hubSubOptionCallback(self, choice):
+        """Return sub-menu options for an enabled hub, or None if no sub-menu needed. Ported
+        verbatim from HomeWindow._hubSubOptionCallback() (home.py)."""
+        if choice.get('key') != 'toggle_hub' or not choice.get('enabled'):
+            return None
+
+        catalog_id = choice.get('catalog_id')
+        section_key = getattr(self, '_managingHubsForSection', None)
+
+        can_move_up, can_move_down = self._canMoveHub(catalog_id, section_key)
+        can_move = can_move_up or can_move_down
+
+        options = []
+        if can_move:
+            options.append({'key': 'move', 'display': T(34089, 'Move')})
+        options.append({'key': 'disable', 'display': T(34085, 'Disable')})
+        return options
+
+    def onHubSettingToggle(self, optionsList, mli):
+        """Callback when a hub is toggled in the settings dialog - ported verbatim from
+        HomeWindow.onHubSettingToggle() (home.py)."""
+        choice = mli.dataSource
+        if not choice:
+            return
+
+        if choice.get('key') == 'refresh_hubs':
+            section_key = getattr(self, '_managingHubsForSection', self.lastSection.key)
+            section_title = getattr(self, '_managingHubsForSectionTitle', '')
+            self._discoverHubsSync()
+            options = self._buildHubSettingsOptions(section_key, section_title)
+            return ('rebuild', options, 0)
+
+        if choice.get('key') == 'reset_hubs':
+            section_key = getattr(self, '_managingHubsForSection', self.lastSection.key)
+            section_title = getattr(self, '_managingHubsForSectionTitle', '')
+            self.resetSectionHubs(section_key)
+            self._hubsSettingsChanged = True
+            options = self._buildHubSettingsOptions(section_key, section_title)
+            return ('rebuild', options, 0)
+
+        if choice.get('key') != 'toggle_hub':
+            return
+
+        catalog_id = choice.get('catalog_id', choice.get('identifier'))
+        section_key = getattr(self, '_managingHubsForSection', self.lastSection.key)
+        is_currently_enabled = choice.get('enabled', False)
+
+        if is_currently_enabled:
+            config_created = self._ensureCustomConfigExists(section_key)
+            if config_created:
+                self._refreshHubSettingsDialog(optionsList, section_key)
+
+            sub = choice.get('sub')
+            if not sub:
+                return None
+
+            if sub.get('key') == 'move':
+                self._movingHubCatalogId = catalog_id
+                self._movingHubSectionKey = section_key
+                self._movingHubOptionsList = optionsList
+                return 'enter_move_mode_sub'
+
+            elif sub.get('key') == 'disable':
+                focus_pos = optionsList.getSelectedPos()
+                self._disableHub(catalog_id, section_key)
+                self._hubsSettingsChanged = True
+                section_title = getattr(self, '_managingHubsForSectionTitle', '')
+                options = self._buildHubSettingsOptions(section_key, section_title)
+                return ('rebuild', options, focus_pos)
+
+            return None
+        else:
+            new_enabled = True
+
+        config_key = str(section_key) if section_key is not None else None
+
+        if not self.hubSettings:
+            self.hubSettings = {}
+
+        need_init = config_key not in self.hubSettings or not self.hubSettings.get(config_key, {}).get('custom')
+
+        if config_key not in self.hubSettings:
+            self.hubSettings[config_key] = {'custom': False, 'hubs': []}
+
+        section_config = self.hubSettings[config_key]
+
+        if need_init:
+            section_config['custom'] = True
+            section_config['hubs'] = []
+            is_home = section_key is None
+
+            cached_hubs = self.sectionHubs.get(section_key, [])
+
+            for hub in cached_hubs:
+                hub_identifier = hub.getCleanHubIdentifier(is_home=is_home)
+                if is_home:
+                    cat_id = hub_identifier
+                else:
+                    cat_id = '{}:{}'.format(section_key, hub_identifier)
+
+                if cat_id in self.availableHubs:
+                    section_config['hubs'].append({
+                        'catalog_id': cat_id,
+                        'identifier': hub_identifier,
+                        'order': len(section_config['hubs'])
+                    })
+
+        hub_found = False
+        for hub_config in section_config['hubs']:
+            config_cat_id = hub_config.get('catalog_id', hub_config.get('identifier'))
+            if config_cat_id == catalog_id:
+                hub_found = True
+                if not new_enabled:
+                    section_config['hubs'].remove(hub_config)
+                break
+
+        if new_enabled and not hub_found:
+            hub_info = choice.get('hub_info', {})
+            section_config['hubs'].append({
+                'catalog_id': catalog_id,
+                'identifier': hub_info.get('identifier', catalog_id),
+                'order': len(section_config['hubs'])
+            })
+
+        self.saveHubSettings()
+        self._hubsSettingsChanged = True
+
+        focus_pos = optionsList.getSelectedPos()
+        section_title = getattr(self, '_managingHubsForSectionTitle', '')
+        options = self._buildHubSettingsOptions(section_key, section_title)
+        return ('rebuild', options, focus_pos)
+
+    def _onHubMoveCallback(self, action, mli, old_pos, new_pos):
+        """Handle move-mode callbacks from the dropdown dialog - ported verbatim from
+        HomeWindow._onHubMoveCallback() (home.py)."""
+        section_key = getattr(self, '_movingHubSectionKey', None)
+        catalog_id = getattr(self, '_movingHubCatalogId', None)
+        optionsList = getattr(self, '_movingHubOptionsList', None)
+
+        if action == 'move':
+            if catalog_id:
+                self._moveHubToPosition(catalog_id, section_key, old_pos, new_pos, optionsList)
+            return
+        elif action == 'confirm':
+            if optionsList:
+                self._refreshHubSettingsDialog(optionsList, section_key)
+            self.saveHubSettings()
+            self._hubsSettingsChanged = True
+        elif action == 'cancel':
+            if catalog_id and optionsList:
+                self._restoreHubOrder(section_key, optionsList)
+
+        self._movingHubCatalogId = None
+        self._movingHubSectionKey = None
+        self._movingHubOptionsList = None
+
+    def _refreshHubSettingsDialog(self, optionsList, section_key):
+        """Refresh the hub settings dropdown to reflect new order - ported verbatim from
+        HomeWindow._refreshHubSettingsDialog() (home.py)."""
+        config_key = str(section_key) if section_key is not None else None
+        section_config = self.hubSettings.get(config_key, {}) if self.hubSettings else {}
+        has_custom_config = section_config.get('custom', False)
+        configured_hubs = section_config.get('hubs', []) if has_custom_config else []
+
+        enabled_order = {}
+        for idx, hub_config in enumerate(configured_hubs):
+            cat_id = hub_config.get('catalog_id', hub_config.get('identifier'))
+            enabled_order[cat_id] = idx + 1
+
+        for mli in optionsList:
+            ds = mli.dataSource
+            if not ds or ds.get('key') != 'toggle_hub':
+                continue
+
+            catalog_id = ds.get('catalog_id', ds.get('identifier'))
+            hub_info = ds.get('hub_info', {})
+            hub_source_key = hub_info.get('source_section_key')
+
+            if has_custom_config:
+                is_enabled = catalog_id in enabled_order
+            else:
+                if section_key is None:
+                    is_enabled = (hub_source_key is None)
+                else:
+                    is_enabled = (str(hub_source_key) == str(section_key) if hub_source_key is not None else False)
+
+            ds['enabled'] = is_enabled
+            indicator = 'script.plex/indicators/circle-19.png' if is_enabled else ''
+            mli.setProperty('indicator', indicator)
+            mli.setThumbnailImage(indicator)
+
+            base_title = hub_info.get('title', catalog_id)
+            source_label = hub_info.get('source_section_title', T(32411, 'Unknown'))
+
+            if has_custom_config and is_enabled:
+                position = enabled_order[catalog_id]
+                display_title = u'{}. {} [{}]'.format(position, base_title, source_label)
+            else:
+                display_title = u'{} [{}]'.format(base_title, source_label)
+
+            ds['display'] = display_title
+            mli.setLabel(display_title)
 
     # Thumb dimensions for hub-tile ListItems specifically (Recommended tab / hub rows) - NOT the
     # same as the module-level THUMB_POSTER_DIM/THUMB_AR16X9_DIM/THUMB_SQUARE_DIM near the top of
@@ -3949,6 +5419,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         verbatim from HomeWindow._anchorControlId() (home.py)."""
         return self.HUB_ROTATION_RING[self._anchorRingPos]
 
+    @property
+    def currentHub(self):
+        """The hub bound to whichever control is currently anchored - ported verbatim from
+        HomeWindow.currentHub() (home.py). Used by hubMenu() below."""
+        if self.hubControls:
+            control = self.hubControls[self._anchorControlId() - self.HUB_CONTROL_ID]
+            if control:
+                return control.dataSource
+        return None
+
     def _ringRoleOffset(self, control_id, ring_pos=None):
         """control_id's current role-offset (-2 two-above / -1 peek-above / 0 anchor / +1
         peek-below / +2 two-below) relative to ring_pos (an index into HUB_ROTATION_RING -
@@ -3976,6 +5456,226 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return
 
         self.processCommand(opener.open(mli.dataSource))
+
+    def hubMenu(self, hubControlID):
+        """Context menu (ACTION_CONTEXT_MENU) for whichever item is focused in a hub row - ported
+        from HomeWindow.hubMenu() (home.py), adapted to this window's own state. Triggered from
+        onAction()'s hub-row branch (399 < controlID < 500), which owns the return-value ->
+        serverRefresh() handoff, same shape as sectionMenu()'s own trigger.
+
+        Two adaptations from the original, both deliberate scope-narrowing rather than a straight
+        port:
+        - `self.toggleWatched(item=ds, state=True)`/`self._updateOnDeckHubs()` -> this window's own
+          `toggleWatched(mli, ...)` (takes a ManagedListItem, not a raw item) and a direct
+          `updateUnwatchedAndProgress(mli)` call instead. HomeWindow's `_updateOnDeckHubs()` is a
+          background-task machinery (UpdateHubTask/getCurrentHubsPositions) tied to Home's own
+          incremental hub-refresh system, which this window doesn't have (its hubs are fetched once
+          per section swap, see `_recommendedHubsCallback()`'s own docstring) - not ported. Mark
+          watched/unwatched here only updates the tile's own display in place; the hub's item *list*
+          itself (e.g. an item newly eligible for On Deck) stays as it was until the section is next
+          reopened, a known, accepted narrowing matching this window's existing simpler hub-refresh
+          model elsewhere.
+        - `add_to_home` (adding a library's hub to Home as a cross-section hub) is not ported at
+          all - it depends on `_crossSectionSource`/`getCombinedHubsForSection()`-style cross-section
+          hub aggregation, none of which exists on this window (Manage Hubs' own port explicitly
+          left this out too, see that section's progress notes). `disable_hub` still works: it only
+          needs `_ensureCustomConfigExists()`/`_disableHub()`, both already ported.
+        """
+        hub = self.currentHub
+        if not hub:
+            return
+
+        control = self.hubControls[hubControlID - self.HUB_CONTROL_ID]
+        mli = control.getSelectedItem()
+        if not mli:
+            return
+
+        if mli.dataSource is None or mli.dataSource is kodigui.DUMMY_DATA_SOURCE:
+            return
+
+        ds = mli.dataSource
+
+        # Determine the hub's source section and catalog_id. (The original also computed a
+        # `self.lastSection`-is-home flag here for the 'add_to_home' option's own visibility check
+        # - not ported, see this method's own docstring, so only hub_is_home below is needed.)
+        cross_source = hub.__dict__.get('_crossSectionSource')
+        hub_source_key = cross_source if cross_source is not None else self.lastSection.key
+        hub_is_home = hub_source_key is None
+        clean_identifier = hub.getCleanHubIdentifier(is_home=hub_is_home)
+
+        # Build catalog_id for Manage Hubs integration
+        if hub_is_home:
+            catalog_id = clean_identifier
+        else:
+            catalog_id = '{}:{}'.format(hub_source_key, clean_identifier)
+
+        hub_title = hub.__dict__.get('_displayTitle') or hub.title or clean_identifier
+
+        select_base = 0
+
+        options = []
+        has_prev = False
+        is_watchlist = self.lastSection == home.watchlist_section
+        # Don't allow disabling hubs for watchlist or main CW/On Deck hubs
+        if not is_watchlist and hub.hubIdentifier not in ("continueWatching", "home.continue", "home.ondeck"):
+            options.append({'key': 'disable_hub', 'display': T(33659, "Disable Hub: {}").format(hub_title)})
+            has_prev = True
+
+        if ds.TYPE in ('episode', 'season', 'movie', 'show'):
+            if has_prev:
+                options.append(dropdown.SEPARATOR)
+
+            has_mp = False
+            if not mli.getProperty('watched'):
+                options.append({'key': 'mark_watched', 'display': T(32319, "Mark Played")})
+                select_base = has_prev and 1 or 0
+                has_mp = True
+
+            if ds.isFullyWatched or ds.isWatched or ds.viewedLeafCount.asInt() > 0:
+                options.append({'key': 'mark_unwatched', 'display': T(32318, "Mark Unplayed")})
+                select_base = has_prev and 1 or has_mp and 0
+                has_mp = True
+
+            if ds.TYPE in ('episode', 'movie'):
+                if (hub.hubIdentifier in ("continueWatching", "home.continue", "home.ondeck") or
+                        clean_identifier in ("tv.inprogress", "movie.inprogress")):
+                    # allow removing items from CW / On Deck
+                    options.append(dropdown.SEPARATOR)
+                    options.append({'key': 'remove_cw', 'display': T(33662, "Remove from Continue Watching")})
+                    if not has_mp:
+                        select_base = 1
+                if util.getSetting('home_inprogress_resume') and ds.in_progress:
+                    # this is an in progress item that would be auto resumed; add specific entry to visit media instead
+                    options.insert(0, dropdown.SEPARATOR)
+                    options.insert(1, {'key': 'start_over', 'display': T(32317, 'Play from beginning')})
+                    options.insert(2, {'key': 'to_item', 'display': T(33019, "Visit media item")})
+                    select_base = 1
+                elif ds.in_progress:
+                    options.insert(0, dropdown.SEPARATOR)
+                    options.insert(1, {'key': 'start_over', 'display': T(32317, 'Play from beginning')})
+                    options.insert(2, {'key': 'resume', 'display': T(32429, "Resume from {}").format(util.timeDisplay(ds.viewOffset.asInt()).lstrip('0').lstrip(':'))})
+
+            if ds.TYPE in ('episode', 'season'):
+                options.append(dropdown.SEPARATOR)
+                options.append({'key': 'to_show', 'display': T(32323, "Go To Show")})
+                if ds.TYPE == 'episode':
+                    options.append({'key': 'to_season', 'display': T(32400, "Go To Season")})
+
+            if 'items' in util.getSetting('cache_requests'):
+                options.append({'key': 'cache_reset', 'display': T(33728, "Clear cache for item")})
+
+        if not options:
+            return
+
+        choice = dropdown.showDropdown(
+            options,
+            pos=(660, 441),
+            close_direction='none',
+            set_dropdown_prop=False,
+            header=T(33030, 'Choose action for: {}').format(hub.title),
+            select_index=select_base,
+            align_items="left",
+            dialog_props=getattr(self, 'carriedProps', None)
+        )
+
+        if not choice:
+            return
+
+        elif choice["key"] == "disable_hub":
+            # Disable hub via Manage Hubs settings (same as disabling in the dialog). Returning
+            # self.lastSection hands off to onAction()'s serverRefresh() call, same pattern
+            # sectionMenu()'s own 'manage_hubs'/'refresh_hubs' choices use - forces the section
+            # to reopen, which re-triggers hub fetching/isHubHidden() filtering and so drops the
+            # now-disabled hub from view.
+            section_key = self.lastSection.key
+            self._ensureCustomConfigExists(section_key)
+            self._disableHub(catalog_id, section_key)
+            return self.lastSection
+
+        elif choice["key"] in ("mark_watched", "mark_unwatched"):
+            if util.getSetting('home_confirm_actions'):
+                button = optionsdialog.show(
+                    T(32319, "Mark Played") if choice["key"] == "mark_watched" else T(32318, "Mark Unplayed"),
+                    u"{} {}".format(mli.label, mli.label2),
+                    T(32328, 'Yes'),
+                    T(32329, 'No'),
+                    dialog_props=getattr(self, 'carriedProps', None)
+                )
+
+                if button != 0:
+                    return
+
+            if choice["key"] == "mark_watched":
+                self.toggleWatched(mli)
+
+            elif choice["key"] == "mark_unwatched":
+                mli.dataSource.markUnwatched()
+                self.updateUnwatchedAndProgress(mli)
+
+        elif choice["key"] == "remove_cw":
+            if util.getSetting('home_confirm_actions'):
+                button = optionsdialog.show(
+                    T(33662, "Remove from Continue Watching"),
+                    u"{} {}".format(mli.label, mli.label2),
+                    T(32328, 'Yes'),
+                    T(32329, 'No'),
+                    dialog_props=getattr(self, 'carriedProps', None)
+                )
+
+                if button != 0:
+                    return
+
+            ds.removeFromContinueWatching()
+            # Force a reopen (unlike mark_watched/mark_unwatched's in-place tile update) - the
+            # whole point of removing an item from Continue Watching is for it to disappear from
+            # the hub, which an in-place property update on this one tile can't do.
+            return self.lastSection
+
+        elif choice["key"] in ("to_season", "to_show"):
+            target = ds.show() if choice["key"] == "to_show" else ds.season()
+            try:
+                command = opener.open(target, dialog_props=getattr(self, 'carriedProps', None))
+                if command == "NODATA":
+                    raise util.NoDataException
+            except util.NoDataException:
+                util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
+                return
+
+        elif choice["key"] == "to_item":
+            try:
+                command = opener.open(ds, dialog_props=getattr(self, 'carriedProps', None))
+                if command == "NODATA":
+                    raise util.NoDataException
+            except util.NoDataException:
+                util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
+                return
+
+        elif choice["key"] == "start_over":
+            try:
+                command = opener.open(ds, auto_play=True, start_over=True, dialog_props=getattr(self, 'carriedProps', None))
+                if command == "NODATA":
+                    raise util.NoDataException
+            except util.NoDataException:
+                util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
+                return
+            return
+
+        elif choice["key"] == "resume":
+            try:
+                command = opener.open(ds, auto_play=True, dialog_props=getattr(self, 'carriedProps', None))
+                if command == "NODATA":
+                    raise util.NoDataException
+            except util.NoDataException:
+                util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
+                return
+            return
+
+        elif choice["key"] == "cache_reset":
+            try:
+                util.DEBUG_LOG('Clearing requests cache for {}...', ds)
+                ds.clearCache()
+            except Exception as e:
+                util.DEBUG_LOG("Couldn't clear cache: {}", e)
 
     def _bindHubToControl(self, hub, control_index):
         """Populate physical hub-row control HUB_CONTROL_ID + control_index with hub's content -
@@ -4005,6 +5705,25 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         control.dataSource = hub
         items = [mli for mli in
                 (self.createListItem(obj, wide=flags['with_art']) for obj in hub.items) if mli]
+
+        # getHubRenderFlags() above already computes with_progress (hub-identifier-based - e.g.
+        # False for watchlist/discovery hubs via HUBS_NO_PROGRESS), but nothing ever acted on it -
+        # createListItem()'s own create*ListItem() family (createMovieListItem()/
+        # createEpisodeListItem()/etc.) never sets the 'progress' property at all, matching
+        # HomeWindow's own identical methods (home.py) byte-for-byte - HomeWindow's progress bar
+        # comes entirely from this post-processing step instead (its own showHub(), home.py:5359-
+        # 5362), which was one of the pieces this method's own docstring already calls out as
+        # deliberately out of scope for the D2 port ("reselect-position restoration and hero-art/
+        # spoiler/cache-clearing") - with_progress itself just wasn't named there explicitly and
+        # ended up silently dropped along with them. Live-confirmed regression: the Continue
+        # Watching/On Deck progress bar (present in the old HomeWindow UI) never appeared on this
+        # window's Recommended tab at all. Fixed here rather than in createListItem() itself, same
+        # division of responsibility HomeWindow's own code uses (per-item-type builders vs.
+        # per-hub-context binding).
+        if flags['with_progress']:
+            for mli in items:
+                mli.setProperty('progress', util.getProgressImage(mli.dataSource))
+
         control.replaceItems(items)
 
     def _recommendedHubsCallbackFor(self, generation):

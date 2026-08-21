@@ -108,11 +108,11 @@ class SidebarMixin():
 
     def openSidebarTarget(self, open_fn, *args, **kwargs):
         """Open a sidebar-reached window (call `open_fn(*args, **kwargs)`, e.g.
-        opener.sectionClicked(section) or opener.handleOpen(playlists.PlaylistsWindow)) the way every
-        sidebar-driven hop should: force-dismiss self's real Kodi window first, so the new window
-        replaces it on Kodi's native stack instead of pushing on top of it - see forceDismiss() on
-        ControlledWindow/MultiWindow. self.doClose()'s own flag-only close still happens afterwards via
-        processCommand(), same as before, for the (possibly bubbled-up) exit command handling.
+        opener.sectionClicked(section)) the way every sidebar-driven hop should: force-dismiss
+        self's real Kodi window first, so the new window replaces it on Kodi's native stack instead
+        of pushing on top of it - see forceDismiss() on ControlledWindow/MultiWindow.
+        self.doClose()'s own flag-only close still happens afterwards via processCommand(), same as
+        before, for the (possibly bubbled-up) exit command handling.
         """
         self.forceDismiss()
         self.processCommand(open_fn(*args, **kwargs))
@@ -192,6 +192,14 @@ class SidebarMixin():
         if getattr(self, '_shuttingDown', False):
             return
 
+        # Set by LibraryWindow while sectionMenu()'s modal dropdown is up (home.py's HomeWindow has
+        # an identical guard for the same reason) - without it, a debounce thread already in flight
+        # from focus movement just before the context menu opened could settle on a section change
+        # mid-menu, racing sectionMenu()'s own return-value handling. Default False via getattr so
+        # windows that never set this attribute (anything but LibraryWindow) are unaffected.
+        if getattr(self, 'block_section_change', False):
+            return
+
         if not immediate:
             if not self.sectionChangeTimeout:
                 return
@@ -222,9 +230,20 @@ class SidebarMixin():
         home_section is just another section value now, indistinguishable from a real one, to any
         window with in-place swap support (openSection() - LibraryWindow). Skips if it's the
         section this window already shows (see _ensureSidebarNavState()'s lastSection seeding -
-        this replaces library.py's old explicit `section.key == self.section.key` check), playlists
-        -> open PlaylistsWindow, else -> opener.sectionClicked(). HomeWindow overrides this entirely
-        (preview only, never opens a window).
+        this replaces library.py's old explicit `section.key == self.section.key` check), else ->
+        opener.sectionClicked(). HomeWindow overrides this entirely (preview only, never opens a
+        window).
+
+        playlists_section is likewise no longer special-cased here (Playlists port, ported from the
+        Sidebar-Tab-Unification branch's identical change): it used to always push a standalone
+        PlaylistsWindow, the one sidebar target that couldn't do an in-place swap and so had to stay
+        parked underneath other windows - a structural bug where Exit could silently fail and land
+        back on Playlists instead of quitting. PlaylistsSection now carries enough of a real-section
+        surface (TYPE='playlists', getLibrarySectionId(), see home.py) for
+        opener.sectionClicked() to route it through library.LibraryWindow like any other section
+        (opener.py's own VIEWS_SQUARE check), so it falls through to the same branches below as
+        everything else - the in-place swap for windows with openSection(), the generic
+        openSidebarTarget(opener.sectionClicked, section) push otherwise.
 
         The one remaining is.home special case (final elif below) is for windows *without*
         openSection() - ShowWindow/PrePlayWindow's own independent sidebar (see the plan's "Known
@@ -240,12 +259,7 @@ class SidebarMixin():
         if section == self.lastSection:
             return
 
-        from . import playlists
-
-        if section.type == 'playlists':
-            self.lastSection = section
-            self.openSidebarTarget(opener.handleOpen, playlists.PlaylistsWindow)
-        elif hasattr(self, 'openSection'):
+        if hasattr(self, 'openSection'):
             # In-place swap (library.py's LibraryWindow.openSection()) - safe to call from any
             # thread, no new blocking .modal() call, home_section included (openSection() forces
             # contentMode to 'recommended' when the target section has no library-grid content at

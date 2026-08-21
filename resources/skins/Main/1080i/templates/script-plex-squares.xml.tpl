@@ -22,6 +22,8 @@
     <ondown>101</ondown>
     <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
     <control type="button" id="311">
+        <!-- No genre/category filter concept for playlists - see 211's own comment. -->
+        <visible>!String.IsEqual(Window.Property(media),playlists)</visible>
         <enable>false</enable>
         <width max="300">auto</width>
         <height>65</height>
@@ -38,6 +40,10 @@
         <label>[UPPERCASE]$INFO[Window.Property(filter2.display)][/UPPERCASE]</label>
     </control>
     <control type="button" id="211">
+        <!-- Playlists port: playlists never populate filter1.display/self.filter (no genre/
+             category filter concept for playlists at all, unlike Artist/Movie/Show), so this
+             would otherwise show a stale/blank filter button. -->
+        <visible>!String.IsEqual(Window.Property(media),playlists)</visible>
         <width max="500">auto</width>
         <height>65</height>
         <font>font12</font>
@@ -52,7 +58,7 @@
         <label>[UPPERCASE]$INFO[Window.Property(filter1.display)][/UPPERCASE]</label>
     </control>
     <control type="button" id="310">
-        <visible>!String.IsEqual(Window.Property(media),artist)</visible>
+        <visible>!String.IsEqual(Window.Property(media),artist) + !String.IsEqual(Window.Property(media),playlists)</visible>
         <enable>false</enable>
         <width max="300">auto</width>
         <height>65</height>
@@ -69,7 +75,9 @@
         <label>[UPPERCASE]$INFO[Window.Property(media.type)][/UPPERCASE]</label>
     </control>
     <control type="button" id="312">
-        <visible>String.IsEqual(Window.Property(media),artist)</visible>
+        <!-- Playlists port: this is the real, interactive item-type button - Audio/Video for
+             playlists, same control Artist uses for Artist/Album/Collection/Track. -->
+        <visible>String.IsEqual(Window.Property(media),artist) | String.IsEqual(Window.Property(media),playlists)</visible>
         <width max="300">auto</width>
         <height>65</height>
         <font>font12</font>

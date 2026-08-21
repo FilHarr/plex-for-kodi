@@ -427,6 +427,21 @@ class PlaylistsSection(VirtualSection):
     locations = []
     isMapped = False
 
+    # Enough of a real-section surface for LibraryWindow's construction path (LibrarySettings,
+    # reset()'s TYPE/DEFAULT_SORT/key handling) to not crash when opening
+    # LibraryWindow(section=playlists_section) - Playlists port, ported from the Sidebar-Tab-
+    # Unification branch's identical addition (mirrors HomeSection's own docstring/reasoning above).
+    TYPE = 'playlists'
+    DEFAULT_SORT = 'titleSort'
+    DEFAULT_SORT_DESC = False
+    settings = {}
+
+    def getLibrarySectionId(self):
+        # key is already a real, non-None string ('playlists'), unlike HomeSection's key=None
+        # sentinel - this only matters for reset()'s key.isdigit() fallback, so any stable literal
+        # works; reusing self.key keeps it obviously consistent rather than a second literal.
+        return self.key
+
 
 playlists_section = PlaylistsSection()
 
