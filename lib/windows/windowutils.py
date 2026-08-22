@@ -40,17 +40,20 @@ SKIN_RELOAD_DEFER_SECONDS = 0.15
 class GoHomeMixin():
     def goHome(self, section=None, with_root=False):
         HOME.go_root = with_root
+        # Stashed on the HOME singleton directly, not embedded in the exitCommand string below -
+        # HOME never gets discarded/recreated mid-session, so a live object reference survives the
+        # bubble just fine and needs no round-trip through a section-key lookup. processCommand()
+        # (library.py's LibraryWindow override) reads this back once the bubble actually reaches
+        # HOME - see that method's own comment (Home-ControlledWindow plan, item 4 - "dispatch/
+        # bubble generalization").
+        HOME._pendingSection = section
+
         # closeWithCommand()/doClose() below only flips a flag on windows using the doModal()-emulation
         # pattern (ControlledWindow/MultiWindow) - forceDismiss() is the real Kodi-native dismiss, so
         # HOME.show() below always lands on a clean stack instead of pushing on top of self. No-op on
         # window classes that don't need it (see BaseFunctions.forceDismiss()).
         self.forceDismiss()
-
-        if section:
-            self.closeWithCommand('HOME:{0}'.format(section))
-        else:
-            self.closeWithCommand('HOME')
-
+        self.closeWithCommand('HOME')
         HOME.show()
 
     def goHomeRoot(self, *args, **kwargs):
@@ -105,17 +108,6 @@ class SidebarMixin():
             if mli and mli.getProperty('is.active'):
                 sectionList.setSelectedItemByPos(i)
                 return
-
-    def openSidebarTarget(self, open_fn, *args, **kwargs):
-        """Open a sidebar-reached window (call `open_fn(*args, **kwargs)`, e.g.
-        opener.sectionClicked(section)) the way every sidebar-driven hop should: force-dismiss
-        self's real Kodi window first, so the new window replaces it on Kodi's native stack instead
-        of pushing on top of it - see forceDismiss() on ControlledWindow/MultiWindow.
-        self.doClose()'s own flag-only close still happens afterwards via processCommand(), same as
-        before, for the (possibly bubbled-up) exit command handling.
-        """
-        self.forceDismiss()
-        self.processCommand(open_fn(*args, **kwargs))
 
     # --- Focus-driven section navigation ---------------------------------------------------
     #
@@ -214,7 +206,21 @@ class SidebarMixin():
             # entirely (e.g. down onto the server/user button) - the selection it's about to
             # read is stale in that case, so don't act on a section the user isn't even browsing
             # anymore
-            if self.getFocusId() != self.SECTION_LIST_ID:
+            try:
+                if self.getFocusId() != self.SECTION_LIST_ID:
+                    return
+            except AttributeError:
+                # self itself (a MultiWindow - a nested LibraryWindow instance) may have been torn
+                # down for real - not just covered - while this thread slept: item 4's goHome()
+                # bubble (Home-ControlledWindow plan) now actively unwinds descendant windows from
+                # outside, including ones with their own independent settled-focus debounce thread
+                # still in flight from before the unwind started. getFocusId() isn't defined on
+                # MultiWindow directly - it's delegated via __getattr__ to self._current, which real
+                # teardown already `del`'d by the time this fires (see __getattr__'s own comment,
+                # kodigui.py) - so this is exactly the same "focus moved away, don't act" case
+                # above, just discovered by AttributeError instead of a control ID mismatch.
+                # Live-confirmed: an uncaught exception here otherwise, logged from the debounce
+                # thread's own top-level exception handler - not a crash, but not clean either.
                 return
 
         item = self.sectionList.getSelectedItem()
@@ -235,67 +241,54 @@ class SidebarMixin():
 
     def _dispatchSectionOpen(self, item):
         """What happens once the debounce settles on a genuinely different section (also reused by
-        sectionClicked() below for the immediate click path). is.home is no longer special-cased
-        up front (Home-ControlledWindow plan, item 1 - "fold home_section into openSection()"):
-        home_section is just another section value now, indistinguishable from a real one, to any
-        window with in-place swap support (openSection() - LibraryWindow). Skips if it's the
-        section this window already shows (see _ensureSidebarNavState()'s lastSection seeding -
-        this replaces library.py's old explicit `section.key == self.section.key` check), else ->
-        opener.sectionClicked(). HomeWindow overrides this entirely (preview only, never opens a
-        window).
+        sectionClicked() below for the immediate click path). is.home is not special-cased at all
+        any more (Home-ControlledWindow plan, items 1 and 4): home_section is just another section
+        value, whether self can swap in place or has to unwind a descendant chain first.
 
-        playlists_section is likewise no longer special-cased here (Playlists port, ported from the
-        Sidebar-Tab-Unification branch's identical change): it used to always push a standalone
-        PlaylistsWindow, the one sidebar target that couldn't do an in-place swap and so had to stay
-        parked underneath other windows - a structural bug where Exit could silently fail and land
-        back on Playlists instead of quitting. PlaylistsSection now carries enough of a real-section
-        surface (TYPE='playlists', getLibrarySectionId(), see home.py) for
-        opener.sectionClicked() to route it through library.LibraryWindow like any other section
-        (opener.py's own VIEWS_SQUARE check), so it falls through to the same branches below as
-        everything else - the in-place swap for windows with openSection(), the generic
-        openSidebarTarget(opener.sectionClicked, section) push otherwise.
+        Two cases, split on whether self is the true root (windowutils.HOME):
 
-        The one remaining is.home special case (final elif below) is for windows *without*
-        openSection() - ShowWindow/PrePlayWindow's own independent sidebar (see the plan's "Known
-        interim gaps"/"Descendant windows" note - untouched by this work). Home has no equivalent
-        "open a fresh window for this section" the way ordinary sections do via
-        opener.sectionClicked() (there is no standalone HomeWindow-equivalent to open freshly), so
-        it still needs goHome()'s real, separate-window navigation there. Still click-only (main-
-        thread-gated): goHome() itself still makes a new blocking .modal() call (HOME.show()) - the
-        exact reentrancy-unsafe shape this whole plan exists to eliminate - unrelated to this
-        fold-in and not yet solved for these descendant-sidebar windows specifically.
+        - self IS HOME: safe in-place swap (library.py's LibraryWindow.openSection()), deferred via
+          SKIN_RELOAD_DEFER_SECONDS the same as always - see that constant's own comment. Callable
+          from any thread, including the settled-focus debounce thread - openSection()'s own
+          doClose()-based swap is what this whole plan's threading work made safe from anywhere.
+          Still guarded by openSection()'s own is_current_window check (declines, doesn't act, if
+          somehow not current) as defense in depth, though a genuine descendant shouldn't be able to
+          reach this branch any more per the point below.
+
+        - self is any descendant - a nested LibraryWindow instance (a movie collection, a subDir
+          browse) *or* a plain ControlledWindow with its own SidebarMixin (ShowWindow, PrePlayWindow,
+          EpisodesWindow) - unwinds via the exact same forceDismiss()+closeWithCommand()+HOME.show()
+          bubble goHome() already uses for the Home button, now carrying the clicked section through
+          instead of always landing on home_section. This replaces two previously-separate, narrower
+          mechanisms: a nested LibraryWindow used to swap *itself* in place instead of unwinding
+          (wrong - it isn't the root), and everything else used to force-dismiss self and push a
+          brand new LibraryWindow instance via opener.sectionClicked() (openSidebarTarget(), now
+          removed) - a second, redundant session object, not "one window."
+
+          goHome()'s forceDismiss()/HOME.show() are real, synchronous native window calls, not the
+          flag-only doClose() the HOME branch above relies on - unlike openSection()'s doClose(),
+          there's no owning loop for a plain ControlledWindow (ShowWindow/PrePlayWindow/
+          EpisodesWindow open via one blocking .modal() call, not MultiWindow._open()'s polled loop)
+          to defer the real native work onto, so this calls forceDismiss() directly, cross-thread,
+          from the settled-focus debounce thread same as from a direct click. Live-tested both ways:
+          clicking a section from inside a descendant, and settled-focus/hover with no click, from a
+          nested LibraryWindow (a collection) and multi-level plain-descendant chains (person/actor
+          pages several deep) alike - all correctly unwind and land on the target section, no native
+          crash. One real bug found and fixed along the way, not this call site - see
+          _sectionChanged()'s own try/except AttributeError above.
         """
         section = item.dataSource
         if section == self.lastSection:
             return
 
-        if hasattr(self, 'openSection'):
-            # In-place swap (library.py's LibraryWindow.openSection()) - safe to call from any
-            # thread, no new blocking .modal() call, home_section included (openSection() forces
-            # contentMode to 'recommended' when the target section has no library-grid content at
-            # all - see that method's own comment). Declines (returns False) rather than acting
-            # if a descendant window is currently open on top of self - see that method's own
-            # docstring. lastSection only advances on an actual swap, so a declined attempt gets
-            # retried on the next settled focus/click instead of being silently forgotten.
-            #
-            # Deferred, not called inline: this method is reached directly from onClick()
-            # (sectionClicked() above) on a genuine click, unlike the settled-focus debounce path
-            # (sectionChanged()/_sectionChanged() below) that already runs this same call off a
-            # background thread with a real delay. Calling openSection() (and its doClose()) here
-            # inline would nest the resulting skin/window reload underneath the very onClick()/
-            # OnAction() call handling this click - see SKIN_RELOAD_DEFER_SECONDS' own comment
-            # above for why that's a confirmed Kodi core crash, not a theoretical one.
+        if self is HOME:
             def _deferredOpenSection():
                 if self.openSection(section):
                     self.lastSection = section
             threading.Timer(SKIN_RELOAD_DEFER_SECONDS, _deferredOpenSection).start()
-        elif item.getProperty('is.home'):
-            if threading.current_thread() is not threading.main_thread():
-                return
-            self.goHome()
         else:
             self.lastSection = section
-            self.openSidebarTarget(opener.sectionClicked, section)
+            self.goHome(section=section)
 
     def sectionClicked(self):
         self._ensureSidebarNavState()

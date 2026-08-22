@@ -511,6 +511,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         PlaybackBtnMixin.__init__(self)
         kodigui.MultiWindow.__init__(self, *args, **kwargs)
         windowutils.UtilMixin.__init__(self)
+        # Only ever read/written once this instance is windowutils.HOME - see processCommand()'s own
+        # comment (Home-ControlledWindow plan, item 4). Defined unconditionally here anyway, same as
+        # exitCommand above, so every instance (including nested ones that never become HOME) has it.
+        self._pendingSection = None
         self.section = kwargs.get('section')
         self.filter = kwargs.get('filter_')
         self.subDir = kwargs.get('subDir')
@@ -810,11 +814,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         pushed on top of it, so mutating section state here while a child is still holding
         references into it (e.g. ShowWindow's parent_list=self.showPanelControl) would corrupt
         that child's view rather than switch it cleanly. Actually unwinding a drill chain for a
-        sidebar-driven section switch is the generalized dispatch/bubble mechanism goHome()
-        already does for itself (closeWithCommand()'s exitCommand propagating through each
-        ancestor's processCommand() as their own .modal() calls return) - not yet generalized to
-        ordinary section switches, so this just declines rather than corrupting state in the
-        meantime.
+        sidebar-driven section switch is windowutils.py's _dispatchSectionOpen() - any descendant
+        (nested LibraryWindow or otherwise) now bubbles via goHome(section=...) instead of ever
+        reaching openSection() directly, so this guard shouldn't actually fire via that path any
+        more (Home-ControlledWindow plan, item 4) - kept as defense in depth for any other caller
+        (e.g. onReInit()'s go_root handling below) that might still race against a not-yet-closed
+        descendant.
 
         force=True skips the "already on this section" no-op below - for serverRefresh() (Stage
         3's server-switch popup): a server switch can leave `section` pointing at the exact same
@@ -974,16 +979,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def processCommand(self, command):
         """UtilMixin.processCommand() (windowutils.py) - live-confirmed regression, fixed here.
-        Every real descendant a 'HOME'/'HOME:<section>' command bubbles through (ShowWindow,
-        EpisodesWindow, PrePlayWindow, ... via openItem()/openWindow()) is meant to close itself
-        on the way back - that's the base class's own, still-correct behavior, unchanged below.
-        But once the bubble reaches back up to whichever ancestor opened the chain, and that
-        ancestor is US (the cold-start root, windowutils.HOME), the command has arrived, not "left
-        home too" - goHome()/goHomeRoot() (windowutils.py's GoHomeMixin/SidebarMixin) already reset
-        us via go_root/show() before the bubble even started. Falling into the base class's
-        self.doClose() here would tear down the whole session, since nothing sits underneath this
-        window anymore the way HomeWindow used to. Live-confirmed: pressing the Home button from a
-        descendant briefly flashed this window back up, then closed the whole addon, before this.
+        Every real descendant a 'HOME' command bubbles through (ShowWindow, EpisodesWindow,
+        PrePlayWindow, a nested LibraryWindow instance, ... via openItem()/openWindow()) is meant to
+        close itself on the way back - that's the base class's own, still-correct behavior,
+        unchanged below. But once the bubble reaches back up to whichever ancestor opened the chain,
+        and that ancestor is US (the cold-start root, windowutils.HOME), the command has arrived,
+        not "left home too" - goHome()/goHomeRoot() (windowutils.py's GoHomeMixin/SidebarMixin)
+        already reset us via go_root/show() before the bubble even started. Falling into the base
+        class's self.doClose() here would tear down the whole session, since nothing sits underneath
+        this window anymore the way HomeWindow used to. Live-confirmed: pressing the Home button
+        from a descendant briefly flashed this window back up, then closed the whole addon, before
+        this.
 
         One exception: _closeSessionWithOption() (below) primes self.closeOption directly before
         starting this same bubble, for a nested LibraryWindow instance (e.g. a movie collection)
@@ -991,10 +997,24 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         live-confirmed regression, choosing Exit from within a collection only closed the
         collection. closeOption already being set (still None on an ordinary "just go home"
         bubble) is the signal this arrived HOME to actually close, not merely to reset root.
+
+        A second exception, live-tested: an ordinary sidebar section click/settle from any
+        descendant (windowutils.py's _dispatchSectionOpen()) goes through this exact same 'HOME'
+        bubble now too (Home-ControlledWindow plan, item 4), carrying the target section via
+        self._pendingSection (stashed directly on this object by GoHomeMixin.goHome() before the
+        bubble started, not embedded in the command string - HOME is a persistent singleton, so a
+        live object reference survives however many ancestors unwind before this runs). Once
+        closeOption rules out the "actually closing" case above, a pending section that differs
+        from what's already showing gets swapped in the same deferred way every other openSection()
+        caller already uses.
         """
         if command and command.startswith('HOME') and self is windowutils.HOME:
+            pending = self._pendingSection
+            self._pendingSection = None
             if self.closeOption is not None:
                 self.doClose()
+            elif pending is not None and pending != self.section:
+                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection, args=(pending,)).start()
             return
         windowutils.UtilMixin.processCommand(self, command)
 
