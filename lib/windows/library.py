@@ -1937,8 +1937,28 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     self.requestChunk(mli.pos())
 
                 if util.addonSettings.dynamicBackgrounds:
-                    if mli and mli.dataSource:
-                        self.updateBackgroundFrom(mli.dataSource)
+                    # `mli and mli.dataSource`, not `is not None`, used to gate this - a real
+                    # footgun for Playlist dataSources specifically: BasePlaylist defines
+                    # __len__() (playlist.py) returning its *member* count, which is always 0
+                    # for the summary objects this grid fetches (real items are never loaded
+                    # just to browse the grid) - Python falls back to __len__ for truthiness
+                    # when __bool__ isn't defined, so a perfectly valid Playlist object silently
+                    # evaluated as falsy here, skipping the background update on every single
+                    # scroll. Live-confirmed via diagnostic logging: MOVE_SET fired correctly
+                    # every time with a valid mli.dataSource, but this check still failed.
+                    # Explicit `is not None` sidesteps __len__ entirely.
+                    if mli is not None and mli.dataSource is not None:
+                        if self.section.TYPE == 'playlists':
+                            # updateBackgroundFrom() keys off ds.get('art', ...), which
+                            # playlists don't have (see _setPlaylistBackground()'s own
+                            # docstring) - without this, scrolling through the playlists grid
+                            # silently did nothing (no art, so no background write at all),
+                            # leaving whichever playlist fillPlaylists() randomly picked at fill
+                            # time showing until the next full refill (e.g. a Music/Video tab
+                            # swap) happened to pick a different one.
+                            self._setPlaylistBackground(mli.dataSource)
+                        else:
+                            self.updateBackgroundFrom(mli.dataSource)
 
                 controlID = self.getFocusId()
                 if controlID == self.POSTERS_PANEL_ID or controlID == self.SCROLLBAR_ID:
@@ -3008,7 +3028,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self.showPanelControl.reset()
             except:
                 util.DEBUG_LOG("Couldn't reset showPanelControl on view change")
-            self.showPanelControl = None  # TODO: Need to do some check here I think
+            # Not self.showPanelControl = None (as this used to do, "TODO: Need to do some check
+            # here I think"): nothing rebuilds it before fill() below runs except a real window
+            # reconstruction (nextWindow(False) below, kodigui.py) - and that path had its own
+            # bug (fixed separately) that made it fire unconditionally on every item-type change,
+            # which is what covered for this: the reconstruction's own onFirstInit()/doRefill()
+            # rebuilt showPanelControl fresh every time, whether or not one was actually needed.
+            # With that now fixed, the common no-real-window-change case reaches fill() with
+            # showPanelControl still None otherwise - live-confirmed as a crash for Playlists
+            # (fillPlaylists() calling .addItems() on None) and, for every other section type, a
+            # silent no-op (_chunkCallback()'s own `if not self.showPanelControl: return` guard,
+            # so the grid would've just stayed empty instead). reset() above already clears its
+            # contents/native state in place; the object itself stays perfectly valid to reuse
+            # for the fill() that's about to happen on the very same still-open window.
 
         self.librarySettings.setItemType(choice)
 
@@ -3742,6 +3774,33 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         mli.setProperty('album.artist', itemCount)
         return mli
 
+    def _setPlaylistBackground(self, pl):
+        """Background art + corner-panel colors for a single playlist - factored out of
+        fillPlaylists() so the same per-item treatment can also run on focus-move (onAction()'s
+        MOVE_SET handling below), not just once at fill time. Needed at all because playlists
+        never go through the generic updateBackgroundFrom()/setBackground() path: that keys off
+        ds.get('art', ...), which playlists don't have - mirrors the old playlists.py's own
+        fill(), which set 'background' directly from .composite instead for the same reason.
+
+        windowSetBackground(), not a bare setProperty(): a bare setProperty() skips the
+        background_static/LAST_BG_URL bookkeeping windowSetBackground() (kodigui.py) does for
+        every other background-setting path in the app - live-confirmed as a stale-art flash
+        without it (a bare setProperty() here left 'background' pointing at a playlist's
+        composite while background_static/LAST_BG_URL still held whatever the *previous*
+        Recommended-tab visit last set, so the next Recommended entry whose anchor happened to
+        match LAST_BG_URL again silently kept showing this playlist's art instead of the real
+        new value).
+
+        Panel corners: playlists have no ultraBlurColors of their own (not a Video/Photo/Audio
+        media item at all), so backgroundPanelCorners() is called directly with seed= instead of
+        through updateBackgroundFrom() - real ultraBlurColors is never an option here, only the
+        seeded fake-color fallback, seeded from this same playlist so art and panel stay paired.
+        """
+        self.windowSetBackground(util.backgroundFromArt(
+            pl.composite, width=self.width, height=self.height))
+        self._setPanelCorners(util.backgroundPanelCorners(
+            None, seed=pl.get('ratingKey') or pl.title))
+
     @busy.dialog()
     def fillPlaylists(self, keep_focus=False):
         # Playlists were never a paginated library query (see the old playlists.py's own fill()) -
@@ -3773,21 +3832,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             items.append(mli)
 
         if not self.backgroundSet:
-            # setBackground()/updateBackgroundFrom() key off ds.get('art', ...), which playlists
-            # don't have - mirrors the old playlists.py's own fill(), which set 'background' directly
-            # from .composite instead for the same reason. windowSetBackground(), not a bare
-            # setProperty() though - that was the old playlists.py behavior but skips the
-            # background_static/LAST_BG_URL bookkeeping windowSetBackground() (kodigui.py) does for
-            # every other background-setting path in the app. Live-confirmed as the cause of a
-            # stale-art flash: a bare setProperty() here left 'background' pointing at a playlist's
-            # composite while 'background_static' and the module-level LAST_BG_URL tracker still
-            # held whatever the *previous* Recommended-tab visit last set - so the very next
-            # Recommended entry whose anchor happened to match LAST_BG_URL again (a real hazard on a
-            # second round trip through the same section) hit windowSetBackground()'s own
-            # already-in-sync no-op check and silently kept showing this playlist's art instead of
-            # writing the new value.
-            self.windowSetBackground(util.backgroundFromArt(
-                random.choice(playlists).composite, width=self.width, height=self.height))
+            self._setPlaylistBackground(random.choice(playlists))
             self.backgroundSet = True
 
         self.showPanelControl.addItems(items)

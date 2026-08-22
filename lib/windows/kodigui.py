@@ -352,7 +352,12 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             # getattr, not ds.get(): ultraBlurColors is a plain instance attribute only present on
             # Video subclasses (Movie/Show/Season/Episode/Clip), absent entirely on e.g. Photo, and
             # PlexObject.get() would wrap a missing key in a truthy PlexValue instead of None.
-            corners = util.backgroundPanelCorners(getattr(ds, 'ultraBlurColors', None))
+            # seed=ratingKey (falling back to title): when ultraBlurColors is genuinely absent
+            # (Photo/most Music items, or any item the server just didn't return it for),
+            # backgroundPanelCorners() hashes this into a deterministic, neutral-but-colorful
+            # stand-in instead of leaving the panel flat black - see its own docstring (util.py).
+            corners = util.backgroundPanelCorners(getattr(ds, 'ultraBlurColors', None),
+                                                  seed=ds.get('ratingKey') or ds.get('title'))
             self._setPanelCorners(corners)
             # opacity=100: this art is now a focal, vivid box next to its own color panel, not a
             # full-bleed wash with text floating on top anywhere - backgroundArtOpacityAmount2's
@@ -1236,7 +1241,21 @@ class MultiWindow(object):
             window = self._windows[self.windowIndex(self._current)]
 
         if window:
-            if window.__class__ == self._current.__class__:
+            # window is a class here (from self._windows, or an explicit caller-supplied class -
+            # every real caller passes one, never an instance), so this must compare directly
+            # against self._current's own class, not against window.__class__ (that's the
+            # metaclass, e.g. `type` - comparing a metaclass to a real window class can never
+            # match). The window=False path above always resolves to self._current's own class
+            # (windowIndex(self._current) finds self._current's own position in self._windows),
+            # so this bug made this branch permanently unreachable for that caller
+            # (_applyItemTypeChoice(), library.py) - every item-type change forced a full,
+            # unintended window reconstruction (doClose()+rebuild) instead of the lightweight
+            # in-place refill this was supposed to allow, since "no window class exists other
+            # than the one already showing" could never be detected. Live-confirmed as a crash
+            # for Playlists specifically: a MOVE_SET action arriving while that reconstruction
+            # was still in flight hit self.showPanelControl before doRefill() had rebuilt it
+            # (AttributeError: 'NoneType' object has no attribute 'getSelectedItem').
+            if window == self._current.__class__:
                 return None
         else:
             idx = self.windowIndex(self._current)

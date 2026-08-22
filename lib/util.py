@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 
 import gc
+import hashlib
 import os
 import sys
 import re
@@ -809,7 +810,34 @@ def backgroundFromArt(art, width=1920, height=1080, background=colors.noAlpha.Ba
         background=background
     )
 
-def backgroundPanelCorners(ultraBlurColors, maxValue=0.3):
+
+# Hue offset per corner, applied to _fakeBackgroundPanelCorners()'s single hashed base hue - a
+# small spread rather than one flat wash, so a faked panel still reads as a soft gradient like a
+# real one. Kept subtle (max 0.08 = ~29 degrees) so adjacent corners stay harmonious, not clashing.
+_FAKE_CORNER_HUE_OFFSETS = (('topLeft', -0.04), ('topRight', 0.04), ('bottomLeft', -0.08), ('bottomRight', 0.08))
+
+
+def _fakeBackgroundPanelCorners(seed, maxValue=0.3, saturation=0.4):
+    """Deterministic, neutral-but-colorful stand-in for real ultraBlurColors - used when an item
+    has none (Photo/PhotoDirectory/most Music items, or any item the server just didn't return it
+    for). A flat black/default panel reads as dull next to titles that do have real per-item
+    color, so this hashes a stable identifier (the item's ratingKey, ideally) into a base hue and
+    spreads it gently across the 4 corners (see _FAKE_CORNER_HUE_OFFSETS) - same HSV value clamp
+    and a similarly modest fixed saturation as the real path, so a faked panel reads as "the same
+    kind of tasteful dark panel", not a visually distinct fallback. md5, not the builtin hash():
+    Python's string hash is randomized per-process (PYTHONHASHSEED) unless disabled, which would
+    make the same item's fake color change every time Kodi restarts - md5 is stable forever, so a
+    given item always gets the same color, no flicker across sessions or hub-row scrolling.
+    """
+    base_hue = (int(hashlib.md5(str(seed).encode('utf-8')).hexdigest(), 16) % 360) / 360.0
+    result = {}
+    for corner, offset in _FAKE_CORNER_HUE_OFFSETS:
+        r, g, b = colorsys.hsv_to_rgb((base_hue + offset) % 1.0, saturation, maxValue)
+        result[corner] = 'FF{:02X}{:02X}{:02X}'.format(round(r * 255), round(g * 255), round(b * 255))
+    return result
+
+
+def backgroundPanelCorners(ultraBlurColors, seed=None, maxValue=0.3):
     """
     Phase 1 approximation of official Plex's native per-corner art-color extraction (see
     docs/notes/hero-art-background-status.md, "Resolved: official Plex Android decompile"). Sources
@@ -825,10 +853,14 @@ def backgroundPanelCorners(ultraBlurColors, maxValue=0.3):
     bottomRight af1308 HSL-clamped to ~146 max channel vs officially observed ~77).
 
     Returns a dict of up to 4 ARGB colordiffuse-ready hex strings keyed 'topLeft'/'topRight'/
-    'bottomLeft'/'bottomRight'. Returns {} when the item has no ultraBlurColors data at all, so
-    callers can leave the skin's corner-tint layers hidden and fall back to the flat base color only.
+    'bottomLeft'/'bottomRight'. When the item has no ultraBlurColors data at all: falls back to
+    _fakeBackgroundPanelCorners(seed) if a seed was given, otherwise returns {} (the original
+    behavior - callers can leave the skin's corner-tint layers hidden and fall back to the flat
+    base color only, for whatever caller doesn't have/want a seed-based fake).
     """
     if not ultraBlurColors:
+        if seed is not None:
+            return _fakeBackgroundPanelCorners(seed, maxValue=maxValue)
         return {}
 
     result = {}
