@@ -1143,6 +1143,20 @@ class ManagedControlList(object):
         self.control.addItems([xbmcgui.ListItem() for i in range(self.size())])
         self._updateItems()
 
+    def newControlEmpty(self, window=None, control_id=None):
+        """Like newControl(), but rebinds to the fresh native control without repainting
+        whatever ManagedListItems this list was still holding - for a caller whose items are
+        about to be replaced wholesale anyway (replaceItems()/reset()), where newControl()'s
+        repaint would otherwise put stale content on screen for the gap between window
+        construction and the real replacement landing.
+        """
+        self.controlID = control_id or self.controlID
+        self.control = window.getControl(self.controlID)
+        for i in self.items:
+            i.onDestroy()
+            i.invalidate()
+        self.items = []
+
 
 class _MWBackground(ControlledWindow):
     __slots__ = ("_multiWindow", "started")

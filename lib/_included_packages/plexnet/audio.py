@@ -15,6 +15,13 @@ class Audio(media.MediaItem):
             setattr(self, k, plexobjects.PlexValue(v, self))
 
         self.key = plexobjects.PlexValue(self.key.replace('/children', ''), self)
+        # Video._setData()/Collection._setData() both extract this (video.py, plexlibrary.py) -
+        # Audio never picked it up since it doesn't call through media.MediaItem._setData() (the
+        # attrib loop above is a separate, parallel implementation, not a super() call) - without
+        # this, updateBackgroundFrom()'s getattr(ds, 'ultraBlurColors', None) always silently
+        # returned None for Artist/Album/Track, falling back to the flat default panel color
+        # instead of a real per-item tint, same gap Collection's own fix (plexlibrary.py) closed.
+        self.ultraBlurColors = self._findUltraBlurColors(data)
 
     def isMusicItem(self):
         return True

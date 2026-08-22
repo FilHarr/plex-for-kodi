@@ -11,6 +11,10 @@ class Photo(media.MediaItem):
     def _setData(self, data):
         self.art = plexobjects.PlexValue('')
         media.MediaItem._setData(self, data)
+        # Video._setData()/Collection._setData() both extract this (video.py, plexlibrary.py) -
+        # Photo never did, leaving updateBackgroundFrom()'s getattr(ds, 'ultraBlurColors', None)
+        # silently None here too, same gap Collection's own fix closed.
+        self.ultraBlurColors = self._findUltraBlurColors(data)
 
         if self.isFullObject():
             self.media = plexobjects.PlexMediaItemList(data, plexmedia.PlexMedia, media.Media.TYPE,
@@ -49,6 +53,12 @@ class PhotoDirectory(media.MediaItem):
     ALLOWED_SORT = ()
     DEFAULT_SORT = 'titleSort'
     DEFAULT_SORT_DESC = False
+
+    def _setData(self, data):
+        media.MediaItem._setData(self, data)
+        # Same gap as Photo just above - never extracted, so a focused photo *folder* always fell
+        # back to the flat default panel color instead of a real per-item tint.
+        self.ultraBlurColors = self._findUltraBlurColors(data)
 
     def all(self, *args, **kwargs):
         path = self.key

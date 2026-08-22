@@ -378,6 +378,7 @@ class LibrarySettings(object):
     def __init__(self, section_or_server_id, ignoreLibrarySettings=False):
         self.ignoreLibrarySettings = ignoreLibrarySettings
         self.forcedItemType = None
+        self.sectionType = None
         if isinstance(section_or_server_id, six.string_types):
             self.serverID = section_or_server_id
             self.sectionID = None
@@ -387,6 +388,11 @@ class LibrarySettings(object):
             # a pinned item-type view always opens in its own type, no matter which type was
             # last selected while inside it
             self.forcedItemType = section_or_server_id.__dict__.get('itemType')
+            # Fallback for _loadSettings() below, when this section has never had its own
+            # ITEM_TYPE saved (getItemType() returns None) - the section's own native type,
+            # not whatever a completely different, previously-open section left the ITEM_TYPE
+            # module global at.
+            self.sectionType = section_or_server_id.TYPE
 
         self._loadSettings()
 
@@ -408,7 +414,16 @@ class LibrarySettings(object):
         except:
             util.ERROR()
 
-        setItemType(self.forcedItemType or self.getItemType() or ITEM_TYPE)
+        # Live-confirmed bug without the sectionType fallback: a section that's never had its
+        # own ITEM_TYPE saved (getItemType() returns None) fell all the way through to the bare
+        # ITEM_TYPE module global - whatever a completely different, previously-open section
+        # left it at (e.g. Music's 'album'), not anything valid for *this* section - silently
+        # sending the wrong type= filter to the server and rendering as "No content available"
+        # even though the library genuinely has content. sectionType (this section's own native
+        # type, set in __init__) is the correct fallback for a never-configured section; the
+        # bare ITEM_TYPE global is now only reached for the string-serverID construction (no real
+        # section to derive a type from at all).
+        setItemType(self.forcedItemType or self.getItemType() or self.sectionType or ITEM_TYPE)
 
     def getItemType(self):
         if not self._settings or self.sectionID not in self._settings:
@@ -659,6 +674,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # content-mode swap, but the ManagedControlList/its items persist across that via
         # newControl(), same as the sidebar's own list does.
         self.tabList = None
+        # Which flavor of tabList's 2 items is currently built - Recommended/Library normally,
+        # or Music/Video for the Playlists section (which has no real hub content for a
+        # Recommended tab, and no separate Library-tab concept since it's grid-only always).
+        # Unlike the sectionList/tabList "build once, rebind forever" pattern this otherwise
+        # follows, this one genuinely needs full content swapped out - tracked here so
+        # onFirstInit() knows to call buildTabList() again (not just newControl()) exactly when
+        # a section swap crosses the playlists/non-playlists boundary.
+        self._tabListIsPlaylists = False
 
         # Stage 3 (quiet-orbiting-heron.md's Cold Start plan): user-options dropdown (control 250,
         # includes/sidebar_dropdowns.xml.tpl - shared, generic markup, already wired into every
@@ -1389,10 +1412,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         if self.tabList is None:
             self.tabList = kodigui.ManagedControlList(self, self.TAB_LIST_ID, 5)
+            self._tabListIsPlaylists = self.section.TYPE == 'playlists'
             self.buildTabList()
         else:
             self.tabList.newControl(self)
-            self.updateActiveTabMarker()
+            is_playlists = self.section.TYPE == 'playlists'
+            if is_playlists != self._tabListIsPlaylists:
+                # Crossed the playlists/non-playlists boundary since the tabList's 2 items were
+                # last built - newControl()'s usual rebind-in-place isn't enough here, the items
+                # themselves (Recommended/Library vs. Music/Video) need swapping out too.
+                self._tabListIsPlaylists = is_playlists
+                self.buildTabList()
+            else:
+                self.updateActiveTabMarker()
 
         if self.userList is None:
             self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5)
@@ -1465,8 +1497,30 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 4, 3),
                 )
             else:
+                # newControlEmpty(), not newControl(): this section's hub content is about to
+                # be replaced wholesale by hubsTask.run() below anyway, so repainting whatever
+                # the *previous* section's Recommended tab last left in these items (newControl()'s
+                # normal behavior - correct for tabList/sectionList/userList/serverList just
+                # above, whose content genuinely carries over unchanged across a section swap)
+                # would otherwise flash that stale content on screen for the ~100-200ms gap
+                # until _recommendedHubsCallback()/replaceItems() actually lands. Live-confirmed
+                # as the cause of a jarring "previous section's hubs" flash on every swap into a
+                # section whose Recommended tab was already visible earlier this session.
                 for hc in self.hubControls:
-                    hc.newControl(self)
+                    hc.newControlEmpty(self)
+
+            # Same stale-content problem as the hub tiles above, for the hero overlay (art box
+            # top-right, title/summary/etc. panel left) - updateHeroFrom()/setHeroInfo() only run
+            # once hubsTask.run() below actually lands, so without this, whatever the *previous*
+            # section's Recommended tab last set title/clear.logo/summary/background/etc. to just
+            # sits there, fully visible, for that same gap. _setNoHeroArt(True) is the existing
+            # single choke point for this: script-plex-recommended.xml.tpl's hero-art box is gated
+            # purely on no_hero_art, and its info panel is gated on title-non-empty OR no_hero_art -
+            # forcing it true here hides both regardless of whatever stale property values are
+            # still sitting underneath, until the real callback below reveals (or keeps hidden)
+            # the anchor hub's actual state. self._lastNoHeroArt was already reset to None just
+            # above, so this isn't a no-op even when the previous section also had no hero art.
+            self._setNoHeroArt(True)
 
             # Snapshot now (main thread, same moment the task is scheduled) so the callback can
             # tell a stale fetch (a swap landed before it ran) from a current one - same idiom as
@@ -1577,6 +1631,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Plain setBoolProperty(), not _setNoHeroArt() - that method also repositions control 51,
         # which doesn't exist in any library-grid template (RuntimeError: Non-Existent Control).
         self.setBoolProperty('no_hero_art', True)
+        # ...but _setNoHeroArt()'s own no-op guard (self._lastNoHeroArt) still needs to know about
+        # this write, or it goes stale: onFirstInit()'s 'recommended' branch already resets it to
+        # None unconditionally before its own _setNoHeroArt(True) call, so this doesn't change that
+        # path's correctness - but _setNoHeroArt() can also be reached later via
+        # updateHeroFrom()/_recommendedHubsCallback() without onFirstInit() running again in
+        # between (e.g. hub-to-hub focus moves within the same 'recommended' entry), where a stale
+        # guard could wrongly no-op a real property change.
+        self._lastNoHeroArt = True
 
         self.setTitle()
         self.setBoolProperty("initialized", True)
@@ -1935,6 +1997,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # bypass below, same as SECTION_LIST_ID above.
             mli = self.tabList.getSelectedItem()
             if mli:
+                if self._tabListIsPlaylists:
+                    # Music/Video: _applyItemTypeChoice() is an in-place refill (reset()/fill()),
+                    # never a doClose()-based window reconstruction - none of the deferral below
+                    # applies, same as itemTypeButtonClicked()'s own dropdown-result call to it.
+                    self._applyItemTypeChoice(mli.getProperty('item.type'))
+                    return
+
                 # Not a direct switchTab() call: confirmed as xbmc/xbmc#27552/#27239, an upstream
                 # Kodi core bug, not anything specific to this control - CGUIWindow::OnAction()'s
                 # focused-control parent walk crashes if the window/skin gets reloaded nested
@@ -2429,37 +2498,62 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.saveNavSettings()
 
     def buildTabList(self):
-        """Populate the section-tabs row (Recommended/Library) - plan item 0
-        (quiet-orbiting-heron.md). Built once per LibraryWindow lifetime (see onFirstInit()),
-        not rebuilt on every content-mode swap - only which item is marked 'current' changes
-        (updateActiveTabMarker()), same relationship buildSectionList()/is.active has to the
-        sidebar. Plain hardcoded English labels for now, not T()-translated - no existing
-        translation string to reuse, and adding new ones is a separate concern from this pass.
+        """Populate the section-tabs row: Recommended/Library normally (plan item 0,
+        quiet-orbiting-heron.md), or Music/Video for the Playlists section instead - per the
+        user's own request, Playlists has no real hub content for a Recommended tab (no numeric
+        section key for SectionHubsTask to fetch against) and no separate Library-tab concept
+        either (always grid), so this reuses the same 2-tab row for the Audio/Video item-type
+        choice instead - the same choice the old floating item-type button (312,
+        ITEM_TYPE_BUTTON_ID) used to offer via a dropdown for this section, before it became
+        playlists-hidden (see itemTypeButtonClicked()'s own comment). self._tabListIsPlaylists
+        (set by onFirstInit() immediately before calling this) picks which flavor gets built -
+        called once per LibraryWindow lifetime for a given flavor, then only rebound
+        (newControl()) on further same-flavor swaps, and rebuilt again if a swap crosses the
+        playlists/non-playlists boundary - see onFirstInit()'s own comment. Recommended/Library's
+        labels are plain hardcoded English, not T()-translated - no existing translation string
+        to reuse there, and adding new ones was a separate concern from that original pass;
+        Music/Video reuse existing strings since this is porting an already-translated dropdown's
+        own option labels, not introducing new copy.
         """
         items = []
-        for mode, label in (('recommended', 'Recommended'), ('library', 'Library')):
-            mli = kodigui.ManagedListItem(label)
-            mli.setProperty('item', '1')
-            mli.setProperty('content.mode', mode)
-            items.append(mli)
+        if self._tabListIsPlaylists:
+            for item_type, label in (('audio', T(32394, 'Music')), ('video', T(32053, 'Video'))):
+                mli = kodigui.ManagedListItem(label)
+                mli.setProperty('item', '1')
+                mli.setProperty('item.type', item_type)
+                items.append(mli)
+        else:
+            for mode, label in (('recommended', 'Recommended'), ('library', 'Library')):
+                mli = kodigui.ManagedListItem(label)
+                mli.setProperty('item', '1')
+                mli.setProperty('content.mode', mode)
+                items.append(mli)
 
         self.tabList.reset()
         self.tabList.addItems(items)
         self.updateActiveTabMarker()
 
     def updateActiveTabMarker(self):
-        """Update 'current' on the tab list items to highlight self.contentMode's active tab -
-        same key-matched-property pattern updateActiveSectionMarker() uses for the sidebar,
-        called both right after buildTabList() and whenever switchTab() changes contentMode.
+        """Update 'current' on the tab list items to highlight the active tab - self.contentMode
+        normally (Recommended/Library), or the active ITEM_TYPE for the Playlists section's
+        Music/Video tabs instead (self._tabListIsPlaylists). Same key-matched-property pattern
+        updateActiveSectionMarker() uses for the sidebar, called both right after buildTabList()
+        and whenever the active tab changes (switchTab() for contentMode,
+        _applyItemTypeChoice() for ITEM_TYPE).
         """
         if not self.tabList:
             return
+
+        if self._tabListIsPlaylists:
+            key, active = 'item.type', ITEM_TYPE
+        else:
+            key, active = 'content.mode', self.contentMode
 
         for i in range(self.tabList.size()):
             mli = self.tabList[i]
             if not mli:
                 continue
-            if mli.getProperty('content.mode') == self.contentMode:
+            if mli.getProperty(key) == active:
                 mli.setProperty('current', '1')
             elif mli.getProperty('current'):
                 mli.setProperty('current', '')
@@ -2860,10 +2954,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         elif self.section.TYPE == 'movies_shows':
             for t in ('movies_shows', 'movie', 'show'):
                 options.append({'type': t, 'display': TYPE_PLURAL.get(t, t)})
-        elif self.section.TYPE == 'playlists':
-            options.append({'type': 'audio', 'display': T(32048, 'Audio')})
-            options.append({'type': 'video', 'display': T(32053, 'Video')})
         else:
+            # 'playlists' used to be here too (Audio/Video options) - control 312
+            # (ITEM_TYPE_BUTTON_ID, this method's only caller) is playlists-specific-hidden now,
+            # per the user's own request: Playlists gets Music/Video as real tabList tabs
+            # instead of a floating dropdown button, same _applyItemTypeChoice() effect either
+            # way - see onClick()'s TAB_LIST_ID branch.
             return
 
         selectItem = None
@@ -2884,6 +2980,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.browseGenres()
             return
 
+        self._applyItemTypeChoice(choice)
+
+    def _applyItemTypeChoice(self, choice):
+        """Switch ITEM_TYPE in place (no window reconstruction) - shared by
+        itemTypeButtonClicked()'s dropdown result above and the Playlists tabList's Music/Video
+        click (onClick()'s TAB_LIST_ID branch), which needs the exact same effect without a
+        dropdown at all."""
         if choice == ITEM_TYPE:
             return
 
@@ -2925,6 +3028,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # stored sort isn't valid for this item type
                 self.resetSort()
             self.fill(keep_focus=True)
+
+        # No-op for the Recommended/Library tabList flavor (updateActiveTabMarker() keys off
+        # self.contentMode there, unaffected by an ITEM_TYPE change) - only meaningfully updates
+        # anything when self._tabListIsPlaylists, but cheap enough not to bother gating.
+        self.updateActiveTabMarker()
 
     def sortButtonClicked(self):
         desc = 'script.plex/indicators/arrow-down.png'
@@ -3667,8 +3775,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if not self.backgroundSet:
             # setBackground()/updateBackgroundFrom() key off ds.get('art', ...), which playlists
             # don't have - mirrors the old playlists.py's own fill(), which set 'background' directly
-            # from .composite instead for the same reason.
-            self.setProperty('background', util.backgroundFromArt(
+            # from .composite instead for the same reason. windowSetBackground(), not a bare
+            # setProperty() though - that was the old playlists.py behavior but skips the
+            # background_static/LAST_BG_URL bookkeeping windowSetBackground() (kodigui.py) does for
+            # every other background-setting path in the app. Live-confirmed as the cause of a
+            # stale-art flash: a bare setProperty() here left 'background' pointing at a playlist's
+            # composite while 'background_static' and the module-level LAST_BG_URL tracker still
+            # held whatever the *previous* Recommended-tab visit last set - so the very next
+            # Recommended entry whose anchor happened to match LAST_BG_URL again (a real hazard on a
+            # second round trip through the same section) hit windowSetBackground()'s own
+            # already-in-sync no-op check and silently kept showing this playlist's art instead of
+            # writing the new value.
+            self.windowSetBackground(util.backgroundFromArt(
                 random.choice(playlists).composite, width=self.width, height=self.height))
             self.backgroundSet = True
 
