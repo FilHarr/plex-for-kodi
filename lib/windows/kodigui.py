@@ -169,7 +169,8 @@ class XMLBase(object):
 
                     xbmc.sleep(1000)
 
-                    if self.__class__.__name__ == "HomeWindow":
+                    from . import windowutils
+                    if self is windowutils.HOME:
                         try:
                             self._errored = True
                             self.closeWRecompileTpls()
@@ -186,7 +187,6 @@ class XMLBase(object):
                             self._errored = True
                             self.doClose()
                         finally:
-                            from . import windowutils
                             windowutils.HOME.closeWRecompileTpls()
                     return
                 raise
@@ -273,7 +273,8 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
                 if LAST_BG_URL:
                     self.windowSetBackground(LAST_BG_URL)
 
-                if self.__class__.__name__ not in ("HomeWindow", "BackgroundWindow"):
+                from . import windowutils
+                if self is not windowutils.HOME and self.__class__.__name__ != "BackgroundWindow":
                     plexapp.util.APP.on('close.windows', self.onCloseSignal)
 
                 if hasattr(self, "onFirstInit"):

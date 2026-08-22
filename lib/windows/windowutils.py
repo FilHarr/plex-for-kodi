@@ -218,6 +218,16 @@ class SidebarMixin():
                 return
 
         item = self.sectionList.getSelectedItem()
+        if not item or item.getProperty('is.search') or item.dataSource is None:
+            # checkSectionItem() applies this same filter when it starts the debounce timer, but
+            # focus can still move onto Search (or anything else with no real section behind it)
+            # inside the section list before the timer fires - the "focus left the list entirely"
+            # check above doesn't catch that, since it never leaves SECTION_LIST_ID. Re-checking
+            # here against this settled-on item, not just the one that started the timer, is what
+            # was missing - live-confirmed crash otherwise (opener.sectionClicked() dereferencing
+            # a None section).
+            return
+
         if self.lastSection == item.dataSource:
             return
 

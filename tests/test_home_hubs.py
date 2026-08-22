@@ -1,6 +1,12 @@
 # coding=utf-8
 """
-Hub display for Home and library sections - lib/windows/home.py.
+Cross-section hub aggregation - lib/windows/home.py.
+
+getCombinedHubsForSection/attributeCrossSectionHub were HomeWindow methods, extracted to
+module-level functions when HomeWindow was deleted (quiet-orbiting-heron.md item 6/
+unified-stargazing-lerdorf.md Stage 5). Not currently wired into LibraryWindow - item 10's
+cross-section hub aggregation infrastructure is still unbuilt future work - kept here with
+tests intact so that work has a starting point instead of only a git-history reference.
 
 Plex tells same-type sections' hubs apart only by numeric suffixes on the
 hubIdentifier ("home.movies.recent.3.1" vs "home.movies.recent.7.1"), and
@@ -24,7 +30,7 @@ from __future__ import absolute_import
 from kodienv import ENV
 
 ENV.abort_requested = True
-from lib.windows.home import HomeWindow, HubsList  # noqa: E402
+from lib.windows.home import HubsList, attributeCrossSectionHub, getCombinedHubsForSection  # noqa: E402
 from plexnet import plexlibrary  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
@@ -52,15 +58,6 @@ class FakeSection(object):
 HOME = FakeSection(None, "Home")
 
 
-def homeWindow(section_hubs=None, hub_settings=None, all_sections=None):
-    """A HomeWindow without Kodi behind it - only hub bookkeeping is exercised."""
-    win = HomeWindow.__new__(HomeWindow)
-    win.sectionHubs = section_hubs or {}
-    win.hubSettings = hub_settings or {}
-    win.allSections = all_sections or {}
-    return win
-
-
 class CombinedHubsDedupTest(KodiTestCase):
     """Two same-type libraries' home hubs share a catalog id but are distinct hubs."""
 
@@ -69,34 +66,31 @@ class CombinedHubsDedupTest(KodiTestCase):
         self.movies_hub = FakeHub("home.movies.recent.3.1", "Recently Added in Movies")
         self.other_hub = FakeHub("home.movies.recent.7.1", "Recently Added in Other Videos")
         native = HubsList([self.movies_hub, self.other_hub]).init()
-        self.win = homeWindow(
-            section_hubs={None: native},
-            hub_settings={None: {"custom": True, "hubs": [
-                {"catalog_id": "home.movies.recent", "order": 0},
-            ]}},
-        )
+        self.section_hubs = {None: native}
+        self.hub_settings = {None: {"custom": True, "hubs": [
+            {"catalog_id": "home.movies.recent", "order": 0},
+        ]}}
+
+    def combined(self):
+        return getCombinedHubsForSection(HOME, self.section_hubs, self.hub_settings)
 
     def test_both_libraries_keep_their_row(self):
-        combined = self.win.getCombinedHubsForSection(HOME)
         self.assertEqual(
             ["Recently Added in Movies", "Recently Added in Other Videos"],
-            [h.title for h in combined],
+            [h.title for h in self.combined()],
         )
 
     def test_the_shared_catalog_id_enables_both_rows(self):
-        combined = self.win.getCombinedHubsForSection(HOME)
         self.assertEqual(["home.movies.recent"] * 2,
-                         [h._catalogId for h in combined])
+                         [h._catalogId for h in self.combined()])
 
     def test_a_disabled_catalog_id_still_hides_its_rows(self):
-        self.win.hubSettings[None]["hubs"] = [{"catalog_id": "home.continue", "order": 0}]
-        combined = self.win.getCombinedHubsForSection(HOME)
-        self.assertEqual([], list(combined))
+        self.hub_settings[None]["hubs"] = [{"catalog_id": "home.continue", "order": 0}]
+        self.assertEqual([], list(self.combined()))
 
     def test_the_same_hub_listed_twice_is_still_deduped(self):
-        self.win.sectionHubs[None].append(self.movies_hub)
-        combined = self.win.getCombinedHubsForSection(HOME)
-        self.assertEqual(2, len(combined))
+        self.section_hubs[None].append(self.movies_hub)
+        self.assertEqual(2, len(self.combined()))
 
 
 class CrossSectionAttributionTest(KodiTestCase):
@@ -106,7 +100,7 @@ class CrossSectionAttributionTest(KodiTestCase):
         super(CrossSectionAttributionTest, self).setUp()
         self.movies = FakeSection("3", "Movies")
         self.other = FakeSection("7", "Other Videos")
-        self.win = homeWindow(all_sections={"3": self.movies, "7": self.other})
+        self.all_sections = {"3": self.movies, "7": self.other}
 
     @staticmethod
     def crossHub(title, source_key, identifier="movie.recentlyreleased.3.1"):
@@ -115,7 +109,7 @@ class CrossSectionAttributionTest(KodiTestCase):
         return hub
 
     def displayTitle(self, hub, section, is_home=False):
-        self.win.attributeCrossSectionHub(hub, section, is_home)
+        attributeCrossSectionHub(self.all_sections, hub, section, is_home)
         return hub.__dict__.get("_displayTitle")
 
     def test_foreign_hub_is_attributed_even_if_the_library_name_is_a_substring(self):

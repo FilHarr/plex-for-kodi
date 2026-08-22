@@ -21,7 +21,7 @@ from kodienv import ENV
 
 ENV.abort_requested = True
 from lib.windows import home, library  # noqa: E402
-from lib.windows.home import HomeWindow, PinnedTypeSection  # noqa: E402
+from lib.windows.home import PinnedTypeSection  # noqa: E402
 from plexnet.plexlibrary import CollectionsHub  # noqa: E402
 from lib.windows.library import LibrarySettings, realSection  # noqa: E402
 
@@ -53,10 +53,10 @@ class FakeSection(object):
         return self.server
 
 
-def homeWindow(library_settings):
-    """A HomeWindow without Kodi behind it - only the pin bookkeeping is exercised."""
-    win = HomeWindow.__new__(HomeWindow)
-    win.librarySettings = library_settings
+def libraryWindow(nav_settings):
+    """A LibraryWindow without Kodi behind it - only the pin bookkeeping is exercised."""
+    win = library.LibraryWindow.__new__(library.LibraryWindow)
+    win.navSettings = nav_settings
     return win
 
 
@@ -195,11 +195,11 @@ class PinBookkeepingTest(KodiTestCase):
         self.section = FakeSection()
 
     def test_nothing_is_pinned_by_default(self):
-        self.assertEqual([], homeWindow({}).sectionPinnedTypes(self.section))
+        self.assertEqual([], libraryWindow({}).sectionPinnedTypes(self.section))
 
     def test_pinning_then_unpinning_round_trips(self):
-        win = homeWindow({})
-        win.saveLibrarySettings = lambda: None
+        win = libraryWindow({})
+        win.saveNavSettings = lambda: None
 
         win.setSectionPinned(self.section, "collection", True)
         self.assertEqual(["collection"], win.sectionPinnedTypes(self.section))
@@ -208,8 +208,8 @@ class PinBookkeepingTest(KodiTestCase):
         self.assertEqual([], win.sectionPinnedTypes(self.section))
 
     def test_pinning_twice_does_not_duplicate_the_entry(self):
-        win = homeWindow({})
-        win.saveLibrarySettings = lambda: None
+        win = libraryWindow({})
+        win.saveNavSettings = lambda: None
 
         win.setSectionPinned(self.section, "collection", True)
         win.setSectionPinned(self.section, "collection", True)
@@ -218,16 +218,16 @@ class PinBookkeepingTest(KodiTestCase):
     def test_a_type_the_library_cannot_pin_is_ignored(self):
         photos = FakeSection(key="9", title="Photos")
         photos.TYPE = photos.type = "photo"
-        win = homeWindow({"9": {"pinned_types": ["collection"]}})
+        win = libraryWindow({"9": {"pinned_types": ["collection"]}})
         self.assertEqual([], win.sectionPinnedTypes(photos))
 
     def test_virtual_sections_without_a_type_are_ignored(self):
         # playlists and the watchlist reach this code on every top bar rebuild
-        win = homeWindow({"playlists": {"pinned_types": ["collection"]}})
+        win = libraryWindow({"playlists": {"pinned_types": ["collection"]}})
         self.assertEqual([], win.sectionPinnedTypes(home.playlists_section))
 
     def test_a_pin_cannot_itself_be_pinned(self):
-        win = homeWindow({"3": {"pinned_types": ["collection"]}})
+        win = libraryWindow({"3": {"pinned_types": ["collection"]}})
         pin = PinnedTypeSection(self.section, "collection")
         self.assertEqual([], win.sectionPinnedTypes(pin))
 
