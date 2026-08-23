@@ -28,21 +28,25 @@ class RolesMixin(object):
         return x, y
 
     def roleSectionId(self):
-        """Library section id of the item roles are being browsed from, if any. Host windows
-        that track a "current item" (PrePlayWindow, EpisodesWindow, ShowWindow/ArtistWindow)
-        override this so PersonWindow's sidebar can highlight the section the click came from;
-        default is None (VideoPlayerWindow has no sidebar, so it has nothing to thread through).
+        """Library section id PersonWindow's sidebar should highlight when opened from here -
+        self.entrySectionId (Sidebar entry-section persistence), not the host item's own real
+        section: host windows resolve entrySectionId to their own real section only when they're
+        themselves a genesis point (opened from the sidebar/Home/Search/Watchlist), and otherwise
+        inherit it from whatever they were drilled in from - so this stays correct across an
+        arbitrary-depth drill chain, not just one hop. Default is None (VideoPlayerWindow has no
+        sidebar, so it has nothing to thread through).
         """
-        return None
+        return getattr(self, 'entrySectionId', None)
 
     def roleFromWatchlist(self):
-        """Whether the item roles are being browsed from was itself reached via the watchlist.
-        Watchlist ("discover") items report the literal string "watchlist" as their library
+        """Whether the sidebar entry PersonWindow should highlight is Watchlist -
+        self.entryFromWatchlist, the same inherited-or-self-resolved flag roleSectionId() above
+        uses. Watchlist ("discover") items report the literal string "watchlist" as their library
         section id, which never matches a real section's key - this lets PersonWindow fall back
         to highlighting the Watchlist rail entry instead of nothing, same as PrePlayWindow's own
         buildSectionList() does.
         """
-        return False
+        return getattr(self, 'entryFromWatchlist', False)
 
     def roleClicked(self):
         mli = self.rolesListControl.getSelectedItem()

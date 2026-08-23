@@ -516,6 +516,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # exitCommand above, so every instance (including nested ones that never become HOME) has it.
         self._pendingSection = None
         self.section = kwargs.get('section')
+
+        # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
+        # mellow-pondering-magpie.md, 2026-08-18) - see preplay.py's PrePlayWindow.__init__ for the
+        # full reasoning. Only ever set when this instance was opened as a drilled-in child (a
+        # collection/subDir view) of an ancestor tracking its own inherited entry section - a real
+        # top-level section reached directly via the sidebar never passes this, so it stays None
+        # here and buildSectionList() falls back to exactly its pre-existing self.section-based
+        # computation.
+        self.entrySectionId = kwargs.get('entry_section_id')
+        self.entryFromWatchlist = kwargs.get('entry_from_watchlist', False)
+
         self.filter = kwargs.get('filter_')
         self.subDir = kwargs.get('subDir')
         # 'library' (poster/grid, default) or 'recommended' (hubs) - a second swap dimension
@@ -2207,8 +2218,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # the Sidebar-Tab-Unification branch's identical fix (commit f0e6340f), which found the
         # same bug independently - that branch's own pooled-window architecture isn't ported here,
         # just this small, self-contained highlight fix.
-        getActiveLibraryId = getattr(self.section, 'getLibrarySectionId', None)
-        activeLibraryId = getActiveLibraryId() if getActiveLibraryId else None
+        # self.entrySectionId (Sidebar entry-section persistence, ported from Sidebar-Tab-
+        # Unification's mellow-pondering-magpie.md) overrides the fallback above when present: an
+        # ancestor further up the drill chain (PrePlayWindow/ShowWindow/etc - see their own
+        # buildSectionList()) explicitly threaded its own entrySectionId through - a collection
+        # opened from e.g. a cross-section PersonWindow filmography click can genuinely live in a
+        # different real section than the one that should stay highlighted, so that always wins
+        # when present.
+        if self.entrySectionId is not None:
+            activeLibraryId = self.entrySectionId
+        else:
+            getActiveLibraryId = getattr(self.section, 'getLibrarySectionId', None)
+            activeLibraryId = getActiveLibraryId() if getActiveLibraryId else None
 
         for section in sections:
             mli = kodigui.ManagedListItem(section.title,
@@ -2222,7 +2243,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 mli.setIconImage('script.plex/home/type/watchlist.png')
             elif isinstance(section, home.PinnedTypeSection):
                 mli.setProperty('is.pinned.type', section.itemType)
-            if section.key == self.section.key or (activeLibraryId and section.key == activeLibraryId):
+            if section.key == self.section.key or (activeLibraryId and section.key == activeLibraryId) or \
+                    (self.entrySectionId is None and self.entryFromWatchlist and section == home.watchlist_section):
                 mli.setProperty('is.active', '1')
                 active_pos = len(items)
             items.append(mli)
@@ -3436,9 +3458,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             extra_kwargs['directly_from_watchlist'] = True
             extra_kwargs['external_item'] = True
 
+        # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
+        # mellow-pondering-magpie.md, 2026-08-18): None/False here for a genuine top-level section
+        # (the common case) is exactly equivalent to not passing these at all - only meaningfully
+        # differs when this LibraryWindow instance was itself opened as a drilled-in child (a
+        # collection/subDir view) inheriting an ancestor's entrySectionId, in which case that keeps
+        # propagating instead of being lost - see this window's own buildSectionList(). Folded into
+        # extra_kwargs (not a separate dict) since every branch below already either uses
+        # extra_kwargs or wants these two keys the same way.
+        extra_kwargs['entry_section_id'] = self.entrySectionId
+        extra_kwargs['entry_from_watchlist'] = self.entryFromWatchlist
+
         if mli.dataSource.TYPE == 'collection':
             prevItemType = self.librarySettings.getItemType() or ITEM_TYPE
-            self.processCommand(opener.open(mli.dataSource))
+            self.processCommand(opener.open(mli.dataSource, **extra_kwargs))
             self.librarySettings.setItemType(prevItemType)
         elif self.section.TYPE == 'show' or mli.dataSource.TYPE == 'show' or mli.dataSource.TYPE == 'season' or mli.dataSource.TYPE == 'episode':
             if ITEM_TYPE == 'episode' or mli.dataSource.TYPE == 'episode' or mli.dataSource.TYPE == 'season':
@@ -3460,16 +3493,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 section.key = datasource.key
                 section.title = datasource.title
 
-                self.processCommand(opener.handleOpen(LibraryWindow, windows=self._windows, default_window=self._next, section=section, filter_=self.filter, subDir=True))
+                self.processCommand(opener.handleOpen(LibraryWindow, windows=self._windows, default_window=self._next, section=section, filter_=self.filter, subDir=True,
+                                                       entry_section_id=self.entrySectionId, entry_from_watchlist=self.entryFromWatchlist))
                 self.librarySettings.setItemType(self.librarySettings.getItemType() or ITEM_TYPE)
             else:
                 self.processCommand(opener.handleOpen(preplay.PrePlayWindow if not sectionType == 'movies_shows' else preplay.PrePlayWindowWL, video=datasource, parent_list=self.showPanelControl, **extra_kwargs))
                 updateUnwatchedAndProgress = True
         elif self.section.TYPE == 'artist' or mli.dataSource.TYPE == 'artist' or mli.dataSource.TYPE == 'album' or mli.dataSource.TYPE == 'track':
             if ITEM_TYPE == 'album' or mli.dataSource.TYPE == 'album' or mli.dataSource.TYPE == 'track':
-                self.openItem(mli.dataSource)
+                self.openItem(mli.dataSource, entry_section_id=self.entrySectionId)
             else:
-                self.processCommand(opener.handleOpen(subitems.ArtistWindow, media_item=mli.dataSource, parent_list=self.showPanelControl))
+                self.processCommand(opener.handleOpen(subitems.ArtistWindow, media_item=mli.dataSource, parent_list=self.showPanelControl,
+                                                       entry_section_id=self.entrySectionId, entry_from_watchlist=self.entryFromWatchlist))
         elif self.section.TYPE in ('photo', 'photodirectory'):
             self.showPhoto(mli.dataSource)
         elif self.section.TYPE == 'playlists':
@@ -5628,17 +5663,37 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         HomeWindow.hubItemClicked() (home.py): generic opener.open() dispatch, since hub items
         span many different types across different hubs, unlike the grid's own section-TYPE-
         scoped showPanelClicked(). Deliberately narrower than the original for now - no
-        watchlist-specific extra_kwargs, no in-progress auto-resume, no season/episode-to-show
-        redirection for discover hubs, no hub-becomes-empty cleanup after the click (an item
-        removed/deleted, a watchlist item dropped on open, etc. leaving this row with fewer items
-        than before) - real gaps, not yet decided whether/when to close, see
-        quiet-orbiting-heron.md."""
+        in-progress auto-resume, no season/episode-to-show redirection for discover hubs, no
+        hub-becomes-empty cleanup after the click (an item removed/deleted, a watchlist item
+        dropped on open, etc. leaving this row with fewer items than before) - real gaps, not yet
+        decided whether/when to close, see quiet-orbiting-heron.md.
+
+        watchlist-specific extra_kwargs (live-confirmed gap, fixed here): this window's own
+        contentMode can be 'recommended' for a section whose TYPE is 'movies_shows' (Watchlist,
+        e.g. if that's the last tab persisted for it - see reset()'s own contentMode comment), in
+        which case clicks land here, not showPanelClicked() - which never gets a chance to set
+        from_watchlist/directly_from_watchlist at all. Without it, the opened window's own
+        getLibrarySectionId() legitimately finds nothing real to match (discover items report the
+        literal string "watchlist"), so its sidebar has nothing to highlight. Same detection
+        showPanelClicked() uses (self.section.TYPE, not per-hub cross-section sourcing -
+        hubMenu()'s own _crossSectionSource - which would be a separate, currently unhandled case
+        even there).
+        """
         control = self.hubControls[hub_control_id - self.HUB_CONTROL_ID]
         mli = control.getSelectedItem()
         if not mli or not mli.dataSource:
             return
 
-        self.processCommand(opener.open(mli.dataSource))
+        extra_kwargs = {
+            'entry_section_id': self.entrySectionId,
+            'entry_from_watchlist': self.entryFromWatchlist,
+        }
+        if self.section.TYPE == 'movies_shows':
+            extra_kwargs['from_watchlist'] = True
+            extra_kwargs['directly_from_watchlist'] = True
+            extra_kwargs['external_item'] = True
+
+        self.processCommand(opener.open(mli.dataSource, **extra_kwargs))
 
     def hubMenu(self, hubControlID):
         """Context menu (ACTION_CONTEXT_MENU) for whichever item is focused in a hub row - ported

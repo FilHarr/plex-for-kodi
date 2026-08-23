@@ -445,7 +445,8 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             try:
                 # Resolve plex:// guid against the local PMS — getObject builds a proper PlexObject
                 self.processCommand(opener.open(
-                    '/library/metadata/{0}'.format(quote_plus(item.guid)), server=local_server))
+                    '/library/metadata/{0}'.format(quote_plus(item.guid)), server=local_server,
+                    entry_section_id=self.sectionId, entry_from_watchlist=self.cameFromWatchlist))
                 return
             except Exception as e:
                 util.DEBUG_LOG('PersonWindow: Local open failed for {0}: {1}', item.guid, e)
@@ -463,7 +464,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             item.ratingKey,
             server=discover_server,
             from_watchlist=True,
-            external_item=True
+            external_item=True,
+            entry_section_id=self.sectionId,
+            entry_from_watchlist=self.cameFromWatchlist
         ))
 
     def onFilmography(self, result):
@@ -561,9 +564,13 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         if len(versions) > 1:
             selectedItem = self.showVersionPicker(versions, item.type if hasattr(item, 'type') else 'movie')
             if selectedItem:
-                self.processCommand(opener.open(selectedItem))
+                self.processCommand(opener.open(selectedItem,
+                                                entry_section_id=self.sectionId,
+                                                entry_from_watchlist=self.cameFromWatchlist))
         else:
-            self.processCommand(opener.open(item))
+            self.processCommand(opener.open(item,
+                                            entry_section_id=self.sectionId,
+                                            entry_from_watchlist=self.cameFromWatchlist))
 
     def searchButtonClicked(self):
         self.processCommand(search.dialog(self))

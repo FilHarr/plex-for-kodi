@@ -300,6 +300,17 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.startOver = kwargs.get('start_over')
         self.debouncing = False
 
+        # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
+        # mellow-pondering-magpie.md, 2026-08-18) - see preplay.py's PrePlayWindow.__init__ for the
+        # full reasoning; identical shape here. Set once here, not in reset() - navigating between
+        # episodes within this same window (reset() is called again for that) must not change
+        # which sidebar section stays lit.
+        self.entrySectionId = kwargs.get('entry_section_id')
+        self.entryFromWatchlist = kwargs.get('entry_from_watchlist', False)
+        if self.entrySectionId is None and not self.entryFromWatchlist:
+            self.entrySectionId = self.show_.getLibrarySectionId()
+            self.entryFromWatchlist = self.fromWatchlist or self.directlyFromWatchlist
+
     def reset(self, episode, season=None, show=None):
         self.episode = episode
         self.initialEpisode = episode
@@ -961,13 +972,15 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 return
             item = mli.dataSource
 
-        self.processCommand(opener.open(item, came_from=came_from))
+        self.processCommand(opener.open(item, came_from=came_from,
+                                        entry_section_id=self.entrySectionId,
+                                        entry_from_watchlist=self.entryFromWatchlist))
 
     def roleSectionId(self):
-        return self.show_.getLibrarySectionId()
+        return self.entrySectionId
 
     def roleFromWatchlist(self):
-        return self.fromWatchlist or self.directlyFromWatchlist
+        return self.entryFromWatchlist
 
     def getRoleItemDDPosition(self, *args, **kwargs):
         y = 900
@@ -1128,18 +1141,16 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
             sections = sorted(sections, key=orderPos)
 
-        activeSectionId = self.show_.getLibrarySectionId()
-        # A real section match always wins; only fall back to Watchlist when nothing matched -
-        # activeSectionId can be a real section's key, empty, or the literal string "watchlist"
-        # (what discover/watchlist items report), which never matches a real section's key, so it
-        # naturally falls through to the watchlist fallback below.
+        # self.entrySectionId (Sidebar entry-section persistence) - see preplay.py's
+        # buildSectionList() for the full reasoning; identical shape here.
+        activeSectionId = self.entrySectionId
         activeSection = None
         if activeSectionId:
             for section in sections:
                 if section.key == activeSectionId:
                     activeSection = section
                     break
-        if activeSection is None and (self.fromWatchlist or self.directlyFromWatchlist):
+        if activeSection is None and self.entryFromWatchlist:
             activeSection = home.watchlist_section
 
         for section in sections:
@@ -1421,7 +1432,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.processCommand(opener.open(
                 mli.dataSource.show().ratingKey,
                 came_from=mli.dataSource.season().ratingKey,
-                server=mli.dataSource.server)
+                server=mli.dataSource.server,
+                entry_section_id=self.entrySectionId,
+                entry_from_watchlist=self.entryFromWatchlist)
             )
         elif choice['key'] == 'to_section':
             self.cameFrom = "library"

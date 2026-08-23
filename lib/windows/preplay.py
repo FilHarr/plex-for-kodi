@@ -139,6 +139,21 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.directlyFromWatchlist = kwargs.get('directly_from_watchlist')
         self.is_watchlisted = kwargs.get('is_watchlisted', False)
         self.startOver = kwargs.get('start_over')
+
+        # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
+        # mellow-pondering-magpie.md, 2026-08-18): which sidebar row should stay highlighted while
+        # drilling through content, regardless of which section the item actually on screen
+        # belongs to - set once here (not recomputed per buildSectionList() call) so every window
+        # this one goes on to open can inherit it unchanged. None/False here means "nobody passed
+        # one down" - this window is itself a genesis point (opened from the sidebar/Home/Search/
+        # Watchlist), so it falls back to the same real-section-of-the-item computation
+        # buildSectionList() always used before this.
+        self.entrySectionId = kwargs.get('entry_section_id')
+        self.entryFromWatchlist = kwargs.get('entry_from_watchlist', False)
+        if self.entrySectionId is None and not self.entryFromWatchlist:
+            self.entrySectionId = self.video.getLibrarySectionId()
+            self.entryFromWatchlist = self.fromWatchlist or self.directlyFromWatchlist
+
         self.videos = None
         self.exitCommand = None
         self.trailer = None
@@ -364,10 +379,10 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.processCommand(search.dialog(self, section_id=self.video.getLibrarySectionId() or None))
 
     def roleSectionId(self):
-        return self.video.getLibrarySectionId()
+        return self.entrySectionId
 
     def roleFromWatchlist(self):
-        return self.fromWatchlist or self.directlyFromWatchlist
+        return self.entryFromWatchlist
 
     def buildSectionList(self):
         """Populate the sidebar's section list. Mirrors library.py's buildSectionList()/
@@ -427,18 +442,21 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
             sections = sorted(sections, key=orderPos)
 
-        activeSectionId = self.video.getLibrarySectionId()
-        # A real section match always wins; only fall back to Watchlist when nothing matched -
-        # activeSectionId can be a real section's key, empty, or the literal string "watchlist"
-        # (what discover/watchlist items report), which never matches a real section's key, so it
-        # naturally falls through to the watchlist fallback below.
+        # self.entrySectionId (Sidebar entry-section persistence) - resolved once in __init__,
+        # either inherited from whatever this window was drilled in from or, when this is itself a
+        # genesis point, this exact same real-section-of-the-item computation. A real section match
+        # always wins; only fall back to Watchlist when nothing matched - activeSectionId can be a
+        # real section's key, empty, or the literal string "watchlist" (what discover/watchlist
+        # items report), which never matches a real section's key, so it naturally falls through to
+        # the watchlist fallback below.
+        activeSectionId = self.entrySectionId
         activeSection = None
         if activeSectionId:
             for section in sections:
                 if section.key == activeSectionId:
                     activeSection = section
                     break
-        if activeSection is None and (self.fromWatchlist or self.directlyFromWatchlist):
+        if activeSection is None and self.entryFromWatchlist:
             activeSection = home.watchlist_section
 
         for section in sections:
@@ -556,9 +574,13 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         elif choice['key'] == 'mark_unwatched':
             self.toggleWatched(self.video, state=False, **VIDEO_RELOAD_KW)
         elif choice['key'] == 'to_season':
-            self.processCommand(opener.open(self.video.parentRatingKey))
+            self.processCommand(opener.open(self.video.parentRatingKey,
+                                            entry_section_id=self.entrySectionId,
+                                            entry_from_watchlist=self.entryFromWatchlist))
         elif choice['key'] == 'to_show':
-            self.processCommand(opener.open(self.video.grandparentRatingKey))
+            self.processCommand(opener.open(self.video.grandparentRatingKey,
+                                            entry_section_id=self.entrySectionId,
+                                            entry_from_watchlist=self.entryFromWatchlist))
         elif choice['key'] == 'to_section':
             self.cameFrom = "library"
             section = plexlibrary.LibrarySection.fromFilter(self.video)
@@ -780,7 +802,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             item = mli.dataSource
 
         self.processCommand(opener.open(item, from_watchlist=self.fromWatchlist if inherit_from_watchlist else False,
-                                        server=server, is_watchlisted=is_watchlisted, **kw))
+                                        server=server, is_watchlisted=is_watchlisted,
+                                        entry_section_id=self.entrySectionId,
+                                        entry_from_watchlist=self.entryFromWatchlist, **kw))
 
     def focusPlayButton(self, extended=False):
         if extended:

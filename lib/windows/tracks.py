@@ -44,6 +44,13 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
         self.album = kwargs.get('album')
         self.parentList = kwargs.get('parentList')
+
+        # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
+        # mellow-pondering-magpie.md, 2026-08-18) - see preplay.py's PrePlayWindow.__init__ for the
+        # full reasoning. No watchlist concept in the music library, so just the section id, always
+        # inherited or self-resolved.
+        self.entrySectionId = kwargs.get('entry_section_id') or self.album.getLibrarySectionId()
+
         self.albums = None
         self.exitCommand = None
         self.lastPlayingRK = None
@@ -303,7 +310,10 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
 
             sections = sorted(sections, key=orderPos)
 
-        activeSectionId = self.album.getLibrarySectionId()
+        # self.entrySectionId (Sidebar entry-section persistence) - inherited from wherever this
+        # window was drilled in from, or this window's own real section if it's itself a genesis
+        # point - see preplay.py's buildSectionList().
+        activeSectionId = self.entrySectionId
 
         for section in sections:
             mli = kodigui.ManagedListItem(section.title,
@@ -408,7 +418,7 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             self.updateItems(item)
             util.MONITOR.watchStatusChanged()
         elif choice['key'] == 'to_artist':
-            self.processCommand(opener.open(self.album.parentRatingKey))
+            self.processCommand(opener.open(self.album.parentRatingKey, entry_section_id=self.entrySectionId))
         elif choice['key'] == 'to_section':
             self.goHome(self.album.getLibrarySectionId())
 

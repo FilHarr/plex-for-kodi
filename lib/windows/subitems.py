@@ -89,6 +89,16 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.isExternal = kwargs.get('external_item', False)
         self.directlyFromWatchlist = kwargs.get('directly_from_watchlist')
         self.is_watchlisted = kwargs.get('is_watchlisted')
+
+        # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
+        # mellow-pondering-magpie.md, 2026-08-18) - see preplay.py's PrePlayWindow.__init__ for the
+        # full reasoning; identical shape here.
+        self.entrySectionId = kwargs.get('entry_section_id')
+        self.entryFromWatchlist = kwargs.get('entry_from_watchlist', False)
+        if self.entrySectionId is None and not self.entryFromWatchlist:
+            self.entrySectionId = self.mediaItem.getLibrarySectionId()
+            self.entryFromWatchlist = self.fromWatchlist or self.directlyFromWatchlist
+
         self.mediaItems = None
         self.exitCommand = None
         self.lastFocusID = None
@@ -421,18 +431,16 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
             sections = sorted(sections, key=orderPos)
 
-        activeSectionId = self.mediaItem.getLibrarySectionId()
-        # A real section match always wins; only fall back to Watchlist when nothing matched -
-        # activeSectionId can be a real section's key, empty, or the literal string "watchlist"
-        # (what discover/watchlist items report), which never matches a real section's key, so it
-        # naturally falls through to the watchlist fallback below.
+        # self.entrySectionId (Sidebar entry-section persistence) - see preplay.py's
+        # buildSectionList() for the full reasoning; identical shape here.
+        activeSectionId = self.entrySectionId
         activeSection = None
         if activeSectionId:
             for section in sections:
                 if section.key == activeSectionId:
                     activeSection = section
                     break
-        if activeSection is None and (self.fromWatchlist or self.directlyFromWatchlist):
+        if activeSection is None and self.entryFromWatchlist:
             activeSection = home.watchlist_section
 
         for section in sections:
@@ -569,10 +577,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.processCommand(search.dialog(self, section_id=self.mediaItem.getLibrarySectionId() or None))
 
     def roleSectionId(self):
-        return self.mediaItem.getLibrarySectionId()
+        return self.entrySectionId
 
     def roleFromWatchlist(self):
-        return self.fromWatchlist or self.directlyFromWatchlist
+        return self.entryFromWatchlist
 
     def openItem(self, control=None, item=None, inherit_from_watchlist=True, server=None, is_watchlisted=False, **kw):
         if not item:
@@ -582,7 +590,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             item = mli.dataSource
 
         self.processCommand(opener.open(item, from_watchlist=self.fromWatchlist if inherit_from_watchlist else False,
-                                        server=server, is_watchlisted=is_watchlisted, **kw))
+                                        server=server, is_watchlisted=is_watchlisted,
+                                        entry_section_id=self.entrySectionId,
+                                        entry_from_watchlist=self.entryFromWatchlist, **kw))
 
     def subItemListClicked(self):
         mli = self.subItemListControl.getSelectedItem()
@@ -596,10 +606,13 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             w = episodes.EpisodesWindow.open(season=mli.dataSource, show=self.mediaItem,
                                              parent_list=self.subItemListControl, from_watchlist=self.fromWatchlist,
                                              directly_from_watchlist=self.directlyFromWatchlist,
-                                             is_watchlisted=self.is_watchlisted)
+                                             is_watchlisted=self.is_watchlisted,
+                                             entry_section_id=self.entrySectionId,
+                                             entry_from_watchlist=self.entryFromWatchlist)
             update = True
         elif self.mediaItem.type == 'artist':
-            w = tracks.AlbumWindow.open(album=mli.dataSource, parent_list=self.subItemListControl)
+            w = tracks.AlbumWindow.open(album=mli.dataSource, parent_list=self.subItemListControl,
+                                        entry_section_id=self.entrySectionId)
 
         if not mli:
             return
