@@ -1025,7 +1025,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             if self.closeOption is not None:
                 self.doClose()
             elif pending is not None and pending != self.section:
-                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection, args=(pending,)).start()
+                self.openSection(pending)
             return
         windowutils.UtilMixin.processCommand(self, command)
 
@@ -1696,7 +1696,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """
         if self is windowutils.HOME:
             if section and section != self.section:
-                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection, args=(section,)).start()
+                self.openSection(section)
             if with_root:
                 self.go_root = True
                 self.show()
@@ -1739,8 +1739,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # section documents (SKIN_RELOAD_DEFER_SECONDS, windowutils.py) - untested whether
                 # onReInit() is actually exposed to it the same way OnAction() is, so deferring
                 # here too rather than assuming it's safe.
-                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection,
-                                 args=(home.home_section,)).start()
+                self.openSection(home.home_section)
             else:
                 self.setFocusId(self.SECTION_LIST_ID)
             # Set at the end, same as HomeWindow's own version - openSection() above is deferred
