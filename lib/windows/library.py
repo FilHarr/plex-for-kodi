@@ -3470,8 +3470,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         if mli.dataSource.TYPE == 'collection':
             prevItemType = self.librarySettings.getItemType() or ITEM_TYPE
+            prevLibrarySettings = self.librarySettings
             self.processCommand(opener.open(mli.dataSource, **extra_kwargs))
-            self.librarySettings.setItemType(prevItemType)
+            # Restore the live ITEM_TYPE global the nested collection window left dirty - not a
+            # real preference change, so use the plain module-level setter (no disk write), and
+            # only if we're still looking at the same section: a sidebar/Home bounce while inside
+            # the collection can reassign self.librarySettings to a different section's object
+            # before this call returns (opener.open() blocks for the collection's whole lifetime),
+            # in which case there's nothing of ours left to restore.
+            if self.librarySettings is prevLibrarySettings:
+                setItemType(prevItemType)
         elif self.section.TYPE == 'show' or mli.dataSource.TYPE == 'show' or mli.dataSource.TYPE == 'season' or mli.dataSource.TYPE == 'episode':
             if ITEM_TYPE == 'episode' or mli.dataSource.TYPE == 'episode' or mli.dataSource.TYPE == 'season':
                 self.openItem(mli.dataSource, **extra_kwargs)
@@ -3492,9 +3500,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 section.key = datasource.key
                 section.title = datasource.title
 
+                prevItemType = self.librarySettings.getItemType() or ITEM_TYPE
+                prevLibrarySettings = self.librarySettings
                 self.processCommand(opener.handleOpen(LibraryWindow, windows=self._windows, default_window=self._next, section=section, filter_=self.filter, subDir=True,
                                                        entry_section_id=self.entrySectionId, entry_from_watchlist=self.entryFromWatchlist))
-                self.librarySettings.setItemType(self.librarySettings.getItemType() or ITEM_TYPE)
+                # Same restore-after-a-blocking-nested-window shape as the collection branch above
+                # - see its comment for why this is the plain module-level setter, guarded by
+                # object identity, not the persisting instance method.
+                if self.librarySettings is prevLibrarySettings:
+                    setItemType(prevItemType)
             else:
                 self.processCommand(opener.handleOpen(preplay.PrePlayWindow if not sectionType == 'movies_shows' else preplay.PrePlayWindowWL, video=datasource, parent_list=self.showPanelControl, **extra_kwargs))
                 updateUnwatchedAndProgress = True
