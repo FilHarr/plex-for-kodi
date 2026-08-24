@@ -369,15 +369,9 @@ class PhotoPropertiesTask(backgroundthread.Task):
             util.DEBUG_LOG('404 on photo reload: {0}', self.photo)
 
 
-def realSection(section):
-    """The library a section belongs to. Pinned top bar item-type views proxy one."""
-    return section.__dict__.get('librarySection') or section
-
-
 class LibrarySettings(object):
     def __init__(self, section_or_server_id, ignoreLibrarySettings=False):
         self.ignoreLibrarySettings = ignoreLibrarySettings
-        self.forcedItemType = None
         self.sectionType = None
         if isinstance(section_or_server_id, six.string_types):
             self.serverID = section_or_server_id
@@ -385,9 +379,6 @@ class LibrarySettings(object):
         else:
             self.serverID = section_or_server_id.getServer().uuid
             self.sectionID = section_or_server_id.key
-            # a pinned item-type view always opens in its own type, no matter which type was
-            # last selected while inside it
-            self.forcedItemType = section_or_server_id.__dict__.get('itemType')
             # Fallback for _loadSettings() below, when this section has never had its own
             # ITEM_TYPE saved (getItemType() returns None) - the section's own native type,
             # not whatever a completely different, previously-open section left the ITEM_TYPE
@@ -423,7 +414,7 @@ class LibrarySettings(object):
         # type, set in __init__) is the correct fallback for a never-configured section; the
         # bare ITEM_TYPE global is now only reached for the string-serverID construction (no real
         # section to derive a type from at all).
-        setItemType(self.forcedItemType or self.getItemType() or self.sectionType or ITEM_TYPE)
+        setItemType(self.getItemType() or self.sectionType or ITEM_TYPE)
 
     def getItemType(self):
         if not self._settings or self.sectionID not in self._settings:
@@ -731,9 +722,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         util.setGlobalProperty('sort.alpha', '')
 
         if self.section.TYPE == 'playlists' and ITEM_TYPE not in ('audio', 'video'):
-            # LibrarySettings._loadSettings() only corrects ITEM_TYPE from persisted state or
-            # forcedItemType - on a genuine first-ever visit (nothing persisted yet) it falls back
-            # to the bare module global, which is whatever the *previously* open section (e.g.
+            # LibrarySettings._loadSettings() only corrects ITEM_TYPE from persisted state - on a
+            # genuine first-ever visit (nothing persisted yet) it falls back to the bare module
+            # global, which is whatever the *previously* open section (e.g.
             # 'movie'/'collection') left it at. fillPlaylists() filters by playlistType == ITEM_TYPE,
             # so an uncorrected stale value would silently show zero playlists. Corrected here,
             # once, before anything below reads ITEM_TYPE - setItemType() persists it too, so this
@@ -1571,7 +1562,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # way - reused directly rather than re-deriving navSettings here. Real library
             # section keys are purely numeric strings (same key.isdigit() distinction already
             # used elsewhere in this file), which naturally excludes the Search/Home/Watchlist/
-            # Playlists/pinned-type entries also in this list.
+            # Playlists entries also in this list.
             section_keys = [mli.dataSource.key for mli in self.sectionList
                             if mli.dataSource and mli.dataSource.key and mli.dataSource.key.isdigit()]
             hubsTask = home.SectionHubsTask().setup(self.section, self._recommendedHubsCallbackFor(generation),
@@ -2187,12 +2178,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             if section.key in navSettings and not navSettings[section.key].get("show", True):
                 continue
             sections.append(section)
-            if navSettings:
-                pinnable = home.PINNABLE_TYPES.get(str(getattr(section, 'TYPE', None)), ())
-                stored = navSettings.get(section.key, {}).get('pinned_types') or []
-                for item_type in stored:
-                    if item_type in pinnable:
-                        sections.append(home.PinnedTypeSection(section, item_type))
 
         if "order" in navSettings:
             order = navSettings["order"]
@@ -2200,8 +2185,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             def orderPos(s):
                 if s.key in order:
                     return order.index(s.key), 0
-                if isinstance(s, home.PinnedTypeSection) and s.librarySection.key in order:
-                    return order.index(s.librarySection.key), 1
                 return -1, 0
 
             sections = sorted(sections, key=orderPos)
@@ -2240,8 +2223,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 mli.setIconImage('script.plex/home/type/playlists.png')
             elif section == home.watchlist_section:
                 mli.setIconImage('script.plex/home/type/watchlist.png')
-            elif isinstance(section, home.PinnedTypeSection):
-                mli.setProperty('is.pinned.type', section.itemType)
             if section.key == self.section.key or (activeLibraryId and section.key == activeLibraryId) or \
                     (self.entrySectionId is None and self.entryFromWatchlist and section == home.watchlist_section):
                 mli.setProperty('is.active', '1')
@@ -2252,25 +2233,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.sectionList.addItems(items)
         if active_pos is not None:
             self.sectionList.selectItem(active_pos)
-
-    def sectionPinnedTypes(self, section):
-        """Item types this library has pinned to the top bar as views of their own - ported from
-        HomeWindow.sectionPinnedTypes() (home.py), self.librarySettings -> self.navSettings."""
-        if not self.navSettings or isinstance(section, home.PinnedTypeSection):
-            return []
-
-        # playlists and the watchlist are plain virtual sections without a TYPE
-        pinnable = home.PINNABLE_TYPES.get(str(getattr(section, 'TYPE', None)), ())
-        stored = self.navSettings.get(section.key, {}).get('pinned_types') or []
-        return [t for t in stored if t in pinnable]
-
-    def setSectionPinned(self, section, item_type, pinned):
-        settings = self.navSettings.setdefault(section.key, {})
-        types = [t for t in settings.get('pinned_types') or [] if t != item_type]
-        if pinned:
-            types.append(item_type)
-        settings['pinned_types'] = types
-        self.saveNavSettings()
 
     def sectionMenu(self):
         """Context menu (ACTION_CONTEXT_MENU) for the sidebar's currently-focused section item -
@@ -2287,20 +2249,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         section = item.dataSource
         choice = None
-        if isinstance(section, home.PinnedTypeSection):
-            choice = dropdown.showDropdown(
-                [{'key': 'unpin', 'display': T(35045, "Unpin collections from the top bar")},
-                 {'key': 'move', 'display': T(33039, "Move")}],
-                pos=(660, 441),
-                close_direction='none',
-                set_dropdown_prop=False,
-                header=T(33030, 'Choose action for: {}').format(section.title),
-                select_index=0,
-                align_items="left",
-                dialog_props=getattr(self, 'carriedProps', None)
-            )
-
-        elif not section.key:
+        if not section.key:
             # home section
             sections = [home.playlists_section] + plexapp.SERVERMANAGER.selectedServer.library.sections()
             options = []
@@ -2374,11 +2323,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
                 options.append(dropdown.SEPARATOR)
 
-            if 'collection' in home.PINNABLE_TYPES.get(str(getattr(section, 'TYPE', None)), ()) \
-                    and 'collection' not in self.sectionPinnedTypes(section):
-                options.append({'key': 'pin_collections',
-                                'display': T(35044, "Pin collections to the top bar")})
-
             options.append({'key': 'hide', 'display': T(33028, "Hide library")})
             options.append({'key': 'move', 'display': T(33039, "Move")})
             options.append(dropdown.SEPARATOR)
@@ -2422,12 +2366,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     return
                 pmm.addPathMapping(d, choice["path"])
                 return self.lastSection
-        elif choice["key"] == "pin_collections":
-            self.setSectionPinned(section, 'collection', True)
-            return section
-        elif choice["key"] == "unpin":
-            self.setSectionPinned(section.librarySection, section.itemType, False)
-            return section.librarySection
         elif choice["key"] == "hide":
             if section.key not in self.navSettings:
                 self.navSettings[section.key] = {}
@@ -2801,13 +2739,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.keyListControl.selectItem(li.pos())
 
     def searchButtonClicked(self):
-        # a pinned item-type view searches the library it belongs to
-        self.processCommand(search.dialog(self, section_id=realSection(self.section).key))
+        self.processCommand(search.dialog(self, section_id=self.section.key))
 
     def browseGenres(self):
         from . import genres as genres_window
         self.processCommand(opener.handleOpen(genres_window.GenreBrowserWindow,
-                                              section=realSection(self.section)))
+                                              section=self.section))
 
     def keyClicked(self):
         li = self.keyListControl.getSelectedItem()
@@ -6041,8 +5978,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
             is_home = section.key is None
             # A hub can be returned by the server with zero current items (e.g. a personalized/
-            # dynamic hub with nothing to show right now) - same filter PinnedTypeHubsTask.run()
-            # (home.py) already applies for the same reason. Left in, such a hub would still
+            # dynamic hub with nothing to show right now). Left in, such a hub would still
             # occupy a role slot in the rotation (the geometry math below has no item-count
             # check), so its control would have a real position but zero bound ListItems -
             # live-confirmed as "Control 403 ... has been asked to focus, but it can't" (the

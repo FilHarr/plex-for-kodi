@@ -320,45 +320,6 @@ class SectionHubsTask(backgroundthread.Task):
             self.callback(self.section, hubs)
 
 
-class PinnedTypeHubsTask(backgroundthread.Task):
-    """Builds the one hub a pinned item-type view shows: the library's collections."""
-
-    def setup(self, section, callback, reselect_pos_dict=None):
-        self.section = section
-        self.callback = callback
-        self.reselect_pos_dict = reselect_pos_dict
-        return self
-
-    def run(self):
-        if self.isCanceled():
-            return
-
-        if not plexapp.SERVERMANAGER.selectedServer or not self.section.server:
-            # Could happen during sign-out for instance
-            return
-
-        try:
-            hub = plexlibrary.CollectionsHub(self.section.librarySection)
-            # the server names its hubs; this one is ours, so it needs its own title
-            hub.set('title', T(32490, 'Collections'))
-            hubs = HubsList([hub] if hub.items else []).init()
-            hubs.identifier = self.section.key
-            if self.isCanceled():
-                return
-            self.callback(self.section, hubs, reselect_pos_dict=self.reselect_pos_dict)
-        except plexnet.exceptions.BadRequest:
-            util.DEBUG_LOG('404 on collections of: {0}', repr(self.section.title))
-            hubs = HubsList().init()
-            hubs.invalid = True
-            self.callback(self.section, hubs)
-        except:
-            util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
-            util.DEBUG_LOG('Generic exception when fetching collections of: {0}', repr(self.section.title))
-            hubs = HubsList().init()
-            hubs.invalid = True
-            self.callback(self.section, hubs)
-
-
 class PathMappingProbeTask(backgroundthread.Task):
     """Checks the Kodi-side roots of mapped libraries. Runs in the background because a
     dead SMB/NFS share blocks for the full mount timeout, which would stall the section
@@ -660,49 +621,6 @@ class PlaylistsSection(VirtualSection):
 
 
 playlists_section = PlaylistsSection()
-
-
-# item types that can be pinned to the top bar as a view of their own, per library type
-PINNABLE_TYPES = {
-    'movie': ('collection',),
-    'show': ('collection',),
-    'artist': ('collection',),
-}
-
-
-class PinnedTypeSection(object):
-    """A library pinned to the top bar showing one fixed item type, e.g. its collections.
-
-    Everything but the key, the title and the item type is delegated to the library it was
-    pinned from, so all queries still run against the real section. The separate key is the
-    point of the whole thing: LibrarySettings stores sort and filters per section key, so a
-    pinned collections view keeps its own alphabetical sort while the library itself keeps
-    the user's filters, and neither switching item types nor visiting one touches the other.
-    """
-    def __init__(self, section, item_type):
-        self.librarySection = section
-        self.itemType = item_type
-        self.key = pinnedSectionKey(section.key, item_type)
-        self.title = T(35043, '{} Collections').format(section.title) if item_type == 'collection' \
-            else u'{} {}'.format(section.title, item_type)
-
-    def __getattr__(self, name):
-        # only reached for attributes we don't define ourselves; guarded so an access
-        # before __init__ completed raises instead of recursing
-        if name == 'librarySection':
-            raise AttributeError(name)
-        return getattr(self.librarySection, name)
-
-    def __repr__(self):
-        return '<PinnedTypeSection:{0}>'.format(self.key)
-
-    def getLibrarySectionId(self):
-        # view type (poster/list) is shared with the library, unlike sort and filters
-        return self.librarySection.key
-
-
-def pinnedSectionKey(section_key, item_type):
-    return '{0}#{1}'.format(section_key, item_type)
 
 
 class ServerListItem(kodigui.ManagedListItem):

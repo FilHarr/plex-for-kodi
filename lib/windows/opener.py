@@ -155,9 +155,7 @@ def collectionClicked(collection, **kwargs):
 
 def sectionClicked(section, filter_=None, **kwargs):
     from . import library
-    # a section pinned to the top bar as an item-type view opens in that type; __dict__ is
-    # deliberate, PlexObject.__getattr__ invents an empty attribute for anything asked of it
-    library.ITEM_TYPE = section.__dict__.get('itemType') or section.TYPE
+    library.ITEM_TYPE = section.TYPE
     key = section.key
     if not key or not key.isdigit():
         key = section.getLibrarySectionId()

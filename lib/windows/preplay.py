@@ -423,12 +423,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             if section.key in navSettings and not navSettings[section.key].get("show", True):
                 continue
             sections.append(section)
-            if navSettings:
-                pinnable = home.PINNABLE_TYPES.get(str(getattr(section, 'TYPE', None)), ())
-                stored = navSettings.get(section.key, {}).get('pinned_types') or []
-                for item_type in stored:
-                    if item_type in pinnable:
-                        sections.append(home.PinnedTypeSection(section, item_type))
 
         if "order" in navSettings:
             order = navSettings["order"]
@@ -436,8 +430,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             def orderPos(s):
                 if s.key in order:
                     return order.index(s.key), 0
-                if isinstance(s, home.PinnedTypeSection) and s.librarySection.key in order:
-                    return order.index(s.librarySection.key), 1
                 return -1, 0
 
             sections = sorted(sections, key=orderPos)
@@ -469,8 +461,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 mli.setIconImage('script.plex/home/type/playlists.png')
             elif section == home.watchlist_section:
                 mli.setIconImage('script.plex/home/type/watchlist.png')
-            elif isinstance(section, home.PinnedTypeSection):
-                mli.setProperty('is.pinned.type', section.itemType)
             if section == activeSection:
                 mli.setProperty('is.active', '1')
             items.append(mli)
