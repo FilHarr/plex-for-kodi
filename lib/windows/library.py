@@ -3439,8 +3439,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
                 prevItemType = self.librarySettings.getItemType() or ITEM_TYPE
                 prevLibrarySettings = self.librarySettings
+                # ignoreLibrarySettings=True: this synthetic section's key (datasource.key, a
+                # folder path) has never been seen before, so LibrarySettings._loadSettings()'s own
+                # ITEM_TYPE fallback (getItemType() or sectionType or ITEM_TYPE) would resolve to
+                # this section's native sectionType ('movie') and clobber the 'folder' mode that
+                # must already be active for a Directory item to be clickable here in the first
+                # place - live-confirmed: silently corrupted every chunk-fetch URL for the child
+                # window (Section.all() appending '/all' to an already-folder-scoped key), leaving
+                # blank/unresponsive posters. Skips loading (and persisting) any settings for this
+                # one-off, never-revisited key entirely, which is also the correct behavior for a
+                # bounded subfolder view - there's nothing worth remembering by that key later.
                 self.processCommand(opener.handleOpen(LibraryWindow, windows=self._windows, default_window=self._next, section=section, filter_=self.filter, subDir=True,
-                                                       entry_section_id=self.entrySectionId, entry_from_watchlist=self.entryFromWatchlist))
+                                                       entry_section_id=self.entrySectionId, entry_from_watchlist=self.entryFromWatchlist,
+                                                       ignoreLibrarySettings=True))
                 # Same restore-after-a-blocking-nested-window shape as the collection branch above
                 # - see its comment for why this is the plain module-level setter, guarded by
                 # object identity, not the persisting instance method.
