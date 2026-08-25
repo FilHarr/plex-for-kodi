@@ -615,6 +615,21 @@ class Collection(media.MediaItem):
         # panel color instead of a real per-item tint.
         media.MediaItem._setData(self, data)
         self.ultraBlurColors = self._findUltraBlurColors(data)
+        # Same gap, same fix shape, for <Image> children (clearLogo among them) - Video._setData()
+        # (video.py:108-111) is the only place that ever builds self.images, so clearLogo
+        # (video.py:113-119, scans self.images for type=='clearLogo') always silently returned
+        # None for a Collection regardless of what the server actually sent. NOT server-confirmed
+        # the way ultraBlurColors above was - inferred from that precedent, not independently
+        # verified that PMS returns <Image type="clearLogo"> for collections.
+        self.images = plexobjects.PlexItemList(data, media.Image, media.Image.TYPE, server=self.server)
+
+    @property
+    def clearLogo(self):
+        for image in self.images:
+            if image.type == 'clearLogo':
+                return image.url
+
+        return None
 
     def __repr__(self):
         title = self.title.replace(' ', '.')[0:20]
