@@ -285,7 +285,7 @@ class SidebarMixin():
             def _deferredOpenSection():
                 if self.openSection(section):
                     self.lastSection = section
-            _deferredOpenSection()
+            threading.Timer(SKIN_RELOAD_DEFER_SECONDS, _deferredOpenSection).start()
         else:
             self.lastSection = section
             self.goHome(section=section)
