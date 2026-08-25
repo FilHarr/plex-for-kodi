@@ -28,6 +28,7 @@ from lib.path_mapping import pmm
 from lib.util import T
 from . import background
 from . import busy
+from . import collection
 from . import dropdown
 from . import home
 from . import kodigui
@@ -3406,17 +3407,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         extra_kwargs['entry_from_watchlist'] = self.entryFromWatchlist
 
         if mli.dataSource.TYPE == 'collection':
-            prevItemType = self.librarySettings.getItemType() or ITEM_TYPE
-            prevLibrarySettings = self.librarySettings
-            self.processCommand(opener.open(mli.dataSource, **extra_kwargs))
-            # Restore the live ITEM_TYPE global the nested collection window left dirty - not a
-            # real preference change, so use the plain module-level setter (no disk write), and
-            # only if we're still looking at the same section: a sidebar/Home bounce while inside
-            # the collection can reassign self.librarySettings to a different section's object
-            # before this call returns (opener.open() blocks for the collection's whole lifetime),
-            # in which case there's nothing of ours left to restore.
-            if self.librarySettings is prevLibrarySettings:
-                setItemType(prevItemType)
+            # collection.CollectionWindow (not a nested LibraryWindow) - a plain bounded grid, no
+            # LibrarySettings/ITEM_TYPE involved at all, so none of the old restore-after-a-
+            # blocking-nested-window dance is needed any more. See hashed-orbiting-pizza.md's
+            # Phase 4.
+            self.openWindow(collection.CollectionWindow, collection=mli.dataSource, **extra_kwargs)
         elif self.section.TYPE == 'show' or mli.dataSource.TYPE == 'show' or mli.dataSource.TYPE == 'season' or mli.dataSource.TYPE == 'episode':
             if ITEM_TYPE == 'episode' or mli.dataSource.TYPE == 'episode' or mli.dataSource.TYPE == 'season':
                 self.openItem(mli.dataSource, **extra_kwargs)
