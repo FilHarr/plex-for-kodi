@@ -24,9 +24,18 @@
             <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),6) + Integer.IsGreaterOrEqual(Container(101).ListItem.Property(index),3)">300</onup>
             <onleft>9000</onleft>
             <onright>151</onright>
+            <!-- Kodi panels wrap top<->bottom by default - moving down at the very last row was
+                 sending focus back to the first row instead of stopping. Top wasn't an issue (the
+                 onup conditions above already route out to controls 600/300). wraparound=false
+                 alone didn't stop it live - onXXX destinations only kick in once a container has
+                 exhausted its own internal items in that direction, and 'noop' is this codebase's
+                 own established way to say "consume the press, don't move focus anywhere"
+                 (includes/sidebar.xml.tpl:322, the server button's own ondown). -->
+            <ondown>noop</ondown>
             <scrolltime>200</scrolltime>
             <orientation>vertical</orientation>
             <preloaditems>2</preloaditems>
+            <wraparound>false</wraparound>
             <!-- ITEM LAYOUT ########################################## -->
             <itemlayout width="287" height="{{ vscale(460) }}">
                 <control type="group">
