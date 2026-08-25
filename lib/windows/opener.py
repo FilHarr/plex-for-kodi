@@ -84,7 +84,12 @@ def handleOpen(winclass, **kwargs):
             w = winclass.open(**kwargs)
         return w.exitCommand or ''
     except AttributeError:
-        pass
+        # Same silent-return behavior as before (still falls through to `return ''` below,
+        # nothing about control flow changes) - just logged now instead of swallowed with zero
+        # trace. Live-confirmed this was actively hiding a real failure (a window silently
+        # failing to open, with nothing in kodi.log to explain why) - not touching the other
+        # except branches, which already log.
+        util.ERROR()
     except util.NoDataException:
         raise
     except:
