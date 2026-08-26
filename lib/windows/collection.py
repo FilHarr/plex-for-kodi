@@ -173,7 +173,22 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         return kodigui.ManagedListItem('', data_source=data)
 
     def setItemInfo(self, data, mli):
-        raise NotImplementedError
+        # Shared by CollectionWindow and SubDirWindow - genuinely generic, not collection-specific:
+        # handles the same movie/show/nested-collection/plain-directory mix either shell's grid can
+        # contain. defaultTitle/defaultThumb/defaultArt are all base PlexObject-level fallbacks
+        # (plexobjects.py), so this works unchanged for a Generic/TYPE=='Directory' folder entry too.
+        mli.setLabel(data.defaultTitle)
+        mli.setProperty('summary', data.get('summary'))
+        if data.TYPE == 'collection':
+            # Collections often have no own poster - fall back to a composite of member posters,
+            # same as library.py's _chunkCallback() (library.py:4071-4076) and the dead-code
+            # createCollectionListItem() (library.py:5291-5294) both already do.
+            mli.setThumbnailImage(data.artCompositeURL(*THUMB_DIM))
+        else:
+            mli.setThumbnailImage(data.defaultThumb.asTranscodedImageURL(*THUMB_DIM))
+            mli.setProperty('art', data.defaultArt.asTranscodedImageURL(*ART_DIM))
+        if not data.isDirectory() and data.get('duration').asInt():
+            mli.setLabel2(util.durationToText(data.fixedDuration()))
 
     def setWatchedInfo(self, data, mli):
         # Mirrors library.py's _chunkCallback() generic-item branch (library.py:4098-4105) -
@@ -239,8 +254,8 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
                             **extra_kwargs)
 
     def openDirectory(self, data, extra_kwargs):
-        """Hook: only SubDirWindow (not yet built) needs to open a further subfolder - a
-        CollectionWindow's own members should never themselves be plain directories. Left as a
+        """Hook: only SubDirWindow (see its own override below) needs to open a further subfolder -
+        a CollectionWindow's own members should never themselves be plain directories. Left as a
         no-op here rather than NotImplementedError, since reaching this from a real collection
         would indicate unexpected server data, not a programming error."""
         pass
@@ -385,16 +400,60 @@ class CollectionWindow(BoundedGridWindow):
         # after populating its own grid (library.py:3683-3684).
         self.setFocusId(self.GRID_ID)
 
-    def setItemInfo(self, data, mli):
-        mli.setLabel(data.defaultTitle)
-        mli.setProperty('summary', data.get('summary'))
-        if data.TYPE == 'collection':
-            # Collections often have no own poster - fall back to a composite of member posters,
-            # same as library.py's _chunkCallback() (library.py:4071-4076) and the dead-code
-            # createCollectionListItem() (library.py:5291-5294) both already do.
-            mli.setThumbnailImage(data.artCompositeURL(*THUMB_DIM))
-        else:
-            mli.setThumbnailImage(data.defaultThumb.asTranscodedImageURL(*THUMB_DIM))
-            mli.setProperty('art', data.defaultArt.asTranscodedImageURL(*ART_DIM))
-        if not data.isDirectory() and data.get('duration').asInt():
-            mli.setLabel2(util.durationToText(data.fixedDuration()))
+
+def buildSubDirSection(section, datasource):
+    """Synthetic, folder-scoped section for one directory click - identical construction to what
+    library.py's showPanelClicked() used to build inline before SubDirWindow existed. `section` is
+    whatever section this folder was reached from (a real section for the first hop out of a real
+    LibraryWindow, or an already-synthetic one when SubDirWindow.openDirectory() drills further);
+    `datasource` is the clicked Directory item whose own key becomes the new section's key. Shared
+    so both callers build the exact same shape rather than keeping two copies in sync - see
+    hashed-orbiting-pizza.md's Phase 4 "SubDirWindow" notes.
+    """
+    cls = section.__class__
+    newSection = cls(section.data, section.initpath, section.server, section.container)
+    sectionId = newSection.key
+    if not sectionId.isdigit():
+        sectionId = newSection.getLibrarySectionId()
+    newSection.set('librarySectionID', sectionId)
+    newSection.key = datasource.key
+    newSection.title = datasource.title
+    return newSection
+
+
+class SubDirPaginator(BoundedGridPaginator):
+    def getData(self, offset, amount):
+        return self.parentWindow.section.folder(offset, amount, subDir=True)
+
+
+class SubDirWindow(BoundedGridWindow):
+    xmlFile = 'script-plex-subdir.xml'
+
+    def __init__(self, *args, **kwargs):
+        BoundedGridWindow.__init__(self, *args, **kwargs)
+        self.section = kwargs.get('section')
+        if self.entrySectionId is None and not self.entryFromWatchlist:
+            self.entrySectionId = self.section.getLibrarySectionId()
+
+    def setup(self):
+        # No info panel/title - a subDir folder has no comparable metadata to a Collection's
+        # summary/childCount/clearLogo, per the plan's own decision on this.
+        leafCount = self.section.folder(0, 0, subDir=True).totalSize.asInt()
+
+        self.paginator = SubDirPaginator(self.gridControl, parent_window=self, leaf_count=leafCount)
+        self.paginator.paginate()
+        self.gridControl.selectItem(0)
+        # Same explicit-focus requirement as CollectionWindow.setup() - see its own comment for why
+        # the XML <defaultcontrol> alone doesn't reliably win initial window focus here.
+        self.setFocusId(self.GRID_ID)
+
+        # No single owning item to seed the background from (unlike CollectionWindow's own
+        # self.collection) - seed it from whatever the grid's own initial selection turned out to
+        # be instead, same as the MOVE_SET re-tint BoundedGridWindow.onAction() already does on
+        # every subsequent focus change.
+        mli = self.gridControl.getSelectedItem()
+        if mli and mli.dataSource is not None:
+            self.updateBackgroundFrom(mli.dataSource)
+
+    def openDirectory(self, data, extra_kwargs):
+        self.openWindow(SubDirWindow, section=buildSubDirSection(self.section, data), **extra_kwargs)
