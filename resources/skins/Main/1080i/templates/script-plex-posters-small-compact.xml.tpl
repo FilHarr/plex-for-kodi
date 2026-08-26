@@ -47,23 +47,23 @@
                 <control type="group">
                     <posx>55</posx>
                     <posy>{{ vscale(137) }}</posy>
+                    <control type="image">
+                        <posx>0</posx>
+                        <posy>0</posy>
+                        <width>186</width>
+                        <height>{{ vscale(263) }}</height>
+                        <texture border="24">script.plex/drop-shadow-directional.png</texture>
+                    </control>
                     <control type="group">
-                        <posx>5</posx>
-                        <posy>5</posy>
+                        <posx>3</posx>
+                        <posy>3</posy>
                         <control type="image">
                             <posx>0</posx>
                             <posy>0</posy>
                             <width>162</width>
                             <height>{{ vscale(239) }}</height>
-                            <texture>$INFO[ListItem.Property(thumb.fallback)]</texture>
-                        </control>
-                        <control type="image">
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>162</width>
-                            <height>{{ vscale(239) }}</height>
-                            <texture background="true">$INFO[ListItem.Thumb]</texture>
-                            <aspectratio>scale</aspectratio>
+                            <texture background="true" diffuse="script.plex/masks/poster-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
+                            <aspectratio scalediffuse="false">scale</aspectratio>
                         </control>
                         <control type="group">
                             <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
@@ -86,7 +86,7 @@
                                 <colordiffuse>FFCC7B19</colordiffuse>
                             </control>
                         </control>
-                        {% include "includes/watched_indicator.xml.tpl" with xoff=162 & uw_size=29 & with_count=True & scale="small" %}
+                        {% include "includes/watched_indicator.xml.tpl" with xoff=162 & uw_size=29 & wbg_w=22.9 & wbg_h=22.9 & count_zoom=29.5 & with_count=True & scale="small" %}
                         <!-- Title/year labels intentionally removed to hide text under posters -->
                     </control>
                 </control>
@@ -104,29 +104,22 @@
                         <posy>0</posy>
                         <control type="image">
                             <visible>Control.HasFocus(101)</visible>
-                            <posx>-40</posx>
-                            <posy>{{ vscale(-40) }}</posy>
-                            <width>234</width>
-                            <height>{{ vscale(316) }}</height>
-                            <texture border="42">script.plex/drop-shadow.png</texture>
+                            <posx>0</posx>
+                            <posy>0</posy>
+                            <width>186</width>
+                            <height>{{ vscale(263) }}</height>
+                            <texture border="24">script.plex/drop-shadow-directional.png</texture>
                         </control>
                         <control type="group">
-                            <posx>5</posx>
-                            <posy>5</posy>
+                            <posx>3</posx>
+                            <posy>3</posy>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
                                 <width>162</width>
                                 <height>{{ vscale(239) }}</height>
-                                <texture>$INFO[ListItem.Property(thumb.fallback)]</texture>
-                            </control>
-                            <control type="image">
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>162</width>
-                                <height>{{ vscale(239) }}</height>
-                                <texture background="true">$INFO[ListItem.Thumb]</texture>
-                                <aspectratio>scale</aspectratio>
+                                <texture background="true" diffuse="script.plex/masks/poster-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
                             </control>
                             <control type="group">
                                 <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
@@ -149,15 +142,15 @@
                                     <colordiffuse>FFCC7B19</colordiffuse>
                                 </control>
                             </control>
-                            {% include "includes/watched_indicator.xml.tpl" with xoff=162 & uw_size=29 & with_count=True & scale="small" %}
+                            {% include "includes/watched_indicator.xml.tpl" with xoff=162 & uw_size=29 & wbg_w=22.9 & wbg_h=22.9 & count_zoom=29.5 & with_count=True & scale="small" %}
                             <!-- Title/year labels intentionally removed to hide text under posters -->
                         </control>
                         <control type="image">
                             <visible>Control.HasFocus(101)</visible>
                             <posx>0</posx>
                             <posy>0</posy>
-                            <width>171</width>
-                            <height>{{ vscale(249) }}</height>
+                            <width>168</width>
+                            <height>{{ vscale(245) }}</height>
                             <texture border="10">script.plex/home/selected.png</texture>
                         </control>
                     </control>

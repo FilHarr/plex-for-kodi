@@ -41,23 +41,23 @@
                 <control type="group">
                     <posx>55</posx>
                     <posy>{{ vscale(137) }}</posy>
+                    <control type="image">
+                        <posx>0</posx>
+                        <posy>0</posy>
+                        <width>268</width>
+                        <height>{{ vscale(385) }}</height>
+                        <texture border="24">script.plex/drop-shadow-directional.png</texture>
+                    </control>
                     <control type="group">
-                        <posx>5</posx>
-                        <posy>5</posy>
+                        <posx>3</posx>
+                        <posy>3</posy>
                         <control type="image">
                             <posx>0</posx>
                             <posy>0</posy>
                             <width>244</width>
                             <height>{{ vscale(361) }}</height>
-                            <texture>$INFO[ListItem.Property(thumb.fallback)]</texture>
-                        </control>
-                        <control type="image">
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>244</width>
-                            <height>{{ vscale(361) }}</height>
-                            <texture background="true">$INFO[ListItem.Thumb]</texture>
-                            <aspectratio>scale</aspectratio>
+                            <texture background="true" diffuse="script.plex/masks/poster-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
+                            <aspectratio scalediffuse="false">scale</aspectratio>
                         </control>
                         <control type="group">
                             <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
@@ -80,7 +80,7 @@
                                 <colordiffuse>FFCC7B19</colordiffuse>
                             </control>
                         </control>
-                        {% include "includes/watched_indicator.xml.tpl" with xoff=244 & uw_size=45 & with_count=True & scale="medium" %}
+                        {% include "includes/watched_indicator.xml.tpl" with xoff=244 & uw_size=45 & wbg_w=34.4 & wbg_h=34.4 & with_count=True & scale="medium" %}
                         <control type="label">
                             <scroll>false</scroll>
                             <posx>0</posx>
@@ -132,29 +132,22 @@
                         <posy>0</posy>
                         <control type="image">
                             <visible>Control.HasFocus(101)</visible>
-                            <posx>-40</posx>
-                            <posy>{{ vscale(-40) }}</posy>
-                            <width>334</width>
-                            <height>{{ vscale(451) }}</height>
-                            <texture border="42">script.plex/drop-shadow.png</texture>
+                            <posx>0</posx>
+                            <posy>0</posy>
+                            <width>268</width>
+                            <height>{{ vscale(385) }}</height>
+                            <texture border="24">script.plex/drop-shadow-directional.png</texture>
                         </control>
                         <control type="group">
-                            <posx>5</posx>
-                            <posy>5</posy>
+                            <posx>3</posx>
+                            <posy>3</posy>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
                                 <width>244</width>
                                 <height>{{ vscale(361) }}</height>
-                                <texture>$INFO[ListItem.Property(thumb.fallback)]</texture>
-                            </control>
-                            <control type="image">
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(361) }}</height>
-                                <texture background="true">$INFO[ListItem.Thumb]</texture>
-                                <aspectratio>scale</aspectratio>
+                                <texture background="true" diffuse="script.plex/masks/poster-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
                             </control>
                             <control type="group">
                                 <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
@@ -177,7 +170,7 @@
                                     <colordiffuse>FFCC7B19</colordiffuse>
                                 </control>
                             </control>
-                            {% include "includes/watched_indicator.xml.tpl" with xoff=244 & uw_size=45 & with_count=True & scale="medium" %}
+                            {% include "includes/watched_indicator.xml.tpl" with xoff=244 & uw_size=45 & wbg_w=34.4 & wbg_h=34.4 & with_count=True & scale="medium" %}
                             <control type="label">
                                 <scroll>true</scroll>
                                 <posx>0</posx>
@@ -218,9 +211,10 @@
                             <visible>Control.HasFocus(101)</visible>
                             <posx>0</posx>
                             <posy>0</posy>
-                            <width>254</width>
-                            <height>{{ vscale(371) }}</height>
-                            <texture border="10">script.plex/home/selected.png</texture>
+                            <width>250</width>
+                            <height>{{ vscale(367) }}</height>
+                            <texture diffuse="script.plex/masks/ring-mask-poster.png">script.plex/white-square.png</texture>
+                            <colordiffuse>FFE9A20D</colordiffuse>
                         </control>
                     </control>
                 </control>

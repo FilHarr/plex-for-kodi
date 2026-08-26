@@ -1,5 +1,5 @@
     {% if indicators.show %}
-    {% with xoff = xoff|default(158) & yoff = yoff|default(0) & uw_size = uw_size|default(32) & wbg_w = wbg_w|default(32) & wbg_h = wbg_h|default(32) %}
+    {% with xoff = xoff|default(158) & yoff = yoff|default(0) & uw_size = uw_size|default(32) & wbg_w = wbg_w|default(32) & wbg_h = wbg_h|default(32) & count_zoom = count_zoom|default(40) %}
         {% if indicators.use_unwatched %}
         <control type="image">
             <visible>!String.IsEmpty({{ itemref|default("ListItem") }}.Property(unwatched)) + String.IsEmpty({{ itemref|default("ListItem") }}.Property(watched))</visible>
@@ -74,7 +74,7 @@
             </control>
             {% endif %}
             <control type="label">{# this label uses a nasty hack to get a smaller fitting font size: use a larger font, increase the label size, then zoom it down #}
-                <animation effect="zoom" start="40" end="40" time="0" reversible="false" center="auto" condition="true">Conditional</animation>
+                <animation effect="zoom" start="{{ count_zoom }}" end="{{ count_zoom }}" time="0" reversible="false" center="auto" condition="true">Conditional</animation>
                 <visible>String.IsEmpty({{ itemref|default("ListItem") }}.Property(unwatched.count.large))</visible>
                 <posx>{{ xoff - wbg_w - 20 }}</posx>
                 <posy>{{ (yoff - 8)|vscale }}</posy>
@@ -87,7 +87,7 @@
                 <label>$INFO[{{ itemref|default("ListItem") }}.Property(unwatched.count)]</label>
             </control>
             <control type="label">{# this label uses a nasty hack to get a smaller fitting font size: use a larger font, increase the label size, then zoom it down #}
-                <animation effect="zoom" start="40" end="40" time="0" reversible="false" center="auto" condition="true">Conditional</animation>
+                <animation effect="zoom" start="{{ count_zoom }}" end="{{ count_zoom }}" time="0" reversible="false" center="auto" condition="true">Conditional</animation>
                 <visible>!String.IsEmpty({{ itemref|default("ListItem") }}.Property(unwatched.count.large))</visible>
                 <posx>{{ xoff - wbg_w - 36 }}</posx>
                 <posy>{{ (yoff - 8)|vscale }}</posy>

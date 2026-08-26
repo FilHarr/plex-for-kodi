@@ -82,7 +82,7 @@
                         <colordiffuse>FFE5A00D</colordiffuse>
                     </control>
                 </control>
-                {% include "includes/watched_indicator.xml.tpl" with xoff=220 & uw_size=43 & with_count=True & scale="medium" %}
+                {% include "includes/watched_indicator.xml.tpl" with xoff=220 & uw_size=43 & wbg_w=32 & wbg_h=32 & with_count=True & scale="medium" %}
             </control>
             <control type="image">
                 <visible>Control.HasFocus({{ hub_id }})</visible>
@@ -90,7 +90,8 @@
                 <posy>0</posy>
                 <width>226</width>
                 <height>{{ vscale(331) }}</height>
-                <texture border="10">script.plex/home/selected.png</texture>
+                <texture diffuse="script.plex/masks/ring-mask-poster.png">script.plex/white-square.png</texture>
+                <colordiffuse>FFE9A20D</colordiffuse>
             </control>
         </control>
     </control>

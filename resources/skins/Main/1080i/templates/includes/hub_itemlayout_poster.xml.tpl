@@ -92,7 +92,7 @@
                     <colordiffuse>FFE5A00D</colordiffuse>
                 </control>
             </control>
-            {% include "includes/watched_indicator.xml.tpl" with xoff=220 & uw_size=43 & with_count=True & scale="medium" %}
+            {% include "includes/watched_indicator.xml.tpl" with xoff=220 & uw_size=43 & wbg_w=32 & wbg_h=32 & with_count=True & scale="medium" %}
         </control>
     </control>
 </itemlayout>
