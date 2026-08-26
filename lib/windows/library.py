@@ -897,6 +897,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # vs. VIEWS_POSTER/VIEWS_SQUARE - setting it after would use the stale value for this
             # swap's own reset() call.
             self.contentMode = 'recommended'
+        elif self.section.TYPE == 'playlists':
+            # Playlists has no 'recommended' hub content either (fillPlaylists() is the only
+            # fill() path for this TYPE, regardless of contentMode - reset()'s own VIEWS_SQUARE
+            # branch is what its Audio/Video ITEM_TYPE tabs actually depend on) - unconditional
+            # like the TYPE=='mixed' branch above, for the same reason: the ordinary carry-over
+            # logic below would otherwise leave contentMode stuck on 'recommended' whenever this
+            # section is entered straight from Home or Watchlist (both of which use 'recommended'
+            # themselves), and reset() checks contentMode == 'recommended' *before* it ever looks
+            # at self.section.TYPE, so that stale value would load the hub-style Recommended
+            # view-shell instead of the squares/tabs one - live-confirmed: no Audio/Video split
+            # and a black background (that shell doesn't read 'background' the way
+            # _setPlaylistBackground() sets it). Arriving from an ordinary library section never
+            # hit this, since none of them force contentMode to 'recommended' in the first place.
+            self.contentMode = 'library'
         else:
             # Ordinary sections (real library-grid content): restore this section's own last tab
             # choice, the same "sticky per-section" treatment sort/filter/item-type already get
