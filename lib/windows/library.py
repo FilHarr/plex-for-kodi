@@ -371,8 +371,7 @@ class PhotoPropertiesTask(backgroundthread.Task):
 
 
 class LibrarySettings(object):
-    def __init__(self, section_or_server_id, ignoreLibrarySettings=False):
-        self.ignoreLibrarySettings = ignoreLibrarySettings
+    def __init__(self, section_or_server_id):
         self.sectionType = None
         if isinstance(section_or_server_id, six.string_types):
             self.serverID = section_or_server_id
@@ -389,10 +388,6 @@ class LibrarySettings(object):
         self._loadSettings()
 
     def _loadSettings(self):
-        if self.ignoreLibrarySettings:
-            self._settings = {}
-            return
-
         if not self.sectionID:
             self._settings = {}
             return
@@ -578,8 +573,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.dragging = False
 
         self.cleared = True
-        self.librarySettings = LibrarySettings(self.section,
-                                               ignoreLibrarySettings=kwargs.get("ignoreLibrarySettings", False))
+        self.librarySettings = LibrarySettings(self.section)
 
         # Sections with no library-grid content at all (home_section, so far the only one - see
         # its own TYPE comment, home.py) unconditionally force 'recommended' - 'library' is
@@ -1101,8 +1095,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Rebuilt before contentMode is decided below, not after - the new section's own
         # persisted tab choice (getContentMode()) has to come from *this* section's settings, not
         # the outgoing one's.
-        self.librarySettings = LibrarySettings(
-            self.section, ignoreLibrarySettings=self.librarySettings.ignoreLibrarySettings)
+        self.librarySettings = LibrarySettings(self.section)
 
         if self.section.TYPE == 'mixed':
             # Sections with no library-grid content at all (home_section, so far the only one -
