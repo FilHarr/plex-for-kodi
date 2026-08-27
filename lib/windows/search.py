@@ -311,7 +311,18 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         self.addToHistory(self.edit.getText())
         self.doClose()
         try:
-            command = opener.open(hubItem)
+            # context=self.parentWindow (hashed-orbiting-pizza.md Phase 5 follow-up): every
+            # search.dialog() caller passes the window that was current when Search opened as
+            # parent_window - by the time this runs, self.doClose() above has already closed this
+            # dialog, so parentWindow is back to being the sole active window, same as any other
+            # context-menu-driven open elsewhere in this codebase. Without this, every one of the
+            # seven hosted shell types opened from a search result opened as a second real nested
+            # window instead of swapping into a live chain, and everything drilled into further
+            # from there kept nesting too, since a standalone (non-hosted) shell's own
+            # _chainHost is always None - defeating the whole point of hosting for that entire
+            # sub-tree. context is a no-op for object types no dispatch branch is wired for yet
+            # (photo/track/playlist/photodirectory) - opener.open() already ignores it there.
+            command = opener.open(hubItem, context=self.parentWindow)
 
             if not hubItem.exists():
                 control.removeManagedItem(mli)
