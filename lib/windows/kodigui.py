@@ -1328,7 +1328,11 @@ class MultiWindow(object):
                         self._openFailed = True
                         break
 
+            # TEMPORARY diagnostic logging (hashed-orbiting-pizza.md live-crash investigation) -
+            # remove once the native-crash-on-second-hosting-cycle bug is understood/fixed.
+            util.DEBUG_LOG("MultiWindow: _open() about to call .modal() on {0}", self._current)
             self._current.modal()
+            util.DEBUG_LOG("MultiWindow: _open() .modal() on {0} returned", self._current)
 
         self._current.doClose()
         del self._current

@@ -50,6 +50,28 @@ class FakeAction(object):
         return self.action_id
 
 
+class FakeTimer(object):
+    """Stand-in for threading.Timer - records construction/start instead of actually deferring,
+    so a test can assert a call was scheduled (right target, actually started) without waiting on
+    or synchronously invoking a real timer thread."""
+    instances = []
+
+    def __init__(self, interval, function, args=None, kwargs=None):
+        self.interval = interval
+        self.function = function
+        self.args = args or ()
+        self.kwargs = kwargs or {}
+        self.started = False
+        self.cancelled = False
+        FakeTimer.instances.append(self)
+
+    def start(self):
+        self.started = True
+
+    def cancel(self):
+        self.cancelled = True
+
+
 class FakeShell(object):
     xmlFile = 'script-plex-fake.xml'
     path = '/fake/path'
@@ -64,9 +86,13 @@ class FakeShell(object):
         self.kwargs = kwargs
         self.closed = False
         self.onFirstInitCalled = False
+        self.setPropertyCalls = []
 
     def onFirstInit(self):
         self.onFirstInitCalled = True
+
+    def setProperty(self, key, value):
+        self.setPropertyCalls.append((key, value))
 
     def onAction(self, action):
         pass
@@ -112,8 +138,10 @@ class FakeHostWindow(object):
     # without needing a full LibraryWindow instance.
     _isRealShell = staticmethod(library.LibraryWindow._isRealShell)
     _setupCurrent = library.LibraryWindow._setupCurrent
+    _forceCollectOutgoing = library.LibraryWindow._forceCollectOutgoing
     swapTo = library.LibraryWindow.swapTo
     popBack = library.LibraryWindow.popBack
+    _deferOpenSection = library.LibraryWindow._deferOpenSection
 
     def __init__(self):
         self._current = None
@@ -133,9 +161,16 @@ class FakeHostWindow(object):
         self.openSectionCalls = []
         self.onCloseSignalCalls = []
         self.onActionCalls = []
+        self._pendingSectionTimer = None
+        self.lastSection = None
+        # _deferOpenSection()'s _fire() closure checks `if self.openSection(section):` - a real
+        # LibraryWindow.openSection() returns True/False; configurable here per-test since most
+        # tests only care whether/how it was called, not the success-path lastSection update.
+        self.openSectionReturnValue = False
 
     def openSection(self, *args, **kwargs):
         self.openSectionCalls.append((args, kwargs))
+        return self.openSectionReturnValue
 
     def doClose(self, **kw):
         pass
@@ -261,8 +296,8 @@ class SetupCurrentTest(KodiTestCase):
         that's LibraryWindow's own real, template-specific setup, which would run broken against a
         real shell's native window. FakeHostWindow defines no onFirstInit() at all, so calling the
         wrapped closure would raise AttributeError if it ever tried to reach it - proving the wrap
-        only touches the two host-generic lines (queued setProperty() replay + close.windows
-        registration) before running the shell's own real onFirstInit()."""
+        only registers close.windows before running the shell's own real onFirstInit(), and does
+        NOT also replay self._properties onto it (see the next test)."""
         from plexnet import plexapp
 
         host = FakeHostWindow()
@@ -271,13 +306,37 @@ class SetupCurrentTest(KodiTestCase):
 
         try:
             shell.onFirstInit()  # must not raise, and must not need host.onFirstInit at all
-            # The two host-generic lines did run: close.windows got registered...
+            # The host-generic line did run: close.windows got registered...
             self.assertTrue(plexapp.util.APP.has_signal('close.windows', host.onCloseSignal))
         finally:
             plexapp.util.APP.off('close.windows', host.onCloseSignal)
 
         # ...and the shell's own real onFirstInit still ran (wrapped, not replaced/discarded).
         self.assertTrue(shell.onFirstInitCalled)
+
+    def test_real_shell_branch_does_not_replay_the_hosts_own_properties_onto_the_shell(self):
+        """Live-confirmed bug this guards against: self._properties accumulates whatever
+        LibraryWindow's own 'recommended'-mode hero display last set (clear.logo/summary/etc.
+        for the focused hub item) and nothing overwrites those specific keys again once the user
+        is just browsing an ordinary grid, so they sit frozen for the rest of the session. A real
+        shell like PrePlayWindow happens to use the same property names for its own, unrelated
+        metadata panel - replaying the host's entire cache onto it briefly showed that frozen,
+        unrelated content (Home's Continue Watching's first item, in practice) until the shell's
+        own setInfo() overwrote it a moment later. A real shell has its own independent metadata
+        logic; it must not inherit the host's display-state cache the way a thin proxy does."""
+        from plexnet import plexapp
+
+        host = FakeHostWindow()
+        host._properties = {'clear.logo': 'stale-continue-watching-logo.png', 'summary': 'stale summary'}
+
+        _setupCurrent(host, FakeShell)
+        shell = host._current
+        try:
+            shell.onFirstInit()
+        finally:
+            plexapp.util.APP.off('close.windows', host.onCloseSignal)
+
+        self.assertEqual([], shell.setPropertyCalls)
 
     def test_thin_proxy_branch_marks_not_hosted_and_passes_no_kwargs(self):
         host = FakeHostWindow()
@@ -378,12 +437,94 @@ class SwapToAndBackStackTest(KodiTestCase):
         self.assertEqual(1, len(host.openSectionCalls))
 
 
+class DeferOpenSectionTest(KodiTestCase):
+    """hashed-orbiting-pizza.md's live-confirmed reentrancy hazard: kodi.log showed 7 concurrent
+    openSection() calls, on 7 different threads, racing to mutate the same LibraryWindow's state
+    at once - traced to goHome()/_dispatchSectionOpen() each scheduling their own uncoordinated
+    threading.Timer per trigger, with no single-flight protection. _deferOpenSection() (bound
+    directly off library.LibraryWindow, real code under test) is the shared fix both call
+    through now. Monkeypatches library.threading.Timer with FakeTimer (test_library_chain.py's
+    own fake, also used by OnActionTest below) rather than waiting on/invoking a real one."""
+
+    def _patchedTimer(self):
+        FakeTimer.instances = []
+        originalTimer = library.threading.Timer
+        library.threading.Timer = FakeTimer
+        return originalTimer
+
+    def test_first_call_schedules_and_starts_a_timer(self):
+        host = FakeHostWindow()
+        original = self._patchedTimer()
+        try:
+            host._deferOpenSection('the-section')
+        finally:
+            library.threading.Timer = original
+
+        self.assertEqual(1, len(FakeTimer.instances))
+        timer = FakeTimer.instances[0]
+        self.assertTrue(timer.started)
+        self.assertIs(host._pendingSectionTimer, timer)
+
+    def test_a_second_call_cancels_the_first_pending_timer_instead_of_stacking(self):
+        host = FakeHostWindow()
+        original = self._patchedTimer()
+        try:
+            host._deferOpenSection('the-section')
+            firstTimer = host._pendingSectionTimer
+            host._deferOpenSection('a-different-section')
+        finally:
+            library.threading.Timer = original
+
+        self.assertTrue(firstTimer.cancelled)
+        self.assertEqual(2, len(FakeTimer.instances))
+        secondTimer = FakeTimer.instances[1]
+        self.assertFalse(secondTimer.cancelled)
+        self.assertIs(host._pendingSectionTimer, secondTimer)
+
+    def test_firing_the_timer_calls_openSection_and_updates_lastSection_on_success(self):
+        host = FakeHostWindow()
+        host.openSectionReturnValue = True
+        original = self._patchedTimer()
+        try:
+            host._deferOpenSection('the-section')
+            timer = host._pendingSectionTimer
+        finally:
+            library.threading.Timer = original
+
+        timer.function()  # simulates the timer actually firing
+
+        self.assertEqual([(('the-section',), {})], host.openSectionCalls)
+        self.assertEqual('the-section', host.lastSection)
+        self.assertIsNone(host._pendingSectionTimer, "must clear itself once fired, or a later call could cancel a dead timer for nothing")
+
+    def test_firing_the_timer_does_not_update_lastSection_on_a_declined_openSection(self):
+        host = FakeHostWindow()
+        host.openSectionReturnValue = False
+        original = self._patchedTimer()
+        try:
+            host._deferOpenSection('the-section')
+            timer = host._pendingSectionTimer
+        finally:
+            library.threading.Timer = original
+
+        timer.function()
+
+        self.assertIsNone(host.lastSection)
+
+
 class OnActionTest(KodiTestCase):
     """Deliberately narrow - see module docstring. FakeHostWindow defines no self.dragging/
     self.contentMode/self.movingSection etc., so if either early-return below fell through instead
     of returning, the real onAction() body would raise AttributeError trying to reach them."""
 
-    def test_navback_pops_the_backstack_and_returns_immediately(self):
+    def test_navback_defers_popBack_via_a_timer_instead_of_calling_it_inline(self):
+        """hashed-orbiting-pizza.md Phase 3's still-open OnAction()-reentrancy risk: popBack()
+        must not run synchronously from inside onAction() - the same shape the documented Kodi
+        core OnAction() reentrancy bug (SKIN_RELOAD_DEFER_SECONDS's own comment) is suspected
+        unsafe for. Deferred the same way every other onAction()-triggered reload in this class
+        already is. Monkeypatches library.threading.Timer rather than waiting on/invoking a real
+        one - proving the defer was scheduled (right target, actually started), not that popBack()
+        eventually runs (that's swapTo()/popBack()'s own coverage above)."""
         host = FakeHostWindow()
         host._shuttingDown = False
         host._goRootHoldUntil = 0
@@ -391,9 +532,19 @@ class OnActionTest(KodiTestCase):
         popCalls = []
         host.popBack = lambda: popCalls.append(True)
 
-        onAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
+        FakeTimer.instances = []
+        originalTimer = library.threading.Timer
+        library.threading.Timer = FakeTimer
+        try:
+            onAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
+        finally:
+            library.threading.Timer = originalTimer
 
-        self.assertEqual([True], popCalls)
+        self.assertEqual([], popCalls, "popBack() must not run inline, only once the timer fires")
+        self.assertEqual(1, len(FakeTimer.instances))
+        timer = FakeTimer.instances[0]
+        self.assertEqual(host.popBack, timer.function)
+        self.assertTrue(timer.started)
 
     def test_navback_with_an_empty_backstack_falls_through_unmodified(self):
         """Regression guard for the "empty stack means never chained" contract: swapTo() always

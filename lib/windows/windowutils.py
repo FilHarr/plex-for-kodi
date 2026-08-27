@@ -329,10 +329,12 @@ class SidebarMixin():
             return
 
         if self is HOME:
-            def _deferredOpenSection():
-                if self.openSection(section):
-                    self.lastSection = section
-            threading.Timer(SKIN_RELOAD_DEFER_SECONDS, _deferredOpenSection).start()
+            # _deferOpenSection() (library.py's LibraryWindow, the only thing HOME ever is):
+            # single-flight - see its own comment for the live-confirmed reentrancy hazard
+            # (kodi.log: 7 concurrent openSection() calls racing each other) a bare
+            # threading.Timer(...).start() here used to allow, with no coordination against
+            # goHome()'s own identical defer or repeated triggers of this same method.
+            self._deferOpenSection(section)
         else:
             self.lastSection = section
             self.goHome(section=section)
@@ -356,7 +358,12 @@ class UtilMixin(GoHomeMixin):
         self.exitCommand = None
 
     def openItem(self, obj, **kwargs):
-        self.processCommand(opener.open(obj, **kwargs))
+        # context=self (hashed-orbiting-pizza.md Phase 4): lets opener.open()'s dispatch call
+        # self.openWindow(...) instead of unconditionally handleOpen()-ing, for whichever object
+        # types its dispatch has been made chain-aware for so far (currently just movies - see
+        # opener.py's own docstring on open()). Inert (ignored) for every other object type until
+        # its own Phase 4 item wires that branch too - safe for every existing caller.
+        self.processCommand(opener.open(obj, context=self, **kwargs))
 
     def openWindow(self, window_class, **kwargs):
         # A prior attempt hosted chains via a separate DescendantContainer class

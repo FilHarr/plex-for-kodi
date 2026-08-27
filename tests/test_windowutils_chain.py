@@ -145,6 +145,31 @@ class ChainAwareOpenWindowTest(KodiTestCase):
         self.assertEqual([(FakeChainedShell, {"media_item": "the-show"})], host.swapToCalls)
 
 
+class OpenItemPassesContextTest(KodiTestCase):
+    """hashed-orbiting-pizza.md Phase 4 item 1: openItem() passes context=self to opener.open()
+    so its dispatch can call self.openWindow(...) for whichever object types have been made
+    chain-aware so far (currently just movies, opener.py's own docstring on open()) - inert for
+    everything else. Doesn't exercise opener.open()'s own dispatch logic (that's
+    tests/test_opener_context.py) - just that openItem() forwards context correctly."""
+
+    def test_openItem_forwards_context_equal_to_self(self):
+        shell = FakeChainedShell(chain_host=None)
+        openCalls = []
+
+        def fakeOpen(obj, context=None, **kwargs):
+            openCalls.append((obj, context, kwargs))
+            return ''
+
+        originalOpen = windowutils.opener.open
+        windowutils.opener.open = fakeOpen
+        try:
+            shell.openItem("the-object", extra="kwarg")
+        finally:
+            windowutils.opener.open = originalOpen
+
+        self.assertEqual([("the-object", shell, {"extra": "kwarg"})], openCalls)
+
+
 class ChainAwareStaleHostTest(KodiTestCase):
     """The bug this session's live testing actually caught: a shell's own settled-focus debounce
     thread firing after its host already fully closed. See the module docstring."""

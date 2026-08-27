@@ -540,6 +540,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # goHome()/goHomeRoot()/processCommand() below for the self-referential-delegation
         # hazard this creates and how it's avoided (windowutils.py's _goHomeDirect() etc.).
         self._chainHost = self
+        # Live-confirmed reentrancy hazard (kodi.log: 7 concurrent openSection() calls, on 7
+        # different threads, all racing to tear down/reconstruct self._current at the same
+        # instant) - see _deferOpenSection()'s own comment below.
+        self._pendingSectionTimer = None
         # 'library' (poster/grid, default) or 'recommended' (hubs) - a second swap dimension
         # alongside view-type (panel/panel2/.../list), not a replacement for it. See
         # quiet-orbiting-heron.md's Stage A/B/C/D breakdown for Recommended-tab sharing. Real
@@ -792,11 +796,50 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         return not hasattr(cls, 'MULTI_WINDOW_ID')
 
     def _setupCurrent(self, cls):
+        # TEMPORARY diagnostic logging (hashed-orbiting-pizza.md live-crash investigation) -
+        # remove once the native-crash-on-second-hosting-cycle bug is understood/fixed.
+        util.DEBUG_LOG("Library: _setupCurrent({0}) real_shell_count={1} isHostedShell(before)={2}",
+                        cls, getattr(self, '_realShellHostCount', 0), self._isHostedShell)
+
+        # EXPERIMENTAL fix, being tested live (hashed-orbiting-pizza.md crash investigation):
+        # self._current._chainHost = self (below) creates a reference cycle between the host
+        # and every hosted shell (shell -> host via _chainHost/onAction/onFirstInit's closure;
+        # host -> shell via self._current, while it's current) - refcounting alone can't free a
+        # genuine cycle, so the outgoing shell can survive past reassignment below until
+        # Python's cyclic GC happens to run, which nothing here ever forces between swaps (the
+        # only gc.collect() in this whole session is MultiWindow.open()'s, once, at session
+        # end). Hypothesis: Kodi's native side needs the outgoing window's Python object torn
+        # down promptly to safely reuse its window ID for the next one, and a shell kept alive
+        # by an uncollected cycle is what corrupts the next window built on that reused ID -
+        # live-confirmed as a 100%-deterministic native crash (identical faulting instruction
+        # and address - a classic "used a not-found sentinel as a pointer" read at
+        # 0xFFFFFFFFFFFFFFFF - across 5 independent captures) that only manifests after a real
+        # shell has been hosted more than once before a section switch. Not proven; explicitly
+        # breaking the cycle and forcing collection here is the direct test of that hypothesis.
+        #
+        # Breaking the cycle (clearing the outgoing shell's own back-references) has to happen
+        # here, before self._current is reassigned below - but gc.collect() itself must NOT run
+        # until after that reassignment, since self._current is still the only remaining
+        # reference to the outgoing shell until then; collecting too early would find it still
+        # referenced and do nothing. See _forceCollectOutgoing() below, called at the tail of
+        # both branches once self._current genuinely points at the new object instead.
+        outgoingShell = self._current
+        outgoingWasRealShell = outgoingShell is not None and getattr(outgoingShell, '_chainHost', None) is not None
+        if outgoingWasRealShell:
+            outgoingShell._chainHost = None
+            outgoingShell.onAction = None
+            outgoingShell.onFirstInit = None
+        del outgoingShell
+
         if not self._isRealShell(cls):
             self._isHostedShell = False
             kodigui.MultiWindow._setupCurrent(self, cls)
+            if outgoingWasRealShell:
+                self._forceCollectOutgoing(cls)
+            util.DEBUG_LOG("Library: _setupCurrent({0}) thin-proxy branch complete", cls)
             return
 
+        self._realShellHostCount = getattr(self, '_realShellHostCount', 0) + 1
         self._isHostedShell = True
         self._current = cls(cls.xmlFile, cls.path, cls.theme, cls.res, **self._nextKwargs)
         self._currentKwargs = self._nextKwargs
@@ -815,13 +858,26 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # LibraryWindow.onFirstInit() is real logic keyed to LibraryWindow's own templates
         # (sectionList/tabList/userList/serverList, POSTERS_PANEL_ID focus) and would run broken
         # against a real shell's native window (e.g. PrePlayWindow's XML has none of those
-        # controls). Duplicates only the two host-generic lines base MultiWindow._onFirstInit()
-        # itself does (kodigui.py), so kodigui.py stays unmodified.
+        # controls). Only registers the close.windows signal (the other host-generic line base
+        # MultiWindow._onFirstInit() does, kodigui.py) - deliberately does NOT also replay
+        # self._properties onto the shell the way that base method does for LibraryWindow's own
+        # thin proxies. Live-confirmed bug without this exclusion: self._properties accumulates
+        # whatever LibraryWindow's own 'recommended'-mode hero display last set via
+        # updateHeroFrom()/setHeroInfo() (clear.logo/summary/etc. for the focused hub item) and
+        # nothing overwrites those specific keys again once the user is just browsing an
+        # ordinary grid - so they sit frozen at whatever hub item was focused when Home's hubs
+        # first drew this session (Continue Watching's first item, in practice) for the rest of
+        # the session. A real shell like PrePlayWindow happens to use the same property names
+        # for its own, unrelated metadata panel, so blindly replaying the host's entire cache
+        # briefly shows that frozen, unrelated content until the shell's own setInfo() overwrites
+        # it a moment later - visible specifically when opening straight from a library grid
+        # (nothing there ever refreshes those keys), not when opening from a hub (navigating the
+        # hub row to reach the click target keeps refreshing them to something closer to
+        # correct). A real shell has its own independent metadata logic; it was never meant to
+        # inherit the host's display-state cache the way a thin proxy is.
         shellOnFirstInit = self._current.onFirstInit
 
         def _onFirstInit():
-            for k, v in self._properties.items():
-                self._current.setProperty(k, v)
             plexapp.util.APP.on('close.windows', self.onCloseSignal)
             shellOnFirstInit()
 
@@ -834,6 +890,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._current.onAction = self.onAction
         # onClick/onFocus/onReInit deliberately left untouched on the shell instance - unlike
         # LibraryWindow's own thin view-type children, these seven carry real business logic.
+        if outgoingWasRealShell:
+            self._forceCollectOutgoing(cls)
+        # TEMPORARY diagnostic logging - see this method's own top.
+        util.DEBUG_LOG("Library: _setupCurrent({0}) real-shell branch complete, real_shell_count={1}",
+                        cls, self._realShellHostCount)
+
+    def _forceCollectOutgoing(self, cls):
+        """EXPERIMENTAL, see _setupCurrent()'s own comment on the hypothesis this tests. Called
+        only once self._current/self._currentOnAction have both already been reassigned away
+        from the outgoing shell (whose own back-references to self were already cleared) - at
+        this point nothing in this object graph should still reference it, so a forced
+        collection should free it (and its native window resources) immediately rather than
+        waiting on Python's own GC scheduling."""
+        import gc
+        collected = gc.collect()
+        util.DEBUG_LOG("Library: _setupCurrent({0}) forced gc.collect() after real-shell teardown, "
+                        "collected={1}", cls, collected)
 
     def swapTo(self, cls, push=True, **kwargs):
         """Swap this already-open, already-hosting LibraryWindow to one of the seven real
@@ -969,6 +1042,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # afterward hit `section == self.lastSection` and silently no-opped, until a genuinely
         # different section was clicked first (which finally advanced lastSection for real).
         self.lastSection = section
+        # hashed-orbiting-pizza.md Phase 4: a sidebar section click reaches here even while a
+        # descendant chain is hosted (bubbled via PrePlayWindow etc.'s own goHome(section=...),
+        # windowutils.py's GoHomeMixin/_dispatchSectionOpen(), landing on this deferred call) -
+        # an explicit sidebar click is exactly the case that should abandon any chain in
+        # progress, not just leave it dangling. Without this, _backStack keeps whatever
+        # root-restore entry the chain pushed on its way in, live-confirmed to cause real
+        # breakage on the *next* unrelated NAV_BACK/chain: onAction()'s NAV_BACK intercept below
+        # only checks "is _backStack non-empty," not whether a chain is actually still active, so
+        # a stale entry here gets wrongly popped later, jumping back to whatever section this
+        # abandoned chain started from instead of behaving like an ordinary section view.
+        self._backStack = []
         self.filter = filter_
         self.subDir = None
         self.keyItems = {}
@@ -1026,8 +1110,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.refill = True
         self.updateActiveSectionMarker(section)
 
-        util.DEBUG_LOG("Library: openSection() swapping in place to {0}", section)
+        # TEMPORARY diagnostic logging (hashed-orbiting-pizza.md live-crash investigation) -
+        # remove once the native-crash-on-second-hosting-cycle bug is understood/fixed.
+        util.DEBUG_LOG("Library: openSection() swapping in place to {0}, current={1} next={2} "
+                        "isHostedShell={3} real_shell_count={4} backStack_len={5}",
+                        section, self._current, self._next, self._isHostedShell,
+                        getattr(self, '_realShellHostCount', 0), len(self._backStack))
         self._current.doClose()
+        util.DEBUG_LOG("Library: openSection() self._current.doClose() returned")
         return True
 
     def updateActiveSectionMarker(self, active_section):
@@ -1802,6 +1892,46 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.setFocusId(self.POSTERS_PANEL_ID)
 
+    def _deferOpenSection(self, section):
+        """Single-flight defer for the "self is HOME, safe in-place swap" case both this class's
+        own goHome() and windowutils.py's SidebarMixin._dispatchSectionOpen() use (both only ever
+        call this when self is windowutils.HOME). Both used to construct their own bare
+        threading.Timer(SKIN_RELOAD_DEFER_SECONDS, self.openSection, ...) independently, with no
+        coordination between repeated calls.
+
+        Live-confirmed reentrancy hazard without this: kodi.log showed 7 concurrent
+        openSection() calls, on 7 different threads, all racing to mutate
+        self.section/self._current/self._backStack/etc. at the same instant - triggered by
+        something firing goHome()/_dispatchSectionOpen() repeatedly in quick succession (a
+        Home-button remote auto-repeating while held is the prime suspect, now reachable from a
+        hosted shell too via onAction()'s _isHostedShell branch -> _dispatchNativeAction() ->
+        base MultiWindow.onAction()'s goHomeAction() check; the immediate-click and settled-
+        focus-debounce paths both firing for the same section-list navigation is a second,
+        independent way to get two overlapping triggers). This is exactly the "openSection()/
+        switchTab() triggered a second time before _open()'s loop caught up and reassigned
+        self._current" native-crash shape ControlledWindow.doClose()'s own _closing guard
+        (kodigui.py) already documents - that guard stops a second doClose() call on the same
+        already-closing shell, but does nothing about N-way-concurrent openSection() calls each
+        independently mutating this object's other state before/after it.
+
+        A fresh call cancels whatever's already pending and replaces it - only the most recent
+        target matters, and there is never more than one Timer in flight. cancel() only prevents
+        a Timer that hasn't fired yet; it can't un-fire one already mid-run - this reduces the
+        race to a much narrower window rather than proving it impossible, the same "cheap,
+        low-risk mitigation, not a proven fix" status every other SKIN_RELOAD_DEFER_SECONDS use
+        in this codebase already carries.
+        """
+        if self._pendingSectionTimer is not None:
+            self._pendingSectionTimer.cancel()
+
+        def _fire():
+            self._pendingSectionTimer = None
+            if self.openSection(section):
+                self.lastSection = section
+
+        self._pendingSectionTimer = threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, _fire)
+        self._pendingSectionTimer.start()
+
     def goHome(self, section=None, with_root=False):
         """GoHomeMixin.goHome() (windowutils.py) assumes self is some OTHER (descendant) window
         handing off to a separate Home singleton elsewhere: force-dismiss self, bubble a close
@@ -1818,7 +1948,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """
         if self is windowutils.HOME:
             if section and section != self.section:
-                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection, args=(section,)).start()
+                self._deferOpenSection(section)
             if with_root:
                 self.go_root = True
                 self.show()
@@ -1946,8 +2076,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # below exactly as before. Must return immediately, never fall through to the outgoing
         # shell's own onAction() - every real shell sets dismissOnClose = True, so a fallthrough
         # would double-process the same NAV_BACK.
+        #
+        # Deferred via SKIN_RELOAD_DEFER_SECONDS, not called inline: popBack()/swapTo() end in the
+        # exact same doClose()-based reconstruct openSection()/switchTab() use, and this is that
+        # reload triggered synchronously from inside onAction() itself - precisely the shape
+        # hashed-orbiting-pizza.md's Phase 3 flagged as a live open risk (the documented Kodi core
+        # OnAction() reentrancy bug this constant exists for). Live-confirmed crash during Phase 4
+        # testing on a related path (a stale _backStack entry left behind by a sidebar section
+        # switch mid-chain, since fixed in openSection() - see its own comment); deferring this
+        # call is the same cheap, low-risk mitigation every other onAction()-triggered reload in
+        # this class already uses, not a proven fix for that specific bug.
         if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and self._backStack:
-            self.popBack()
+            threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.popBack).start()
             return
 
         try:
@@ -3593,7 +3733,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self.openWindow(collection.SubDirWindow, section=collection.buildSubDirSection(self.section, datasource),
                                 **extra_kwargs)
             else:
-                self.processCommand(opener.handleOpen(preplay.PrePlayWindow if not sectionType == 'movies_shows' else preplay.PrePlayWindowWL, video=datasource, parent_list=self.showPanelControl, **extra_kwargs))
+                # hashed-orbiting-pizza.md Phase 4 item 1: self.openWindow(), not
+                # opener.handleOpen() directly - swaps PrePlayWindow in place via this window's
+                # own swapTo() (self._chainHost always points at self, __init__) instead of
+                # opening a second real nested window. parent_list=self.showPanelControl is safe
+                # to keep passing through unchanged - PrePlayWindow only ever reads it for
+                # next/prev-in-grid lookups (preplay.py's _next()/_prev()), pure Python-side
+                # ManagedControlList data reads, not native-control reads, and self.showPanelControl
+                # lives on this outer, persistent LibraryWindow instance (never torn down when
+                # hosting a shell - only self._current, the native window, is).
+                self.openWindow(preplay.PrePlayWindow if not sectionType == 'movies_shows' else preplay.PrePlayWindowWL,
+                                 video=datasource, parent_list=self.showPanelControl, **extra_kwargs)
                 updateUnwatchedAndProgress = True
         elif self.section.TYPE == 'artist' or mli.dataSource.TYPE == 'artist' or mli.dataSource.TYPE == 'album' or mli.dataSource.TYPE == 'track':
             if ITEM_TYPE == 'album' or mli.dataSource.TYPE == 'album' or mli.dataSource.TYPE == 'track':
@@ -5789,7 +5939,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             extra_kwargs['directly_from_watchlist'] = True
             extra_kwargs['external_item'] = True
 
-        self.processCommand(opener.open(mli.dataSource, **extra_kwargs))
+        # context=self (hashed-orbiting-pizza.md Phase 4 item 1): hub items span many object
+        # types (unlike the grid's own type-scoped showPanelClicked()), so this keeps using
+        # opener.open()'s shared dispatch rather than duplicating it locally - context=self lets
+        # whichever branch has been made chain-aware so far (currently just movies) call
+        # self.openWindow(...) instead of unconditionally opening a real nested window. Inert for
+        # every other object type until its own Phase 4 item wires that branch too.
+        self.processCommand(opener.open(mli.dataSource, context=self, **extra_kwargs))
 
     def hubMenu(self, hubControlID):
         """Context menu (ACTION_CONTEXT_MENU) for whichever item is focused in a hub row - ported

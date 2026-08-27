@@ -7,7 +7,14 @@ from lib import util
 from . import busy
 
 
-def open(obj, **kwargs):
+def open(obj, context=None, **kwargs):
+    """context: the calling window (a UtilMixin instance), threaded through to whichever
+    dispatch branch below has been made chain-aware (hashed-orbiting-pizza.md's Phase 4) - lets
+    that branch call context.openWindow(...) (swap in place if context is a live chain host,
+    else fall back to today's handleOpen()) instead of always calling handleOpen() unconditionally.
+    None (the default, used by every caller not passing it) preserves today's behavior exactly.
+    Only the movie branch (playableClicked()) is wired so far - every other branch below ignores
+    this parameter entirely until its own Phase 4 item threads it through."""
     if isinstance(obj, playqueue.PlayQueue):
         if busy.widthDialog(obj.waitForInitialization, None):
             if obj.type == 'audio':
@@ -26,11 +33,11 @@ def open(obj, **kwargs):
             key = '/library/metadata/{0}'.format(obj)
 
         server = kwargs.pop("server", None) or plexapp.SERVERMANAGER.selectedServer
-        return open(server.getObject(key), **kwargs)
+        return open(server.getObject(key), context=context, **kwargs)
     elif obj.TYPE == 'episode':
         return episodeClicked(obj, **kwargs)
     elif obj.TYPE == 'movie':
-        return playableClicked(obj, **kwargs)
+        return playableClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('show'):
         return showClicked(obj, **kwargs)
     elif obj.TYPE in ('artist'):
@@ -101,12 +108,15 @@ def handleOpen(winclass, **kwargs):
     return ''
 
 
-def playableClicked(playable, **kwargs):
+def playableClicked(playable, context=None, **kwargs):
     from . import preplay
     if kwargs.get('from_watchlist', False):
         win = preplay.PrePlayWindowWL
     else:
         win = preplay.PrePlayWindow
+    if context is not None:
+        context.openWindow(win, video=playable, **kwargs)
+        return ''
     return handleOpen(win, video=playable, **kwargs)
 
 
