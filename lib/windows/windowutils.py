@@ -38,7 +38,46 @@ SKIN_RELOAD_DEFER_SECONDS = 0.15
 
 
 class GoHomeMixin():
+    # None for every window except a shell hosted inside a LibraryWindow-hosted descendant chain
+    # (set as an instance-attribute override by LibraryWindow._setupCurrent(), library.py), or
+    # LibraryWindow itself (which points this at self - see LibraryWindow.__init__'s own comment
+    # for why). See hashed-orbiting-pizza.md's Phase 1. A chained shell's own
+    # forceDismiss()/closeWithCommand() only ever touch itself, not the host - the host's _open()
+    # poll loop would just reconstruct and reopen the same shell again, since neither its
+    # _allClosed flag nor _next/_nextKwargs changed - goHome()/goHomeRoot() below must operate on
+    # the host itself once one exists, not on the chained shell that happened to receive the call.
+    _chainHost = None
+
+    def _liveChainHost(self):
+        """None if this window was never chained, OR if its host has already fully closed
+        (_allClosed - a real, never-del'd attribute, unlike _current/_currentOnAction, which
+        MultiWindow._open()'s teardown does del - kodigui.py) - live-confirmed crash otherwise:
+        this shell's own settled-focus debounce thread (sectionChanged()/_sectionChanged() below)
+        can still be in flight from *before* a swapTo() swapped this shell out (or the whole chain
+        closed), landing here well after self._chainHost's own _current/_currentOnAction are
+        gone. Same root shape as _sectionChanged()'s own pre-existing AttributeError guard below
+        (a MultiWindow reference outliving its own teardown) - a stale reference here, not a bug in
+        the caller, so treating it as "nothing left to act on" is correct, not a workaround."""
+        host = self._chainHost
+        if host is not None and host._allClosed:
+            return None
+        return host
+
     def goHome(self, section=None, with_root=False):
+        host = self._liveChainHost()
+        if host is not None:
+            host.goHome(section=section, with_root=with_root)
+            return
+        self._goHomeDirect(section=section, with_root=with_root)
+
+    def _goHomeDirect(self, section=None, with_root=False):
+        """The pre-chain-awareness goHome() body, factored out so a self-hosting LibraryWindow
+        instance (whose own goHome() override, library.py, falls through to this mixin once it's
+        decided "I'm not windowutils.HOME") can invoke it directly, without going back through
+        _liveChainHost() - which would just resolve to self again and recurse forever, since
+        LibraryWindow always points _chainHost at itself. Delegation only means something for a
+        genuinely distinct hosted shell; by the time a self-hosting caller's own override has run,
+        there's no other object to hand off to."""
         HOME.go_root = with_root
         # Stashed on the HOME singleton directly, not embedded in the exitCommand string below -
         # HOME never gets discarded/recreated mid-session, so a live object reference survives the
@@ -57,6 +96,14 @@ class GoHomeMixin():
         HOME.show()
 
     def goHomeRoot(self, *args, **kwargs):
+        host = self._liveChainHost()
+        if host is not None:
+            host.goHome(with_root=True)
+            return
+        self._goHomeRootDirect()
+
+    def _goHomeRootDirect(self):
+        """See _goHomeDirect()'s own comment - same self-hosting-recursion reason."""
         HOME.go_root = True
         self.forceDismiss()
         self.closeWithCommand('HOME')
@@ -312,14 +359,42 @@ class UtilMixin(GoHomeMixin):
         self.processCommand(opener.open(obj, **kwargs))
 
     def openWindow(self, window_class, **kwargs):
+        # A prior attempt hosted chains via a separate DescendantContainer class
+        # (descendant_container.py, since deleted) - genesis-open of that class was reverted
+        # after a real, session-breaking native window-stack desync was found live
+        # (hashed-orbiting-pizza-history.md). hashed-orbiting-pizza.md's Phase 1 replaces that
+        # design: LibraryWindow now hosts chains directly on itself (library.py), pointing
+        # _chainHost at self unconditionally, and at itself on each real shell it swaps in
+        # (LibraryWindow._setupCurrent()) - so this swapTo() branch is live again, targeting a
+        # LibraryWindow host rather than a second MultiWindow.
+        host = self._liveChainHost()
+        if host is not None:
+            host.swapTo(window_class, **kwargs)
+            return
         self.processCommand(opener.handleOpen(window_class, **kwargs))
 
     def processCommand(self, command):
         if command and command.startswith('HOME'):
-            self.exitCommand = command
-            self.doClose()
+            host = self._liveChainHost()
+            if host is not None:
+                # Bubbling a HOME exit command up from a not-yet-migrated child window opened the
+                # old blocking way (opener.handleOpen()) directly on top of a chained shell - the
+                # same "operate on the host, not the shell that happened to receive this" fix
+                # goHome() needs, for the same reason. See GoHomeMixin's own comment.
+                host.processCommand(command)
+                return
+            self._processHomeCommandDirect(command)
         elif command and command == "NODATA":
             raise util.NoDataException
+
+    def _processHomeCommandDirect(self, command):
+        """See GoHomeMixin._goHomeDirect()'s own comment - same self-hosting-recursion reason.
+        LibraryWindow's own processCommand() override (library.py) falls through to this mixin's
+        processCommand() once it's decided "I'm not windowutils.HOME"; without this split, that
+        fallthrough would re-resolve _liveChainHost() back to self and recurse forever, since
+        LibraryWindow always points _chainHost at itself."""
+        self.exitCommand = command
+        self.doClose()
 
     def closeWithCommand(self, command):
         self.exitCommand = command

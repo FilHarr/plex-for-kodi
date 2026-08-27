@@ -521,6 +521,25 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self.filter = kwargs.get('filter_')
         self.subDir = kwargs.get('subDir')
+
+        # Descendant-chain hosting (hashed-orbiting-pizza.md Phase 1) - lets this same
+        # LibraryWindow instance swapTo() any of the seven real descendant shell types
+        # (PrePlayWindow, EpisodesWindow, ...) in place, instead of opening each as a real
+        # nested window. _backStack holds two entry shapes: (ShellClass, kwargs) to reconstruct
+        # a shell, or (None, {'section':..., 'filter_':...}) to restore this window's own grid -
+        # the latter is pushed once, automatically, the moment a chain starts (see swapTo()),
+        # so the *last* pop of any chain reveals the grid again instead of running off the end.
+        self._backStack = []
+        self._nextKwargs = {}
+        self._currentKwargs = {}
+        self._isHostedShell = False
+        # Resolve to self as chain host, unconditionally - windowutils.UtilMixin.openWindow()
+        # checks self._liveChainHost() to decide whether a click should swapTo() in place or
+        # fall back to opener.handleOpen(); pointing this at self lets LibraryWindow's own
+        # click-handlers reuse that exact generic path, same as every hosted shell. See
+        # goHome()/goHomeRoot()/processCommand() below for the self-referential-delegation
+        # hazard this creates and how it's avoided (windowutils.py's _goHomeDirect() etc.).
+        self._chainHost = self
         # 'library' (poster/grid, default) or 'recommended' (hubs) - a second swap dimension
         # alongside view-type (panel/panel2/.../list), not a replacement for it. See
         # quiet-orbiting-heron.md's Stage A/B/C/D breakdown for Recommended-tab sharing. Real
@@ -762,6 +781,80 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.setWindows(VIEWS_POSTER.get('all'))
             self.setDefault(VIEWS_POSTER.get(viewtype))
+
+    @staticmethod
+    def _isRealShell(cls):
+        """True for the seven real descendant shell types (PrePlayWindow, EpisodesWindow, ...) -
+        full, independent windows with their own onClick/onFocus/onFirstInit/onAction. False for
+        LibraryWindow's own thin view-type children (PostersWindow etc.), which carry
+        MULTI_WINDOW_ID and no real handlers of their own - confirmed via grep, none of the seven
+        shells define this attribute. See _setupCurrent()'s bifurcation below."""
+        return not hasattr(cls, 'MULTI_WINDOW_ID')
+
+    def _setupCurrent(self, cls):
+        if not self._isRealShell(cls):
+            self._isHostedShell = False
+            kodigui.MultiWindow._setupCurrent(self, cls)
+            return
+
+        self._isHostedShell = True
+        self._current = cls(cls.xmlFile, cls.path, cls.theme, cls.res, **self._nextKwargs)
+        self._currentKwargs = self._nextKwargs
+        self._current._chainHost = self
+
+        # Wraps (not replaces) the shell's own real onFirstInit - deliberately does NOT call
+        # self._onFirstInit()/self.onFirstInit() the way base MultiWindow._setupCurrent() would:
+        # LibraryWindow.onFirstInit() is real logic keyed to LibraryWindow's own templates
+        # (sectionList/tabList/userList/serverList, POSTERS_PANEL_ID focus) and would run broken
+        # against a real shell's native window (e.g. PrePlayWindow's XML has none of those
+        # controls). Duplicates only the two host-generic lines base MultiWindow._onFirstInit()
+        # itself does (kodigui.py), so kodigui.py stays unmodified.
+        shellOnFirstInit = self._current.onFirstInit
+
+        def _onFirstInit():
+            for k, v in self._properties.items():
+                self._current.setProperty(k, v)
+            plexapp.util.APP.on('close.windows', self.onCloseSignal)
+            shellOnFirstInit()
+
+        self._current.onFirstInit = _onFirstInit
+
+        # Same capture-and-forward shape base MultiWindow.onAction() already uses - this
+        # window's own onAction() (below) handles NAV_BACK/PREVIOUS_MENU/hosted-shell dispatch
+        # itself before falling through to the shell's real onAction() for everything else.
+        self._currentOnAction = self._current.onAction
+        self._current.onAction = self.onAction
+        # onClick/onFocus/onReInit deliberately left untouched on the shell instance - unlike
+        # LibraryWindow's own thin view-type children, these seven carry real business logic.
+
+    def swapTo(self, cls, push=True, **kwargs):
+        """Swap this already-open, already-hosting LibraryWindow to one of the seven real
+        descendant shell types in place - same construct-fresh-via-_open()'s-loop pattern
+        openSection()/switchTab() already use, just targeting a real shell class instead of one
+        of LibraryWindow's own thin view-type proxies. See _backStack's own comment (__init__)
+        for the two entry shapes pushed here."""
+        if push and self._current is not None:
+            if self._isHostedShell:
+                self._backStack.append((self._current.__class__, self._currentKwargs))
+            else:
+                # Genesis swap out of LibraryWindow's own grid: push root-restore state so the
+                # *last* pop of this chain reveals the grid again instead of running off the
+                # stack - this is what makes _backStack empty mean "never started a chain"
+                # unambiguously, every time.
+                self._backStack.append((None, {'section': self.section, 'filter_': self.filter}))
+        self._next = cls
+        self._nextKwargs = kwargs
+        self._current.doClose()
+
+    def popBack(self):
+        cls, kwargs = self._backStack.pop()
+        if cls is None:
+            # force=True: section == self.section will be true here (root state is never
+            # mutated while a shell is hosted), which openSection()'s own no-op guard would
+            # otherwise decline.
+            self.openSection(force=True, **kwargs)
+        else:
+            self.swapTo(cls, push=False, **kwargs)
 
     def switchTab(self, mode):
         """Swap this already-open window between content modes ('library' grid vs.
@@ -1033,6 +1126,21 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             elif pending is not None and pending != self.section:
                 threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection, args=(pending,)).start()
             return
+        if command and command.startswith('HOME'):
+            # self is guaranteed not to be windowutils.HOME here (ruled out above) - go straight
+            # to _processHomeCommandDirect(), not the chain-checking UtilMixin.processCommand():
+            # this LibraryWindow instance always points its own _chainHost at itself (__init__),
+            # so calling the wrapper would resolve _liveChainHost() back to self and call
+            # host.processCommand(command) = self.processCommand(command) - which Python resolves
+            # right back to this very override, recursing forever. There's no other object to
+            # delegate to once "I'm not windowutils.HOME" has already been decided here; just
+            # close and let the bubble continue upward, matching a plain (non-chain-hosting)
+            # window's behavior exactly (the pre-Phase-1 UtilMixin.processCommand() behavior).
+            windowutils.UtilMixin._processHomeCommandDirect(self, command)
+            return
+        # Any other command (e.g. "NODATA") - safe to hand to the generic UtilMixin.processCommand()
+        # unchanged, since its 'HOME'-prefixed branch (the only one that touches _liveChainHost())
+        # can't fire for a command that isn't 'HOME'-prefixed.
         windowutils.UtilMixin.processCommand(self, command)
 
     def confirmExit(self):
@@ -1707,14 +1815,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self.go_root = True
                 self.show()
             return
-        windowutils.GoHomeMixin.goHome(self, section=section, with_root=with_root)
+        # _goHomeDirect(), not the chain-checking goHome() wrapper: this LibraryWindow instance
+        # always points its own _chainHost at itself (__init__), so the wrapper would resolve
+        # _liveChainHost() back to self and recurse forever. Once this override has already
+        # decided "I'm not windowutils.HOME," self-referential delegation is meaningless - see
+        # windowutils.py's GoHomeMixin._goHomeDirect() for the full reasoning.
+        windowutils.GoHomeMixin._goHomeDirect(self, section=section, with_root=with_root)
 
     def goHomeRoot(self, *args, **kwargs):
         if self is windowutils.HOME:
             self.go_root = True
             self.show()
             return
-        windowutils.GoHomeMixin.goHomeRoot(self, *args, **kwargs)
+        windowutils.GoHomeMixin._goHomeRootDirect(self)
 
     def show(self, **kwargs):
         """MultiWindow has no native show() of its own (kodigui.py) - unlike HomeWindow's own
@@ -1818,6 +1931,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if self._goRootHoldUntil:
             self._goRootHoldUntil = 0
 
+        # Descendant-chain back-stack (hashed-orbiting-pizza.md Phase 1) - swapTo() always
+        # pushes a root-restore entry on the genesis swap out of this window's own grid, so
+        # _backStack is guaranteed non-empty whenever a real shell is hosted; an empty stack
+        # therefore unambiguously means "never started a chain," falling through to every branch
+        # below exactly as before. Must return immediately, never fall through to the outgoing
+        # shell's own onAction() - every real shell sets dismissOnClose = True, so a fallthrough
+        # would double-process the same NAV_BACK.
+        if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and self._backStack:
+            self.popBack()
+            return
+
         try:
             controlID = self.getFocusId()
             if controlID == self.SECTION_LIST_ID:
@@ -1887,6 +2011,21 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 if action == xbmcgui.ACTION_SELECT_ITEM:
                     self.setFocusId(self.SERVER_BUTTON_ID)
                     return
+
+            if self._isHostedShell:
+                # Everything below here (grid MOVE_SET, drag, hub-rotation-ring) is specific to
+                # LibraryWindow's own content area and reads state (self.contentMode,
+                # self.getFocusId() delegating through __getattr__ to the hosted shell's real
+                # focused control) that has nothing to do with whatever the real shell is
+                # actually showing. Confirmed concretely: PrePlayWindow's own
+                # ROLES_LIST_ID/REVIEWS_LIST_ID/EXTRA_LIST_ID/RELATED_LIST_ID/COLLECTION_LIST_IDS
+                # (400-406) all fall inside the 399 < controlID < 500 hub-rotation check below -
+                # without this early return, ordinary up/down navigation on a hosted
+                # PrePlayWindow whose host was last on the 'recommended' tab would wrongly
+                # trigger _startHubSlide()/hub-menu logic against host-side state. The shared
+                # sidebar/server/user controls above (SidebarMixin) stay reachable either way.
+                self._dispatchNativeAction(action)
+                return
 
             if self.dragging:
                 if not action == xbmcgui.ACTION_MOUSE_DRAG:
