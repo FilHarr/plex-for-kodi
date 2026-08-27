@@ -165,6 +165,10 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.openedWithAutoPlay = False
         self.fromPlayback = False
         self.useBGM = False
+        # hashed-orbiting-pizza.md Phase 2: None here means "build my own sectionList" (a
+        # standalone/un-hosted open) - a hosted open (LibraryWindow._setupCurrent(), library.py)
+        # overwrites this with the host's own sectionList object before onFirstInit() runs.
+        self.sectionList = None
 
     def doClose(self, **kw):
         self.relatedPaginator = None
@@ -184,8 +188,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.collectionListControls = [kodigui.ManagedControlList(self, lid, 5) for lid in self.COLLECTION_LIST_IDS]
         self.setBoolProperty("is_watchlisted", self.is_watchlisted)
 
-        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
-        self.buildSectionList()
+        if self.sectionList is None:
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.buildSectionList()
+        else:
+            self.sectionList.newControl(self)
         self.displayServerAndUser()
 
         self.setup()

@@ -110,8 +110,11 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
 
     def onFirstInit(self):
         self.gridControl = kodigui.ManagedControlList(self, self.GRID_ID, 5)
-        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
-        self.buildSectionList()
+        if self.sectionList is None:
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.buildSectionList()
+        else:
+            self.sectionList.newControl(self)
         self.displayServerAndUser()
         self.setup()
         self.setBoolProperty('initialized', True)

@@ -311,6 +311,13 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.entrySectionId = self.show_.getLibrarySectionId()
             self.entryFromWatchlist = self.fromWatchlist or self.directlyFromWatchlist
 
+        # hashed-orbiting-pizza.md Phase 2: None here means "build my own sectionList" (a
+        # standalone/un-hosted open) - a hosted open (LibraryWindow._setupCurrent(), library.py)
+        # overwrites this with the host's own sectionList object before onFirstInit() runs. Set
+        # in __init__, not reset() below - reset() re-runs on every episode navigation within
+        # this same window and must not force a rebuild each time.
+        self.sectionList = None
+
     def reset(self, episode, season=None, show=None):
         self.episode = episode
         self.initialEpisode = episode
@@ -378,8 +385,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.extraListControl = kodigui.ManagedControlList(self, self.EXTRA_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
 
-        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
-        self.buildSectionList()
+        if self.sectionList is None:
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.buildSectionList()
+        else:
+            self.sectionList.newControl(self)
         self.displayServerAndUser()
 
         VIDEO_PROGRESS.clear()

@@ -125,6 +125,11 @@ class FakeHostWindow(object):
         self._properties = {}
         self.section = 'the-section'
         self.filter = 'the-filter'
+        # Phase 2 (hashed-orbiting-pizza.md): the host's own sectionList - _setupCurrent() must
+        # hand this exact object to the hosted shell so its onFirstInit() reuses (newControl())
+        # rather than rebuilds it. A plain sentinel is enough here; no real ManagedControlList
+        # behavior is exercised by _setupCurrent() itself.
+        self.sectionList = object()
         self.openSectionCalls = []
         self.onCloseSignalCalls = []
         self.onActionCalls = []
@@ -207,6 +212,17 @@ class SetupCurrentTest(KodiTestCase):
         self.assertEqual({'collection': 'the-collection'}, shell.kwargs)
         self.assertEqual({'collection': 'the-collection'}, host._currentKwargs)
         self.assertTrue(host._isHostedShell)
+
+    def test_real_shell_branch_hands_the_hosts_own_sectionList_to_the_shell(self):
+        """Phase 2 (hashed-orbiting-pizza.md): the sidebar-highlight-reuse fix depends entirely
+        on this one assignment - the shell's own onFirstInit() branch (each of the seven shells,
+        not exercised here) only reuses via newControl() if it sees a non-None sectionList, and
+        it must be the SAME object the host has, not a copy, so is.active carries over."""
+        host = FakeHostWindow()
+
+        _setupCurrent(host, FakeShell)
+
+        self.assertIs(host.sectionList, host._current.sectionList)
 
     def test_real_shell_branch_marks_the_shell_as_chained_to_this_host(self):
         host = FakeHostWindow()

@@ -181,6 +181,10 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.exitCommand = None
         self.initialized = False
         self.lastFocusID = None
+        # hashed-orbiting-pizza.md Phase 2: None here means "build my own sectionList" (a
+        # standalone/un-hosted open) - a hosted open (LibraryWindow._setupCurrent(), library.py)
+        # overwrites this with the host's own sectionList object before onFirstInit() runs.
+        self.sectionList = None
 
     def onFirstInit(self):
         self.setProperty('loading', '1')
@@ -195,8 +199,11 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             except Exception:
                 break
 
-        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
-        self.buildSectionList()
+        if self.sectionList is None:
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.buildSectionList()
+        else:
+            self.sectionList.newControl(self)
         self.displayServerAndUser()
 
         local_server = plexapp.SERVERMANAGER.selectedServer

@@ -801,6 +801,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._current = cls(cls.xmlFile, cls.path, cls.theme, cls.res, **self._nextKwargs)
         self._currentKwargs = self._nextKwargs
         self._current._chainHost = self
+        # Phase 2 (hashed-orbiting-pizza.md): hand the host's own sectionList object to the
+        # shell - its onFirstInit() sees a non-None sectionList and rebinds via newControl()
+        # instead of rebuilding, so is.active (and everything else about which section is
+        # highlighted) carries over untouched for the whole chain. self is always the host here
+        # (never a shell), and the host's own sectionList is never rebuilt across its own swaps,
+        # so this is the same single object handed to every shell in the chain, forward or
+        # backward (popBack() reconstructs via this same method).
+        self._current.sectionList = self.sectionList
 
         # Wraps (not replaces) the shell's own real onFirstInit - deliberately does NOT call
         # self._onFirstInit()/self.onFirstInit() the way base MultiWindow._setupCurrent() would:

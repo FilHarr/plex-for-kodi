@@ -107,6 +107,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.initialized = False
         self.relatedPaginator = None
         self.useBGM = False
+        # hashed-orbiting-pizza.md Phase 2: None here means "build my own sectionList" (a
+        # standalone/un-hosted open) - a hosted open (LibraryWindow._setupCurrent(), library.py)
+        # overwrites this with the host's own sectionList object before onFirstInit() runs.
+        self.sectionList = None
 
     def doClose(self, **kw):
         self.relatedPaginator = None
@@ -120,8 +124,11 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.extraListControl = kodigui.ManagedControlList(self, self.EXTRA_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
 
-        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
-        self.buildSectionList()
+        if self.sectionList is None:
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.buildSectionList()
+        else:
+            self.sectionList.newControl(self)
         self.displayServerAndUser()
 
         self.setup()
@@ -871,9 +878,12 @@ class ArtistWindow(ShowWindow):
 
         # This fully overrides ShowWindow.onFirstInit() rather than calling super(), so unlike
         # every other ShowWindow-based screen the sidebar's section list is never populated for
-        # free via inheritance - needs its own copy of the same three calls.
-        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
-        self.buildSectionList()
+        # free via inheritance - needs its own copy of the same build-or-reuse branch.
+        if self.sectionList is None:
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.buildSectionList()
+        else:
+            self.sectionList.newControl(self)
         self.displayServerAndUser()
 
         self.setup()
