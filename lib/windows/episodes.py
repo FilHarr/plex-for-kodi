@@ -982,7 +982,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 return
             item = mli.dataSource
 
-        self.processCommand(opener.open(item, came_from=came_from,
+        self.processCommand(opener.open(item, context=self, came_from=came_from,
                                         entry_section_id=self.entrySectionId,
                                         entry_from_watchlist=self.entryFromWatchlist))
 
@@ -1431,6 +1431,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.cameFrom = "show"
             self.processCommand(opener.open(
                 mli.dataSource.show().ratingKey,
+                context=self,
                 came_from=mli.dataSource.season().ratingKey,
                 server=mli.dataSource.server,
                 entry_section_id=self.entrySectionId,
@@ -1439,7 +1440,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         elif choice['key'] == 'to_section':
             self.cameFrom = "library"
             section = plexlibrary.LibrarySection.fromFilter(mli.dataSource.show())
-            self.processCommand(opener.sectionClicked(section,
+            self.processCommand(opener.sectionClicked(section, context=self,
                 came_from=mli.dataSource.show().ratingKey)
             )
         elif choice['key'] == 'delete':

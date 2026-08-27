@@ -58,5 +58,5 @@ class RolesMixin(object):
             return
 
         # Open the actor detail window directly
-        self.processCommand(opener.open(role, section_id=self.roleSectionId(),
+        self.processCommand(opener.open(role, context=self, section_id=self.roleSectionId(),
                                         from_watchlist=self.roleFromWatchlist()))

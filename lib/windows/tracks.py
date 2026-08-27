@@ -415,7 +415,7 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             self.updateItems(item)
             util.MONITOR.watchStatusChanged()
         elif choice['key'] == 'to_artist':
-            self.processCommand(opener.open(self.album.parentRatingKey, entry_section_id=self.entrySectionId))
+            self.processCommand(opener.open(self.album.parentRatingKey, context=self, entry_section_id=self.entrySectionId))
         elif choice['key'] == 'to_section':
             self.goHome(self.album.getLibrarySectionId())
 

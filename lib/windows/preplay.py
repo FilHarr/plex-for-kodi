@@ -586,17 +586,17 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         elif choice['key'] == 'mark_unwatched':
             self.toggleWatched(self.video, state=False, **VIDEO_RELOAD_KW)
         elif choice['key'] == 'to_season':
-            self.processCommand(opener.open(self.video.parentRatingKey,
+            self.processCommand(opener.open(self.video.parentRatingKey, context=self,
                                             entry_section_id=self.entrySectionId,
                                             entry_from_watchlist=self.entryFromWatchlist))
         elif choice['key'] == 'to_show':
-            self.processCommand(opener.open(self.video.grandparentRatingKey,
+            self.processCommand(opener.open(self.video.grandparentRatingKey, context=self,
                                             entry_section_id=self.entrySectionId,
                                             entry_from_watchlist=self.entryFromWatchlist))
         elif choice['key'] == 'to_section':
             self.cameFrom = "library"
             section = plexlibrary.LibrarySection.fromFilter(self.video)
-            self.processCommand(opener.sectionClicked(section,
+            self.processCommand(opener.sectionClicked(section, context=self,
                                                       came_from=self.video.ratingKey)
                                 )
         elif choice['key'] == 'delete':
@@ -813,7 +813,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 return
             item = mli.dataSource
 
-        self.processCommand(opener.open(item, from_watchlist=self.fromWatchlist if inherit_from_watchlist else False,
+        self.processCommand(opener.open(item, context=self,
+                                        from_watchlist=self.fromWatchlist if inherit_from_watchlist else False,
                                         server=server, is_watchlisted=is_watchlisted,
                                         entry_section_id=self.entrySectionId,
                                         entry_from_watchlist=self.entryFromWatchlist, **kw))

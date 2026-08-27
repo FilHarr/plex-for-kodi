@@ -902,7 +902,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         from the outgoing shell (whose own back-references to self were already cleared) - at
         this point nothing in this object graph should still reference it, so a forced
         collection should free it (and its native window resources) immediately rather than
-        waiting on Python's own GC scheduling."""
+        waiting on Python's own GC scheduling.
+
+        Live-confirmed cosmetic cost of this being synchronous/inline: whatever's beneath the
+        addon's window stack (Kodi's own base skin) can flash through for the ~50-150ms this
+        blocks the next window's .modal() call - see plexobjects.py's PlexItemList/container
+        objects (item<->container is a genuine cycle only the collector, not refcounting, can
+        free) and this method's own git history for the investigation. Live-confirmed NOT
+        rescuable by moving this call to a background thread instead (tried and reverted): it
+        deadlocked Kodi outright, almost certainly because freeing the outgoing shell here
+        triggers native Kodi GUI-subsystem teardown, and doing that off-thread while the main
+        thread is simultaneously inside .modal()'s own native GUI code is a cross-thread
+        lock-order hazard. Must stay synchronous, before self._current's caller proceeds to the
+        next .modal() call - the flicker is the accepted tradeoff for not deadlocking."""
         import gc
         collected = gc.collect()
         util.DEBUG_LOG("Library: _setupCurrent({0}) forced gc.collect() after real-shell teardown, "
@@ -936,6 +948,29 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.openSection(force=True, **kwargs)
         else:
             self.swapTo(cls, push=False, **kwargs)
+
+    def swapToSection(self, section, filter_=None):
+        """hashed-orbiting-pizza.md Phase 4 item 8: genre/director/actor-tag filtered browsing
+        (opener.sectionClicked()/genreClicked(), clicked from a hosted shell's own "go to
+        section" option) reuses this LibraryWindow's own section-rendering in place, instead of
+        opener.handleOpen() opening a second nested LibraryWindow. Not swapTo(cls, ...) - there's
+        no new shell class involved, just different section/filter content on the same host, so
+        openSection() (the same in-place swap sidebar clicks already use) does the actual work.
+        Not the goHome(section=...) bubble either - that unwinds by closing, which would destroy
+        whatever chain (e.g. a hosted PrePlayWindow) this was clicked from, instead of preserving
+        it for Back to return to.
+
+        openSection() unconditionally clears _backStack before returning - correct for its own
+        ordinary callers (an explicit sidebar click really should abandon any chain in progress,
+        see its own comment), wrong here, where the whole point is to preserve the chain. Capture
+        the entry first (same two shapes swapTo() itself pushes) and re-append it after.
+        """
+        if self._isHostedShell:
+            entry = (self._current.__class__, self._currentKwargs)
+        else:
+            entry = (None, {'section': self.section, 'filter_': self.filter})
+        self.openSection(section, filter_=filter_, force=True)
+        self._backStack.append(entry)
 
     def switchTab(self, mode):
         """Swap this already-open window between content modes ('library' grid vs.
@@ -3718,7 +3753,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             if ITEM_TYPE == 'episode' or mli.dataSource.TYPE == 'episode' or mli.dataSource.TYPE == 'season':
                 self.openItem(mli.dataSource, **extra_kwargs)
             else:
-                self.processCommand(opener.handleOpen(subitems.ShowWindow, media_item=mli.dataSource, parent_list=self.showPanelControl, **extra_kwargs))
+                # hashed-orbiting-pizza.md Phase 4 item 3: self.openWindow(), not
+                # opener.handleOpen() directly - same reasoning as the PrePlayWindow branch below.
+                self.openWindow(subitems.ShowWindow, media_item=mli.dataSource, parent_list=self.showPanelControl, **extra_kwargs)
             if mli.dataSource.TYPE != 'season': # NOTE: A collection with Seasons doesn't have the leafCount/viewedLeafCount until you actually go into the season so we can't update the unwatched count here
                 updateUnwatchedAndProgress = True
         elif self.section.TYPE == 'movie' or mli.dataSource.TYPE == 'movie':
@@ -3749,8 +3786,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             if ITEM_TYPE == 'album' or mli.dataSource.TYPE == 'album' or mli.dataSource.TYPE == 'track':
                 self.openItem(mli.dataSource, entry_section_id=self.entrySectionId)
             else:
-                self.processCommand(opener.handleOpen(subitems.ArtistWindow, media_item=mli.dataSource, parent_list=self.showPanelControl,
-                                                       entry_section_id=self.entrySectionId, entry_from_watchlist=self.entryFromWatchlist))
+                # hashed-orbiting-pizza.md Phase 4 item 3: self.openWindow(), not
+                # opener.handleOpen() directly - same reasoning as the PrePlayWindow branch above.
+                self.openWindow(subitems.ArtistWindow, media_item=mli.dataSource, parent_list=self.showPanelControl,
+                                 entry_section_id=self.entrySectionId, entry_from_watchlist=self.entryFromWatchlist)
         elif self.section.TYPE in ('photo', 'photodirectory'):
             self.showPhoto(mli.dataSource)
         elif self.section.TYPE == 'playlists':
@@ -3781,7 +3820,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if isinstance(photo, plexnet.photo.Photo) or photo.TYPE == 'clip':
             self.processCommand(opener.open(photo))
         else:
-            self.processCommand(opener.sectionClicked(photo))
+            self.processCommand(opener.sectionClicked(photo, context=self))
 
     def updateUnwatchedAndProgress(self, mli):
         mli.dataSource.reload()

@@ -141,6 +141,7 @@ class FakeHostWindow(object):
     _forceCollectOutgoing = library.LibraryWindow._forceCollectOutgoing
     swapTo = library.LibraryWindow.swapTo
     popBack = library.LibraryWindow.popBack
+    swapToSection = library.LibraryWindow.swapToSection
     _deferOpenSection = library.LibraryWindow._deferOpenSection
 
     def __init__(self):
@@ -205,6 +206,7 @@ _isRealShell = library.LibraryWindow._isRealShell
 _setupCurrent = library.LibraryWindow._setupCurrent
 swapTo = library.LibraryWindow.swapTo
 popBack = library.LibraryWindow.popBack
+swapToSection = library.LibraryWindow.swapToSection
 onAction = library.LibraryWindow.onAction
 
 
@@ -435,6 +437,67 @@ class SwapToAndBackStackTest(KodiTestCase):
         popBack(host)
         self.assertEqual([], host._backStack)
         self.assertEqual(1, len(host.openSectionCalls))
+
+
+class SwapToSectionTest(KodiTestCase):
+    """hashed-orbiting-pizza.md Phase 4 item 8: genre/director/actor-tag "go to section" clicks
+    reuse this LibraryWindow's own section-rendering in place (openSection()) rather than
+    swapping to a different shell class - but openSection() unconditionally clears _backStack
+    before returning (correct for its own ordinary sidebar-click callers, wrong here). Both fakes
+    below mimic that real clearing side effect, since a fake that silently kept _backStack intact
+    would pass even if swapToSection() forgot to re-append its own entry afterward."""
+
+    def _openSectionClearingBackStack(self, host):
+        def _fake(section, filter_=None, force=False):
+            host.openSectionCalls.append((section, filter_, force))
+            host._backStack = []
+            return True
+        return _fake
+
+    def test_from_a_hosted_shell_pushes_the_shells_own_reconstruction_entry(self):
+        host = FakeHostWindow()
+        _setupCurrent(host, FakeShell)  # host._current is now a real, hosted FakeShell
+        host._currentKwargs = {'video': 'the-movie'}
+        host.openSection = self._openSectionClearingBackStack(host)
+
+        swapToSection(host, 'new-section', filter_='new-filter')
+
+        self.assertEqual([('new-section', 'new-filter', True)], host.openSectionCalls)
+        self.assertEqual([(FakeShell, {'video': 'the-movie'})], host._backStack)
+
+    def test_from_the_grid_pushes_a_root_restore_entry(self):
+        host = FakeHostWindow()
+        host._current = FakeThinProxy(FakeThinProxy.xmlFile, FakeThinProxy.path, FakeThinProxy.theme, FakeThinProxy.res)
+        host._isHostedShell = False
+        host.section = 'old-section'
+        host.filter = 'old-filter'
+        host.openSection = self._openSectionClearingBackStack(host)
+
+        swapToSection(host, 'new-section', filter_='new-filter')
+
+        self.assertEqual([(None, {'section': 'old-section', 'filter_': 'old-filter'})], host._backStack)
+
+    def test_entry_is_captured_before_open_section_mutates_section_and_filter(self):
+        """Regression guard: swapToSection() must read self.section/self.filter for the pushed
+        entry BEFORE calling openSection() (which reassigns both to the new section/filter) - not
+        after, which would push the new section as if it were the old one, making Back a no-op."""
+        host = FakeHostWindow()
+        host._current = FakeThinProxy(FakeThinProxy.xmlFile, FakeThinProxy.path, FakeThinProxy.theme, FakeThinProxy.res)
+        host._isHostedShell = False
+        host.section = 'old-section'
+        host.filter = 'old-filter'
+
+        def _fakeMutatingOpenSection(section, filter_=None, force=False):
+            host.openSectionCalls.append((section, filter_, force))
+            host.section = section
+            host.filter = filter_
+            host._backStack = []
+            return True
+        host.openSection = _fakeMutatingOpenSection
+
+        swapToSection(host, 'new-section', filter_='new-filter')
+
+        self.assertEqual([(None, {'section': 'old-section', 'filter_': 'old-filter'})], host._backStack)
 
 
 class DeferOpenSectionTest(KodiTestCase):

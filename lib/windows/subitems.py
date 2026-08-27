@@ -586,7 +586,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 return
             item = mli.dataSource
 
-        self.processCommand(opener.open(item, from_watchlist=self.fromWatchlist if inherit_from_watchlist else False,
+        self.processCommand(opener.open(item, context=self,
+                                        from_watchlist=self.fromWatchlist if inherit_from_watchlist else False,
                                         server=server, is_watchlisted=is_watchlisted,
                                         entry_section_id=self.entrySectionId,
                                         entry_from_watchlist=self.entryFromWatchlist, **kw))
@@ -745,7 +746,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         elif choice['key'] == 'to_section':
             self.cameFrom = "library"
             section = plexlibrary.LibrarySection.fromFilter(self.mediaItem)
-            self.processCommand(opener.sectionClicked(section,
+            self.processCommand(opener.sectionClicked(section, context=self,
                                                       came_from=self.mediaItem.ratingKey)
                                 )
         elif choice['key'] == 'playback_settings':

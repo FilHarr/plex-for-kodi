@@ -13,8 +13,9 @@ def open(obj, context=None, **kwargs):
     that branch call context.openWindow(...) (swap in place if context is a live chain host,
     else fall back to today's handleOpen()) instead of always calling handleOpen() unconditionally.
     None (the default, used by every caller not passing it) preserves today's behavior exactly.
-    Only the movie branch (playableClicked()) is wired so far - every other branch below ignores
-    this parameter entirely until its own Phase 4 item threads it through."""
+    Wired for movie/episode/show/artist/season/album/director/actor (Phase 4 items 1-4);
+    photo/track/playlist/collection/genre/section branches still ignore this parameter and always
+    go through handleOpen()."""
     if isinstance(obj, playqueue.PlayQueue):
         if busy.widthDialog(obj.waitForInitialization, None):
             if obj.type == 'audio':
@@ -35,17 +36,17 @@ def open(obj, context=None, **kwargs):
         server = kwargs.pop("server", None) or plexapp.SERVERMANAGER.selectedServer
         return open(server.getObject(key), context=context, **kwargs)
     elif obj.TYPE == 'episode':
-        return episodeClicked(obj, **kwargs)
+        return episodeClicked(obj, context=context, **kwargs)
     elif obj.TYPE == 'movie':
         return playableClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('show'):
-        return showClicked(obj, **kwargs)
+        return showClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('artist'):
-        return artistClicked(obj, **kwargs)
+        return artistClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('season'):
-        return seasonClicked(obj, **kwargs)
+        return seasonClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('album'):
-        return albumClicked(obj, **kwargs)
+        return albumClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('photo',):
         return photoClicked(obj, **kwargs)
     elif obj.TYPE in ('photodirectory'):
@@ -63,11 +64,11 @@ def open(obj, context=None, **kwargs):
     elif obj.TYPE in ('collection'):
         return collectionClicked(obj, **kwargs)
     elif obj.TYPE in ('Genre'):
-        return genreClicked(obj, **kwargs)
+        return genreClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('Director'):
-        return directorClicked(obj, **kwargs)
+        return directorClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('Role'):
-        return actorClicked(obj, **kwargs)
+        return actorClicked(obj, context=context, **kwargs)
 
 
 def handleOpen(winclass, **kwargs):
@@ -120,28 +121,43 @@ def playableClicked(playable, context=None, **kwargs):
     return handleOpen(win, video=playable, **kwargs)
 
 
-def episodeClicked(episode, **kwargs):
+def episodeClicked(episode, context=None, **kwargs):
     from . import episodes
+    if context is not None:
+        context.openWindow(episodes.EpisodesWindow, episode=episode, **kwargs)
+        return ''
     return handleOpen(episodes.EpisodesWindow, episode=episode, **kwargs)
 
 
-def showClicked(show, **kwargs):
+def showClicked(show, context=None, **kwargs):
     from . import subitems
+    if context is not None:
+        context.openWindow(subitems.ShowWindow, media_item=show, **kwargs)
+        return ''
     return handleOpen(subitems.ShowWindow, media_item=show, **kwargs)
 
 
-def artistClicked(artist, **kwargs):
+def artistClicked(artist, context=None, **kwargs):
     from . import subitems
+    if context is not None:
+        context.openWindow(subitems.ArtistWindow, media_item=artist, **kwargs)
+        return ''
     return handleOpen(subitems.ArtistWindow, media_item=artist, **kwargs)
 
 
-def seasonClicked(season, **kwargs):
+def seasonClicked(season, context=None, **kwargs):
     from . import episodes
+    if context is not None:
+        context.openWindow(episodes.EpisodesWindow, season=season, **kwargs)
+        return ''
     return handleOpen(episodes.EpisodesWindow, season=season, **kwargs)
 
 
-def albumClicked(album, **kwargs):
+def albumClicked(album, context=None, **kwargs):
     from . import tracks
+    if context is not None:
+        context.openWindow(tracks.AlbumWindow, album=album, **kwargs)
+        return ''
     return handleOpen(tracks.AlbumWindow, album=album, **kwargs)
 
 
@@ -168,8 +184,19 @@ def collectionClicked(collection, **kwargs):
     return sectionClicked(collection, **kwargs)
 
 
-def sectionClicked(section, filter_=None, **kwargs):
+def sectionClicked(section, filter_=None, context=None, **kwargs):
     from . import library
+    if context is not None:
+        # hashed-orbiting-pizza.md Phase 4 item 8: reuse the live chain host's own
+        # section-rendering in place (LibraryWindow.swapToSection()) instead of always opening a
+        # second nested LibraryWindow below - preserves whatever chain (e.g. a hosted
+        # PrePlayWindow) this was clicked from, for Back to return to. **kwargs (came_from etc.)
+        # deliberately dropped on this path - meaningful only to a freshly-constructed
+        # LibraryWindow's own __init__, which this path never calls.
+        host = context._liveChainHost()
+        if host is not None:
+            host.swapToSection(section, filter_=filter_)
+            return ''
     library.ITEM_TYPE = section.TYPE
     key = section.key
     if not key or not key.isdigit():
@@ -187,17 +214,23 @@ def sectionClicked(section, filter_=None, **kwargs):
         )
 
 
-def genreClicked(genre, **kwargs):
+def genreClicked(genre, context=None, **kwargs):
     section = plexlibrary.LibrarySection.fromFilter(genre)
     filter_ = {'type': genre.FILTER, 'display': 'Genre', 'sub': {'val': genre.id, 'display': genre.tag}}
-    return sectionClicked(section, filter_, **kwargs)
+    return sectionClicked(section, filter_, context=context, **kwargs)
 
 
-def directorClicked(director, **kwargs):
+def directorClicked(director, context=None, **kwargs):
     from . import person as person_window
+    if context is not None:
+        context.openWindow(person_window.DirectorWindow, role=director, **kwargs)
+        return ''
     return handleOpen(person_window.DirectorWindow, role=director, **kwargs)
 
 
-def actorClicked(actor, **kwargs):
+def actorClicked(actor, context=None, **kwargs):
     from . import person as person_window
+    if context is not None:
+        context.openWindow(person_window.ActorWindow, role=actor, **kwargs)
+        return ''
     return handleOpen(person_window.ActorWindow, role=actor, **kwargs)
