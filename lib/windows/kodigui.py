@@ -218,6 +218,12 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self._panelLayer = 'a'
         self._panelColors = ('', '', '', '')
         self.dialogProps = kwargs.get("dialog_props", None)
+        # opener.py's handleOpen() reads w.exitCommand unconditionally on every window it opens
+        # this way (win.open(**kwargs) then `return w.exitCommand or ''`) - a BaseWindow subclass
+        # that never mixes in UtilMixin/MultiWindow (both of which already set this in their own
+        # __init__) and never sets it itself (e.g. PhotoWindow) hit this as a bare AttributeError
+        # instead of the intended empty-command default. Same default those two already use.
+        self.exitCommand = None
 
         carryProps = kwargs.get("window_props", None)
         if carryProps:
