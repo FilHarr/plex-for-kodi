@@ -37,6 +37,19 @@ BACKGROUND = None
 quitKodi = False
 restart = False
 skipEnsureLastUsed = False
+# Live-confirmed (kodi.log window/dialog-ID tracing) as the actual cause of a stuck black
+# screen/loading spinner after exit: updateLastUsedAddon()'s RunAddon(...)/Action(back) pair are
+# both fire-and-forget builtins with no synchronization between them, opening (and meant to
+# immediately back out of) Kodi's own native Programs content browser. Action(back) has no
+# guarantee that browser has actually opened yet when it fires - lose that race and the browser is
+# left stuck loading once it does open, with nothing left to dismiss it. A session that went
+# through a full sign-out -> re-authenticate cycle involves enough extra native window churn to
+# make Kodi slower to respond, making the race far more likely to be lost - confirmed reproducible
+# every time; a plain exit or a user-switch (no re-auth) never lost it in testing. Rather than
+# retime an already-fragile, unsynchronized builtin pair, skip this purely cosmetic feature
+# (ensure_lastused - keeps the addon's position in Kodi's own addon list current) for the one
+# scenario proven to trigger it, same shape as skipEnsureLastUsed's existing 'update' case.
+hadReauth = False
 
 
 if six.PY2:
@@ -97,11 +110,13 @@ def realExit():
     elif restart:
         xbmc.executebuiltin('RunScript(script.plexmod)')
     else:
-        if not skipEnsureLastUsed and util.getSetting('ensure_lastused'):
+        if not skipEnsureLastUsed and not hadReauth and util.getSetting('ensure_lastused'):
             updateLastUsedAddon()
 
 
 def signout():
+    global hadReauth
+    hadReauth = True
     util.setSetting('auth.token', '')
     # signing out always leaves local mode - staying in it would bounce us straight
     # back into an account-less local session, making the sign-out a visual no-op
