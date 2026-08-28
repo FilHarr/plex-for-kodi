@@ -166,7 +166,7 @@
             <texturenofocus>-</texturenofocus>
             <textoffsetx>0</textoffsetx>
             <textoffsety>0</textoffsety>
-            <label>[UPPERCASE]$INFO[Window.Property(filter2.display)][/UPPERCASE]</label>
+            <label>[CAPITALIZE]$INFO[Window.Property(filter2.display)][/CAPITALIZE]</label>
         </control>
         <control type="button" id="211">
             <width max="500">auto</width>
@@ -180,7 +180,7 @@
             <texturenofocus>-</texturenofocus>
             <textoffsetx>20</textoffsetx>
             <textoffsety>0</textoffsety>
-            <label>[UPPERCASE]$INFO[Window.Property(filter1.display)][/UPPERCASE]</label>
+            <label>[CAPITALIZE]$INFO[Window.Property(filter1.display)][/CAPITALIZE]</label>
         </control>
         <control type="button" id="310">
             <visible>!String.IsEqual(Window.Property(media),artist)</visible>
@@ -194,10 +194,9 @@
             <align>center</align>
             <aligny>center</aligny>
             <texturenofocus>-</texturenofocus>
-            <texturenofocus>-</texturenofocus>
             <textoffsetx>20</textoffsetx>
             <textoffsety>0</textoffsety>
-            <label>[UPPERCASE]$INFO[Window.Property(media.type)][/UPPERCASE]</label>
+            <label>[CAPITALIZE]$INFO[Window.Property(media.type)][/CAPITALIZE]</label>
         </control>
         <control type="button" id="312">
             <visible>String.IsEqual(Window.Property(media),artist)</visible>
@@ -213,9 +212,44 @@
             <texturenofocus>-</texturenofocus>
             <textoffsetx>20</textoffsetx>
             <textoffsety>0</textoffsety>
-            <label>[UPPERCASE]$INFO[Window.Property(media.type)][/UPPERCASE]</label>
+            <label>[CAPITALIZE]$INFO[Window.Property(media.type)][/CAPITALIZE]</label>
+        </control>
+        <control type="button" id="212">
+            <!-- Ascending/descending indicator for the sort button below - see sortButtonClicked()/
+                 updateSortIcon() (library.py). type=button + enable=false, not type=image: a
+                 plain image here isn't a focusable-eligible control type, which breaks the
+                 grouplist's internal navigation. Direct grouplist child at the row's own full
+                 height (not a shorter box + <posy>, and not wrapped in a group): a shorter box
+                 with an explicit posy offset - even nested one level inside a group - measurably
+                 broke this row's right-navigation out to the play button when this sat after 210
+                 instead of before it, for reasons that didn't trace back to any onright value.
+                 Matching every sibling's plain full-height footprint is what's proven not to
+                 disturb it, so the vertical offset is baked into the sort-asc/desc.png canvas's
+                 own transparent padding instead of a posy tag. Two mutually-exclusive
+                 static-texture buttons, not one dynamic $INFO path - $INFO[Window.Property(...)]
+                 isn't evaluated inside <texturenofocus> the way it is inside an image control's
+                 <texture>, so that only rendered an empty box. Same swap-on-a-property pattern
+                 310/312 already use above for the media-type button's artist variant. -->
+            <visible>!String.IsEqual(Window.Property(sort.icon),desc)</visible>
+            <enable>false</enable>
+            <width>{{ vscale(30) }}</width>
+            <height>{{ vscale(65) }}</height>
+            <texturefocus>-</texturefocus>
+            <texturenofocus>script.plex/indicators/sort-asc.png</texturenofocus>
+        </control>
+        <control type="button" id="213">
+            <visible>String.IsEqual(Window.Property(sort.icon),desc)</visible>
+            <enable>false</enable>
+            <width>{{ vscale(30) }}</width>
+            <height>{{ vscale(65) }}</height>
+            <texturefocus>-</texturefocus>
+            <texturenofocus>script.plex/indicators/sort-desc.png</texturenofocus>
         </control>
         <control type="button" id="210">
+            <!-- Explicit, not relying on the grouplist's own onright: nothing else follows 210
+                 in this (unused) template. Targets 301 (the play button) directly, not
+                 container 300. -->
+            <onright>301</onright>
             <width max="300">auto</width>
             <height>{{ vscale(65) }}</height>
             <font>font12</font>
@@ -227,7 +261,7 @@
             <texturenofocus>-</texturenofocus>
             <textoffsetx>20</textoffsetx>
             <textoffsety>0</textoffsety>
-            <label>[UPPERCASE]$INFO[Window.Property(sort.display)][/UPPERCASE]</label>
+            <label>[CAPITALIZE]$INFO[Window.Property(sort.display)][/CAPITALIZE]</label>
         </control>
     </control>
     {% endblock filteropts_grouplist %}

@@ -1988,10 +1988,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         try:
             self.setProperty('sort.display',
                              SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
+            self.updateSortIcon()
         except TypeError:
             self.resetSort()
-            self.setProperty('sort.display',
-                             SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
         self.setProperty('media.itemType', ITEM_TYPE or self.section.TYPE)
         self.setProperty('media.type', TYPE_PLURAL.get(ITEM_TYPE or self.section.TYPE, self.section.TYPE))
         self.setProperty('media', self.section.TYPE)
@@ -3433,6 +3432,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.goHome(self.section.getLibrarySectionId())
 
     def itemTypeButtonClicked(self):
+        # Button stays visible on the Collections tab (its own visibility only checks
+        # section.TYPE, not ITEM_TYPE), but none of the branches below ever offer a
+        # 'collection' option to select - same no-op-click treatment 'playlists' already
+        # gets further down for a type with no dropdown options at all.
+        if ITEM_TYPE == 'collection':
+            return
+
         options = []
 
         # 'collection' deliberately excluded from every branch below - promoted to a real tab
@@ -3529,6 +3535,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.setProperty('media.type', TYPE_PLURAL.get(ITEM_TYPE or self.section.TYPE, self.section.TYPE))
             try:
                 self.setProperty('sort.display', SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
+                self.updateSortIcon()
             except TypeError:
                 # stored sort isn't valid for this item type
                 self.resetSort()
@@ -3640,6 +3647,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         util.setGlobalProperty('sort', choice)
         self.setProperty('sort.display', result['display'])
+        self.updateSortIcon()
 
         self.sortShowPanel(choice, True, keep_focus=True)
 
@@ -3843,6 +3851,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         util.setGlobalProperty('sort', self.sort)
         self.setProperty('sort.display', SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
+        self.updateSortIcon()
+
+    def updateSortIcon(self):
+        # A plain token, not a texture path: $INFO[Window.Property(...)] isn't evaluated inside
+        # a button's <texturenofocus> the way it is inside an image control's <texture> (that
+        # only resolved to a broken path, rendering an empty box) - so the skin instead flips
+        # between two static-texture placeholder buttons on this property, same as it already
+        # does for the media-type button's artist/non-artist variants (310/312).
+        self.setProperty('sort.icon', self.sortDesc and 'desc' or 'asc')
 
     def updateFilterDisplay(self):
         boolLabels = [self._filterLabel(k, k) for k, on in self.boolFilters.items() if on]

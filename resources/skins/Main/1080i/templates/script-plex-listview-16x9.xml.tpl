@@ -9,12 +9,12 @@
     <!-- Swapped with the buttons row (300): this row now sits where 300 used to (left,
          next to the sidebar), so it needs the same expand-slide 300 used to have. -->
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
-    <posx>90</posx>
+    <posx>105</posx>
     <posy>{{ vscale(127.5) }}</posy>
     <width>870</width>
     <height>{{ vscale(65) }}</height>
     <align>left</align>
-    <itemgap>15</itemgap>
+    <itemgap>0</itemgap>
     <orientation>horizontal</orientation>
     <onleft>9000</onleft>
     <onright>300</onright>
@@ -36,7 +36,7 @@
         <texturenofocus>-</texturenofocus>
         <textoffsetx>0</textoffsetx>
         <textoffsety>0</textoffsety>
-        <label>[UPPERCASE]$INFO[Window.Property(filter2.display)][/UPPERCASE]</label>
+        <label>[CAPITALIZE]$INFO[Window.Property(filter2.display)][/CAPITALIZE]</label>
     </control>
     <control type="button" id="211">
         <visible>!String.IsEqual(Window.Property(media.itemType),folder)</visible>
@@ -51,7 +51,7 @@
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
-        <label>[UPPERCASE]$INFO[Window.Property(filter1.display)][/UPPERCASE]</label>
+        <label>[CAPITALIZE]$INFO[Window.Property(filter1.display)][/CAPITALIZE]</label>
     </control>
     <control type="button" id="310">
         <visible>String.IsEqual(Window.Property(subDir),1) | ![String.IsEqual(Window.Property(media),show) | String.IsEqual(Window.Property(media),movie) | String.IsEqual(Window.Property(media),movies_shows)]</visible>
@@ -65,10 +65,9 @@
         <align>center</align>
         <aligny>center</aligny>
         <texturenofocus>-</texturenofocus>
-        <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
-        <label>[UPPERCASE]$INFO[Window.Property(media.type)][/UPPERCASE]</label>
+        <label>[CAPITALIZE]$INFO[Window.Property(media.type)][/CAPITALIZE]</label>
     </control>
     <control type="button" id="312">
         <visible>!String.IsEqual(Window.Property(subDir),1) + [String.IsEqual(Window.Property(media),show) | String.IsEqual(Window.Property(media),movie) | String.IsEqual(Window.Property(media),movies_shows)]</visible>
@@ -84,7 +83,7 @@
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
-        <label>[UPPERCASE]$INFO[Window.Property(media.type)][/UPPERCASE]</label>
+        <label>[CAPITALIZE]$INFO[Window.Property(media.type)][/CAPITALIZE]</label>
     </control>
     <control type="button" id="314">
         <!-- Same disabled-button placeholder trick as 311/310/313: a plain <label> here
@@ -105,13 +104,60 @@
         <textoffsety>0</textoffsety>
         <label>$ADDON[script.plexmod 35052]</label>
     </control>
+    <control type="button" id="215">
+        <!-- Blank 15px gap before the sort-direction icon, since itemgap above is 0 -
+             disabled button (not a plain image), matching the same nav-safe placeholder
+             pattern used elsewhere in this row. -->
+        <visible>!String.IsEqual(Window.Property(media.itemType),folder)</visible>
+        <enable>false</enable>
+        <width>{{ vscale(15) }}</width>
+        <height>{{ vscale(65) }}</height>
+        <texturefocus>-</texturefocus>
+        <texturenofocus>-</texturenofocus>
+    </control>
+    <control type="button" id="212">
+        <!-- Ascending/descending indicator for the sort button below - see sortButtonClicked()/
+             updateSortIcon() (library.py). type=button + enable=false, not type=image: a plain
+             image here isn't a focusable-eligible control type, which breaks the grouplist's
+             internal navigation - same class of issue as the plain-label case 313 already
+             documents below. Direct grouplist child at the row's own full height (not a shorter
+             box + <posy>, and not wrapped in a group): a shorter box with an explicit posy
+             offset - even nested one level inside a group - measurably broke this row's
+             right-navigation out to the play button when this sat after 210 instead of before
+             it, for reasons that didn't trace back to any onright value. Matching every
+             sibling's plain full-height footprint is what's proven not to disturb it, so the
+             vertical offset is baked into the sort-asc/desc.png canvas's own transparent padding
+             instead of a posy tag. Sits before 210 (between 314 and it), not after: 314 is
+             already a proven-safe disabled placeholder ahead of a real focusable control, so
+             this just extends that same already-working internal-flow skip rather than
+             recreating the boundary-exit case 210's own onright comment covers. Two
+             mutually-exclusive static-texture buttons, not one dynamic $INFO path -
+             $INFO[Window.Property(...)] isn't evaluated inside <texturenofocus> the way it is
+             inside an image control's <texture>, so that only rendered an empty box. Same
+             swap-on-a-property pattern 310/312 already use above for the media-type button's
+             artist variant. -->
+        <visible>!String.IsEqual(Window.Property(media.itemType),folder) + !String.IsEqual(Window.Property(sort.icon),desc)</visible>
+        <enable>false</enable>
+        <width>{{ vscale(30) }}</width>
+        <height>{{ vscale(65) }}</height>
+        <texturefocus>-</texturefocus>
+        <texturenofocus>script.plex/indicators/sort-asc.png</texturenofocus>
+    </control>
+    <control type="button" id="213">
+        <visible>!String.IsEqual(Window.Property(media.itemType),folder) + String.IsEqual(Window.Property(sort.icon),desc)</visible>
+        <enable>false</enable>
+        <width>{{ vscale(30) }}</width>
+        <height>{{ vscale(65) }}</height>
+        <texturefocus>-</texturefocus>
+        <texturenofocus>script.plex/indicators/sort-desc.png</texturenofocus>
+    </control>
     <control type="button" id="210">
         <visible>!String.IsEqual(Window.Property(media.itemType),folder)</visible>
         <!-- Explicit, not relying on the grouplist's own onright: the trailing item-count
              label below is non-focusable, which stops the grouplist from falling through to
              its container-level onright when 210 is the last focusable (but not last
-             declared) child. -->
-        <onright>300</onright>
+             declared) child. Targets 301 (the play button) directly, not container 300. -->
+        <onright>301</onright>
         <width max="300">auto</width>
         <height>{{ vscale(65) }}</height>
         <font>font10</font>
@@ -123,14 +169,18 @@
         <texturenofocus>-</texturenofocus>
         <textoffsetx>20</textoffsetx>
         <textoffsety>0</textoffsety>
-        <label>[UPPERCASE]$INFO[Window.Property(sort.display)][/UPPERCASE]</label>
+        <label>[CAPITALIZE]$INFO[Window.Property(sort.display)][/CAPITALIZE]</label>
     </control>
     <control type="button" id="313">
         <!-- type=button + enable=false, not a plain label: a trailing plain <label> as the
              grouplist's last child breaks the list's onright boundary-fallback for whichever
              button precedes it (210 couldn't reach 300 on the right with a label here) - a
-             disabled button matches the already-working 311/310 placeholder pattern above. -->
+             disabled button matches the already-working 311/310 placeholder pattern above.
+             Explicit onright of its own (previously relied only on being unreachable since
+             disabled): belt-and-suspenders alongside 210/212/213's own onright, in case Kodi's
+             right-navigation ever lands focus attempts here instead of falling through. -->
         <enable>false</enable>
+        <onright>301</onright>
         <width max="400">auto</width>
         <height>{{ vscale(65) }}</height>
         <font>font10</font>
@@ -140,7 +190,7 @@
         <aligny>center</aligny>
         <texturefocus>-</texturefocus>
         <texturenofocus>-</texturenofocus>
-        <label>$INFO[Window.Property(items.count)] $INFO[Window.Property(screen.title)]</label>
+        <label>($INFO[Window.Property(items.count)] [LOWERCASE]$INFO[Window.Property(media.type)][/LOWERCASE])</label>
     </control>
 </control>
 {% endblock filteropts_grouplist %}
