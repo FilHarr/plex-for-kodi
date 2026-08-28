@@ -1,4 +1,6 @@
 # coding=utf-8
+import threading
+
 from kodi_six import xbmc
 from .settings_util import getSetting
 from .properties_core import _setGlobalProperty
@@ -176,7 +178,25 @@ class UtilityMonitor(xbmc.Monitor, signalsmixin.SignalsMixin):
 
         if getSetting('onss_library_back_home'):
             LOG("Monitor: OnScreensaverActivated: Triggering going home")
-            self.trigger('library.back_home')
+            # Deferred, not called inline: this whole method is itself a native xbmc.Monitor
+            # callback (OnScreensaverActivated), and the 'library.back_home' listener
+            # (LibraryWindow.goHomeRoot(), library.py) makes synchronous native GUI calls of its
+            # own (self.show()'s self._current.show(), and onReInit()'s setFocusId()/openSection())
+            # - nesting those under this callback is the same shape as the documented Kodi core
+            # OnAction() reentrancy crash (SKIN_RELOAD_DEFER_SECONDS, windowutils.py), just reached
+            # through OnScreensaverActivated instead of OnAction(). That surface was never covered
+            # by the live-testing behind 33de130a (button presses only, not the screensaver path).
+            # NOT a confirmed fix, same "cheap, low-risk mitigation" status every other
+            # SKIN_RELOAD_DEFER_SECONDS use in this codebase carries (see library.py's
+            # _deferOpenSection()) - a screensaver-triggered navigation freeze was still reproduced
+            # after this landed, traced to a separate, still-unresolved corruption of
+            # self.showPanelControl/self.hubControls (undersized control lists after the bounce,
+            # producing a "ChunkCallback: N not found"/RuntimeError storm on every later section
+            # swap - library.py's _chunkCallback()). Keeping this deferred anyway: it's a real
+            # instance of the same reentrancy shape regardless of whether it's THE cause of that
+            # bug, and deferring costs nothing.
+            from .windows import windowutils
+            threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.trigger, args=('library.back_home',)).start()
 
         # we've stopped playback during an onScreensaverActivated event, which deactivates the screensaver. Reactivate.
         if self.ignore_ssevent:
