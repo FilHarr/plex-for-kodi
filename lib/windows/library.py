@@ -706,6 +706,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # onFirstInit() knows to call buildTabList() again (not just newControl()) exactly when
         # a section swap crosses the playlists/non-playlists boundary.
         self._tabListIsPlaylists = False
+        # Same idea, second independent boundary: whether the Categories tab should be present
+        # (section.TYPE in ('movie', 'show') only) - see onFirstInit()'s own comment.
+        self._tabListHasCategories = False
 
         # Stage 3 (quiet-orbiting-heron.md's Cold Start plan): user-options dropdown (control 250,
         # includes/sidebar_dropdowns.xml.tpl - shared, generic markup, already wired into every
@@ -963,7 +966,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         this call (e.g. the root-restore entry pushed when a chain first entered a hosted shell)
         needs preserving too, not just the one entry for returning to *this* call's own shell.
         Without capturing the whole preceding stack, a second swapToSection() deeper in the same
-        chain would only ever remember one hop back - the second Back would find an empty stack
+        chain (e.g. genres.py's GenreBrowserWindow: enter Categories, click a genre, then Back
+        twice) would only ever remember one hop back - the second Back would find an empty stack
         and fall through to ordinary NAV_BACK handling instead of unwinding the rest of the chain.
         """
         precedingBackStack = self._backStack
@@ -979,6 +983,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         'recommended' hubs) in place, the same construct-fresh-via-_open()'s-loop pattern
         openSection() already uses for section swaps - see that method's own docstring for why
         in-place mutation, not a fresh object, is the safe shape here.
+
+        Also reached (mode always 'library'/'recommended', never 'categories') when leaving the
+        Categories tab (genres.py's GenreBrowserWindow, hosted via browseGenres()'s swapTo()) back
+        to an ordinary tab - self.contentMode is deliberately never mutated to 'categories' (see
+        browseGenres()/onClick()'s TAB_LIST_ID branch), so it still holds whatever content mode
+        was active before Categories was entered.
         """
         try:
             isCurrent = self.is_current_window
@@ -989,7 +999,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             util.DEBUG_LOG("Library: switchTab() declined - {0} not current window (descendant open, or closing)", self)
             return False
 
-        if mode == self.contentMode:
+        # self._isHostedShell: a real shell (Categories) can be fronting the *same* contentMode
+        # string the user is now clicking - e.g. they left from 'library', contentMode is still
+        # 'library', and they click the Library tab from inside Categories to return. A bare
+        # `mode == self.contentMode` would wrongly treat that as a no-op and leave Categories
+        # showing.
+        if mode == self.contentMode and not self._isHostedShell:
             return False
 
         self.tasks.kill()
@@ -1001,6 +1016,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._settleHubSlide()
         self._listGeneration += 1
         self.contentMode = mode
+        # An explicit tab click is exactly the case that should abandon any chain in progress -
+        # same reasoning openSection() already documents for itself (sidebar clicks). Without
+        # this, leaving Categories via a direct tab click (rather than Back/popBack()) would leave
+        # its root-restore back-stack entry stale, to be wrongly popped by some later, unrelated
+        # NAV_BACK.
+        self._backStack = []
         # Persist per-section, same "sticky" treatment sort/filter/item-type already get - see
         # LibrarySettings.getContentMode()'s own docstring. Unconditional even for a TYPE=='mixed'
         # section (home_section) switching to 'library' (permanently empty there) - harmless to
@@ -1691,16 +1712,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         if self.tabList is None:
             self.tabList = kodigui.ManagedControlList(self, self.TAB_LIST_ID, 5)
-            self._tabListIsPlaylists = self.section.TYPE == 'playlists'
+            self._tabListNeedsRebuild(self.section)  # just to set the tracked flags - always builds below regardless
             self.buildTabList()
         else:
             self.tabList.newControl(self)
-            is_playlists = self.section.TYPE == 'playlists'
-            if is_playlists != self._tabListIsPlaylists:
-                # Crossed the playlists/non-playlists boundary since the tabList's 2 items were
-                # last built - newControl()'s usual rebind-in-place isn't enough here, the items
-                # themselves (Recommended/Library vs. Music/Video) need swapping out too.
-                self._tabListIsPlaylists = is_playlists
+            if self._tabListNeedsRebuild(self.section):
                 self.buildTabList()
             else:
                 self.updateActiveTabMarker()
@@ -2394,7 +2410,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # thread with no delay - live-confirmed as insufficient on its own) is what
                 # actually avoids it.
                 mode = mli.getProperty('content.mode')
-                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.switchTab, args=(mode,)).start()
+                if mode == 'categories':
+                    threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.browseGenres).start()
+                else:
+                    threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.switchTab, args=(mode,)).start()
             return
 
         if controlID == self.USER_LIST_ID:
@@ -2835,6 +2854,25 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.navSettings["order"] = [i.dataSource.key for i in self.sectionList.items if i.dataSource]
             self.saveNavSettings()
 
+    def _tabListNeedsRebuild(self, section):
+        """True (and updates self._tabListIsPlaylists/self._tabListHasCategories to match
+        `section`) if buildTabList() needs to fully rebuild the tab-list's item set for it, not
+        just rebind (newControl()) - two independent boundaries: the playlists/non-playlists one
+        (Music/Video vs. Recommended/Library) and the movie-or-show/other one (whether the
+        Categories tab belongs there). Live-confirmed bug this guards against: before this
+        existed, onFirstInit() only ever compared the playlists boundary, so a swap between two
+        non-playlists sections that differed only in Categories-eligibility (e.g. Show -> Artist,
+        or worse, whichever section this LibraryWindow instance happened to build its tab list for
+        first -> Movie) silently kept showing/hiding Categories based on stale state instead of
+        the section actually on screen.
+        """
+        is_playlists = section.TYPE == 'playlists'
+        has_categories = section.TYPE in ('movie', 'show')
+        needsRebuild = is_playlists != self._tabListIsPlaylists or has_categories != self._tabListHasCategories
+        self._tabListIsPlaylists = is_playlists
+        self._tabListHasCategories = has_categories
+        return needsRebuild
+
     def buildTabList(self):
         """Populate the section-tabs row: Recommended/Library normally (plan item 0,
         quiet-orbiting-heron.md), or Music/Video for the Playlists section instead - per the
@@ -2843,11 +2881,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         either (always grid), so this reuses the same 2-tab row for the Audio/Video item-type
         choice instead - the same choice the old floating item-type button (312,
         ITEM_TYPE_BUTTON_ID) used to offer via a dropdown for this section, before it became
-        playlists-hidden (see itemTypeButtonClicked()'s own comment). self._tabListIsPlaylists
-        (set by onFirstInit() immediately before calling this) picks which flavor gets built -
-        called once per LibraryWindow lifetime for a given flavor, then only rebound
-        (newControl()) on further same-flavor swaps, and rebuilt again if a swap crosses the
-        playlists/non-playlists boundary - see onFirstInit()'s own comment. Recommended/Library's
+        playlists-hidden (see itemTypeButtonClicked()'s own comment). self._tabListIsPlaylists/
+        self._tabListHasCategories (both kept in sync by _tabListNeedsRebuild(), called from
+        onFirstInit() immediately before this) pick which flavor gets built - called once per
+        LibraryWindow lifetime for a given flavor, then only rebound (newControl()) on further
+        same-flavor swaps, and rebuilt again if a swap crosses either boundary - see
+        _tabListNeedsRebuild()'s own comment. Recommended/Library's
         labels are plain hardcoded English, not T()-translated - no existing translation string
         to reuse there, and adding new ones was a separate concern from that original pass;
         Music/Video reuse existing strings since this is porting an already-translated dropdown's
@@ -2866,18 +2905,30 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 mli.setProperty('item', '1')
                 mli.setProperty('content.mode', mode)
                 items.append(mli)
+            if self.section.TYPE in ('movie', 'show'):
+                # Categories (genres.py's GenreBrowserWindow) - not a real contentMode (see
+                # switchTab()'s own comment), just another tab entry pointing at browseGenres()
+                # instead of switchTab() - see onClick()'s TAB_LIST_ID branch.
+                mli = kodigui.ManagedListItem(T(34102, 'Categories'))
+                mli.setProperty('item', '1')
+                mli.setProperty('content.mode', 'categories')
+                items.append(mli)
 
         self.tabList.reset()
         self.tabList.addItems(items)
         self.updateActiveTabMarker()
 
-    def updateActiveTabMarker(self):
+    def updateActiveTabMarker(self, active_override=None):
         """Update 'current' on the tab list items to highlight the active tab - self.contentMode
         normally (Recommended/Library), or the active ITEM_TYPE for the Playlists section's
         Music/Video tabs instead (self._tabListIsPlaylists). Same key-matched-property pattern
         updateActiveSectionMarker() uses for the sidebar, called both right after buildTabList()
         and whenever the active tab changes (switchTab() for contentMode,
         _applyItemTypeChoice() for ITEM_TYPE).
+
+        active_override: genres.py's GenreBrowserWindow passes 'categories' here once hosted -
+        self.contentMode is deliberately never mutated to 'categories' (switchTab()'s own
+        comment), so there'd otherwise be nothing to mark that tab active while it's showing.
         """
         if not self.tabList:
             return
@@ -2885,7 +2936,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if self._tabListIsPlaylists:
             key, active = 'item.type', ITEM_TYPE
         else:
-            key, active = 'content.mode', self.contentMode
+            key, active = 'content.mode', active_override or self.contentMode
 
         for i in range(self.tabList.size()):
             mli = self.tabList[i]
@@ -3082,8 +3133,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def browseGenres(self):
         from . import genres as genres_window
-        self.processCommand(opener.handleOpen(genres_window.GenreBrowserWindow,
-                                              section=self.section))
+        self.swapTo(genres_window.GenreBrowserWindow, section=self.section)
 
     def keyClicked(self):
         li = self.keyListControl.getSelectedItem()
@@ -3279,11 +3329,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if self.section.TYPE == 'show':
             for t in ('show', 'episode', 'collection'):
                 options.append({'type': t, 'display': TYPE_PLURAL.get(t, t)})
-            options.append({'type': 'browse_genres', 'display': T(34102, 'Categories')})
         elif self.section.TYPE == 'movie':
             for t in ('movie', 'collection'):
                 options.append({'type': t, 'display': TYPE_PLURAL.get(t, t)})
-            options.append({'type': 'browse_genres', 'display': T(34102, 'Categories')})
             options.append({'type': 'folder', 'display': TYPE_PLURAL.get('folder', 'folder')})
         elif self.section.TYPE == 'artist':
             for t in ('artist', 'album', 'collection', 'track'):
@@ -3312,10 +3360,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return
 
         choice = result['type']
-
-        if choice == 'browse_genres':
-            self.browseGenres()
-            return
 
         self._applyItemTypeChoice(choice)
 

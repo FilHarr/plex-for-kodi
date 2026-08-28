@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 import json
+import threading
 
 from plexnet import plexapp, plexobjects
 
@@ -22,6 +23,7 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
     height = 1080
 
     GENRE_PANEL_ID = 101
+    TAB_LIST_ID = 320
 
     PLAYER_STATUS_BUTTON_ID = 204
 
@@ -31,6 +33,11 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         self.section = kwargs.get('section')
         self.exitCommand = None
         self.lastFocusID = None
+        # hashed-orbiting-pizza.md Phase 4 follow-up: None here means "build my own sectionList"
+        # (a standalone/un-hosted open) - a hosted open (LibraryWindow._setupCurrent(), library.py)
+        # overwrites this with the host's own sectionList object before onFirstInit() runs.
+        self.sectionList = None
+        self.tabList = None
 
     def onFirstInit(self):
         self.genreListControl = kodigui.ManagedControlList(self, self.GENRE_PANEL_ID, 5)
@@ -39,9 +46,24 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         ))
         self.fillGenres()
 
-        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
-        self.buildSectionList()
+        if self.sectionList is None:
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.buildSectionList()
+        else:
+            self.sectionList.newControl(self)
         self.displayServerAndUser()
+
+        # library.xml.tpl's tab row (control 320, inherited verbatim - script-plex-genres.xml.tpl
+        # extends library.xml.tpl) is what makes this screen's header/sidebar look identical to
+        # Library/Recommended - reuse the host's own tabList object exactly like sectionList
+        # above, then mark "categories" active on it (self.contentMode itself is never mutated to
+        # 'categories' - see library.py's switchTab()/browseGenres() comments). browseGenres() is
+        # this window's only genesis call site, always called from a LibraryWindow instance, which
+        # always self-hosts - so _chainHost is always live here in practice.
+        if self._chainHost is not None:
+            self.tabList = self._chainHost.tabList
+            self.tabList.newControl(self)
+            self._chainHost.updateActiveTabMarker(active_override='categories')
 
         self.setBoolProperty('initialized', True)
         self.setFocusId(self.GENRE_PANEL_ID)
@@ -78,6 +100,16 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
             self.showAudioPlayer()
         elif controlID == self.GENRE_PANEL_ID:
             self.genreClicked()
+        elif controlID == self.TAB_LIST_ID:
+            # Leaving Categories via a direct Library/Recommended tab click (not Back) -
+            # delegate to the host, same deferred-doClose() shape library.py's own TAB_LIST_ID
+            # handler uses, for the same reentrancy reason (windowutils.SKIN_RELOAD_DEFER_SECONDS).
+            mli = self.tabList.getSelectedItem()
+            if mli:
+                mode = mli.getProperty('content.mode')
+                if mode != 'categories' and self._chainHost is not None:
+                    threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS,
+                                    self._chainHost.switchTab, args=(mode,)).start()
 
     def onAction(self, action):
         if self.getFocusId() == self.SECTION_LIST_ID:
@@ -202,4 +234,4 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         key_str = str(cat.key)
         genre_id = key_str.split('genre=')[-1].split('&')[0] if 'genre=' in key_str else key_str
         filter_ = {'type': 'genre', 'display': T(32379, 'Genre'), 'sub': {'val': genre_id, 'display': str(cat.title)}}
-        self.processCommand(opener.sectionClicked(self.section, filter_=filter_))
+        self.processCommand(opener.sectionClicked(self.section, filter_=filter_, context=self))

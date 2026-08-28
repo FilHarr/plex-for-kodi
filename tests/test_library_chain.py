@@ -207,6 +207,7 @@ _setupCurrent = library.LibraryWindow._setupCurrent
 swapTo = library.LibraryWindow.swapTo
 popBack = library.LibraryWindow.popBack
 swapToSection = library.LibraryWindow.swapToSection
+switchTab = library.LibraryWindow.switchTab
 onAction = library.LibraryWindow.onAction
 
 
@@ -223,7 +224,7 @@ class IsRealShellTest(KodiTestCase):
         confirmed via grep against the live classes when this was written - if any of these ever
         grow a MULTI_WINDOW_ID, the bifurcation below silently starts treating it as a thin proxy
         instead of a real shell."""
-        from lib.windows import preplay, episodes, subitems, person, tracks, collection, playlist
+        from lib.windows import preplay, episodes, subitems, person, tracks, collection, playlist, genres
 
         realShellClasses = [
             preplay.PrePlayWindow, preplay.PrePlayWindowWL,
@@ -233,6 +234,7 @@ class IsRealShellTest(KodiTestCase):
             tracks.AlbumWindow,
             collection.CollectionWindow, collection.SubDirWindow,
             playlist.PlaylistWindow,
+            genres.GenreBrowserWindow,
         ]
         for cls in realShellClasses:
             self.assertTrue(_isRealShell(cls), "{0} unexpectedly carries MULTI_WINDOW_ID".format(cls))
@@ -501,7 +503,8 @@ class SwapToSectionTest(KodiTestCase):
         self.assertEqual([(None, {'section': 'old-section', 'filter_': 'old-filter'})], host._backStack)
 
     def test_preserves_whatever_was_already_on_the_backstack(self):
-        """Regression guard: a real bug - a second swapToSection() deeper in the same chain must
+        """Regression guard: a real bug found while building Categories - a second
+        swapToSection() deeper in the same chain (e.g. enter Categories, then click a genre) must
         not lose the entry that got it into the hosted shell in the first place. openSection()
         clears _backStack unconditionally; swapToSection() must restore whatever preceded its own
         entry, not just append to a blank stack - otherwise a second Back only ever unwinds one
@@ -517,6 +520,101 @@ class SwapToSectionTest(KodiTestCase):
         self.assertEqual(
             [(None, {'section': 'root-section', 'filter_': None}), (FakeShell, {'video': 'the-movie'})],
             host._backStack)
+
+
+class FakeTasks(object):
+    def __init__(self):
+        self.killed = False
+
+    def kill(self):
+        self.killed = True
+
+
+class FakeLibrarySettings(object):
+    def __init__(self):
+        self.contentModeCalls = []
+
+    def setContentMode(self, mode):
+        self.contentModeCalls.append(mode)
+
+
+class FakeSwitchTabHost(object):
+    """A hand-built double carrying only the attributes the real, bound switchTab() (imported
+    directly off library.LibraryWindow above) actually touches - not a real LibraryWindow
+    instance. See module docstring."""
+
+    def __init__(self):
+        self.is_current_window = True
+        self._isHostedShell = False
+        self.contentMode = 'library'
+        self.tasks = FakeTasks()
+        self.hubSlideSettled = False
+        self._listGeneration = 0
+        self._backStack = []
+        self.librarySettings = FakeLibrarySettings()
+        self.resetCalled = False
+        self.refill = False
+        self._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
+
+    def _settleHubSlide(self):
+        self.hubSlideSettled = True
+
+    def reset(self):
+        self.resetCalled = True
+
+
+class SwitchTabTest(KodiTestCase):
+    """hashed-orbiting-pizza.md Categories follow-up: two correctness fixes to switchTab(),
+    needed because a real shell (genres.py's GenreBrowserWindow, hosted via browseGenres()) can be
+    showing while self.contentMode still holds whatever it was before Categories was entered -
+    switchTab() is never itself called with mode='categories' (see its own docstring), only
+    'library'/'recommended', to leave Categories."""
+
+    def test_same_mode_is_a_genuine_noop_when_not_hosting_a_real_shell(self):
+        """Regression guard for the ordinary, pre-Categories case: clicking the tab you're already
+        on must stay a no-op."""
+        host = FakeSwitchTabHost()
+        host.contentMode = 'library'
+
+        result = switchTab(host, 'library')
+
+        self.assertFalse(result)
+        self.assertFalse(host.resetCalled)
+
+    def test_same_mode_proceeds_when_a_real_shell_is_fronting_it(self):
+        """The bug this guards against: leaving Categories via the Library tab when contentMode
+        was already 'library' before Categories was entered - the naive `mode == self.contentMode`
+        check would wrongly no-op and leave Categories showing."""
+        host = FakeSwitchTabHost()
+        host.contentMode = 'library'
+        host._isHostedShell = True
+
+        result = switchTab(host, 'library')
+
+        self.assertTrue(result)
+        self.assertTrue(host.resetCalled)
+        self.assertTrue(host._current.closed)
+
+    def test_clears_the_backstack_when_a_switch_actually_proceeds(self):
+        """An explicit tab click abandons any chain in progress - same reasoning openSection()
+        already applies to sidebar clicks. Without this, leaving Categories via a direct tab click
+        (not Back) would leave its root-restore entry stale on the stack."""
+        host = FakeSwitchTabHost()
+        host._isHostedShell = True
+        host._backStack = [(None, {'section': 'the-section', 'filter_': None})]
+
+        switchTab(host, 'recommended')
+
+        self.assertEqual([], host._backStack)
+
+    def test_declines_when_not_the_current_window(self):
+        host = FakeSwitchTabHost()
+        del host.is_current_window
+
+        result = switchTab(host, 'recommended')
+
+        self.assertFalse(result)
+        self.assertFalse(host.resetCalled)
 
 
 class DeferOpenSectionTest(KodiTestCase):
