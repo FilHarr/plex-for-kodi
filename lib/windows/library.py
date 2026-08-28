@@ -958,13 +958,21 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         ordinary callers (an explicit sidebar click really should abandon any chain in progress,
         see its own comment), wrong here, where the whole point is to preserve the chain. Capture
         the entry first (same two shapes swapTo() itself pushes) and re-append it after.
+
+        Bug fixed here: the entry alone isn't enough - whatever was ALREADY on _backStack before
+        this call (e.g. the root-restore entry pushed when a chain first entered a hosted shell)
+        needs preserving too, not just the one entry for returning to *this* call's own shell.
+        Without capturing the whole preceding stack, a second swapToSection() deeper in the same
+        chain would only ever remember one hop back - the second Back would find an empty stack
+        and fall through to ordinary NAV_BACK handling instead of unwinding the rest of the chain.
         """
+        precedingBackStack = self._backStack
         if self._isHostedShell:
             entry = (self._current.__class__, self._currentKwargs)
         else:
             entry = (None, {'section': self.section, 'filter_': self.filter})
         self.openSection(section, filter_=filter_, force=True)
-        self._backStack.append(entry)
+        self._backStack = precedingBackStack + [entry]
 
     def switchTab(self, mode):
         """Swap this already-open window between content modes ('library' grid vs.

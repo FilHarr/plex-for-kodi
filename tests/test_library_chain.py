@@ -499,6 +499,24 @@ class SwapToSectionTest(KodiTestCase):
 
         self.assertEqual([(None, {'section': 'old-section', 'filter_': 'old-filter'})], host._backStack)
 
+    def test_preserves_whatever_was_already_on_the_backstack(self):
+        """Regression guard: a real bug - a second swapToSection() deeper in the same chain must
+        not lose the entry that got it into the hosted shell in the first place. openSection()
+        clears _backStack unconditionally; swapToSection() must restore whatever preceded its own
+        entry, not just append to a blank stack - otherwise a second Back only ever unwinds one
+        hop instead of the whole chain."""
+        host = FakeHostWindow()
+        host._backStack = [(None, {'section': 'root-section', 'filter_': None})]
+        _setupCurrent(host, FakeShell)  # host._current is now a real, hosted FakeShell
+        host._currentKwargs = {'video': 'the-movie'}
+        host.openSection = self._openSectionClearingBackStack(host)
+
+        swapToSection(host, 'new-section', filter_='new-filter')
+
+        self.assertEqual(
+            [(None, {'section': 'root-section', 'filter_': None}), (FakeShell, {'video': 'the-movie'})],
+            host._backStack)
+
 
 class DeferOpenSectionTest(KodiTestCase):
     """hashed-orbiting-pizza.md's live-confirmed reentrancy hazard: kodi.log showed 7 concurrent
