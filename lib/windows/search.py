@@ -320,8 +320,8 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
             # window instead of swapping into a live chain, and everything drilled into further
             # from there kept nesting too, since a standalone (non-hosted) shell's own
             # _chainHost is always None - defeating the whole point of hosting for that entire
-            # sub-tree. context is a no-op for object types no dispatch branch is wired for yet
-            # (photo/track/playlist/photodirectory) - opener.open() already ignores it there.
+            # sub-tree. context is a no-op for object types no dispatch branch is wired for
+            # (photo/track) - opener.open() already ignores it there.
             command = opener.open(hubItem, context=self.parentWindow)
 
             if not hubItem.exists():

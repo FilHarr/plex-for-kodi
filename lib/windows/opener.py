@@ -50,7 +50,7 @@ def open(obj, context=None, **kwargs):
     elif obj.TYPE in ('photo',):
         return photoClicked(obj, **kwargs)
     elif obj.TYPE in ('photodirectory'):
-        return photoDirectoryClicked(obj, **kwargs)
+        return photoDirectoryClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('track'):
         album = obj.album()
         if album:
@@ -171,8 +171,8 @@ def trackClicked(track, **kwargs):
     return handleOpen(musicplayer.MusicPlayerWindow, track=track, **kwargs)
 
 
-def photoDirectoryClicked(photodirectory, **kwargs):
-    return sectionClicked(photodirectory, **kwargs)
+def photoDirectoryClicked(photodirectory, context=None, **kwargs):
+    return sectionClicked(photodirectory, context=context, **kwargs)
 
 
 def playlistClicked(pl, context=None, **kwargs):

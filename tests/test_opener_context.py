@@ -403,3 +403,47 @@ class GenreClickedContextTest(KodiTestCase):
         self.assertIs(fakeSection, section)
         self.assertEqual({'type': 'genre', 'display': 'Genre', 'sub': {'val': '5', 'display': 'Action'}}, filter_)
         self.assertIs(context, ctx)
+
+
+class PhotoDirectoryClickedContextTest(KodiTestCase):
+    """Regression test for a gap found after Phase 4/5: photoDirectoryClicked() forwarded neither
+    its own context param (didn't have one) nor did open()'s TYPE == 'photodirectory' branch pass
+    context through to it - so a photodirectory reached generically (a hub, search) always opened
+    standalone even though sectionClicked() underneath already supports hosting it. Mirrors
+    GenreClickedContextTest's shape - same structurally-different-from-items-1-5 pattern."""
+
+    def test_forwards_context_to_sectionClicked(self):
+        calls = []
+        originalSectionClicked = opener.sectionClicked
+
+        def fakeSectionClicked(section, filter_=None, context=None, **kwargs):
+            calls.append((section, filter_, context))
+            return ''
+
+        opener.sectionClicked = fakeSectionClicked
+        try:
+            context = object()
+            photodirectory = object()
+            opener.photoDirectoryClicked(photodirectory, context=context)
+        finally:
+            opener.sectionClicked = originalSectionClicked
+
+        self.assertEqual([(photodirectory, None, context)], calls)
+
+    def test_open_dispatch_forwards_context_for_photodirectory(self):
+        calls = []
+        originalPhotoDirectoryClicked = opener.photoDirectoryClicked
+
+        def fakePhotoDirectoryClicked(photodirectory, context=None, **kwargs):
+            calls.append((photodirectory, context))
+            return ''
+
+        opener.photoDirectoryClicked = fakePhotoDirectoryClicked
+        try:
+            context = object()
+            obj = FakeTyped('photodirectory')
+            opener.open(obj, context=context)
+        finally:
+            opener.photoDirectoryClicked = originalPhotoDirectoryClicked
+
+        self.assertEqual([(obj, context)], calls)
