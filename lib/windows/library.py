@@ -298,6 +298,13 @@ def _sectionHasCollections(section):
     real probe ever ran. No exception, nothing to log - exactly the symptom seen live. A plain
     module-level dict sidesteps PlexObject entirely.
 
+    Scoped to "for as long as we're in that section", not the process lifetime: openSection()
+    evicts a section's entry the moment it actually swaps to it (see its own call to
+    _invalidateSectionHasCollectionsCache()), so re-entering a section always re-probes live
+    (picks up collections created/removed since the last visit) while every onFirstInit() within
+    that same visit - including content-mode swaps, which trigger onFirstInit() too, not just
+    section changes - reuses the cached answer instead of re-hitting the server each time.
+
     Callers are expected to only call this for section types the item-type dropdown already
     offered 'collection' for (movie/show/artist) - no point probing types that structurally can't
     have any."""
@@ -311,6 +318,14 @@ def _sectionHasCollections(section):
         has = False
     _sectionHasCollectionsCache[cache_key] = has
     return has
+
+def _invalidateSectionHasCollectionsCache(section):
+    """Called from openSection() the moment it actually swaps to `section`, so the next
+    _sectionHasCollections() call for it (from _tabListNeedsRebuild(), via onFirstInit()
+    immediately after) re-probes live instead of trusting a possibly stale answer left over from
+    a previous visit - see _sectionHasCollections()'s own docstring for the caching scheme this is
+    half of."""
+    _sectionHasCollectionsCache.pop((section.server.uuid, section.key), None)
 
 class CreateDefaultItemsTask(backgroundthread.Task):
     def setup(self, startPos, count, totalSize, fallback, callback, key=None):
@@ -1169,6 +1184,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._listGeneration += 1
 
         self.section = section
+        # Force a fresh live Collections probe for the section we're now entering, rather than
+        # trusting whatever was cached from a previous visit - see _sectionHasCollections()'s own
+        # docstring. Harmless no-op for section types that were never eligible for the probe in
+        # the first place (nothing to evict).
+        _invalidateSectionHasCollectionsCache(section)
         # Keep SidebarMixin's own change-tracking in sync too (windowutils.py's
         # _dispatchSectionOpen()/_sectionChanged() gate every sidebar click/settled-focus on
         # `section == self.lastSection`) - not just whichever caller happened to reach this
@@ -2954,6 +2974,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         is_playlists = section.TYPE == 'playlists'
         has_categories = section.TYPE in ('movie', 'show')
         has_collections = section.TYPE in ('movie', 'show', 'artist') and _sectionHasCollections(section)
+        # Guards against the Collections tab vanishing out from under a still-'collection'
+        # ITEM_TYPE: LibrarySettings persists ITEM_TYPE per-section, so returning to a section
+        # that was left on Collections restores ITEM_TYPE='collection' (openSection() ->
+        # LibrarySettings.__init__() -> _loadSettings()) before this probe ever runs - if every
+        # collection has since been removed, has_collections above is correctly False, but nothing
+        # else would ever reset ITEM_TYPE back. Without this, the tab row falls back to
+        # highlighting Library as active (updateActiveTabMarker()'s has_collections check), while
+        # doRefill() keeps querying type=collection underneath it - an empty grid masquerading as
+        # the section having no content at all. Same reset _libraryTabItemType() already does for
+        # an explicit Library-tab click, just triggered here by the probe instead of a click.
+        if not has_collections and ITEM_TYPE == 'collection':
+            self.librarySettings.setItemType(section.TYPE)
         needsRebuild = (is_playlists != self._tabListIsPlaylists
                          or has_categories != self._tabListHasCategories
                          or has_collections != self._tabListHasCollections)

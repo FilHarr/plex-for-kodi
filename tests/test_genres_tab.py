@@ -101,6 +101,19 @@ class FakeSelectedItem(object):
         return ''
 
 
+class FakeLibrarySettings(object):
+    """Same shape as test_library_chain.py's own fake of the same name (kept local here rather
+    than shared, per this file's self-contained-fakes convention) - only setItemType() is ever
+    touched by _tabListNeedsRebuild()'s new reset-on-vanish path."""
+
+    def __init__(self):
+        self.itemTypeCalls = []
+
+    def setItemType(self, item_type):
+        self.itemTypeCalls.append(item_type)
+        return ''
+
+
 buildTabList = library.LibraryWindow.buildTabList
 libraryOnClick = library.LibraryWindow.onClick
 genresOnClick = genres.GenreBrowserWindow.onClick
@@ -134,9 +147,15 @@ class TabListNeedsRebuildTest(KodiTestCase):
             self._tabListIsPlaylists = False
             self._tabListHasCategories = False
             self._tabListHasCollections = False
+            self.librarySettings = FakeLibrarySettings()
 
     def setUp(self):
         patchSectionHasCollections(self, return_value=False)
+
+    def _setItemType(self, value):
+        original = library.ITEM_TYPE
+        library.ITEM_TYPE = value
+        self.addCleanup(lambda: setattr(library, 'ITEM_TYPE', original))
 
     def test_show_to_movie_does_not_need_a_rebuild(self):
         """Both get Categories - crosses neither boundary."""
@@ -188,6 +207,40 @@ class TabListNeedsRebuildTest(KodiTestCase):
         patchSectionHasCollections(self, return_value=True)
         self.assertTrue(tabListNeedsRebuild(host, FakeSection('movie')))
         self.assertTrue(host._tabListHasCollections)
+
+    def test_resets_item_type_when_collections_vanish_while_still_selected(self):
+        """The follow-up bug to the caching fix: returning to a section left on the Collections
+        tab restores ITEM_TYPE='collection' from LibrarySettings before this probe ever runs
+        (openSection() -> LibrarySettings.__init__()) - if every collection has since been
+        removed, has_collections goes False, but without this reset ITEM_TYPE would stay stuck on
+        'collection' with no tab left to represent it, silently emptying the Library grid."""
+        patchSectionHasCollections(self, return_value=False)
+        self._setItemType('collection')
+        host = self.FakeHost()
+
+        tabListNeedsRebuild(host, FakeSection('movie'))
+
+        self.assertEqual(['movie'], host.librarySettings.itemTypeCalls)
+
+    def test_does_not_reset_item_type_when_collections_still_present(self):
+        patchSectionHasCollections(self, return_value=True)
+        self._setItemType('collection')
+        host = self.FakeHost()
+
+        tabListNeedsRebuild(host, FakeSection('movie'))
+
+        self.assertEqual([], host.librarySettings.itemTypeCalls)
+
+    def test_does_not_reset_item_type_when_it_was_never_collection(self):
+        """The far more common case (item type is 'movie', 'episode', etc.) must not trigger a
+        spurious LibrarySettings write on every rebuild."""
+        patchSectionHasCollections(self, return_value=False)
+        self._setItemType('movie')
+        host = self.FakeHost()
+
+        tabListNeedsRebuild(host, FakeSection('movie'))
+
+        self.assertEqual([], host.librarySettings.itemTypeCalls)
 
     def test_collections_probe_only_runs_for_relevant_section_types(self):
         """photo/photodirectory/movies_shows/playlists structurally can't have collections - the
