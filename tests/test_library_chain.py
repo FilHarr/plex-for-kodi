@@ -208,6 +208,7 @@ swapTo = library.LibraryWindow.swapTo
 popBack = library.LibraryWindow.popBack
 swapToSection = library.LibraryWindow.swapToSection
 switchTab = library.LibraryWindow.switchTab
+switchToCollections = library.LibraryWindow.switchToCollections
 onAction = library.LibraryWindow.onAction
 
 
@@ -533,9 +534,13 @@ class FakeTasks(object):
 class FakeLibrarySettings(object):
     def __init__(self):
         self.contentModeCalls = []
+        self.itemTypeCalls = []
 
     def setContentMode(self, mode):
         self.contentModeCalls.append(mode)
+
+    def setItemType(self, item_type):
+        self.itemTypeCalls.append(item_type)
 
 
 class FakeSwitchTabHost(object):
@@ -615,6 +620,103 @@ class SwitchTabTest(KodiTestCase):
 
         self.assertFalse(result)
         self.assertFalse(host.resetCalled)
+
+    def test_item_type_none_never_persists_anything(self):
+        """Regression guard - every pre-Collections caller passes no item_type at all; that path
+        must stay exactly as cheap/inert as before."""
+        host = FakeSwitchTabHost()
+
+        switchTab(host, 'recommended')
+
+        self.assertEqual([], host.librarySettings.itemTypeCalls)
+
+    def test_item_type_persists_when_provided(self):
+        original = library.ITEM_TYPE
+        library.ITEM_TYPE = 'movie'
+        self.addCleanup(lambda: setattr(library, 'ITEM_TYPE', original))
+        host = FakeSwitchTabHost()
+
+        switchTab(host, 'library', item_type='collection')
+
+        self.assertEqual(['collection'], host.librarySettings.itemTypeCalls)
+
+    def test_item_type_change_bypasses_the_no_op_guard_even_when_mode_matches(self):
+        """The Collections-follow-up bug this guards against: Library-tab-from-Collections never
+        changes contentMode (it was 'library' throughout), so the ordinary mode-comparison no-op
+        guard alone would wrongly swallow the click and leave ITEM_TYPE stuck on 'collection'."""
+        original = library.ITEM_TYPE
+        library.ITEM_TYPE = 'collection'
+        self.addCleanup(lambda: setattr(library, 'ITEM_TYPE', original))
+        host = FakeSwitchTabHost()
+        host.contentMode = 'library'
+
+        result = switchTab(host, 'library', item_type='movie')
+
+        self.assertTrue(result)
+        self.assertTrue(host.resetCalled)
+        self.assertEqual(['movie'], host.librarySettings.itemTypeCalls)
+
+    def test_item_type_equal_to_current_does_not_bypass_the_no_op_guard(self):
+        """item_type matching the already-active ITEM_TYPE isn't a real change - must not
+        artificially defeat the no-op guard."""
+        original = library.ITEM_TYPE
+        library.ITEM_TYPE = 'movie'
+        self.addCleanup(lambda: setattr(library, 'ITEM_TYPE', original))
+        host = FakeSwitchTabHost()
+        host.contentMode = 'library'
+
+        result = switchTab(host, 'library', item_type='movie')
+
+        self.assertFalse(result)
+        self.assertFalse(host.resetCalled)
+
+
+class SwitchToCollectionsTest(KodiTestCase):
+    """switchToCollections() (buildTabList()'s Collections tab): an in-place ITEM_TYPE refill when
+    already on the ordinary library grid, otherwise a real contentMode swap via switchTab() (e.g.
+    starting from Recommended, or from a hosted shell like Categories fronting 'library') - see the
+    method's own docstring for why persisting item_type through switchTab() is enough, no separate
+    post-reconstruction hook needed."""
+
+    class FakeCollectionsHost(object):
+        def __init__(self, content_mode, is_hosted_shell=False):
+            self.contentMode = content_mode
+            self._isHostedShell = is_hosted_shell
+            self.appliedItemTypeChoices = []
+            self.switchTabCalls = []
+
+        def _applyItemTypeChoice(self, choice):
+            self.appliedItemTypeChoices.append(choice)
+
+        def switchTab(self, mode, item_type=None):
+            self.switchTabCalls.append((mode, item_type))
+
+    def test_in_place_refill_when_already_on_the_ordinary_library_grid(self):
+        host = self.FakeCollectionsHost('library')
+
+        switchToCollections(host)
+
+        self.assertEqual(['collection'], host.appliedItemTypeChoices)
+        self.assertEqual([], host.switchTabCalls)
+
+    def test_real_switch_from_recommended(self):
+        host = self.FakeCollectionsHost('recommended')
+
+        switchToCollections(host)
+
+        self.assertEqual([], host.appliedItemTypeChoices)
+        self.assertEqual([('library', 'collection')], host.switchTabCalls)
+
+    def test_real_switch_when_a_hosted_shell_is_fronting_library(self):
+        """Categories can front contentMode == 'library' without switchTab() itself having been
+        the thing that got there - _isHostedShell, not contentMode alone, is what actually means
+        "the ordinary grid is on screen right now."""
+        host = self.FakeCollectionsHost('library', is_hosted_shell=True)
+
+        switchToCollections(host)
+
+        self.assertEqual([], host.appliedItemTypeChoices)
+        self.assertEqual([('library', 'collection')], host.switchTabCalls)
 
 
 class DeferOpenSectionTest(KodiTestCase):

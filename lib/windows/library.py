@@ -282,6 +282,36 @@ def getQueryItemType(section, fallback_to_section_type=False, force_include_coll
         type_ = "{},{}".format(type_, 18)
     return type_
 
+_sectionHasCollectionsCache = {}
+
+def _sectionHasCollections(section):
+    """Cheap existence probe (X-Plex-Container-Size=0, same shape as collection.py's own
+    leafCount probe) for the Collections tab's visibility gate.
+
+    Cached in a module-level dict keyed by (server uuid, section key), NOT as an attribute on the
+    section object itself - live-confirmed as the actual reason the Collections tab never appeared
+    at all: PlexObject.__getattr__ (plexobjects.py) auto-vivifies ANY undefined attribute access
+    into an empty PlexValue('', self) instead of raising AttributeError, and even writes that
+    sentinel back onto the instance via setattr() as a side effect of the lookup itself - so
+    getattr(section, '<made-up-name>', None) can never see a real cache miss (default None); the
+    very first check already returns that non-None empty sentinel, short-circuiting before the
+    real probe ever ran. No exception, nothing to log - exactly the symptom seen live. A plain
+    module-level dict sidesteps PlexObject entirely.
+
+    Callers are expected to only call this for section types the item-type dropdown already
+    offered 'collection' for (movie/show/artist) - no point probing types that structurally can't
+    have any."""
+    cache_key = (section.server.uuid, section.key)
+    if cache_key in _sectionHasCollectionsCache:
+        return _sectionHasCollectionsCache[cache_key]
+    try:
+        has = bool(section.all(start=0, size=0, type_=plexobjects.SEARCHTYPES.get('collection')).totalSize.asInt())
+    except:
+        util.ERROR()
+        has = False
+    _sectionHasCollectionsCache[cache_key] = has
+    return has
+
 class CreateDefaultItemsTask(backgroundthread.Task):
     def setup(self, startPos, count, totalSize, fallback, callback, key=None):
         self.startPos = startPos
@@ -709,6 +739,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Same idea, second independent boundary: whether the Categories tab should be present
         # (section.TYPE in ('movie', 'show') only) - see onFirstInit()'s own comment.
         self._tabListHasCategories = False
+        # Third independent boundary: whether the Collections tab should be present - gated on
+        # section.TYPE in ('movie', 'show', 'artist') (same types the item-type dropdown used to
+        # offer 'collection' for) AND an actual existence probe (_sectionHasCollections()), unlike
+        # Categories which never checks genre existence.
+        self._tabListHasCollections = False
 
         # Stage 3 (quiet-orbiting-heron.md's Cold Start plan): user-options dropdown (control 250,
         # includes/sidebar_dropdowns.xml.tpl - shared, generic markup, already wired into every
@@ -978,7 +1013,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.openSection(section, filter_=filter_, force=True)
         self._backStack = precedingBackStack + [entry]
 
-    def switchTab(self, mode):
+    def switchTab(self, mode, item_type=None):
         """Swap this already-open window between content modes ('library' grid vs.
         'recommended' hubs) in place, the same construct-fresh-via-_open()'s-loop pattern
         openSection() already uses for section swaps - see that method's own docstring for why
@@ -989,6 +1024,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         to an ordinary tab - self.contentMode is deliberately never mutated to 'categories' (see
         browseGenres()/onClick()'s TAB_LIST_ID branch), so it still holds whatever content mode
         was active before Categories was entered.
+
+        item_type: optional - the Collections tab isn't a real contentMode either (like
+        Categories, it stays 'library'), so escaping it (a Library-tab click, from this window's
+        own onClick() or genres.py's delegation) needs to explicitly reset ITEM_TYPE back to this
+        section's own native type, not just leave it stuck on 'collection'. None (every other
+        caller) leaves ITEM_TYPE untouched, exactly today's behavior. switchToCollections() is the
+        entry point for the opposite direction (switching *to* 'collection'), calling this
+        directly with item_type='collection' only when a real contentMode swap is needed too (i.e.
+        starting from 'recommended' or a hosted shell) - see its own docstring.
         """
         try:
             isCurrent = self.is_current_window
@@ -999,12 +1043,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             util.DEBUG_LOG("Library: switchTab() declined - {0} not current window (descendant open, or closing)", self)
             return False
 
+        itemTypeChanging = item_type is not None and item_type != ITEM_TYPE
+
         # self._isHostedShell: a real shell (Categories) can be fronting the *same* contentMode
         # string the user is now clicking - e.g. they left from 'library', contentMode is still
         # 'library', and they click the Library tab from inside Categories to return. A bare
         # `mode == self.contentMode` would wrongly treat that as a no-op and leave Categories
-        # showing.
-        if mode == self.contentMode and not self._isHostedShell:
+        # showing. itemTypeChanging is the same idea for Collections, which doesn't front a
+        # different contentMode at all - without it, Library-tab-from-Collections (contentMode
+        # stays 'library' throughout) would wrongly no-op too.
+        if mode == self.contentMode and not self._isHostedShell and not itemTypeChanging:
             return False
 
         self.tasks.kill()
@@ -1016,6 +1064,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._settleHubSlide()
         self._listGeneration += 1
         self.contentMode = mode
+        if item_type is not None:
+            self.librarySettings.setItemType(item_type)
         # An explicit tab click is exactly the case that should abandon any chain in progress -
         # same reasoning openSection() already documents for itself (sidebar clicks). Without
         # this, leaving Categories via a direct tab click (rather than Back/popBack()) would leave
@@ -1035,6 +1085,35 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         util.DEBUG_LOG("Library: switchTab() swapping in place to {0}", mode)
         self._current.doClose()
         return True
+
+    def _libraryTabItemType(self):
+        """Item type to request when the Library tab is clicked, from anywhere (this window's own
+        onClick(), or a hosted Categories shell delegating back via genres.py) - resets away from
+        'collection' back to this section's own native type (movie/show/artist are all valid
+        ITEM_TYPE values for their own section, same values the item-type dropdown used to offer
+        directly) if that's where Collections left ITEM_TYPE, otherwise None so switchTab() leaves
+        whatever finer-grained choice (e.g. 'folder' for movies, 'episode' for shows) untouched."""
+        return self.section.TYPE if ITEM_TYPE == 'collection' else None
+
+    def switchToCollections(self):
+        """Collections tab (buildTabList()): an ITEM_TYPE='collection' selection presented as a
+        tab, same shape as Playlists' Music/Video tabs (_applyItemTypeChoice()) - not a real third
+        contentMode, the grid still renders through the ordinary 'library' contentMode, just
+        filtered to collections.
+
+        Needs its own entry point rather than always calling _applyItemTypeChoice() directly
+        because Collections can be reached from the Recommended tab too (or from Categories, a
+        hosted shell fronting 'library'), which need a real contentMode swap - persisting the
+        item-type choice via switchTab()'s item_type param before that swap is enough; the
+        reconstruction naturally re-derives ITEM_TYPE from the now-persisted LibrarySettings value
+        (LibrarySettings._loadSettings()), no separate post-reconstruction hook needed. Only when
+        already showing the ordinary library grid (contentMode == 'library', not hosting a shell)
+        is the cheaper in-place refill (_applyItemTypeChoice(), no window reconstruction) enough.
+        """
+        if self.contentMode == 'library' and not self._isHostedShell:
+            self._applyItemTypeChoice('collection')
+        else:
+            self.switchTab('library', item_type='collection')
 
     def openSection(self, section, filter_=None, force=False):
         """Swap this already-open window to a different section in place, reusing the same
@@ -2412,8 +2491,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 mode = mli.getProperty('content.mode')
                 if mode == 'categories':
                     threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.browseGenres).start()
+                elif mode == 'collections':
+                    threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.switchToCollections).start()
                 else:
-                    threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.switchTab, args=(mode,)).start()
+                    item_type = self._libraryTabItemType() if mode == 'library' else None
+                    threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.switchTab,
+                                    args=(mode,), kwargs={'item_type': item_type}).start()
             return
 
         if controlID == self.USER_LIST_ID:
@@ -2855,11 +2938,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.saveNavSettings()
 
     def _tabListNeedsRebuild(self, section):
-        """True (and updates self._tabListIsPlaylists/self._tabListHasCategories to match
-        `section`) if buildTabList() needs to fully rebuild the tab-list's item set for it, not
-        just rebind (newControl()) - two independent boundaries: the playlists/non-playlists one
-        (Music/Video vs. Recommended/Library) and the movie-or-show/other one (whether the
-        Categories tab belongs there). Live-confirmed bug this guards against: before this
+        """True (and updates self._tabListIsPlaylists/self._tabListHasCategories/
+        self._tabListHasCollections to match `section`) if buildTabList() needs to fully rebuild
+        the tab-list's item set for it, not just rebind (newControl()) - three independent
+        boundaries: the playlists/non-playlists one (Music/Video vs. Recommended/Library), the
+        movie-or-show/other one (whether the Categories tab belongs there), and whether the
+        Collections tab belongs there (movie/show/artist AND an actual existence probe -
+        _sectionHasCollections(), cached in a module-level dict, so this is cheap on every call
+        after the first for a given section). Live-confirmed bug this guards against: before this
         existed, onFirstInit() only ever compared the playlists boundary, so a swap between two
         non-playlists sections that differed only in Categories-eligibility (e.g. Show -> Artist,
         or worse, whichever section this LibraryWindow instance happened to build its tab list for
@@ -2868,9 +2954,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """
         is_playlists = section.TYPE == 'playlists'
         has_categories = section.TYPE in ('movie', 'show')
-        needsRebuild = is_playlists != self._tabListIsPlaylists or has_categories != self._tabListHasCategories
+        has_collections = section.TYPE in ('movie', 'show', 'artist') and _sectionHasCollections(section)
+        needsRebuild = (is_playlists != self._tabListIsPlaylists
+                         or has_categories != self._tabListHasCategories
+                         or has_collections != self._tabListHasCollections)
         self._tabListIsPlaylists = is_playlists
         self._tabListHasCategories = has_categories
+        self._tabListHasCollections = has_collections
         return needsRebuild
 
     def buildTabList(self):
@@ -2905,6 +2995,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 mli.setProperty('item', '1')
                 mli.setProperty('content.mode', mode)
                 items.append(mli)
+            if self._tabListHasCollections:
+                # Collections - not a real contentMode (same shape as Categories below), just
+                # another tab entry pointing at switchToCollections() instead of switchTab() - see
+                # onClick()'s TAB_LIST_ID branch. Reuses the exact label the item-type dropdown
+                # used to show for this choice (T(32490, 'Collections')), now removed from that
+                # dropdown (itemTypeButtonClicked()) since this tab replaces it.
+                mli = kodigui.ManagedListItem(T(32490, 'Collections'))
+                mli.setProperty('item', '1')
+                mli.setProperty('content.mode', 'collections')
+                items.append(mli)
             if self.section.TYPE in ('movie', 'show'):
                 # Categories (genres.py's GenreBrowserWindow) - not a real contentMode (see
                 # switchTab()'s own comment), just another tab entry pointing at browseGenres()
@@ -2929,6 +3029,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         active_override: genres.py's GenreBrowserWindow passes 'categories' here once hosted -
         self.contentMode is deliberately never mutated to 'categories' (switchTab()'s own
         comment), so there'd otherwise be nothing to mark that tab active while it's showing.
+        Collections doesn't need an override - unlike Categories, it never leaves contentMode
+        'library' at all, so ITEM_TYPE itself (checked below) is enough to tell it apart from an
+        ordinary Library-tab view.
         """
         if not self.tabList:
             return
@@ -2936,7 +3039,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if self._tabListIsPlaylists:
             key, active = 'item.type', ITEM_TYPE
         else:
-            key, active = 'content.mode', active_override or self.contentMode
+            key = 'content.mode'
+            if active_override:
+                active = active_override
+            elif self._tabListHasCollections and self.contentMode == 'library' and ITEM_TYPE == 'collection':
+                active = 'collections'
+            else:
+                active = self.contentMode
 
         for i in range(self.tabList.size()):
             mli = self.tabList[i]
@@ -3326,15 +3435,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def itemTypeButtonClicked(self):
         options = []
 
+        # 'collection' deliberately excluded from every branch below - promoted to a real tab
+        # (Collections, buildTabList()/switchToCollections()), same precedent as Categories'
+        # 'browse_genres' choice before it (see this method's own git history) - control 312
+        # (ITEM_TYPE_BUTTON_ID)'s dropdown no longer offers either.
         if self.section.TYPE == 'show':
-            for t in ('show', 'episode', 'collection'):
+            for t in ('show', 'episode'):
                 options.append({'type': t, 'display': TYPE_PLURAL.get(t, t)})
         elif self.section.TYPE == 'movie':
-            for t in ('movie', 'collection'):
-                options.append({'type': t, 'display': TYPE_PLURAL.get(t, t)})
+            options.append({'type': 'movie', 'display': TYPE_PLURAL.get('movie', 'movie')})
             options.append({'type': 'folder', 'display': TYPE_PLURAL.get('folder', 'folder')})
         elif self.section.TYPE == 'artist':
-            for t in ('artist', 'album', 'collection', 'track'):
+            for t in ('artist', 'album', 'track'):
                 options.append({'type': t, 'display': TYPE_PLURAL.get(t, t)})
         elif self.section.TYPE == 'movies_shows':
             for t in ('movies_shows', 'movie', 'show'):

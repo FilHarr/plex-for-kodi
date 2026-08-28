@@ -108,8 +108,14 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
             if mli:
                 mode = mli.getProperty('content.mode')
                 if mode != 'categories' and self._chainHost is not None:
+                    # _libraryTabItemType(): if Collections was left with ITEM_TYPE=='collection'
+                    # still stuck from before Categories was entered, a Library-tab click here
+                    # needs to reset it back to this section's own native type too - same as
+                    # library.py's own TAB_LIST_ID branch (see that method's own comment).
+                    item_type = self._chainHost._libraryTabItemType() if mode == 'library' else None
                     threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS,
-                                    self._chainHost.switchTab, args=(mode,)).start()
+                                    self._chainHost.switchTab, args=(mode,),
+                                    kwargs={'item_type': item_type}).start()
 
     def onAction(self, action):
         if self.getFocusId() == self.SECTION_LIST_ID:

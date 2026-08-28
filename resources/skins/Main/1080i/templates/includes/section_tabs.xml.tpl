@@ -3,8 +3,8 @@
    script-plex-episodes.xml.tpl's season tabs (label/underline treatment, same font/colors,
    same Control.HasFocus()-gated label split so the bar doesn't look permanently "focused") but
    deliberately a plain type="list", not that file's type="fixedlist" center-pinned carousel -
-   only ever a handful of tabs (2-3 today: Recommended/Library, plus Categories for movie/show
-   sections - Music/Video for Playlists instead; Collections still planned - never enough to need
+   only ever a handful of tabs (up to 4 today: Recommended/Library, plus Collections and/or
+   Categories for movie/show sections - Music/Video for Playlists instead; never enough to need
    scroll-under-a-fixed-point behavior), so a simple left-anchored list is simpler and correct
    here.
 
@@ -45,11 +45,12 @@
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
     <posx>145</posx>
     <posy>0</posy>
-    <!-- 200px per itemlayout cell below - was 500 (room for 2.5), sized for the 2-tab case only.
-         hashed-orbiting-pizza.md's Categories tab made 3 tabs possible (movie/show sections) -
-         600 fits all 3; harmless slack for the still-common 2-tab case, a type="list" control's
-         own bounding box beyond its actual items renders nothing extra. -->
-    <width>600</width>
+    <!-- 200px per itemlayout cell below - was 500 (room for 2.5), sized for the 2-tab case only,
+         then 600 once Categories made 3 tabs possible. Collections (movie/show/artist, gated on
+         an actual existence check) made 4 possible for a movie/show section with both Collections
+         and Categories - 800 fits all 4; harmless slack for the still-common 2/3-tab cases, a
+         type="list" control's own bounding box beyond its actual items renders nothing extra. -->
+    <width>800</width>
     <height>{{ vscale(135) }}</height>
     <onleft>9000</onleft>
     <onright>noop</onright>

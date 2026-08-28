@@ -5,15 +5,27 @@ GenreBrowserWindow is promoted from a dropdown-only, always-standalone window to
 tab (Recommended/Library/Categories) in LibraryWindow's own tab row, hosted the same way the seven
 original shells are (swapTo()), for section.TYPE in ('movie', 'show') only.
 
-Three pieces get their own coverage here, each narrow (matching test_library_chain.py's own
-"deliberately narrow" philosophy for onAction()/onClick()-style dispatch tests):
+Also covers its own follow-up, the Collections tab: unlike Categories (a whole separate hosted
+shell), Collections is an ITEM_TYPE='collection' selection presented as a tab - same shape as
+Playlists' Music/Video tabs (_applyItemTypeChoice()), gated on an actual existence probe
+(_sectionHasCollections()), positioned between Library and Categories.
 
-1. library.py's buildTabList() only adds the Categories item for movie/show sections.
-2. library.py's onClick() TAB_LIST_ID branch dispatches to browseGenres() (deferred) for the
-   categories item, switchTab() (deferred) for everything else - unchanged from before.
-3. genres.py's own onClick() TAB_LIST_ID branch (new - GenreBrowserWindow had no tab-list handling
-   at all before this) delegates a Library/Recommended click to self._chainHost.switchTab()
-   (deferred), and does nothing for a categories click (already showing it) or when un-hosted.
+Pieces covered here, each narrow (matching test_library_chain.py's own "deliberately narrow"
+philosophy for onAction()/onClick()-style dispatch tests):
+
+1. library.py's buildTabList() only adds the Categories item for movie/show sections, and the
+   Collections item only when self._tabListHasCollections.
+2. library.py's _tabListNeedsRebuild() tracks the Collections boundary the same way it already
+   tracks Categories/playlists.
+3. library.py's onClick() TAB_LIST_ID branch dispatches to browseGenres() (deferred) for the
+   categories item, switchToCollections() (deferred) for the collections item, switchTab()
+   (deferred, now with item_type=self._libraryTabItemType() for a 'library' click) for everything
+   else.
+4. genres.py's own onClick() TAB_LIST_ID branch delegates a Library/Recommended click to
+   self._chainHost.switchTab() (deferred, same item_type threading as library.py's own), and does
+   nothing for a categories click (already showing it) or when un-hosted.
+5. library.py's switchTab()'s itemTypeChanging bypass of its own no-op guard, and
+   switchToCollections()'s branch between an in-place refill vs. a real contentMode swap.
 
 Real kodigui.ManagedListItem construction works fine in this test harness (confirmed directly) -
 used here for real, rather than faked, since buildTabList()'s own gating logic is exactly what's
@@ -93,6 +105,20 @@ buildTabList = library.LibraryWindow.buildTabList
 libraryOnClick = library.LibraryWindow.onClick
 genresOnClick = genres.GenreBrowserWindow.onClick
 tabListNeedsRebuild = library.LibraryWindow._tabListNeedsRebuild
+switchTab = library.LibraryWindow.switchTab
+switchToCollections = library.LibraryWindow.switchToCollections
+libraryTabItemType = library.LibraryWindow._libraryTabItemType
+
+
+def patchSectionHasCollections(testcase, return_value=False):
+    """_tabListNeedsRebuild() calls the real, module-level _sectionHasCollections() for any
+    movie/show/artist FakeSection - that function expects a real LibrarySection (section.all(...)),
+    which FakeSection doesn't implement. Tests that don't care about the Collections boundary
+    itself patch this to a fixed, cheap return instead of exercising the real probe/its
+    try/except fallback."""
+    original = library._sectionHasCollections
+    library._sectionHasCollections = lambda section: return_value
+    testcase.addCleanup(lambda: setattr(library, '_sectionHasCollections', original))
 
 
 class TabListNeedsRebuildTest(KodiTestCase):
@@ -107,6 +133,10 @@ class TabListNeedsRebuildTest(KodiTestCase):
         def __init__(self):
             self._tabListIsPlaylists = False
             self._tabListHasCategories = False
+            self._tabListHasCollections = False
+
+    def setUp(self):
+        patchSectionHasCollections(self, return_value=False)
 
     def test_show_to_movie_does_not_need_a_rebuild(self):
         """Both get Categories - crosses neither boundary."""
@@ -145,6 +175,33 @@ class TabListNeedsRebuildTest(KodiTestCase):
 
         self.assertFalse(host._tabListIsPlaylists)
         self.assertFalse(host._tabListHasCategories)
+        self.assertFalse(host._tabListHasCollections)
+
+    def test_collections_boundary_triggers_a_rebuild_on_its_own(self):
+        """A section type staying the same (movie -> movie) but crossing the collections-existence
+        boundary (e.g. the probe result changed - unusual but not impossible mid-session) still
+        needs a rebuild, independent of the other two boundaries."""
+        host = self.FakeHost()
+        patchSectionHasCollections(self, return_value=False)
+        tabListNeedsRebuild(host, FakeSection('movie'))
+
+        patchSectionHasCollections(self, return_value=True)
+        self.assertTrue(tabListNeedsRebuild(host, FakeSection('movie')))
+        self.assertTrue(host._tabListHasCollections)
+
+    def test_collections_probe_only_runs_for_relevant_section_types(self):
+        """photo/photodirectory/movies_shows/playlists structurally can't have collections - the
+        probe (real network call in production) must never even run for them."""
+        host = self.FakeHost()
+        probeCalls = []
+        original = library._sectionHasCollections
+        library._sectionHasCollections = lambda section: probeCalls.append(section) or False
+        self.addCleanup(lambda: setattr(library, '_sectionHasCollections', original))
+
+        for section_type in ('photo', 'photodirectory', 'movies_shows', 'playlists'):
+            tabListNeedsRebuild(host, FakeSection(section_type))
+
+        self.assertEqual([], probeCalls)
 
 
 class BuildTabListCategoriesGatingTest(KodiTestCase):
@@ -152,6 +209,7 @@ class BuildTabListCategoriesGatingTest(KodiTestCase):
         def __init__(self, section_type):
             self.section = FakeSection(section_type)
             self._tabListIsPlaylists = False
+            self._tabListHasCollections = False
             self.contentMode = 'library'
             self.tabList = FakeTabListContainer()
 
@@ -174,21 +232,66 @@ class BuildTabListCategoriesGatingTest(KodiTestCase):
                               "section.TYPE={0}".format(section_type))
 
 
+class BuildTabListCollectionsGatingTest(KodiTestCase):
+    """self._tabListHasCollections drives this directly (the real network probe is
+    _tabListNeedsRebuild()'s job, covered separately above) - buildTabList() itself just trusts
+    the flag, same as it already trusts self._tabListHasCategories."""
+
+    class FakeHost(object):
+        def __init__(self, section_type, has_collections):
+            self.section = FakeSection(section_type)
+            self._tabListIsPlaylists = False
+            self._tabListHasCollections = has_collections
+            self.contentMode = 'library'
+            self.tabList = FakeTabListContainer()
+
+        def updateActiveTabMarker(self, active_override=None):
+            pass
+
+    def _modesFor(self, section_type, has_collections):
+        host = self.FakeHost(section_type, has_collections)
+        buildTabList(host)
+        return [mli.getProperty('content.mode') for mli in host.tabList.items]
+
+    def test_sits_between_library_and_categories_for_movie_and_show(self):
+        for section_type in ('movie', 'show'):
+            self.assertEqual(['recommended', 'library', 'collections', 'categories'],
+                              self._modesFor(section_type, True),
+                              "section.TYPE={0}".format(section_type))
+
+    def test_sits_after_library_when_no_categories_tab_exists(self):
+        """artist sections can have Collections (the old dropdown offered it) but never get a
+        Categories tab - Collections should still appear, right after Library."""
+        self.assertEqual(['recommended', 'library', 'collections'], self._modesFor('artist', True))
+
+    def test_absent_when_the_flag_is_false_regardless_of_section_type(self):
+        for section_type in ('movie', 'show', 'artist'):
+            self.assertNotIn('collections', self._modesFor(section_type, False),
+                              "section.TYPE={0}".format(section_type))
+
+
 class LibraryOnClickTabDispatchTest(KodiTestCase):
     class FakeHost(object):
         SECTION_LIST_ID = 1  # distinct from TAB_LIST_ID, never matched in these tests
         TAB_LIST_ID = 320
 
-        def __init__(self, selected_mode, is_playlists=False):
+        def __init__(self, selected_mode, is_playlists=False, library_tab_item_type=None):
             self.tabList = FakeTabListContainer(selected_mode)
             self._tabListIsPlaylists = is_playlists
             self.movingSection = False
+            self._library_tab_item_type = library_tab_item_type
 
         def browseGenres(self):
             pass
 
-        def switchTab(self, mode):
+        def switchToCollections(self):
             pass
+
+        def switchTab(self, mode, item_type=None):
+            pass
+
+        def _libraryTabItemType(self):
+            return self._library_tab_item_type
 
     def setUp(self):
         FakeTimer.instances = []
@@ -208,6 +311,16 @@ class LibraryOnClickTabDispatchTest(KodiTestCase):
         self.assertEqual(host.browseGenres, timer.function)
         self.assertTrue(timer.started)
 
+    def test_collections_click_defers_to_switchToCollections(self):
+        host = self.FakeHost('collections')
+
+        libraryOnClick(host, host.TAB_LIST_ID)
+
+        self.assertEqual(1, len(FakeTimer.instances))
+        timer = FakeTimer.instances[0]
+        self.assertEqual(host.switchToCollections, timer.function)
+        self.assertTrue(timer.started)
+
     def test_library_click_defers_to_switchTab_unchanged(self):
         host = self.FakeHost('library')
 
@@ -217,16 +330,37 @@ class LibraryOnClickTabDispatchTest(KodiTestCase):
         timer = FakeTimer.instances[0]
         self.assertEqual(host.switchTab, timer.function)
         self.assertEqual(('library',), timer.args)
+        self.assertEqual({'item_type': None}, timer.kwargs)
+
+    def test_library_click_threads_the_item_type_reset(self):
+        """A Library click while ITEM_TYPE is stuck on 'collection' (left over from Collections)
+        must pass the host's own _libraryTabItemType() result through to switchTab()."""
+        host = self.FakeHost('library', library_tab_item_type='movie')
+
+        libraryOnClick(host, host.TAB_LIST_ID)
+
+        self.assertEqual({'item_type': 'movie'}, FakeTimer.instances[0].kwargs)
+
+    def test_recommended_click_never_passes_an_item_type(self):
+        host = self.FakeHost('recommended', library_tab_item_type='movie')
+
+        libraryOnClick(host, host.TAB_LIST_ID)
+
+        self.assertEqual({'item_type': None}, FakeTimer.instances[0].kwargs)
 
 
 class GenresOnClickDelegationTest(KodiTestCase):
     class FakeChainHost(object):
-        def __init__(self):
+        def __init__(self, library_tab_item_type=None):
             self.switchTab = self._switchTab
             self.switchTabCalls = []
+            self._library_tab_item_type = library_tab_item_type
 
-        def _switchTab(self, mode):
-            self.switchTabCalls.append(mode)
+        def _switchTab(self, mode, item_type=None):
+            self.switchTabCalls.append((mode, item_type))
+
+        def _libraryTabItemType(self):
+            return self._library_tab_item_type
 
     class FakeGenresHost(object):
         SECTION_LIST_ID = 1
@@ -256,15 +390,29 @@ class GenresOnClickDelegationTest(KodiTestCase):
         timer = FakeTimer.instances[0]
         self.assertEqual(chainHost.switchTab, timer.function)
         self.assertEqual(('library',), timer.args)
+        self.assertEqual({'item_type': None}, timer.kwargs)
         self.assertTrue(timer.started)
 
+    def test_library_click_threads_the_hosts_item_type_reset(self):
+        """If ITEM_TYPE was left stuck on 'collection' from before Categories was entered, a
+        Library-tab click from within Categories must reset it too, same as library.py's own
+        TAB_LIST_ID branch - delegated here via the host's own _libraryTabItemType()."""
+        chainHost = self.FakeChainHost(library_tab_item_type='movie')
+        host = self.FakeGenresHost('library', chainHost)
+
+        genresOnClick(host, host.TAB_LIST_ID)
+
+        self.assertEqual({'item_type': 'movie'}, FakeTimer.instances[0].kwargs)
+
     def test_recommended_click_delegates_to_the_hosts_switchTab(self):
-        chainHost = self.FakeChainHost()
+        chainHost = self.FakeChainHost(library_tab_item_type='movie')
         host = self.FakeGenresHost('recommended', chainHost)
 
         genresOnClick(host, host.TAB_LIST_ID)
 
         self.assertEqual(('recommended',), FakeTimer.instances[0].args)
+        # Recommended never touches item type, even if Library's own reset would have fired.
+        self.assertEqual({'item_type': None}, FakeTimer.instances[0].kwargs)
 
     def test_categories_click_is_a_noop_already_showing_it(self):
         chainHost = self.FakeChainHost()
