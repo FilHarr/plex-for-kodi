@@ -360,9 +360,9 @@ class UtilMixin(GoHomeMixin):
     def openItem(self, obj, **kwargs):
         # context=self (hashed-orbiting-pizza.md Phase 4): lets opener.open()'s dispatch call
         # self.openWindow(...) instead of unconditionally handleOpen()-ing, for whichever object
-        # types its dispatch has been made chain-aware for so far (currently just movies - see
-        # opener.py's own docstring on open()). Inert (ignored) for every other object type until
-        # its own Phase 4 item wires that branch too - safe for every existing caller.
+        # types its dispatch has been made chain-aware for (see opener.py's own docstring on
+        # open() for the current list - everything except photo/track/clip, which deliberately
+        # stay standalone). Inert (ignored) for those few types - safe for every existing caller.
         self.processCommand(opener.open(obj, context=self, **kwargs))
 
     def openWindow(self, window_class, **kwargs):

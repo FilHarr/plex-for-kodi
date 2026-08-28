@@ -9,13 +9,16 @@ from . import busy
 
 def open(obj, context=None, **kwargs):
     """context: the calling window (a UtilMixin instance), threaded through to whichever
-    dispatch branch below has been made chain-aware (hashed-orbiting-pizza.md's Phase 4) - lets
-    that branch call context.openWindow(...) (swap in place if context is a live chain host,
-    else fall back to today's handleOpen()) instead of always calling handleOpen() unconditionally.
-    None (the default, used by every caller not passing it) preserves today's behavior exactly.
-    Wired for movie/episode/show/artist/season/album/director/actor (Phase 4 items 1-4);
-    photo/track/playlist/collection/genre/section branches still ignore this parameter and always
-    go through handleOpen()."""
+    dispatch branch below has been made chain-aware (hashed-orbiting-pizza.md's Phase 4, plus
+    follow-up passes) - lets that branch call context.openWindow(...) (swap in place if context is
+    a live chain host, else fall back to today's handleOpen()) instead of always calling
+    handleOpen() unconditionally. None (the default, used by every caller not passing it)
+    preserves today's behavior exactly.
+
+    Every branch is context-aware now except photo/track/clip - those three deliberately stay on
+    handleOpen() always: PhotoWindow/MusicPlayerWindow/VideoPlayerWindow are chrome-only
+    player/viewer windows, not library screens, out of this plan's scope (see
+    hashed-orbiting-pizza.md's "Current state")."""
     if isinstance(obj, playqueue.PlayQueue):
         if busy.widthDialog(obj.waitForInitialization, None):
             if obj.type == 'audio':
@@ -62,7 +65,7 @@ def open(obj, context=None, **kwargs):
         from . import videoplayer
         return videoplayer.play(video=obj)
     elif obj.TYPE in ('collection'):
-        return collectionClicked(obj, **kwargs)
+        return collectionClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('Genre'):
         return genreClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('Director'):
@@ -183,8 +186,8 @@ def playlistClicked(pl, context=None, **kwargs):
     return handleOpen(playlist.PlaylistWindow, playlist=pl, **kwargs)
 
 
-def collectionClicked(collection, **kwargs):
-    return sectionClicked(collection, **kwargs)
+def collectionClicked(collection, context=None, **kwargs):
+    return sectionClicked(collection, context=context, **kwargs)
 
 
 def sectionClicked(section, filter_=None, context=None, **kwargs):

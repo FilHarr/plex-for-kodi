@@ -447,3 +447,47 @@ class PhotoDirectoryClickedContextTest(KodiTestCase):
             opener.photoDirectoryClicked = originalPhotoDirectoryClicked
 
         self.assertEqual([(obj, context)], calls)
+
+
+class CollectionClickedContextTest(KodiTestCase):
+    """Same gap, same fix, found during hashed-orbiting-pizza.md's Phase 5 dead-branch audit:
+    collectionClicked() forwarded neither its own context param (didn't have one) nor did open()'s
+    TYPE == 'collection' branch pass context through to it - so a collection reached generically
+    (a hub, search) always opened standalone even though sectionClicked() underneath already
+    supports hosting it. Mirrors PhotoDirectoryClickedContextTest's shape exactly."""
+
+    def test_forwards_context_to_sectionClicked(self):
+        calls = []
+        originalSectionClicked = opener.sectionClicked
+
+        def fakeSectionClicked(section, filter_=None, context=None, **kwargs):
+            calls.append((section, filter_, context))
+            return ''
+
+        opener.sectionClicked = fakeSectionClicked
+        try:
+            context = object()
+            collection = object()
+            opener.collectionClicked(collection, context=context)
+        finally:
+            opener.sectionClicked = originalSectionClicked
+
+        self.assertEqual([(collection, None, context)], calls)
+
+    def test_open_dispatch_forwards_context_for_collection(self):
+        calls = []
+        originalCollectionClicked = opener.collectionClicked
+
+        def fakeCollectionClicked(collection, context=None, **kwargs):
+            calls.append((collection, context))
+            return ''
+
+        opener.collectionClicked = fakeCollectionClicked
+        try:
+            context = object()
+            obj = FakeTyped('collection')
+            opener.open(obj, context=context)
+        finally:
+            opener.collectionClicked = originalCollectionClicked
+
+        self.assertEqual([(obj, context)], calls)
