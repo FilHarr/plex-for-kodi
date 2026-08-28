@@ -3794,9 +3794,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         elif self.section.TYPE in ('photo', 'photodirectory'):
             self.showPhoto(mli.dataSource)
         elif self.section.TYPE == 'playlists':
-            # Mirrors the 'collection' branch above - opener.open()'s existing playlist-TYPE
-            # branch (opener.py) already routes to playlist.PlaylistWindow correctly.
-            self.processCommand(opener.open(mli.dataSource))
+            # Mirrors the 'collection' branch above - opener.open()'s playlist-TYPE branch now
+            # swaps in place via context=self, same as every other migrated shell.
+            self.processCommand(opener.open(mli.dataSource, context=self))
 
         if self._closeSignalled:
             return

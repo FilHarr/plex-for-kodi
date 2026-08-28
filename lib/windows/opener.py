@@ -57,7 +57,7 @@ def open(obj, context=None, **kwargs):
             return trackClicked(obj, album=album, **kwargs)
         return trackClicked(obj, **kwargs)
     elif obj.TYPE in ('playlist'):
-        return playlistClicked(obj, **kwargs)
+        return playlistClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('clip'):
         from . import videoplayer
         return videoplayer.play(video=obj)
@@ -175,8 +175,11 @@ def photoDirectoryClicked(photodirectory, **kwargs):
     return sectionClicked(photodirectory, **kwargs)
 
 
-def playlistClicked(pl, **kwargs):
+def playlistClicked(pl, context=None, **kwargs):
     from . import playlist
+    if context is not None:
+        context.openWindow(playlist.PlaylistWindow, playlist=pl, **kwargs)
+        return ''
     return handleOpen(playlist.PlaylistWindow, playlist=pl, **kwargs)
 
 

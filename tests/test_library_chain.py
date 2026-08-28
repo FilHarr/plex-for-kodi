@@ -223,7 +223,7 @@ class IsRealShellTest(KodiTestCase):
         confirmed via grep against the live classes when this was written - if any of these ever
         grow a MULTI_WINDOW_ID, the bifurcation below silently starts treating it as a thin proxy
         instead of a real shell."""
-        from lib.windows import preplay, episodes, subitems, person, tracks, collection
+        from lib.windows import preplay, episodes, subitems, person, tracks, collection, playlist
 
         realShellClasses = [
             preplay.PrePlayWindow, preplay.PrePlayWindowWL,
@@ -232,6 +232,7 @@ class IsRealShellTest(KodiTestCase):
             person.PersonWindow,
             tracks.AlbumWindow,
             collection.CollectionWindow, collection.SubDirWindow,
+            playlist.PlaylistWindow,
         ]
         for cls in realShellClasses:
             self.assertTrue(_isRealShell(cls), "{0} unexpectedly carries MULTI_WINDOW_ID".format(cls))

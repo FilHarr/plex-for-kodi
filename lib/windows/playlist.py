@@ -90,6 +90,10 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.isPlaying = False
         self.video_progress = {}
         self.lastFocusID = None
+        # hashed-orbiting-pizza.md Phase 4 follow-up: None here means "build my own sectionList"
+        # (a standalone/un-hosted open) - a hosted open (LibraryWindow._setupCurrent(), library.py)
+        # overwrites this with the host's own sectionList object before onFirstInit() runs.
+        self.sectionList = None
         ChunkRequestTask.WINDOW = self
 
     def onFirstInit(self):
@@ -99,8 +103,11 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         player.PLAYER.on('video.progress', self.onVideoProgress)
         self.on('playlist.filled', self.onPlaylistFilled)
 
-        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
-        self.buildSectionList()
+        if self.sectionList is None:
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.buildSectionList()
+        else:
+            self.sectionList.newControl(self)
         self.displayServerAndUser()
 
         self.fillPlaylist()

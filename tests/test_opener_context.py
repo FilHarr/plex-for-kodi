@@ -34,6 +34,7 @@ from lib.windows import episodes  # noqa: E402
 from lib.windows import subitems  # noqa: E402
 from lib.windows import tracks  # noqa: E402
 from lib.windows import person as person_window  # noqa: E402
+from lib.windows import playlist  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
@@ -208,8 +209,16 @@ class ItemClickedFunctionsTest(KodiTestCase):
 
         self.assertEqual([(person_window.ActorWindow, {'role': actor})], context.openWindowCalls)
 
+    def test_playlist_with_context_swaps_in_place(self):
+        context = FakeContext()
+        pl = FakeTyped('playlist')
+
+        opener.playlistClicked(pl, context=context)
+
+        self.assertEqual([(playlist.PlaylistWindow, {'playlist': pl})], context.openWindowCalls)
+
     def test_without_context_each_falls_back_to_handleOpen_unchanged(self):
-        """Regression check, all seven at once - context=None must behave exactly as before this
+        """Regression check, all eight at once - context=None must behave exactly as before this
         session's change for every one of them."""
         handleOpenCalls = []
 
@@ -227,10 +236,11 @@ class ItemClickedFunctionsTest(KodiTestCase):
             opener.albumClicked(FakeTyped('album'))
             opener.directorClicked(FakeTyped('Director'))
             opener.actorClicked(FakeTyped('Role'))
+            opener.playlistClicked(FakeTyped('playlist'))
         finally:
             opener.handleOpen = originalHandleOpen
 
-        self.assertEqual(7, len(handleOpenCalls))
+        self.assertEqual(8, len(handleOpenCalls))
 
 
 class OpenDispatchContextForwardingTest(KodiTestCase):
@@ -247,6 +257,7 @@ class OpenDispatchContextForwardingTest(KodiTestCase):
             ('album', tracks.AlbumWindow, {'album': None}),
             ('Director', person_window.DirectorWindow, {'role': None}),
             ('Role', person_window.ActorWindow, {'role': None}),
+            ('playlist', playlist.PlaylistWindow, {'playlist': None}),
         ]
         for type_, expectedClass, kwargTemplate in cases:
             context = FakeContext()
