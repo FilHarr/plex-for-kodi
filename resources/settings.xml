@@ -93,26 +93,6 @@
                         <popup>false</popup>
                     </control>
                 </setting>
-                <setting id="hubs_round_robin" type="boolean" label="33043">
-                    <level>0</level>
-                    <default>false</default>
-                    <control type="toggle"/>
-                </setting>
-                <setting id="hubs_rr_max" type="integer" label="33047" help="33048">
-                    <level>0</level>
-                    <default>250</default>
-                    <constraints>
-                        <minimum>50</minimum>
-                        <step>50</step>
-                        <maximum>5000</maximum>
-                    </constraints>
-                    <control type="slider" format="integer">
-                        <popup>false</popup>
-                    </control>
-                    <dependencies>
-                        <dependency type="enable" setting="hubs_round_robin">true</dependency>
-                    </dependencies>
-                </setting>
                 <setting id="cache_home_users" type="boolean" label="33018">
                     <level>0</level>
                     <default>true</default>

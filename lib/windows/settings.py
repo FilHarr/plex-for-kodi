@@ -796,11 +796,6 @@ class Settings(object):
                              "Plex clients, which combine those two types of hubs into one Continue Watching hub.")
                 ),
                 BoolSetting(
-                    'hubs_round_robin', T(33043, ''), False
-                ).description(
-                    T(33044, "").format(util.addonSettings.hubsRrMax)
-                ),
-                BoolSetting(
                     'hubs_linear', T(34091, 'Linear Hubs'), False
                 ).description(
                     T(34092, "Certain hubs, such as Top Unwatched Movies, are randomized by Plex by default, "

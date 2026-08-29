@@ -548,6 +548,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # exitCommand above, so every instance (including nested ones that never become HOME) has it.
         self._pendingSection = None
         self.section = kwargs.get('section')
+        # openSection() keeps this mirroring self.section on every real section swap (its own
+        # comment there explains why: SidebarMixin's _sectionChanged() gates every sidebar click/
+        # settled-focus on `section == self.lastSection`, and a handful of other methods -
+        # hubMenu() among them - read self.lastSection directly) - but openSection() itself is
+        # never called for the very first section a LibraryWindow is constructed with (cold start,
+        # main.py, constructs directly with section=home_section and never calls openSection()).
+        # Left unset, self.lastSection would raise AttributeError the first time anything read it
+        # before the first real section switch - live-confirmed: hubMenu() (the hub-item context
+        # menu) silently did nothing on a hub item click on cold start, working normally only
+        # after switching to a different section for the first time. Seeded here so it's never in
+        # an undefined state.
+        self.lastSection = self.section
 
         # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
         # mellow-pondering-magpie.md, 2026-08-18) - see preplay.py's PrePlayWindow.__init__ for the
@@ -736,6 +748,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # pattern - live-confirmed 20+ plain section-to-section swaps clean, only 'recommended'
         # entries ever crash).
         self.hubControls = None
+
+        # Plan item 10, Group A (quiet-orbiting-heron.md): reselect-position memory. Ported from
+        # HomeWindow._hubReselectPositions (home.py) - same name/shape (identifier -> (ratingKey,
+        # pos)). Deliberately NOT reset alongside visibleHubs/focusedHubIndex on every fresh
+        # 'recommended' bind - LibraryWindow is the persistent, session-lifetime object now, same
+        # as HomeWindow always was, so a position remembered from an earlier visit should survive
+        # a swap away and back, not just a rotation-ring slide within one visit.
+        self._hubReselectPositions = {}
 
         # Plan item 0 (quiet-orbiting-heron.md): the section-tabs row (Library/Recommended).
         # Built once per LibraryWindow lifetime in onFirstInit() (same pattern as
@@ -2357,16 +2377,29 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                         self._startHubSlide(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
                         return
                     elif action_id in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
-                        # Plan item 11: sync hero art/info to the item this move is landing on.
-                        # Reads getSelectedItem() directly, same as MOVE_SET's own dynamic-
-                        # background update below does for the grid - Kodi's native container
-                        # cursor is already at the new position by the time onAction() runs (that
-                        # existing, proven pattern is what this one's modeled on), not the old one,
-                        # so no special before/after ordering is needed here. Deliberately doesn't
-                        # return - the actual cursor movement is Kodi's own native list behavior,
-                        # not something this method does; falls through to
+                        # Plan items 10 (Group A)/11: sync hero art/info to the item this move is
+                        # landing on, plus pagination/reselect-position memory (checkHubItem(),
+                        # all hooked into this same call site). Reads
+                        # getSelectedItem() directly, same as MOVE_SET's own dynamic-background
+                        # update below does for the grid - Kodi's native container cursor is
+                        # already at the new position by the time onAction() runs (that existing,
+                        # proven pattern is what this one's modeled on), not the old one, so no
+                        # special before/after ordering is needed here. Deliberately doesn't
+                        # return (checkHubItem()'s return value only matters for the NAV_BACK
+                        # case below) - the actual cursor movement is Kodi's own native list
+                        # behavior, not something this method does; falls through to
                         # kodigui.MultiWindow.onAction() below like anything else unhandled here.
-                        self._updateHeroFromFocusedHubItem(controlID)
+                        self.checkHubItem(controlID, action=action)
+                    elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
+                        # Only reached when self._backStack is empty (onAction()'s own top-of-
+                        # method check already intercepts NAV_BACK/PREVIOUS_MENU otherwise) - i.e.
+                        # a hub row focused on the root 'recommended' tab, no chain in progress.
+                        # checkHubItem() resets to item 0 first if not already there (returns
+                        # False, swallowed here); only lets the action propagate to whatever
+                        # default NAV_BACK handling exists below once already at item 0 - same
+                        # shape as HomeWindow's own onAction() routing (home.py).
+                        if not self.checkHubItem(controlID, action=action):
+                            return
                     elif action == xbmcgui.ACTION_CONTEXT_MENU:
                         # Hub-item context menu - ported from HomeWindow's identical routing
                         # (home.py's onAction(), `elif action == xbmcgui.ACTION_CONTEXT_MENU:`
@@ -2398,7 +2431,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # to actually move focus within a list. Horizontal in-hub navigation (left/right
                 # between items in the same hub row) was never actually reaching Kodi at all as a
                 # result - live-confirmed, not just "out of scope" the way checkHubItem()'s richer
-                # per-item behavior (hero-art updates, pagination, round-robin) genuinely still is.
+                # per-item behavior (hero-art updates, pagination) genuinely still is.
                 # Calling the dispatch directly - skipping only this method's own grid-specific
                 # body in between - fixes that without reopening the crash the blanket return was
                 # protecting against.
@@ -4753,6 +4786,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         'home.top_watchlisted', 'home.coming-soon', 'home.trending-friends',
         'home.trending-for-you', 'home.new-for-you',
     }
+    # Same set, reused for a different reason (plan item 10, Group A): these are curated/algorithmic
+    # Discover-sourced hubs, not paginated library listings - live-confirmed hub.more() reports True
+    # for them (Watchlist's Coming Soon/Recently Added, both well under a single page) even though
+    # there's nothing more the server will actually return, so the "load more" placeholder
+    # (_bindHubToControl()/extendHubCallback() below) briefly showed a loading spinner then vanished
+    # on every one of them with nothing to show for it. Kept as its own separately-named constant
+    # (not just reusing HUBS_NO_PROGRESS directly at each call site) since the two exclusions exist
+    # for different reasons and may not always coincide, even though they currently do.
+    HUBS_NO_PAGINATION = HUBS_NO_PROGRESS
 
     def getHubRenderFlags(self, hub, identifier):
         """Get rendering flags for a hub based on identifier patterns and content.
@@ -6086,6 +6128,33 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         g51 = self.getControl(51)
         g51.setPosition(g51.getPosition()[0], util.vscale(self._group51RestOffset(no_hero_art), r=0))
 
+    def _previewSelectedItem(self, hub):
+        """Best-effort guess at which item hub will actually end up focused on, for previewing the
+        hero block (_prepareHubSlideHero()/_bindAllHubSlots()) before the real reselect has
+        happened - the physical control this hub is about to land in may still hold different
+        content at this point, so this works directly off hub.items rather than a live control.
+        Ported from HomeWindow._previewSelectedItem() (home.py) - now that plan item 10 Group A
+        actually ported reselect-position memory (self._hubReselectPositions), this is no longer
+        the no-op-to-items[0] stand-in _prepareHubSlideHero()'s docstring used to describe; mirrors
+        _bindHubToControl()'s own reselect resolution (ratingKey first, then position), reading
+        the same self._hubReselectPositions entry that method will use moments later. Falls back
+        to the hub's first item when there's no remembered position (never-visited hub) or it
+        can't be resolved (e.g. a still-unextended page)."""
+        if not hub.items:
+            return None
+        is_home = self.section.key is None
+        identifier = hub.getCleanHubIdentifier(is_home=is_home)
+        reselect = self._hubReselectPositions.get(identifier)
+        if reselect:
+            rk, pos = reselect
+            if rk is not None:
+                for item in hub.items:
+                    if item.ratingKey and str(item.ratingKey) == rk:
+                        return item
+            if pos is not None and 0 <= pos < len(hub.items):
+                return hub.items[pos]
+        return hub.items[0]
+
     def _prepareHubSlideHero(self):
         """Sync the hero art/info overlay to the hub about to become the anchor
         (self.visibleHubs[self.focusedHubIndex] - the caller already advanced focusedHubIndex to
@@ -6093,27 +6162,27 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         HomeWindow._prepareHubSlideHero()'s own docstring (home.py) for why (both directions need
         to update at the same moment the scroll begins, not just the losing-hero-art one).
 
-        Simplified from the original: uses new_hub.items[0] directly rather than
-        _previewSelectedItem()/self._hubReselectPositions - D2 never ported reselect-position
-        memory (_startHubSlide()'s own docstring), so every hub row always starts at item 0 here,
-        there's no remembered scroll position to guess at."""
+        Uses _previewSelectedItem(), not new_hub.items[0] - live-confirmed regression without it:
+        this hub's remembered scroll position (self._hubReselectPositions) is very often not item
+        0, and checkHubItem() won't correct this preview to the real selected item until the slide
+        finishes - using items[0] unconditionally showed the wrong item's title/summary/art for
+        that whole window (and permanently, if the user never nudges left/right afterward) on
+        every move into a hub scrolled past its first item."""
         new_hub = self.visibleHubs[self.focusedHubIndex]
-        new_ds = new_hub.items[0] if new_hub.items else None
+        new_ds = self._previewSelectedItem(new_hub)
         self._setNoHeroArt(not self._typeHasHeroArt(new_ds, hub=new_hub))
         self.setHeroInfo(new_ds)
         self.updateBackgroundFrom(new_ds)
 
     def _updateHeroFromFocusedHubItem(self, control_id):
         """Sync the hero art/info overlay to whichever item is currently selected in hub-row
-        control_id - called on horizontal (left/right) movement within a hub row. Minimal port of
-        the hero-art-relevant slice of HomeWindow.checkHubItem() (home.py) - that method also
-        handles pagination (ExtendHubTask), round-robin wraparound, and reselect-position memory,
-        none of which are built here (see plan item 10's own scope notes) - just the hero-info
-        replica update, mirroring updateHeroFrom() rather than calling it directly for the same
-        reason checkHubItem() does (own docstring, home.py): updateHeroFrom() always calls
-        updateBackgroundFrom() unconditionally, ignoring the dynamicBackgrounds setting - hero
-        info (title/summary) should still update regardless of that setting, only the background
-        art panel itself is gated on it."""
+        control_id - called on horizontal (left/right) movement within a hub row, via
+        checkHubItem() below. Port of the hero-art-relevant slice of HomeWindow.checkHubItem()
+        (home.py) - just the hero-info replica update, mirroring updateHeroFrom() rather than
+        calling it directly for the same reason checkHubItem() does (own docstring, home.py):
+        updateHeroFrom() always calls updateBackgroundFrom() unconditionally, ignoring the
+        dynamicBackgrounds setting - hero info (title/summary) should still update regardless of
+        that setting, only the background art panel itself is gated on it."""
         control = self.hubControls[control_id - self.HUB_CONTROL_ID]
         mli = control.getSelectedItem()
         if not mli or not mli.dataSource:
@@ -6122,6 +6191,136 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._setNoHeroArt(not self._typeHasHeroArt(ds, hub=control.dataSource))
         self.setHeroInfo(ds)
         self.updateBackgroundFrom(ds)
+
+    def checkHubItem(self, control_id, action=None):
+        """Horizontal (left/right) in-row hub navigation - hero-art sync (delegated to
+        _updateHeroFromFocusedHubItem() above), pagination, and reselect-position memory, all
+        hooked into this one call site (onAction()'s hub-row branch). Port of
+        HomeWindow.checkHubItem() (home.py), plan item 10 Group A (quiet-orbiting-heron.md).
+
+        Round-robin wraparound (the old hubs_round_robin setting) was deliberately dropped after
+        this landed, not ported: pressing Left at a row's first item already exits to the sidebar
+        (native template onleft neighbor, nothing Python-side to override), and NAV_BACK already
+        jumps back to item 0 - between the two, a mid-row "wrap past the end" gesture wasn't worth
+        the extra state/complexity (self._lastSelectedItem, the old double-press detector, is gone
+        too - nothing else in this file ever needed it).
+
+        self.section.key is None replaces self.lastSection's is-home check (this file's own
+        is_home convention throughout - see _hubRowHeight()'s docstring). self.tasks.add() (not
+        .append()+a separate cleanTasks() call, the old shape) - Tasks.add() (backgroundthread.py)
+        already self-prunes dead tasks. Drops self._anyItemAction (HomeWindow-only bookkeeping, no
+        equivalent consumer here).
+
+        Return value matters only for the NAV_BACK/PREVIOUS_MENU case (every other caller/action
+        ignores it): True means "nothing to do here, let it propagate" (already at item 0);
+        False means "handled" (jumped back to item 0) - the caller should swallow the action.
+        """
+        control = self.hubControls[control_id - self.HUB_CONTROL_ID]
+        mli = control.getSelectedItem()
+        is_valid_mli = mli and mli.getProperty('is.end') != '1'
+
+        if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
+            pos = control.getSelectedPos()
+            if pos is not None and pos > 0:
+                control.selectItem(0)
+                self.updateHeroFrom(control[0].dataSource, hub=control.dataSource)
+                return False
+            # Already at item 0 - nothing for this method to do; tell the caller to let the
+            # NAV_BACK/PREVIOUS_MENU action propagate instead of swallowing it.
+            return True
+
+        if is_valid_mli:
+            self._updateHeroFromFocusedHubItem(control_id)
+
+            # Reselect-position memory - remember this hub's scroll position so navigating away
+            # and back (a different hub rebound to this same physical control, or a fresh
+            # 'recommended' entry later in the session) doesn't always reset to item 0. Restored
+            # in _bindHubToControl().
+            if control.dataSource:
+                is_home = self.section.key is None
+                identifier = control.dataSource.getCleanHubIdentifier(is_home=is_home)
+                pos = control.getSelectedPos()
+                if pos is not None and mli.dataSource is not None:
+                    self._hubReselectPositions[identifier] = (str(mli.dataSource.ratingKey), pos)
+            return
+
+        # Pagination: the selected item is the row's "load more" placeholder (is.end, appended by
+        # _bindHubToControl()/extendHubCallback() whenever the hub's own hub.more says there's
+        # another page beyond what's currently bound).
+        if not mli or mli.getProperty('is.updating') == '1':
+            return
+
+        mli.setBoolProperty('is.updating', True)
+        task = home.ExtendHubTask().setup(
+            control.dataSource, self.extendHubCallback,
+            canceledCallback=lambda hub: mli.setBoolProperty('is.updating', False))
+        self.tasks.add(task)
+        backgroundthread.BGThreader.addTask(task)
+
+    def extendHubCallback(self, hub, items, reselect_pos=None):
+        """ExtendHubTask's callback - pagination result. reselect_pos is accepted, not read - it's
+        always passed through by ExtendHubTask.run() (defaults None); only meant anything for the
+        round-robin wraparound trigger, which was deliberately dropped (see checkHubItem()'s own
+        docstring). Simpler than
+        HomeWindow.extendHubCallback()/updateHubCallback() (home.py): no sectionHubs-search dance
+        needed to find which control is showing hub - D2's model already tracks that directly via
+        each control's own .dataSource. Plan item 10, Group A (quiet-orbiting-heron.md).
+
+        Replaces the "load more" placeholder (the is.end item that triggered this fetch -
+        checkHubItem() always leaves it as the control's own last item, since selecting it is what
+        starts the fetch) with the first newly-fetched item, then appends the rest - same shape
+        HomeWindow.showHub()'s own update path used (home.py: `control.replaceItem(end, items[0]);
+        control.addItems(items[1:])`), not a full replaceItems() rebind. Explicitly reselects that
+        same index afterward (`control.selectItem(end)` in the original too, unconditionally here
+        since reselect_pos-driven round-robin positioning no longer exists) - live-confirmed
+        needed, not optional: neither replaceItem() nor addItems() actually preserves the native
+        container's selected position on their own, so without this the row visibly snapped back
+        to item 0 the moment a page finished loading. Appends a fresh is.end placeholder after the
+        new batch if hub.more says there's still another page beyond it - same condition
+        _bindHubToControl() uses for the initial bind."""
+        if self.closing or self.contentMode != 'recommended':
+            return
+
+        control = next((c for c in self.hubControls if c.dataSource is hub), None)
+        if control is None:
+            # Hub scrolled off / rotated away, or the section was left entirely, since this fetch
+            # was scheduled - hub.items itself was already extended by ExtendHubTask, so nothing
+            # is lost, just nothing left to bind into right now.
+            return
+
+        identifier = hub.getCleanHubIdentifier(is_home=self.section.key is None)
+        flags = self.getHubRenderFlags(hub, identifier)
+        new_mlis = [mli for mli in
+                    (self.createListItem(obj, wide=flags['with_art']) for obj in items) if mli]
+        if flags['with_progress']:
+            for mli in new_mlis:
+                mli.setProperty('progress', util.getProgressImage(mli.dataSource))
+
+        if hub.more.asBool() and identifier not in self.HUBS_NO_PAGINATION:
+            end = kodigui.ManagedListItem('')
+            end.setBoolProperty('is.end', True)
+            new_mlis.append(end)
+
+        if not new_mlis:
+            # The fetch came back empty despite hub.more - drop the stale placeholder rather than
+            # leaving it stuck mid-update (is.updating='1') forever.
+            if control.size():
+                control.removeItem(control.size() - 1)
+            return
+
+        end_index = control.size() - 1
+        control.replaceItem(end_index, new_mlis[0])
+        if len(new_mlis) > 1:
+            control.addItems(new_mlis[1:])
+        control.selectItem(end_index)
+
+        # Sync the hero overlay too - control.selectItem() above is a Python-initiated selection
+        # change, not a real keypress onAction() would otherwise catch and hand to checkHubItem()
+        # for its own hero-sync. Only if this hub row is still the anchor (the fetch is
+        # async - the user may have slid to a different row by the time it lands, in which case
+        # the anchor's own hero state must not be overwritten by a row that's no longer focused).
+        if control is self.hubControls[self._anchorControlId() - self.HUB_CONTROL_ID]:
+            self.updateHeroFrom(new_mlis[0].dataSource, hub=hub)
 
     def _anchorControlId(self):
         """Whichever physical control (400-404) is currently serving the anchor role. Ported
@@ -6138,6 +6337,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 return control.dataSource
         return None
 
+    @property
+    def carriedProps(self):
+        """Window properties to carry over to a new window opened on top of this one (auto-play
+        from a hub item, see hubItemClicked() below) - ported verbatim from
+        HomeWindow.carriedProps (home.py). The new window class temporarily invalidates this one
+        while a dialog is showing rather than rendering the underlying window, and the properties
+        vanish - without carrying hub.text2lines.<id> over explicitly, a text2lines-enabled hub
+        row loses its title2 label once the dialog closes and this window is shown again. Every
+        other call site in this file already reads this defensively (getattr(self, 'carriedProps',
+        None)) expecting it to exist eventually - it never did until now."""
+        anchor_id = self._anchorControlId()
+        if self.hubControls and self.hubControls[anchor_id - self.HUB_CONTROL_ID].dataSource:
+            return {'hub.text2lines.{0}'.format(anchor_id): '1'}
+
     def _ringRoleOffset(self, control_id, ring_pos=None):
         """control_id's current role-offset (-2 two-above / -1 peek-above / 0 anchor / +1
         peek-below / +2 two-below) relative to ring_pos (an index into HUB_ROTATION_RING -
@@ -6150,14 +6363,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         return ((ring.index(control_id) - ring_pos + half) % len(ring)) - half
 
     def hubItemClicked(self, hub_control_id):
-        """Open whatever's focused in a hub row (controls 400-404). Minimal port of
+        """Open whatever's focused in a hub row (controls 400-404). Port of
         HomeWindow.hubItemClicked() (home.py): generic opener.open() dispatch, since hub items
         span many different types across different hubs, unlike the grid's own section-TYPE-
-        scoped showPanelClicked(). Deliberately narrower than the original for now - no
-        in-progress auto-resume, no season/episode-to-show redirection for discover hubs, no
-        hub-becomes-empty cleanup after the click (an item removed/deleted, a watchlist item
-        dropped on open, etc. leaving this row with fewer items than before) - real gaps, not yet
-        decided whether/when to close, see quiet-orbiting-heron.md.
+        scoped showPanelClicked().
+
+        Plan item 10, Group B (quiet-orbiting-heron.md), all three ported here:
+        - in-progress auto-resume (home_inprogress_resume setting)
+        - season/episode -> show redirection for discover/watchlist hub items
+        - hub-becomes-empty cleanup after the click (an item removed/deleted, a watchlist item
+          dropped on open, etc. leaving this row with fewer items than before)
 
         watchlist-specific extra_kwargs (live-confirmed gap, fixed here): this window's own
         contentMode can be 'recommended' for a section whose TYPE is 'movies_shows' (Watchlist,
@@ -6168,12 +6383,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         literal string "watchlist"), so its sidebar has nothing to highlight. Same detection
         showPanelClicked() uses (self.section.TYPE, not per-hub cross-section sourcing -
         hubMenu()'s own _crossSectionSource - which would be a separate, currently unhandled case
-        even there).
+        even there). Independent of and additive to the per-item is_watchlist redirection below -
+        one answers "is this section the Watchlist", the other "is this particular item a
+        discover/watchlist item" (a hub on a real library section can still surface one, e.g.
+        cross-section hubs), same as HomeWindow kept them separate.
         """
         control = self.hubControls[hub_control_id - self.HUB_CONTROL_ID]
         mli = control.getSelectedItem()
         if not mli or not mli.dataSource:
             return
+
+        # In-progress auto-resume - ported from HomeWindow.hubItemClicked() (home.py).
+        auto_play = False
+        if util.getSetting('home_inprogress_resume'):
+            if mli.dataSource.TYPE in ('episode', 'movie') and mli.dataSource.in_progress:
+                auto_play = True
+
+        use_ds = mli.dataSource
 
         extra_kwargs = {
             'entry_section_id': self.entrySectionId,
@@ -6184,13 +6410,59 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             extra_kwargs['directly_from_watchlist'] = True
             extra_kwargs['external_item'] = True
 
-        # context=self (hashed-orbiting-pizza.md Phase 4 item 1): hub items span many object
-        # types (unlike the grid's own type-scoped showPanelClicked()), so this keeps using
+        # Season/episode -> show redirection for discover hub items - ported from
+        # HomeWindow.hubItemClicked() (home.py). A discover/watchlist hub can surface a season or
+        # episode directly (e.g. "New Episodes"); there's no real section context for either on
+        # its own, so redirect straight to the show instead of a dead-end info screen.
+        if mli.dataSource.is_watchlist:
+            extra_kwargs['from_watchlist'] = True
+            extra_kwargs['external_item'] = True
+            if mli.dataSource.TYPE in ('season', 'episode'):
+                use_ds = mli.dataSource.show()
+
+        # context=self (hashed-orbiting-pizza.md Phase 4): hub items span many object types
+        # (unlike the grid's own type-scoped showPanelClicked()), so this keeps using
         # opener.open()'s shared dispatch rather than duplicating it locally - context=self lets
-        # whichever branch has been made chain-aware so far (currently just movies) call
-        # self.openWindow(...) instead of unconditionally opening a real nested window. Inert for
-        # every other object type until its own Phase 4 item wires that branch too.
-        self.processCommand(opener.open(mli.dataSource, context=self, **extra_kwargs))
+        # every chain-aware branch call self.openWindow(...)/swapTo() instead of unconditionally
+        # opening a real nested window.
+        #
+        # Except when auto_play is set: every context-aware *Clicked() branch in opener.py checks
+        # `if context is not None` BEFORE looking at auto_play at all, routing straight to
+        # context.openWindow() -> swapTo() - which just constructs the target shell normally and
+        # shows it, never consulting auto_play (that kwarg only means anything to handleOpen()'s
+        # own branch, reached when context is None: create the window unshown - show=False,
+        # never added to Kodi's window history - call doAutoPlay() on it directly, and tear it
+        # down without ever displaying it). So passing context=self here would silently show the
+        # normal info/preplay screen instead of resuming - live-confirmed regression. Bypassing
+        # context for this one case doesn't reintroduce a second real window either way: the
+        # handleOpen() auto_play path never opens anything itself, it goes straight to playback.
+        command = opener.open(use_ds, context=None if auto_play else self, auto_play=auto_play,
+                               dialog_props=self.carriedProps if auto_play else None, **extra_kwargs)
+
+        # Hub-becomes-empty cleanup - ported from HomeWindow.hubItemClicked() (home.py).
+        # MediaItem.exists() checks the deleted/deletedAt flags; a full check is also tried since
+        # we still want to show the media if it's still valid but has deleted files.
+        if not mli.dataSource.exists() and not mli.dataSource.exists(force_full_check=True):
+            try:
+                control.removeItem(mli.pos())
+            except (ValueError, TypeError):
+                pass
+
+        if not control.size():
+            # this hub is now empty - drop it from the logical list and rebind whatever's left
+            # (visibleHubs has no "holes", so any in-range index is automatically valid).
+            if self.visibleHubs:
+                del self.visibleHubs[self.focusedHubIndex]
+            if self.visibleHubs:
+                self.focusedHubIndex = min(self.focusedHubIndex, len(self.visibleHubs) - 1)
+                self._bindAllHubSlots()
+                anchor_id = self._anchorControlId()
+                if self.getFocusId() != anchor_id:
+                    self.setFocusId(anchor_id)
+            else:
+                self.setFocusId(self.SECTION_LIST_ID)
+
+        self.processCommand(command)
 
     def hubMenu(self, hubControlID):
         """Context menu (ACTION_CONTEXT_MENU) for whichever item is focused in a hub row - ported
@@ -6417,9 +6689,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         the properties/dataSource/items population D1's flat _recommendedHubsCallback() did
         inline for every control unconditionally, factored out here since both the initial full
         bind and _startHubSlide()'s wrap-control rebind need to do exactly this for one control
-        at a time. Deliberately NOT HomeWindow.showHub()/_showHub() - those also handle
-        reselect-position restoration and hero-art/spoiler/cache-clearing, all out of scope for
-        D2 (see this block's own header comment)."""
+        at a time. Deliberately NOT HomeWindow.showHub()/_showHub() - those also handle hero-art/
+        spoiler/cache-clearing, out of scope for D2 (see this block's own header comment).
+        Reselect-position restoration (plan item 10, Group A) and the pagination "load more"
+        placeholder (is.end - checkHubItem() below is what actually acts on it) are handled here
+        though, ported from that same HomeWindow.showHub()."""
         is_home = self.section.key is None
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
         display_type = self.getHubDisplayType(hub, identifier)
@@ -6459,7 +6733,42 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             for mli in items:
                 mli.setProperty('progress', util.getProgressImage(mli.dataSource))
 
+        # Pagination "load more" placeholder - ported from HomeWindow.showHub() (home.py):
+        # `if hub.more.asBool(): end = ManagedListItem(''); end.setBoolProperty('is.end', True);
+        # items.append(end)`. Its own empty title/no dataSource is what makes checkHubItem()'s
+        # `not mli.getProperty('is.end')` early-return skip it, falling through to actually
+        # trigger ExtendHubTask once the user scrolls onto it - without this, hub.more being true
+        # never surfaced anywhere for the D2 port to act on, so pagination never fired at all
+        # (live-confirmed: no placeholder was ever created, so checkHubItem()'s pagination branch
+        # was dead code on every hub, round-robin setting on or off).
+        #
+        # HUBS_NO_PAGINATION exclusion added after a second live-confirmed bug: hub.more() reports
+        # True for curated/algorithmic Discover hubs (Watchlist's Coming Soon/Recently Added, both
+        # well under a single page of content) even though the server has nothing more to actually
+        # return - the placeholder appeared, briefly showed a loading spinner once focused
+        # (ExtendHubTask firing for real), then silently vanished (extendHubCallback()'s own
+        # empty-fetch branch) with nothing gained. Same identifier set HUBS_NO_PROGRESS already
+        # uses to flag this exact category of hub for a different reason.
+        if hub.more.asBool() and identifier not in self.HUBS_NO_PAGINATION:
+            end = kodigui.ManagedListItem('')
+            end.setBoolProperty('is.end', True)
+            items.append(end)
+
         control.replaceItems(items)
+
+        # Reselect-position memory (plan item 10, Group A) - ported from
+        # HomeWindow._hubReselectPositions, restored here since every rebind path (the initial
+        # full bind and _startHubSlide()'s wrap-control rebind) funnels through this one method.
+        # ratingKey resolution first, falling back to the stored position, since the remembered
+        # item may have scrolled out of this page (a fresh page always starts at offset 0) by the
+        # time this hub is revisited.
+        reselect = self._hubReselectPositions.get(identifier)
+        if reselect and items:
+            rk, pos = reselect
+            resolved = next((i for i, mli in enumerate(items)
+                              if mli.dataSource and str(mli.dataSource.ratingKey) == rk), pos)
+            if resolved is not None and 0 <= resolved < len(items):
+                control.selectItem(resolved)
 
     def _recommendedHubsCallbackFor(self, generation):
         """Wraps _recommendedHubsCallback() with the _listGeneration snapshot taken when the
@@ -6547,67 +6856,80 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self._anchorRingPos = self.HUB_ROTATION_RING.index(self.HUB_CONTROL_ID)
 
             # Group 51 has no correct position at all until this is set explicitly - see
-            # GROUP51_BASELINE_OFFSET's own comment above. _setNoHeroArt() below now handles this
-            # (it's the single choke point for group 51's position, keyed on hero-art state) -
-            # previously done unconditionally here, forcing no_hero_art=True, back when D2 had no
-            # hero-art concept at all (see that block's own former comment, still relevant
-            # context: a property that's never been written at all reads as empty in Kodi, same
-            # as explicitly set to '' - which matches has-hero-art's *empty* state, not no-hero-
-            # art's '1' - so no_hero_art must always be written explicitly, never left implicit,
-            # in every branch below, not just this one).
+            # GROUP51_BASELINE_OFFSET's own comment above. _setNoHeroArt() (called from within
+            # _bindAllHubSlots() below, via updateHeroFrom()/direct call) is the single choke
+            # point for group 51's position, keyed on hero-art state - previously done
+            # unconditionally here, forcing no_hero_art=True, back when D2 had no hero-art concept
+            # at all (see that block's own former comment, still relevant context: a property
+            # that's never been written at all reads as empty in Kodi, same as explicitly set to
+            # '' - which matches has-hero-art's *empty* state, not no-hero-art's '1' - so
+            # no_hero_art must always be written explicitly, never left implicit, in every branch).
 
-            if not sorted_hubs:
-                for index in range(len(self.hubControls)):
-                    self.hubControls[index].reset()
-                    self.setProperty('hub.display.4{0:02d}'.format(index), '')
-                self.setBoolProperty('hub.has_prev', False)
-                self.setBoolProperty('hub.has_next', False)
-                self._setNoHeroArt(True)
-                self.setProperty('hub.anchor_id', str(self._anchorControlId()))
-                for control_id in self.HUB_ROTATION_RING:
-                    role = self._ringRoleOffset(control_id)
-                    wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
-                    self._setRoleGeometry(wrapper, role, self.focusedHubIndex)
-                util.DEBUG_LOG("Library: _recommendedHubsCallback() bound 0 hubs for {0}", section.key)
-                return
-
-            self.setProperty('hub.anchor_id', str(self._anchorControlId()))
-
-            # Seed hero art/info from the anchor hub's first item before binding any controls -
-            # same ordering HomeWindow._bindAllHubSlots() uses and for the same reason (own
-            # comment there): binding the anchor first means the hero state is already settled by
-            # the time the other slots populate, so nothing else can race it. Real now (plan item
-            # 11) - previously this comment said "no hero-art background to seed here", back when
-            # D2 forced no_hero_art=True unconditionally instead.
-            anchor_hub = sorted_hubs[self.focusedHubIndex]
-            anchor_ds = anchor_hub.items[0] if anchor_hub.items else None
-            self.updateHeroFrom(anchor_ds, hub=anchor_hub)
-
-            for control_id in sorted(self.HUB_ROTATION_RING, key=lambda cid: abs(self._ringRoleOffset(cid))):
-                role = self._ringRoleOffset(control_id)
-                index = control_id - self.HUB_CONTROL_ID
-                wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
-                self._setRoleGeometry(wrapper, role, self.focusedHubIndex)
-
-                hub_index = self.focusedHubIndex + role
-                if not (0 <= hub_index < len(sorted_hubs)):
-                    self.hubControls[index].reset()
-                    self.setProperty('hub.display.4{0:02d}'.format(index), '')
-                    if role == -1:
-                        self.setBoolProperty('hub.has_prev', False)
-                    elif role == 1:
-                        self.setBoolProperty('hub.has_next', False)
-                    continue
-
-                self._bindHubToControl(sorted_hubs[hub_index], index)
-                if role == -1:
-                    self.setBoolProperty('hub.has_prev', True)
-                elif role == 1:
-                    self.setBoolProperty('hub.has_next', True)
-
+            self._bindAllHubSlots()
             util.DEBUG_LOG("Library: _recommendedHubsCallback() bound {0} hub(s) for {1}, anchor={2}",
                            min(len(sorted_hubs), len(self.hubControls)), section.key,
                            self._anchorControlId())
+
+    def _bindAllHubSlots(self):
+        """Bind all 5 physical hub-row controls to their current roles, from
+        self.visibleHubs/self.focusedHubIndex (already set by the caller) - factored out of
+        _recommendedHubsCallback()'s own per-control loop (Stage D2) since it's also needed
+        outside a fresh section bind: plan item 10's Group B (hubItemClicked()'s empty-hub
+        cleanup, after visibleHubs shrinks) and Group A (returning to a hub row whose reselect
+        position should be restored - handled by _bindHubToControl() itself, called from here).
+        Ported in spirit from HomeWindow._bindAllHubSlots() (home.py) - "visibleHubs by
+        construction only ever contains non-empty hubs, so any in-range index is automatically
+        valid" (focusFirstValidHub()'s own comment there) still applies verbatim here."""
+        if not self.visibleHubs:
+            for index in range(len(self.hubControls)):
+                self.hubControls[index].reset()
+                self.setProperty('hub.display.4{0:02d}'.format(index), '')
+            self.setBoolProperty('hub.has_prev', False)
+            self.setBoolProperty('hub.has_next', False)
+            self._setNoHeroArt(True)
+            self.setProperty('hub.anchor_id', str(self._anchorControlId()))
+            for control_id in self.HUB_ROTATION_RING:
+                role = self._ringRoleOffset(control_id)
+                wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
+                self._setRoleGeometry(wrapper, role, self.focusedHubIndex)
+            return
+
+        self.setProperty('hub.anchor_id', str(self._anchorControlId()))
+
+        # Seed hero art/info from the anchor hub's own remembered-position item (or its first item
+        # if there's no reselect memory for it yet - see _previewSelectedItem()) before binding
+        # any controls - same ordering HomeWindow._bindAllHubSlots() uses and for the same reason
+        # (own comment there): binding the anchor first means the hero state is already settled by
+        # the time the other slots populate, so nothing else can race it. Live-confirmed regression
+        # using items[0] unconditionally here: a hub revisited later in the session (reselect
+        # memory now persists for the whole LibraryWindow lifetime, see __init__'s own comment)
+        # would show its first item's hero art/background even though _bindHubToControl() (called
+        # below, per control) correctly restored the remembered *selection*.
+        anchor_hub = self.visibleHubs[self.focusedHubIndex]
+        anchor_ds = self._previewSelectedItem(anchor_hub)
+        self.updateHeroFrom(anchor_ds, hub=anchor_hub)
+
+        for control_id in sorted(self.HUB_ROTATION_RING, key=lambda cid: abs(self._ringRoleOffset(cid))):
+            role = self._ringRoleOffset(control_id)
+            index = control_id - self.HUB_CONTROL_ID
+            wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
+            self._setRoleGeometry(wrapper, role, self.focusedHubIndex)
+
+            hub_index = self.focusedHubIndex + role
+            if not (0 <= hub_index < len(self.visibleHubs)):
+                self.hubControls[index].reset()
+                self.setProperty('hub.display.4{0:02d}'.format(index), '')
+                if role == -1:
+                    self.setBoolProperty('hub.has_prev', False)
+                elif role == 1:
+                    self.setBoolProperty('hub.has_next', False)
+                continue
+
+            self._bindHubToControl(self.visibleHubs[hub_index], index)
+            if role == -1:
+                self.setBoolProperty('hub.has_prev', True)
+            elif role == 1:
+                self.setBoolProperty('hub.has_next', True)
 
     def _startHubSlide(self, delta):
         """Move the logical focus delta positions (+1 down / -1 up) and animate the transition.
