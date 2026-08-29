@@ -163,6 +163,12 @@
              previous item's art visibly lingering/blending under the new one during the transition. -->
         <fadetime>250</fadetime>
         <texture background="true" diffuse="script.plex/masks/background-vignette.png">$INFO[Window.Property(background_static)]</texture>
+        <!-- lets the 4-corner tinted panel bleed through the art uniformly, not just at the
+             vignette's own edge falloff - same sibling-<colordiffuse>-plus-diffuse-mask pattern
+             as the scrim control below (colordiffuse as an attribute on <texture> alongside
+             diffuse= silently does nothing, this sibling-element form is the one that works).
+             White RGB, alpha only, so this is a pure opacity trim - no colour shift of its own. -->
+        <colordiffuse>66FFFFFF</colordiffuse>
         {% include "includes/scale_background.xml.tpl" %}
     </control>
     <control type="image">
@@ -173,6 +179,7 @@
         <height>691</height>
         <fadetime>250</fadetime>
         <texture background="true" diffuse="script.plex/masks/background-vignette.png">{{ background_source|default("$INFO[Window.Property(background)]") }}</texture>
+        <colordiffuse>66FFFFFF</colordiffuse>
         {% include "includes/scale_background.xml.tpl" %}
     </control>
     <!-- a flat, neutral scrim directly over the art box - official Plex's own key art plateaus
@@ -183,13 +190,16 @@
          layers above so it fades out at the box edges instead of ending in a hard rectangle where
          the art has already faded to reveal the panel underneath. -->
     <control type="image">
-        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
+        <!-- temporarily disabled for testing (hardcoded false) - re-enable by restoring the
+             condition below. -->
+        <visible>false</visible>
+        <!-- <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art))</visible> -->
         <fadetime>1000</fadetime>
         <posx>691</posx>
         <posy>0</posy>
         <width>1229</width>
         <height>691</height>
         <texture diffuse="script.plex/masks/background-vignette.png">script.plex/white-square.png</texture>
-        <colordiffuse>66000000</colordiffuse>
+        <colordiffuse>33000000</colordiffuse>
     </control>
 </control>

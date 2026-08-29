@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import datetime
 import json
 import os
 import random
@@ -2653,9 +2654,21 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # home.watchlist_section, so it's also the only place that needs to populate it.
         if not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True):
             from plexnet import plexlibrary
-            home.watchlist_section = plexlibrary.WatchlistSection(
-                None, server=plexapp.SERVERMANAGER.getDiscoverServer())
-            home.watchlist_section.title = T(34000, 'Watchlist')
+            try:
+                home.watchlist_section = plexlibrary.WatchlistSection(
+                    None, server=plexapp.SERVERMANAGER.getDiscoverServer())
+                home.watchlist_section.title = T(34000, 'Watchlist')
+            except plexnet.exceptions.BadRequest as e:
+                # WatchlistSection.__init__ (plexlibrary.py) queries discover.provider.plex.tv
+                # synchronously, uninsured - live-confirmed: a transient 503 there raised
+                # uncaught all the way out of onFirstInit(), leaving the whole window (sidebar
+                # partially built, no Home content) stuck instead of just missing Watchlist for
+                # this session. Same catch/skip idiom this file already uses elsewhere for
+                # optional, best-effort fetches (see e.g. SectionTask.run() above). Leaving
+                # home.watchlist_section as whatever it already was (usually None) is enough -
+                # the check below already treats a falsy value as "don't show it".
+                util.DEBUG_LOG('Watchlist section unavailable ({0}), skipping for this session', e)
+                home.watchlist_section = None
 
         if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True) and home.watchlist_section
                 and home.watchlist_section.has_data()
@@ -5929,10 +5942,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     # A row's own real rendered height (template-declared, pre-vscale units), keyed by the same
     # (display_type, text2lines) values getHubDisplayType()/getHubRenderFlags() already report.
-    # Ported verbatim from HomeWindow.ROW_CONTENT_HEIGHT - see that constant's own comment
-    # (home.py) for the underlying arithmetic.
+    # poster: hub_itemlayout_poster.xml.tpl's item group starts at posy=72 and the poster art
+    # itself is 360 tall (72+360=432), plus a fixed ~32px bottom margin below that (unrelated to
+    # poster size, left as-is) = 464. Bumped from 429 (poster height 325, 72+325=397+32) when the
+    # poster grew from 220x325 to 240x360 on request - keep this in sync with that file's own
+    # posy/height if either changes again, or rows will start overlapping their neighbours
+    # (_roleLocalY() stacks rows using this value, not the template's own real rendered size).
     ROW_CONTENT_HEIGHT = {
-        ('poster', False): 429, ('poster', True): 429,
+        ('poster', False): 464, ('poster', True): 464,
         ('square', False): 371, ('square', True): 398,
         ('ar16x9', False): 349, ('ar16x9', True): 376,
     }
@@ -5941,9 +5958,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     ROW_GAP = 25
     # The anchor's own absolute resting position (script-plex-recommended.xml.tpl's group 51,
     # local y-offset GROUP51_BASELINE_OFFSET below, sitting inside grouplist 50 at its base
-    # posy=135 - 135 + 289 = 424). Ported verbatim from HomeWindow.ANCHOR_ABS_Y; used by
+    # posy=135 - 135 + 381 = 516). Ported verbatim from HomeWindow.ANCHOR_ABS_Y; used by
     # _setRoleGeometry() to size peek-below's clip height to reach exactly to the screen bottom.
-    ANCHOR_ABS_Y = 424
+    # Bumped from 424 to 516 (+92) on request - dropping the focused row 92px - along with
+    # GROUP51_BASELINE_OFFSET below by the same +92; every other row's position is computed
+    # relative to the anchor via _roleLocalY(), so shifting these two together is sufficient to
+    # move the whole rotation-ring stack down as one unit without touching _roleLocalY() itself.
+    ANCHOR_ABS_Y = 516
     # The local y-offset group 51 must always be explicitly set to via setPosition() to sit at
     # its correct resting position - ported verbatim from HomeWindow.GROUP51_BASELINE_OFFSET.
     # Used as the "no hero art" case of _group51RestOffset() below (the other case, has-hero-art,
@@ -5952,7 +5973,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # per fresh bind, in _recommendedHubsCallback() below - group 51 has no correct position at
     # all until Python explicitly sets it (see that control's own comment in the template for why
     # grouplist 50's auto-stacking can't be relied on for this).
-    GROUP51_BASELINE_OFFSET = 289
+    GROUP51_BASELINE_OFFSET = 381
     # Hub-switch slide animation step count/total time - ported verbatim from
     # HomeWindow.HUB_SLIDE_STEPS/HUB_SLIDE_TIME.
     HUB_SLIDE_STEPS = 24
@@ -5964,10 +5985,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # same amount so the anchor's own absolute position (ANCHOR_ABS_Y) never moves regardless of
     # hero-art state. HERO_ART_TYPES: which item types are eligible at all (see
     # _typeHasHeroArt()'s own docstring for why type-based, not art-field-presence-based).
-    # CLEAR_LOGO_DIM: the clearlogo image's own render bounds.
-    HUB_SLIDE_CLIP_SHIFT_HERO = 321
+    # CLEAR_LOGO_DIM: the clearlogo image's own render bounds. CLEAR_LOGO_DIM_EPISODE: smaller
+    # variant used when the focused hub item is an episode, leaving room for the episode-title
+    # line underneath within the same overall budget (script-plex-recommended.xml.tpl's own
+    # comment on the hero-info group has the exact numbers) - the show's clearlogo itself (same
+    # source image either way, see setHeroInfo()) is just requested/rendered smaller.
+    # Bumped from 321 to 413 (+92) alongside ANCHOR_ABS_Y/GROUP51_BASELINE_OFFSET's own +92 -
+    # must still match the raw number in script-plex-recommended.xml.tpl's Conditional animation
+    # exactly (that XML value isn't templated from this constant, see its own comment).
+    HUB_SLIDE_CLIP_SHIFT_HERO = 413
     HERO_ART_TYPES = {'movie', 'show', 'season', 'episode'}
-    CLEAR_LOGO_DIM = util.scaleResolution(616, 109)
+    CLEAR_LOGO_DIM = util.scaleResolution(722, 162)
+    CLEAR_LOGO_DIM_EPISODE = util.scaleResolution(660, 98)
 
     def _hubRowHeight(self, hub):
         """A row's own real rendered height (pre-vscale template units) for whichever hub it's
@@ -6064,17 +6093,38 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if not ds:
             return
 
+        ds_type = getattr(ds, 'type', '') or ''
         self.setProperty('title', getattr(ds, 'title', '') or '')
-        self.setProperty('clear.logo', util.clearLogoFrom(ds, *self.CLEAR_LOGO_DIM))
+        self.setProperty('hero.type', ds_type)
+        logo_dim = self.CLEAR_LOGO_DIM_EPISODE if ds_type == 'episode' else self.CLEAR_LOGO_DIM
+        self.setProperty('clear.logo', util.clearLogoFrom(ds, *logo_dim))
+
+        episode_code = ''
+        if ds_type == 'episode':
+            season_num = getattr(ds, 'parentIndex', None)
+            episode_num = getattr(ds, 'index', None)
+            if season_num is not None and episode_num is not None:
+                episode_code = u'S{0} E{1} • '.format(season_num.asInt(), episode_num.asInt())
+        self.setProperty('episode.code', episode_code)
 
         duration = getattr(ds, 'duration', None)
-        self.setProperty('duration', duration and util.durationToText(duration.asInt()) or '')
+        self.setProperty('duration', duration and util.durationToShortText(duration.asInt(), noSpaces=True) or '')
 
         summary = getattr(ds, 'summary', None)
         self.setProperty('summary', summary and str(summary).strip().replace('\t', ' ') or '')
 
-        year = getattr(ds, 'year', None)
-        self.setProperty('date', year and str(year) or '')
+        date_text = ''
+        if ds_type == 'episode':
+            air_date = getattr(ds, 'originallyAvailableAt', None)
+            if air_date:
+                try:
+                    date_text = datetime.datetime.strptime(str(air_date), '%Y-%m-%d').strftime('%d %b, %Y')
+                except Exception:
+                    util.DEBUG_LOG('setHeroInfo: air date parse failed for {}', ds)
+        else:
+            year = getattr(ds, 'year', None)
+            date_text = year and str(year) or ''
+        self.setProperty('date', date_text)
 
         content_rating = getattr(ds, 'contentRating', None)
         self.setProperty('content.rating', content_rating and str(content_rating).split('/', 1)[-1] or '')

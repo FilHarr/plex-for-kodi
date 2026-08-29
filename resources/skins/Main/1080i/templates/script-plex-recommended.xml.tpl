@@ -21,7 +21,7 @@
 {% block headers %}<defaultcontrol>50</defaultcontrol>{% endblock %}
 {% block content %}
 <!-- Fixed-position hub row stack: whichever hub is logically focused always renders at the anchor's
-     fixed position (HomeWindow.ANCHOR_ABS_Y, 424) - home.py rotates which of 5 physical row
+     fixed position (HomeWindow.ANCHOR_ABS_Y, 516) - home.py rotates which of 5 physical row
      controls (403/401/400/402/404, permanently ordered offsets -2 to +2 from focus -
      HomeWindow.HUB_ROTATION_RING) currently plays that role, and every other role, as focus moves,
      rather than there being one physical control per hub actually scrolled, or content being
@@ -36,7 +36,7 @@
      already holds correct, previously-loaded content. id="50" is kept on the outer control because
      default.xml.tpl's header controls target it directly via <ondown>50</ondown>. -->
 <!-- Outer clip: a grouplist (grouplist clips its children, a plain group doesn't - see
-     script-plex-episodes.xml.tpl:271's own comment). Base position is y=135 (not y=424, the
+     script-plex-episodes.xml.tpl:271's own comment). Base position is y=135 (not y=516, the
      anchor's own resting position - see group 51's own posy below for how that's preserved) -
      permanently wide enough to show peek-above (folded in as a child of group 51 below, at its own
      fixed relative offset) - peek-above has no <visible> condition of its own any more; whether
@@ -52,14 +52,16 @@
      addressed from Python (grouplist controls aren't - see the id=502/Part 5 comment below). -->
 <control type="grouplist" id="50">
     <!-- Keyed on no_hero_art alone, deliberately NOT also on hub.sliding: nudge the clip down from
-         its y=135 base to a FIXED y=456 (a shift of +321 - must match HomeWindow.HUB_SLIDE_CLIP_SHIFT_HERO
+         its y=135 base to a FIXED y=548 (a shift of +413 - must match HomeWindow.HUB_SLIDE_CLIP_SHIFT_HERO
          exactly) so the sliding row's own title/images, which otherwise briefly sweep through that
-         band on their way past 424, never render above the hero summary text. 456 was originally
-         chosen as the hero summary textbox's real bottom (431, at the time) + a gap (matching
-         HomeWindow.ROW_GAP) - but that's a one-time starting point, not a relationship this value
-         tracks: the user wants y=456 kept as-is even as the hero-info detail elements
-         (clearlogo/meta row/summary) keep getting repositioned - see HUB_SLIDE_CLIP_SHIFT_HERO's own
-         comment in home.py. Don't recompute 321 to match wherever the summary currently sits. No
+         band on their way past 516, never render above the hero summary text. 548 = 456 (the
+         original target) + 92, bumped on request in lockstep with ANCHOR_ABS_Y's own +92 - before
+         that, 456 was chosen as the hero summary textbox's real bottom (431, at the time) + a gap
+         (matching HomeWindow.ROW_GAP) - but that's a one-time starting point, not a relationship
+         this value tracks: the user wants this target kept as-is even as the hero-info detail
+         elements (clearlogo/meta row/summary) keep getting repositioned - see
+         HUB_SLIDE_CLIP_SHIFT_HERO's own comment in home.py. Don't recompute 413 to match wherever
+         the summary currently sits. No
          corresponding no-hero-art animation is needed - the clip is already at its widest (y=135) by
          default, so there's nothing further to shift to for that case.
 
@@ -85,7 +87,7 @@
          settling, on top of whatever the ordinary hub-to-hub row slide was already doing. Precedent
          for instant Conditional repositioning elsewhere in this codebase: seasons_meta_row.xml.tpl,
          script-plex-seasons.xml.tpl:261. -->
-    <animation effect="slide" end="0,321" time="0"
+    <animation effect="slide" end="0,413" time="0"
                condition="String.IsEmpty(Window.Property(no_hero_art))">Conditional</animation>
 
     <defaultcontrol>51</defaultcontrol>
@@ -98,7 +100,7 @@
     <width>2085</width>
     <!-- 945 = 1080 (screen bottom) - 135 (this control's own base posy) - reaches to the bottom of
          the screen. Not compensated when the animation above shifts this control's own posy down
-         by 321 - height stays fixed, so the clip's bottom edge (456+945=1401) also shifts down,
+         by 413 - height stays fixed, so the clip's bottom edge (548+945=1493) also shifts down,
          comfortably past the screen bottom regardless, so nothing is newly clipped there. -->
     <height>{{ vscale(945) }}</height>
     <usecontrolcoords>true</usecontrolcoords>
@@ -118,14 +120,14 @@
              genuinely handing off control once Python had set it explicitly. HomeWindow now owns
              this control's position unconditionally and exclusively - every bind/slide/settle call
              (_bindAllHubSlots()/_startHubSlide()/_settleHubSlide()) always sets it explicitly via
-             setPosition(), from HomeWindow.GROUP51_BASELINE_OFFSET (289) as the true absolute
+             setPosition(), from HomeWindow.GROUP51_BASELINE_OFFSET (381) as the true absolute
              local-offset target, not a value added on top of anything else. The one gap this
              leaves: before HomeWindow's first bind ever runs, grouplist 50 auto-stacks this,
              its only child, flush to 0 (ignoring this declared posy, same as always) - a one-frame
              flash at init, corrected the instant onFirstInit's own first bind runs. -->
         <defaultcontrol>500</defaultcontrol>
         <posx>0</posx>
-        <posy>{{ vscale(289) }}</posy>
+        <posy>{{ vscale(381) }}</posy>
         <width>2085</width>
         <height>{{ vscale(425) }}</height>
         <usecontrolcoords>true</usecontrolcoords>
@@ -139,7 +141,7 @@
              from _bindAllHubSlots()/_startHubSlide()/_finishHubSlide()) - the posy/height declared
              below are just the pre-bind fallback, matching whichever role this control starts in.
              Every role's Y is computed by the same one recurrence, walked outward from the anchor
-             (fixed at HomeWindow.ANCHOR_ABS_Y, 424) in whichever direction is needed: each row's Y
+             (fixed at HomeWindow.ANCHOR_ABS_Y, 516) in whichever direction is needed: each row's Y
              is its neighbor's Y, plus or minus that neighbor's own real rendered content height
              (HomeWindow.ROW_CONTENT_HEIGHT, keyed by display type) plus a fixed gap
              (HomeWindow.ROW_GAP) - not a fixed constant for peek-above and a dynamic one for
@@ -197,7 +199,7 @@
                     <font>font13</font>
                     <align>left</align>
                     <aligny>center</aligny>
-                    <textcolor>FFFFFFFF</textcolor>
+                    <textcolor>FFD2CCCE</textcolor>
                     <shadowcolor>66000000</shadowcolor>
                     <label>[B]$INFO[Window.Property(hub.{{ id - 100 }})][/B]</label>
                 </control>
@@ -437,7 +439,7 @@
     <visible>!String.IsEmpty(Window.Property(title)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
     <posx>52</posx>
     <posy>{{ vscale(135) }}</posy>
-    <height>{{ vscale(296) }}</height>
+    <height>{{ vscale(388) }}</height>
     <control type="label">
         <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
         <posx>60</posx>
@@ -453,21 +455,53 @@
         <label>$INFO[Window.Property(title)]</label>
     </control>
     <control type="image">
-        <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
+        <visible>!String.IsEmpty(Window.Property(clear.logo)) + !String.IsEqual(Window.Property(hero.type),episode)</visible>
         <posx>60</posx>
         <posy>0</posy>
-        <width>616</width>
-        <height>{{ vscale(109) }}</height>
+        <width>722</width>
+        <height>{{ vscale(162) }}</height>
         <aspectratio align="left" aligny="bottom">keep</aspectratio>
         <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
+    </control>
+    <!-- Episode variant: smaller box, leaves room for the episode-title line underneath it -
+         see this group's own CLEAR_LOGO_DIM_EPISODE comment (library.py) for the budget. -->
+    <control type="image">
+        <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEqual(Window.Property(hero.type),episode)</visible>
+        <posx>60</posx>
+        <posy>0</posy>
+        <width>660</width>
+        <height>{{ vscale(98) }}</height>
+        <aspectratio align="left" aligny="bottom">keep</aspectratio>
+        <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
+    </control>
+    <!-- Episode title, sitting under the show's clearlogo: 19px gap below the 98px logo (13px
+         original gap + 6px explicit drop), font32_title (bold variant, 32px - see this session's
+         font-size math for the box budget - ~1.3x box-to-font ratio matching
+         font10/height=vscale(30) elsewhere in this row) sized to that box. Window.Property(title)
+         is already the episode's own title (not
+         the show's - that's grandparentTitle, used nowhere in this overlay), same property the
+         non-logo title label above reads. -->
+    <control type="label">
+        <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEqual(Window.Property(hero.type),episode)</visible>
+        <posx>60</posx>
+        <posy>{{ vscale(117) }}</posy>
+        <width>660</width>
+        <height>{{ vscale(51) }}</height>
+        <font>font32_title</font>
+        <align>left</align>
+        <aligny>top</aligny>
+        <scroll>true</scroll>
+        <scrollspeed>35</scrollspeed>
+        <textcolor>FFD2CCCE</textcolor>
+        <label>$INFO[Window.Property(title)]</label>
     </control>
     {% include "includes/pp_meta_row.xml.tpl" %}
     <control type="textbox">
         <posx>60</posx>
-        <posy>{{ vscale(201) }}</posy>
-        <width>708</width>
+        <posy>{{ vscale(239) }}</posy>
+        <width>813</width>
         <height>{{ vscale(90) }}</height>
-        <font>font12</font>
+        <font>font10</font>
         <align>left</align>
         <textcolor>FFD2CCCE</textcolor>
         <shadowcolor>66000000</shadowcolor>
