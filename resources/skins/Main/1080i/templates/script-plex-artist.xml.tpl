@@ -4,6 +4,12 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
+    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
+         of this include for the full reasoning (this window is one of the seven real hosted-shell
+         types too, same _sidebarTarget()-aware Python side, same onClick forwarding - shared with
+         script-plex-seasons.xml.tpl since ArtistWindow(subitems.py) subclasses ShowWindow without
+         overriding onClick). -->
+    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 {% block content %}
 <control type="group" id="50">

@@ -306,6 +306,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         kodigui.ControlledWindow.onAction(self, action)
 
     def onClick(self, controlID):
+        if self.handleSidebarDropdownClick(controlID):
+            return
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
         elif controlID == self.SUB_ITEM_LIST_ID:

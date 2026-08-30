@@ -749,7 +749,8 @@ class PlayableVideo(CachableItemsMixin, Video, media.RelatedMixin):
 @plexobjects.registerLibType
 class Movie(PlayableVideo):
     __slots__ = ("collections", "countries", "directors", "_genres", "media", "producers", "roles", "reviews",
-                 "writers", "studios", "markers", "sessionKey", "user", "player", "session", "transcodeSession")
+                 "writers", "studios", "markers", "sessionKey", "user", "player", "session", "transcodeSession",
+                 "ratings")
     TYPE = 'movie'
 
     def _setData(self, data):
@@ -760,6 +761,7 @@ class Movie(PlayableVideo):
             self.countries = plexobjects.PlexItemList(data, media.Country, media.Country.TYPE, server=self.server)
             self.directors = plexobjects.PlexItemList(data, media.Director, media.Director.TYPE, server=self.server)
             self._genres = plexobjects.PlexItemList(data, media.Genre, media.Genre.TYPE, server=self.server)
+            self.ratings = plexobjects.PlexItemList(data, media.Rating, media.Rating.TYPE, server=self.server)
             self.media = plexobjects.PlexMediaItemList(data, plexmedia.PlexMedia, media.Media.TYPE,
                                                        initpath=self.initpath, server=self.server, media=self)
             self.producers = plexobjects.PlexItemList(data, media.Producer, media.Producer.TYPE, server=self.server)
@@ -1019,6 +1021,7 @@ class Show(CachableItemsMixin, Video, media.RelatedMixin, SectionOnDeckMixin):
                                                   container=self.container)
             self.roles = plexobjects.PlexItemList(data, media.Role, media.Role.TYPE, server=self.server, container=self.container)
             self.guids = plexobjects.PlexItemList(data, media.Guid, media.Guid.TYPE, server=self.server)
+            self.ratings = plexobjects.PlexItemList(data, media.Rating, media.Rating.TYPE, server=self.server)
             #self.related = plexobjects.PlexItemList(data.find('Related'), plexlibrary.Hub, plexlibrary.Hub.TYPE, server=self.server, container=self)
             self.extras = PlexVideoItemList(data.find('Extras'), initpath=self.initpath, server=self.server, container=self)
             self.onDeck = PlexVideoItemList(data.find('OnDeck'), initpath=self.initpath, server=self.server,
@@ -1174,6 +1177,7 @@ class Episode(PlayableVideo, SectionOnDeckMixin):
             self._roles = plexobjects.PlexItemList(data, media.Role, media.Role.TYPE, server=self.server)
             self.media = plexobjects.PlexMediaItemList(data, plexmedia.PlexMedia, media.Media.TYPE, initpath=self.initpath, server=self.server, media=self)
             self.writers = plexobjects.PlexItemList(data, media.Writer, media.Writer.TYPE, server=self.server)
+            self.ratings = plexobjects.PlexItemList(data, media.Rating, media.Rating.TYPE, server=self.server)
         else:
             if data.find(media.Media.TYPE) is not None:
                 self.media = plexobjects.PlexMediaItemList(data, plexmedia.PlexMedia, media.Media.TYPE, initpath=self.initpath, server=self.server, media=self)

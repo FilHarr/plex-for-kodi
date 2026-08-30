@@ -131,6 +131,35 @@ class SidebarMixin():
     USER_MENU_BG_ID = 801
     USER_MENU_GROUP_ID = 901
 
+    def handleSidebarDropdownClick(self, controlID):
+        """USER_LIST_ID/SERVER_LIST_ID click handling for a real LibraryWindow-hosted shell's own
+        onClick() (PrePlayWindow, EpisodesWindow, etc.) - these two dropdowns are host-owned
+        (LibraryWindow.userList/serverList, doUserOption()/selectServer()), and the host's
+        showUserMenu()/showServers() (library.py) already know how to display them correctly on a
+        hosted shell's own screen (self._sidebarTarget()) - but unlike onAction(), a real shell's
+        own onClick is NOT delegated to the host (_setupCurrent()'s own comment on why, library.py)
+        - Kodi calls the shell's own onClick directly, and only the host has doUserOption()/
+        selectServer() to run. Call this at the top of a real shell's own onClick(controlID),
+        before anything else: returns True if it handled the click (caller should return
+        immediately), False otherwise (not this dropdown - keep checking normally). No-ops safely
+        (still returns True, just does nothing further) if this window was never actually chained -
+        _liveChainHost() is only non-None for a genuinely hosted shell, which is the only context
+        these two ids are ever wired to anything in the first place."""
+        if controlID == self.USER_LIST_ID:
+            host = self._liveChainHost()
+            if host is not None:
+                host.doUserOption(target=self)
+            self.setBoolProperty('show.options', False)
+            self.setFocusId(self.USER_BUTTON_ID)
+            return True
+        if controlID == self.SERVER_LIST_ID:
+            host = self._liveChainHost()
+            if host is not None:
+                self.setBoolProperty('show.servers', False)
+                threading.Timer(SKIN_RELOAD_DEFER_SECONDS, host.selectServer).start()
+            return True
+        return False
+
     def reselectActiveSection(self, controlID, previousFocusID):
         """Call from onFocus(controlID), passing the control that had focus immediately before
         (self.lastFocusID, captured before it gets overwritten with controlID). If focus just moved

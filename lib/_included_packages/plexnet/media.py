@@ -262,6 +262,17 @@ class Mood(MediaTag):
     FILTER = 'mood'
 
 
+class Rating(MediaTag):
+    """<Rating image="imdb://image.rating" value="5.9" type="audience"/> - one of possibly several
+    per item (critic/audience scores from every metadata agent that provided one, not just the
+    single "primary" pick PMS also exposes as the item's own flat rating/audienceRating
+    attributes - see populateRatings(), lib/windows/mixins/ratings.py, for why the flat attributes
+    alone under-represent what's actually available). No FILTER - unlike other MediaTag subclasses,
+    a rating isn't something a library can be browsed/filtered by. .image/.value/.type all fall out
+    of PlexObject._setData()'s generic attribute capture - no per-field code needed here."""
+    TYPE = 'Rating'
+
+
 
 class Role(MediaTag):
     TYPE = 'Role'

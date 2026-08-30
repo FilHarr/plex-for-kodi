@@ -1448,6 +1448,26 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         ret.button = button
         return ret
 
+    def _sidebarTarget(self):
+        """Whichever window object the sidebar's server/user dropdown UI must actually read/write
+        controls on right now: self._current (the live, currently-modal real shell) while one is
+        hosted, self otherwise. Needed because onAction() runs as this bound method even when a
+        real shell owns the screen (_setupCurrent()'s self._current.onAction = self.onAction
+        monkeypatch, so shared chrome like the sidebar is handled centrally) - but self's own
+        native window has already been closed (doClose()) in favor of the shell's by then (see
+        MultiWindow._open()'s .modal() loop). getFocusId() reads still resolve against whatever's
+        genuinely on screen (that's how onAction()'s SERVER_BUTTON_ID/USER_BUTTON_ID branches get
+        reached at all while hosted), but *writes* - getControl(...).setHeight()/.setPosition(),
+        ManagedControlList mutations, setFocusId() - do not: live-confirmed 100% reproducible
+        native Kodi crash (minidump captured) the moment showUserMenu()/showServers() ran those
+        against self while a real shell was actually modal. Every control-touching call in
+        showUserMenu()/showServers()/doUserOption()/selectServer() must go through this, not self,
+        for exactly that reason. self.userList/self.serverList themselves stay owned by self (the
+        host) - only rebound (ManagedControlList.newControl(), same proven-safe pattern
+        self.sectionList/self.tabList/self.hubControls already use to survive a real content swap)
+        to whichever native control target.getControl() actually reaches, immediately before use."""
+        return self._current if self._isHostedShell else self
+
     def showUserMenu(self, mouse=False):
         """Ported from HomeWindow.showUserMenu() (home.py) - see quiet-orbiting-heron.md's Cold
         Start plan, Stage 3. Builds/shows the shared user-options dropdown (control 250,
@@ -1492,16 +1512,22 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # somehow dynamically setting the list height here doesn't work. We need a height that's
         # bigger than our possible available items in the template
 
+        target = self._sidebarTarget()
+        # Rebind first, not after - .reset()/.addItems() below operate on whatever self.userList's
+        # own .control currently points at, so this has to land before them. newControlEmpty(), not
+        # newControl(): about to repaint via addItems() anyway, so skip newControl()'s own redundant
+        # repaint-then-immediately-discard of whatever this list held from its last showing.
+        self.userList.newControlEmpty(target)
         self.userList.reset()
         self.userList.addItems(items)
         itemHeight = util.vscale(66, r=0)
 
         self.userList.setHeight((len(items) * itemHeight))
-        self.getControl(self.USER_MENU_GROUP_ID).setHeight((len(items) * itemHeight))
-        self.getControl(self.USER_MENU_BG_ID).setHeight((len(items) * itemHeight) + 80)
+        target.getControl(self.USER_MENU_GROUP_ID).setHeight((len(items) * itemHeight))
+        target.getControl(self.USER_MENU_BG_ID).setHeight((len(items) * itemHeight) + 80)
 
         if not mouse:
-            self.setFocusId(self.USER_LIST_ID)
+            target.setFocusId(self.USER_LIST_ID)
 
     def _closeSessionWithOption(self, option, shutting_down=False):
         """Every doUserOption() branch that ends a session (go_online while local, signout, exit,
@@ -1539,7 +1565,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # bubble gets.
         self.goHome()
 
-    def doUserOption(self, force_option=None):
+    def doUserOption(self, force_option=None, target=None):
         """Ported from HomeWindow.doUserOption() (home.py) - see quiet-orbiting-heron.md's Cold
         Start plan, Stage 3. Adaptations: dialog_props reads carriedProps defensively (getattr,
         CommonMixin's own pattern) since LibraryWindow doesn't define it; storeLastBG() stays
@@ -1547,7 +1573,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         anyway, only from confirmExit()'s minimize branch and shutdown() itself, neither of which
         call it here either; every session-ending branch routes through _closeSessionWithOption()
         above instead of closing self directly - see that method's own comment for why.
-        """
+
+        target: explicit override for _sidebarTarget() - onClick()'s own USER_LIST_ID branch below
+        always has the right answer already (self when this call originated on self, the calling
+        shell itself when a real shell forwarded its own click here - see e.g.
+        preplay.PrePlayWindow.onClick()) and passing it avoids re-deriving it from self._current,
+        which would be wrong for that forwarded case (self._current is never the caller here, the
+        caller *is* self._current already forwarding to its host)."""
+        target = target or self._sidebarTarget()
         if not force_option:
             mli = self.userList.getSelectedItem()
             if not mli:
@@ -1557,7 +1590,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             option = force_option
 
-        self.setFocusId(self.USER_BUTTON_ID)
+        target.setFocusId(self.USER_BUTTON_ID)
 
         if option == 'settings':
             from . import settings
@@ -1565,7 +1598,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         elif option == 'update':
             self.setBoolProperty('show.options', False)
             self.setProperty('busy', '1')
-            self.setFocusId(self.SECTION_LIST_ID)
+            target.setFocusId(self.SECTION_LIST_ID)
             util.setGlobalProperty('update_requested', '1', wait=True)
         elif option == 'go_online':
             if plexapp.util.LOCAL_MODE:
@@ -1631,6 +1664,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """Ported from HomeWindow.showServers() (home.py) - see quiet-orbiting-heron.md's Cold
         Start plan, Stage 3. Builds/shows the shared server-switch dropdown (control 260,
         includes/sidebar_dropdowns.xml.tpl) - same include showUserMenu() above already uses."""
+        target = self._sidebarTarget()
         with self.lock:
             selection = None
             if from_refresh:
@@ -1662,16 +1696,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             elif items:
                 items[0].setProperty('only', '1')
 
+            # Rebind first, not after - see showUserMenu()'s own comment on this same pattern.
+            # newControl(), not newControlEmpty(): from_refresh can reach here with the list
+            # already showing (a live server/reachability update, not a fresh open), and unlike
+            # showUserMenu()'s unconditional reset()+addItems(), replaceItems() above only
+            # repaints when the item count actually changed - newControlEmpty()'s own repaint-skip
+            # would leave a stale/empty list on screen in the common case where it doesn't.
+            self.serverList.newControl(target)
             self.serverList.replaceItems(items)
             itemHeight = util.vscale(100, r=0)
 
             listHeight = min(len(items), 9) * itemHeight
-            self.getControl(self.SERVER_MENU_BG_ID).setHeight(listHeight + 80)
+            target.getControl(self.SERVER_MENU_BG_ID).setHeight(listHeight + 80)
 
             # Position dropdown so it grows upward from the server button area
             buttonY = util.vscale(990, r=0)
             dropdownY = buttonY - listHeight
-            self.getControl(self.SERVER_MENU_GROUP_ID).setPosition(80, dropdownY)
+            target.getControl(self.SERVER_MENU_GROUP_ID).setPosition(80, dropdownY)
 
             for item in items:
                 if item.dataSource != kodigui.DUMMY_DATA_SOURCE:
@@ -1683,7 +1724,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                         self.serverList.selectItem(mli.pos())
 
             if not from_refresh and items and not mouse:
-                self.setFocusId(self.SERVER_LIST_ID)
+                target.setFocusId(self.SERVER_LIST_ID)
 
             if not from_refresh:
                 plexapp.refreshResources()
@@ -1719,7 +1760,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         prevUUID = plexapp.SERVERMANAGER.selectedServer.uuid
 
         self.changingServer = True
-        self.setFocusId(self.SECTION_LIST_ID)
+        self._sidebarTarget().setFocusId(self.SECTION_LIST_ID)
 
         if not self._shuttingDown and not server.isReachable():
             if server.pendingReachabilityRequests > 0:
@@ -2293,6 +2334,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # swap once the resulting change:selectedServer signal reaches serverRefresh() -
                 # same reentrancy reasoning as switchTab()'s own deferred dispatch (see
                 # windowutils.SKIN_RELOAD_DEFER_SECONDS).
+                #
+                # This whole onAction() runs against a real hosted shell too (self._current.onAction
+                # is monkeypatched to this bound method - _setupCurrent()'s own comment above), but
+                # self here is still the *host* - and the host's own native window has already been
+                # closed (doClose()) in favor of the shell's, once a real shell is showing (see
+                # MultiWindow._open()'s .modal() loop). showServers()/selectServer()/doUserOption()
+                # below are all _sidebarTarget()-aware (see that method's own comment) precisely
+                # because of this - every control write they do lands on self._current, the
+                # genuinely live window, not self.
                 if action == xbmcgui.ACTION_SELECT_ITEM:
                     self.showServers()
                     return
@@ -2307,7 +2357,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     return
             elif controlID == self.USER_BUTTON_ID:
                 # Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - ported from HomeWindow's
-                # identical USER_BUTTON_ID handling (home.py's onAction()).
+                # identical USER_BUTTON_ID handling (home.py's onAction()). See SERVER_BUTTON_ID's
+                # own comment just above on why this is safe against a real hosted shell too.
                 if action == xbmcgui.ACTION_SELECT_ITEM:
                     self.showUserMenu()
                     return

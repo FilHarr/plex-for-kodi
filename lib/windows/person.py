@@ -256,6 +256,8 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         return False
 
     def onClick(self, controlID):
+        if self.handleSidebarDropdownClick(controlID):
+            return
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
         elif controlID == self.FILTER_BUTTON_ID:

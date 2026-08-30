@@ -148,6 +148,8 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         kodigui.ControlledWindow.onAction(self, action)
 
     def onClick(self, controlID):
+        if self.handleSidebarDropdownClick(controlID):
+            return
         if controlID == self.GRID_ID:
             self.itemClicked()
         elif controlID == self.SECTION_LIST_ID:

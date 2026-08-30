@@ -36,7 +36,7 @@
             <align>left</align>
             <textcolor>FFD2CCCE</textcolor>
             <shadowcolor>66000000</shadowcolor>
-            <label>$INFO[Window.Property(episode.code)]$INFO[Window.Property(duration)]$INFO[Window.Property(date), &#8226; ]$INFO[Window.Property(content.rating), &#8226; ]</label>
+            <label>$INFO[Window.Property(episode.code)]$INFO[Window.Property(duration)]$INFO[Window.Property(date), &#8226; ]$INFO[Window.Property(genres.short), &#8226; ]$INFO[Window.Property(content.rating), &#8226; ]</label>
         </control>
         <control type="button">
             <visible>!String.IsEmpty(Window.Property(remainingTime))</visible>

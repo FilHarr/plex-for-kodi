@@ -4,6 +4,12 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
+    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
+         of this include for the full reasoning (this window is one of the seven real hosted-shell
+         types too, same _sidebarTarget()-aware Python side, same onClick forwarding - shared with
+         ActorWindow/DirectorWindow since they subclass PersonWindow (person.py) without
+         overriding onClick or xmlFile). -->
+    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 {% block header_anim %}<animation effect="slide" end="0,{{ vscale(-135) }}" time="200" tween="sine" easing="inout" condition="!String.IsEmpty(Window.Property(on.extras)) + !ControlGroup(200).HasFocus(0)">Conditional</animation>{% endblock %}
 

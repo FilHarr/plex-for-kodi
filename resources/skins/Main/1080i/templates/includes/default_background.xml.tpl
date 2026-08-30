@@ -202,4 +202,23 @@
         <texture diffuse="script.plex/masks/background-vignette.png">script.plex/white-square.png</texture>
         <colordiffuse>33000000</colordiffuse>
     </control>
+    <!-- Full-canvas dim while focus is down in the row content (Roles/Reviews/Extras/Related/etc.)
+         below the details block, so that content doesn't have to compete with the backdrop. Driven
+         by row.focused (PrePlayWindow.onFocus, preplay.py) rather than the pre-existing hub.focus
+         property that the row-slide animations elsewhere key off - hub.focus is deliberately never
+         cleared once a row's been visited (those animations are meant to stay collapsed), but this
+         scrim needs to toggle back off when focus returns above the row list, so it gets its own
+         property that does. Only pre_play sets row.focused today; the same two-line onFocus addition
+         would need to land in episodes.py/person.py/subitems.py's own onFocus to extend this to their
+         screens, which share this same row-scrolling layout but don't opt in yet. -->
+    <control type="image">
+        <visible>!String.IsEmpty(Window.Property(row.focused))</visible>
+        <animation effect="fade" start="0" end="100" time="600" reversible="true">VisibleChange</animation>
+        <posx>0</posx>
+        <posy>0</posy>
+        <width>1920</width>
+        <height>1080</height>
+        <texture>script.plex/white-square.png</texture>
+        <colordiffuse>33000000</colordiffuse>
+    </control>
 </control>

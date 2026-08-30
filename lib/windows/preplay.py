@@ -103,9 +103,13 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     dismissOnClose = True
 
     RELATED_DIM = util.scaleResolution(268, 402)
-    EXTRA_DIM = util.scaleResolution(329, 185)
+    # 533x300 = 512x288 display size (script-plex-pre_play.xml.tpl's extras row) * 104%, the row's own
+    # focus-zoom end value - same "fetch at the zoomed-in size, not the at-rest one" pattern the old
+    # 299x168 art used (329x185 was that at 110%, its own zoom end value at the time). Shared with
+    # ShowWindow's own EXTRA_DIM (subitems.py) - both rows use the same art recipe.
+    EXTRA_DIM = util.scaleResolution(533, 300)
     ROLES_DIM = util.scaleResolution(334, 334)
-    CLEAR_LOGO_DIM = util.scaleResolution(616, 109)
+    CLEAR_LOGO_DIM = util.scaleResolution(722, 162)
 
     ROLES_LIST_ID = 400
     REVIEWS_LIST_ID = 401
@@ -322,8 +326,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 if self.relatedPaginator.boundaryHit:
                     self.relatedPaginator.paginate()
                     return
-                elif action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
-                    self.updateBackgroundFrom(self.relatedListControl.getSelectedItem().dataSource)
 
             if controlID in self.COLLECTION_LIST_IDS:
                 idx = self.COLLECTION_LIST_IDS.index(controlID)
@@ -337,6 +339,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         kodigui.ControlledWindow.onAction(self, action)
 
     def onClick(self, controlID):
+        if self.handleSidebarDropdownClick(controlID):
+            return
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
         elif controlID == self.EXTRA_LIST_ID:
@@ -377,9 +381,13 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
         if 399 < controlID < 500:
             self.setProperty('hub.focus', str(controlID - 400))
-
-            if controlID == self.RELATED_LIST_ID:
-                self.updateBackgroundFrom(self.relatedListControl.getSelectedItem().dataSource)
+            self.setProperty('row.focused', '1')
+        else:
+            # row.focused (not hub.focus, which is never cleared once set - other controls key off
+            # it staying "seen at least once") drives default_background.xml.tpl's scroll-dim scrim,
+            # which needs to toggle back off when focus returns to the details/button area above the
+            # row list.
+            self.setProperty('row.focused', '')
 
         if xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)'):
             self.setProperty('on.extras', '')
@@ -877,7 +885,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.setProperty('title', self.video.title)
         logo = util.clearLogoFrom(self.video, *self.CLEAR_LOGO_DIM)
         self.setProperty('clear.logo', logo)
-        self.setProperty('duration', self.video.duration and util.durationToText(self.video.duration.asInt()))
+        self.setProperty('duration', self.video.duration and util.durationToShortText(self.video.duration.asInt(), noSpaces=True))
         self.setProperty('summary', self.video.summary.strip().replace('\t', ' '))
         self.setProperty('unwatched', not self.video.isWatched and '1' or '')
         self.setBoolProperty('watched', self.video.isFullyWatched)
@@ -894,6 +902,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.setProperty('title', self.video.defaultTitle)
         genres = u' / '.join([g.tag for g in self.video.genres()][:3])
         self.setProperty('info', genres)
+        # Separate from 'info' above (used by the info/options dialogs elsewhere, 3 genres joined by
+        # ' / ') - the metadata row (pp_meta_row.xml.tpl) wants its own shorter, comma-separated form.
+        self.setProperty('genres.short', u', '.join([g.tag for g in self.video.genres()][:2]))
         self.setProperty('date', self.video.year)
         if self.fromWatchlist and not self.wl_availability:
             self.setProperty('wl_server_availability_verbose', util.cleanLeadingZeros(self.video.originallyAvailableAt.asDatetime('%B %d, %Y')))
@@ -989,7 +1000,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             if not self.trailer and extra.extraType.asInt() == media.METADATA_RELATED_TRAILER:
                 self.trailer = extra
                 self.setProperty('trailer.button', '1')
-                continue
 
             mli = self.createListItem(extra)
             if mli:

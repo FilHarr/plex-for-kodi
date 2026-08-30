@@ -161,6 +161,8 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         kodigui.ControlledWindow.onAction(self, action)
 
     def onClick(self, controlID):
+        if self.handleSidebarDropdownClick(controlID):
+            return
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
         elif controlID == self.PLAYLIST_LIST_ID:

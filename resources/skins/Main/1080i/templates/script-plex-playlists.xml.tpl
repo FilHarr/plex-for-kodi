@@ -5,6 +5,11 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
+    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
+         of this include for the full reasoning. Note: this particular template appears unused in
+         practice - the live playlists path is LibraryWindow.fillPlaylists(), not PlaylistsWindow -
+         kept consistent anyway rather than left divergent. -->
+    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 {% block content %}
 <control type="group">

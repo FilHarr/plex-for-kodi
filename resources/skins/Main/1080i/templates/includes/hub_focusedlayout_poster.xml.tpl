@@ -1,5 +1,5 @@
 <!-- Poster focused layout (240x360) - uses hub_id variable -->
-<focusedlayout width="270" condition="String.IsEqual(Window.Property(hub.display.{{ hub_id }}),poster)">
+<focusedlayout width="272" condition="String.IsEqual(Window.Property(hub.display.{{ hub_id }}),poster)">
     <control type="group">
         <!-- 10, not 55: compensates for the parent grouplist's posx moving from 55 to 100
              (see script-plex-home.xml.tpl) so this item's resting position is unchanged. -->
