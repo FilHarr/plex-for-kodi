@@ -1,9 +1,9 @@
 <!-- Poster focused layout (240x360) - uses hub_id variable -->
 <focusedlayout width="272" condition="String.IsEqual(Window.Property(hub.display.{{ hub_id }}),poster)">
     <control type="group">
-        <!-- 10, not 55: compensates for the parent grouplist's posx moving from 55 to 100
-             (see script-plex-home.xml.tpl) so this item's resting position is unchanged. -->
-        <posx>10</posx>
+        <!-- 5, not 55: compensates for the parent grouplist's posx moving from 55 to 105
+             (see script-plex-recommended.xml.tpl) so this item's resting position is unchanged. -->
+        <posx>5</posx>
         <!-- Always top-anchored - see hub_itemlayout_poster.xml.tpl's own matching comment for why
              peek-above's crop no longer needs a manual per-type posy override here. -->
         <posy>{{ vscale(52) }}</posy>

@@ -1,9 +1,9 @@
 <!-- Poster item layout (240x360) - uses hub_id variable -->
 <itemlayout width="272" condition="String.IsEqual(Window.Property(hub.display.{{ hub_id }}),poster)">
     <control type="group">
-        <!-- 10, not 55: compensates for the parent grouplist's posx moving from 55 to 100
-             (see script-plex-home.xml.tpl) so this item's resting position is unchanged. -->
-        <posx>10</posx>
+        <!-- 5, not 55: compensates for the parent grouplist's posx moving from 55 to 105
+             (see script-plex-recommended.xml.tpl) so this item's resting position is unchanged. -->
+        <posx>5</posx>
         <!-- Always top-anchored, same posy regardless of role/hub_id - peek-above's own "bottom-
              flush, tail end" crop look no longer needs a manual per-type negative-posy override
              here: it falls out for free once row positions are computed by the stacking formula in

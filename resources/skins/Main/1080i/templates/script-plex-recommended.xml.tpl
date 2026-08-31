@@ -91,11 +91,12 @@
                condition="String.IsEmpty(Window.Property(no_hero_art))">Conditional</animation>
 
     <defaultcontrol>51</defaultcontrol>
-    <!-- posx=100, not 55: the sidebar rail is drawn on top (see its own comment in default.xml.tpl's
-         header block) - this leaves room for the collapsed rail's icon column. Row title/item
-         layout insets below have their own posx reduced by the same 45px this moved right, to keep
-         resting positions unchanged (60->15, 55->10). -->
-    <posx>100</posx>
+    <!-- posx=105, not 55: the sidebar rail is drawn on top (see its own comment in default.xml.tpl's
+         header block) - this leaves room for the collapsed rail's icon column, moved right again on
+         request (100->105) to put the clip edge at x=105. Row title/item layout insets below have
+         their own posx reduced by the same 50px total this moved right, to keep resting positions
+         unchanged (60->10, 55->5). -->
+    <posx>105</posx>
     <posy>{{ vscale(135) }}</posy>
     <width>2085</width>
     <!-- 945 = 1080 (screen bottom) - 135 (this control's own base posy) - reaches to the bottom of
@@ -192,7 +193,7 @@
                          Peek-above's title needs no separate hide at all any more - it's naturally
                          clipped away the same way the art is (see this block's own comment). -->
                     <visible>!String.IsEqual(Window.Property(hub.anchor_id), {{ id - 100 }}) | [String.IsEmpty(Window.Property(hub.sliding)) | !String.IsEmpty(Window.Property(no_hero_art))]</visible>
-                    <posx>15</posx>
+                    <posx>10</posx>
                     <posy>0</posy>
                     <width>1000</width>
                     <height>{{ vscale(87) }}</height>
