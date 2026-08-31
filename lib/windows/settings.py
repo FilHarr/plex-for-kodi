@@ -1188,7 +1188,6 @@ class SettingsWindow(kodigui.BaseWindow, windowutils.UtilMixin):
     TOP_GROUP_ID = 200
 
     CLOSE_BUTTON_ID = 201
-    PLAYER_STATUS_BUTTON_ID = 204
 
     def onFirstInit(self):
         self.settings = Settings()
@@ -1243,8 +1242,6 @@ class SettingsWindow(kodigui.BaseWindow, windowutils.UtilMixin):
             self.changeSetting()
         elif controlID == self.CLOSE_BUTTON_ID:
             self.doClose()
-        elif controlID == self.PLAYER_STATUS_BUTTON_ID:
-            self.showAudioPlayer()
 
     def onFocus(self, controlID):
         self.lastFocusID = controlID

@@ -532,7 +532,6 @@
                 <animation effect="zoom" start="144" end="100" time="100" center="20,{{ vscale(20) }}" reversible="false">UnFocus</animation>
                 <width>40</width>
                 <height>{{ vscale(40) }}</height>
-                <onright>204</onright>
                 <ondown>50</ondown>
                 <font>font12</font>
                 <focusedcolor>FF000000</focusedcolor>
@@ -549,102 +548,6 @@
             <aligny>center</aligny>
             <textcolor>FFFFFFFF</textcolor>
             <label>[UPPERCASE]$INFO[Window.Property(heading)][/UPPERCASE]</label>
-        </control>
-    </control>
-    <control type="group">
-        <visible>Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))</visible>
-        <posx>438</posx>
-        <posy>0</posy>
-        <control type="button" id="204">
-            <visible>Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))</visible>
-            <posx>-10</posx>
-            <posy>{{ vscale(38) }}</posy>
-            <width>260</width>
-            <height>{{ vscale(75) }}</height>
-            <onleft>201</onleft>
-            <ondown>50</ondown>
-            <font>font12</font>
-            <textcolor>FFFFFFFF</textcolor>
-            <focusedcolor>FF000000</focusedcolor>
-            <align>right</align>
-            <aligny>center</aligny>
-            <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
-            <texturenofocus>-</texturenofocus>
-            <textoffsetx>100</textoffsetx>
-            <textoffsety>0</textoffsety>
-            <label> </label>
-        </control>
-        <control type="image">
-            <posx>0</posx>
-            <posy>{{ vscale(48) }}</posy>
-            <width>42</width>
-            <height>{{ vscale(42) }}</height>
-            <texture>$INFO[Player.Art(thumb)]</texture>
-        </control>
-
-        <control type="group">
-            <visible>!Control.HasFocus(204)</visible>
-            <control type="label">
-                <posx>53</posx>
-                <posy>{{ vscale(48) }}</posy>
-                <width>187</width>
-                <height>{{ vscale(20) }}</height>
-                <font>font10</font>
-                <align>left</align>
-                <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <info>MusicPlayer.Artist</info>
-            </control>
-            <control type="label">
-                <posx>53</posx>
-                <posy>{{ vscale(72) }}</posy>
-                <width>187</width>
-                <height>{{ vscale(20) }}</height>
-                <font>font10</font>
-                <align>left</align>
-                <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <info>MusicPlayer.Title</info>
-            </control>
-        </control>
-        <control type="group">
-            <visible>Control.HasFocus(204)</visible>
-            <control type="label">
-                <posx>53</posx>
-                <posy>{{ vscale(48) }}</posy>
-                <width>187</width>
-                <height>{{ vscale(20) }}</height>
-                <font>font10</font>
-                <align>left</align>
-                <aligny>center</aligny>
-                <textcolor>FF000000</textcolor>
-                <info>MusicPlayer.Artist</info>
-            </control>
-            <control type="label">
-                <posx>53</posx>
-                <posy>{{ vscale(72) }}</posy>
-                <width>187</width>
-                <height>{{ vscale(20) }}</height>
-                <font>font10</font>
-                <align>left</align>
-                <aligny>center</aligny>
-                <textcolor>FF000000</textcolor>
-                <info>MusicPlayer.Title</info>
-            </control>
-        </control>
-
-        <control type="progress">
-            <description>Progressbar</description>
-            <posx>0</posx>
-            <posy>{{ vscale(102) }}</posy>
-            <width>240</width>
-            <height>{{ vscale(1) }}</height>
-            <texturebg colordiffuse="9AFFFFFF">script.plex/white-square-1px.png</texturebg>
-            <lefttexture>-</lefttexture>
-            <midtexture colordiffuse="FFCC7B19">script.plex/white-square-1px.png</midtexture>
-            <righttexture>-</righttexture>
-            <overlaytexture>-</overlaytexture>
-            <info>Player.Progress</info>
         </control>
     </control>
     <control type="label">

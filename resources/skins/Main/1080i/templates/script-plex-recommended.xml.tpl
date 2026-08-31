@@ -244,102 +244,6 @@
     <posy>0</posy>
     <width>1920</width>
     <height>{{ vscale(135) }}</height>
-    <control type="group">
-        <visible>Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))</visible>
-        <posx>438</posx>
-        <posy>0</posy>
-        <control type="button" id="204">
-            <visible>Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))</visible>
-            <posx>-10</posx>
-            <posy>{{ vscale(38) }}</posy>
-            <width>260</width>
-            <height>{{ vscale(75) }}</height>
-            <onleft>9001</onleft>
-            <ondown>50</ondown>
-            <font>font12</font>
-            <textcolor>FFFFFFFF</textcolor>
-            <focusedcolor>FF000000</focusedcolor>
-            <align>right</align>
-            <aligny>center</aligny>
-            <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
-            <texturenofocus>-</texturenofocus>
-            <textoffsetx>100</textoffsetx>
-            <textoffsety>0</textoffsety>
-            <label> </label>
-        </control>
-        <control type="image">
-            <posx>0</posx>
-            <posy>{{ vscale(48) }}</posy>
-            <width>42</width>
-            <height>{{ vscale(42) }}</height>
-            <texture>$INFO[Player.Art(thumb)]</texture>
-        </control>
-
-        <control type="group">
-            <visible>!Control.HasFocus(204)</visible>
-            <control type="label">
-                <posx>53</posx>
-                <posy>{{ vscale(48) }}</posy>
-                <width>187</width>
-                <height>{{ vscale(20) }}</height>
-                <font>font10</font>
-                <align>left</align>
-                <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <info>MusicPlayer.Artist</info>
-            </control>
-            <control type="label">
-                <posx>53</posx>
-                <posy>{{ vscale(72) }}</posy>
-                <width>187</width>
-                <height>{{ vscale(20) }}</height>
-                <font>font10</font>
-                <align>left</align>
-                <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <info>MusicPlayer.Title</info>
-            </control>
-        </control>
-        <control type="group">
-            <visible>Control.HasFocus(204)</visible>
-            <control type="label">
-                <posx>53</posx>
-                <posy>{{ vscale(48) }}</posy>
-                <width>187</width>
-                <height>{{ vscale(20) }}</height>
-                <font>font10</font>
-                <align>left</align>
-                <aligny>center</aligny>
-                <textcolor>FF000000</textcolor>
-                <info>MusicPlayer.Artist</info>
-            </control>
-            <control type="label">
-                <posx>53</posx>
-                <posy>{{ vscale(72) }}</posy>
-                <width>187</width>
-                <height>{{ vscale(20) }}</height>
-                <font>font10</font>
-                <align>left</align>
-                <aligny>center</aligny>
-                <textcolor>FF000000</textcolor>
-                <info>MusicPlayer.Title</info>
-            </control>
-        </control>
-
-        <control type="progress">
-            <description>Progressbar</description>
-            <posx>0</posx>
-            <posy>{{ vscale(102) }}</posy>
-            <width>240</width>
-            <height>{{ vscale(1) }}</height>
-            <texturebg colordiffuse="9AFFFFFF">script.plex/white-square-1px.png</texturebg>
-            <lefttexture>-</lefttexture>
-            <midtexture colordiffuse="FFCC7B19">script.plex/white-square-1px.png</midtexture>
-            <righttexture>-</righttexture>
-            <overlaytexture>-</overlaytexture>
-            <info>Player.Progress</info>
-        </control>
-    </control>
     <control type="label">
         <right>60</right>
         <posy>{{ vscale(35) }}</posy>
@@ -350,6 +254,125 @@
         <aligny>center</aligny>
         <textcolor>FFFFFFFF</textcolor>
         <label>$INFO[System.Time]</label>
+    </control>
+    {# declared after the time label, same as default.xml.tpl's own copy of this group, so the
+       popout below paints over the clock instead of the other way round - was declared before it
+       here, which put the clock on top of the popout's own art/track-info card. #}
+    <control type="group">
+        <visible>Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))</visible>
+        {# 360r matches default.xml.tpl's own header widget - same collapsed-thumbnail/popout design,
+           see that file's copy of this group for the full layout reasoning. onleft prefers the
+           section-tabs row (320, includes/section_tabs.xml.tpl) when it's actually on screen - the
+           symmetric return path for that row's own onright into this widget - falling back to the
+           sidebar rail (9001), same as library.xml.tpl's own copy of this group, when there's no
+           tab row (a 'mixed' section) to land on. #}
+        <posx>360r</posx>
+        <posy>0</posy>
+        <control type="group">
+            <animation effect="zoom" start="100" end="110" time="100" center="31.5,{{ vscale(67.5) }}" reversible="false">Focus</animation>
+            <animation effect="zoom" start="110" end="100" time="100" center="31.5,{{ vscale(67.5) }}" reversible="false">UnFocus</animation>
+            <control type="button" id="204">
+                <posx>0</posx>
+                <posy>{{ vscale(36) }}</posy>
+                <width>63</width>
+                <height>{{ vscale(63) }}</height>
+                <onleft condition="Control.IsVisible(320)">320</onleft>
+                <onleft>9001</onleft>
+                <ondown>50</ondown>
+                <texturefocus>-</texturefocus>
+                <texturenofocus>-</texturenofocus>
+                <label> </label>
+            </control>
+            <control type="image">
+                <posx>0</posx>
+                <posy>{{ vscale(36) }}</posy>
+                <width>63</width>
+                <height>{{ vscale(63) }}</height>
+                <texture>$INFO[Player.Art(thumb)]</texture>
+            </control>
+            <control type="group">
+                <visible>Control.HasFocus(204)</visible>
+                <control type="image">
+                    <posx>-5</posx>
+                    <posy>{{ vscale(31) }}</posy>
+                    <width>73</width>
+                    <height>2</height>
+                    <texture>script.plex/white-square.png</texture>
+                    <colordiffuse>FFE5A00D</colordiffuse>
+                </control>
+                <control type="image">
+                    <posx>-5</posx>
+                    <posy>{{ vscale(102) }}</posy>
+                    <width>73</width>
+                    <height>2</height>
+                    <texture>script.plex/white-square.png</texture>
+                    <colordiffuse>FFE5A00D</colordiffuse>
+                </control>
+                <control type="image">
+                    <posx>-5</posx>
+                    <posy>{{ vscale(31) }}</posy>
+                    <width>2</width>
+                    <height>{{ vscale(73) }}</height>
+                    <texture>script.plex/white-square.png</texture>
+                    <colordiffuse>FFE5A00D</colordiffuse>
+                </control>
+                <control type="image">
+                    <posx>66</posx>
+                    <posy>{{ vscale(31) }}</posy>
+                    <width>2</width>
+                    <height>{{ vscale(73) }}</height>
+                    <texture>script.plex/white-square.png</texture>
+                    <colordiffuse>FFE5A00D</colordiffuse>
+                </control>
+            </control>
+        </control>
+
+        <control type="group">
+            <visible>Control.HasFocus(204)</visible>
+            <animation effect="fade" start="0" end="100" time="120" reversible="true">Visible</animation>
+            <control type="image">
+                <posx>75</posx>
+                <posy>{{ vscale(30) }}</posy>
+                <width>260</width>
+                <height>{{ vscale(75) }}</height>
+                <texture colordiffuse="E0000000" border="10">script.plex/white-square-rounded.png</texture>
+            </control>
+            <control type="label">
+                <posx>90</posx>
+                <posy>{{ vscale(40) }}</posy>
+                <width>230</width>
+                <height>{{ vscale(20) }}</height>
+                <font>font10</font>
+                <align>left</align>
+                <aligny>center</aligny>
+                <textcolor>FFFFFFFF</textcolor>
+                <info>MusicPlayer.Artist</info>
+            </control>
+            <control type="label">
+                <posx>90</posx>
+                <posy>{{ vscale(64) }}</posy>
+                <width>230</width>
+                <height>{{ vscale(20) }}</height>
+                <font>font10</font>
+                <align>left</align>
+                <aligny>center</aligny>
+                <textcolor>FFFFFFFF</textcolor>
+                <info>MusicPlayer.Title</info>
+            </control>
+            <control type="progress">
+                <description>Progressbar</description>
+                <posx>90</posx>
+                <posy>{{ vscale(94) }}</posy>
+                <width>230</width>
+                <height>{{ vscale(1) }}</height>
+                <texturebg colordiffuse="9AFFFFFF">script.plex/white-square-1px.png</texturebg>
+                <lefttexture>-</lefttexture>
+                <midtexture colordiffuse="FFCC7B19">script.plex/white-square-1px.png</midtexture>
+                <righttexture>-</righttexture>
+                <overlaytexture>-</overlaytexture>
+                <info>Player.Progress</info>
+            </control>
+        </control>
     </control>
     {# quiet-orbiting-heron.md plan item 0: ondown=50 targets grouplist 50's own <defaultcontrol>
        chain (already relied on elsewhere in this template) rather than a specific hub-list id -

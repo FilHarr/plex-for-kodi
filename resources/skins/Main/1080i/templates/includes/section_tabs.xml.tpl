@@ -21,9 +21,11 @@
    label (posx 50 = (200-100)/2, was 25 for a 150 cell).
 
    onleft routes to the sidebar (9000), matching every other header control's convention.
-   onright is a dead end (noop) rather than routing further right - there's nothing to its right
-   in the header row today, and reaching remaining/later tabs is via left/right within the list
-   itself, same as season tabs. ondown's correct target differs by including template (grid
+   onright reaches the audio widget (204) when it's actually on screen (Player.HasAudio, same
+   condition every other onup/onright path into 204 already uses - see e.g. library_posters.
+   xml.tpl's own onup pair), falling back to noop otherwise - reaching remaining/later tabs is
+   via left/right within the list itself, same as season tabs. ondown's correct target differs
+   by including template (grid
    content vs. hub content) - passed in via {% with tab_ondown = ... %} at each include site, not
    hardcoded here. Entry from below is via each including template's content control routing its
    own onup here first (Control.IsVisible(320) gated, falling back to its prior target when the
@@ -53,6 +55,7 @@
     <width>800</width>
     <height>{{ vscale(135) }}</height>
     <onleft>9000</onleft>
+    <onright condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onright>
     <onright>noop</onright>
     <onup>noop</onup>
     <ondown>{{ tab_ondown }}</ondown>

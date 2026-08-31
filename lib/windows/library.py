@@ -540,6 +540,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # identically in every content-mode's template, so it doesn't need per-shell delegation.
     TAB_LIST_ID = 320
 
+    # onFocus()'s own "just crossed into the hub range from outside it" flag, consumed by
+    # onAction()'s hub-branch - see onFocus()'s own comment for the double-delivery bug this
+    # guards against. Class-level default so it's never missing before the first onFocus() call.
+    _hubJustEnteredFromOutside = False
+
     def __init__(self, *args, **kwargs):
         PlaybackBtnMixin.__init__(self)
         kodigui.MultiWindow.__init__(self, *args, **kwargs)
@@ -2414,18 +2419,49 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # today, but cheap insurance against a future control-id collision).
                 controlID = self.getFocusId()
                 if 399 < controlID < 500 and self.contentMode == 'recommended':
+                    if self._hubJustEnteredFromOutside:
+                        # Live-confirmed double-delivery (HUBDBG investigation): this same action
+                        # already carried focus into the hub range natively (via a control outside
+                        # it - the tabs row 320, the audio widget 204, or the sidebar rail 9001 -
+                        # all landing here through 50's <defaultcontrol> chain, via <ondown> or, for
+                        # the sidebar, <onright>) - Kodi delivers it to onAction() a second time
+                        # *after* that navigation has already happened, which onFocus() flagged for
+                        # us (see its own comment; onAction() itself can't tell "just arrived" apart
+                        # from "already settled here" - by the time it runs, the native move, if
+                        # any, is already done either way).
+                        #
+                        # Checked and consumed here, before branching on action_id below - not only
+                        # inside the MOVE_UP/MOVE_DOWN branch, where it originally lived: the replay
+                        # carries whatever direction *caused* the entry (e.g. a RIGHT out of the
+                        # sidebar, handled by the MOVE_LEFT/MOVE_RIGHT branch below, via
+                        # checkHubItem()), not necessarily UP/DOWN - a flag left un-consumed by that
+                        # branch stayed True and then wrongly swallowed the user's next, genuinely
+                        # separate UP/DOWN press instead, live-confirmed as "after any sidebar
+                        # interaction, the first up or down press does nothing." Consuming
+                        # unconditionally here, for whatever action this replay actually is, is what
+                        # keeps it from ever surviving to affect a later, unrelated real press.
+                        self._hubJustEnteredFromOutside = False
+                        return
                     action_id = action.getId()
                     if action_id in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
-                        # Topmost hub, pressing up: exit the rotation ring entirely into the
-                        # section-tabs row (plan item 0) instead of the silent no-op
-                        # _startHubSlide() falls into at focusedHubIndex 0 - same role XML onup
-                        # plays for grid content (library_posters.xml.tpl etc.), just done here in
-                        # Python since hub-to-hub vertical nav is already fully Python-owned (see
-                        # this branch's own docstring reference to home.py's onAction()).
-                        if (action_id == xbmcgui.ACTION_MOVE_UP and self.focusedHubIndex == 0
-                                and self.tabList and self.section.TYPE != 'mixed'):
-                            self.setFocusId(self.TAB_LIST_ID)
-                            return
+                        # Topmost hub, pressing up: exit the rotation ring entirely instead of the
+                        # silent no-op _startHubSlide() falls into at focusedHubIndex 0 - same role
+                        # XML onup plays for grid content (library_posters.xml.tpl etc.), just done
+                        # here in Python since hub-to-hub vertical nav is already fully Python-owned
+                        # (see this branch's own docstring reference to home.py's onAction()).
+                        # Prefers the section-tabs row (plan item 0) when it's actually on screen;
+                        # falls back to the audio widget (204) when the tabs are hidden (a 'mixed'
+                        # section has none) so pressing up still lands somewhere reachable rather
+                        # than nowhere - the same condition every XML onup/onright path into 204
+                        # already gates on (e.g. section_tabs.xml.tpl's own onright).
+                        if action_id == xbmcgui.ACTION_MOVE_UP and self.focusedHubIndex == 0:
+                            if self.tabList and self.section.TYPE != 'mixed':
+                                self.setFocusId(self.TAB_LIST_ID)
+                                return
+                            elif xbmc.getCondVisibility(
+                                    'Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))'):
+                                self.setFocusId(self.PLAYER_STATUS_BUTTON_ID)
+                                return
                         self._startHubSlide(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
                         return
                     elif action_id in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
@@ -2626,9 +2662,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # RecommendedWindow has none of the grid controls (POSTERS_PANEL_ID/KEY_LIST_ID/etc.)
             # the elif chain below unconditionally checks against - live-confirmed as an
             # AttributeError otherwise, so hub-row clicks need their own branch here rather than
-            # falling into that chain.
+            # falling into that chain. PLAYER_STATUS_BUTTON_ID (204, the header audio widget) is
+            # checked explicitly too, for the same reason - it's the one control from that chain
+            # this window's own template actually has (script-plex-recommended.xml.tpl), and
+            # without this the unconditional `return` below swallowed clicks on it entirely
+            # (live-confirmed: no music-player window opened, unlike every other window that
+            # reaches the elif chain's own PLAYER_STATUS_BUTTON_ID case further down).
             if 399 < controlID < 500:
                 self.hubItemClicked(controlID)
+            elif controlID == self.PLAYER_STATUS_BUTTON_ID:
+                self.showAudioPlayer()
             return
 
         if controlID == self.POSTERS_PANEL_ID:
@@ -3217,6 +3260,32 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.setProperty('server.iconmod2', '')
 
     def onFocus(self, controlID):
+        # Flags "just crossed into the hub-row range (399-500) from a control outside it" for
+        # onAction()'s own hub-branch to consume - live-confirmed Kodi behavior: a directional
+        # action that exits a native container via its own <onup>/<ondown>/<onright> (the tabs
+        # row 320, the audio widget 204, or the sidebar rail 9001, all landing on a hub control
+        # via 50's <defaultcontrol> chain) gets delivered to onAction() a SECOND time *after*
+        # native navigation has already moved focus - onFocus(<hub control>) fires before
+        # onAction()'s own getFocusId() for that same press, i.e. the move already happened once
+        # by the time our Python code runs at all. Without this guard, onAction()'s hub-branch
+        # treated that replay as a second, independent move and acted on it again (silently
+        # continuing on to the next row on entry, or swallowing the next real press after a
+        # sidebar interaction, depending on which action the replay carried).
+        #
+        # Computed here, not in onAction(): this is the only place that reliably knows what
+        # controlID had focus *immediately before* this one (self.lastFocusID, not yet
+        # overwritten below) - onAction()'s own getFocusId() can't tell "just arrived from
+        # outside" apart from "already settled here", since by the time it runs the native move,
+        # if any, has already completed either way. Consumed (reset to False) the first time
+        # onAction()'s hub-branch checks it, before branching on the action's own direction -
+        # the replay carries whatever direction caused the entry, not necessarily UP/DOWN - so
+        # it never survives to affect a later, unrelated real press; those never re-fire onFocus
+        # for the same control anyway, since in-hub vertical nav is entirely Python-owned
+        # (_startHubSlide()), not native.
+        if self.contentMode == 'recommended':
+            was_outside_hub = not (399 < (self.lastFocusID or -1) < 500)
+            self._hubJustEnteredFromOutside = (399 < controlID < 500) and was_outside_hub
+
         # Within the 150ms hold window after go_root, any non-section-list focus event is the
         # stray Kodi fires when this window reactivates with its previously-focused control still
         # recorded. Snap it back and consume the deadline so real user input (which arrives well
