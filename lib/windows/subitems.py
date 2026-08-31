@@ -51,18 +51,32 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     width = 1920
     height = 1080
 
-    EXTRA_DIM = util.scaleResolution(329, 185)
+    # 533x300 = 512x288 display size (script-plex-seasons.xml.tpl's extras row) * 104%, the row's own
+    # focus-zoom end value - same "fetch at the zoomed-in size, not the at-rest one" pattern the old
+    # 299x168 art used (329x185 was that at 110%, its own zoom end value at the time). Shared with
+    # PrePlayWindow's own EXTRA_DIM (preplay.py) - both rows use the same art recipe.
+    EXTRA_DIM = util.scaleResolution(533, 300)
     RELATED_DIM = util.scaleResolution(268, 402)
     ROLES_DIM = util.scaleResolution(334, 334)
-    THUMB_POSTER_DIM = util.scaleResolution(314, 467)
-    CLEAR_LOGO_DIM = util.scaleResolution(873, 106)
-    CLEAR_LOGO_DIM_NO_POSTER = util.scaleResolution(760, 136)
+    # 722x162, matching PrePlayWindow's own CLEAR_LOGO_DIM (preplay.py) - the corner poster this used
+    # to size around (CLEAR_LOGO_DIM_NO_POSTER, THUMB_POSTER_DIM) is gone, this screen now mirrors
+    # pre_play's single-column hero layout exactly.
+    CLEAR_LOGO_DIM = util.scaleResolution(722, 162)
 
     SUB_ITEM_LIST_ID = 400
 
     ROLES_LIST_ID = 401
     EXTRA_LIST_ID = 402
     RELATED_LIST_ID = 403
+
+    # Header season-tab row, same id Episodes' own equivalent uses (script-plex-episodes.xml.tpl) -
+    # unrelated to (and doesn't collide with) the ids above, since it lives in the shared header
+    # (group 200, header_middle_add block) rather than this screen's own content group 50.
+    SEASON_TABS_LIST_ID = 205
+    # Plain-list twin of the row above, used instead once there are 6 seasons or fewer - see that
+    # control's own comment in the template for why a type="fixedlist" misbehaves at low item counts.
+    # fillSeasonTabs() below decides which of the two actually gets the items.
+    SEASON_TABS_LIST_ID_ALT = 206
 
     OPTIONS_GROUP_ID = 200
 
@@ -123,6 +137,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.rolesListControl = kodigui.ManagedControlList(self, self.ROLES_LIST_ID, 5)
         self.extraListControl = kodigui.ManagedControlList(self, self.EXTRA_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
+        self.seasonTabsControl = kodigui.ManagedControlList(self, self.SEASON_TABS_LIST_ID, 5)
+        self.seasonTabsListControl = kodigui.ManagedControlList(self, self.SEASON_TABS_LIST_ID_ALT, 5)
 
         if self.sectionList is None:
             self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
@@ -136,13 +152,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.themeMusicInit(self.mediaItem)
 
         # focusPlayButton() above gives the window something focused immediately, before setup() has
-        # populated the season row (an empty list control can't take focus) - once it's filled, move
-        # focus there so the season row is what the screen actually opens on. Skipped when opened from
-        # the watchlist: setup() -> watchlistItemAvailable() already drives focus onto whichever watchlist
-        # button reflects this item's availability (see mixins/watchlist.py's wl_set_btn()), which matters
-        # more there than the season row does.
-        if not self.fromWatchlist and self.subItemListControl.size():
-            self.setFocusId(self.SUB_ITEM_LIST_ID)
+        # populated the season row - the screen now opens on the play button instead of jumping focus
+        # to the season row once it's filled (as it used to). Watchlist screens already drive focus onto
+        # whichever watchlist button reflects this item's availability (setup() -> watchlistItemAvailable(),
+        # see mixins/watchlist.py's wl_set_btn()), independently of this.
 
     def onReInit(self):
         PlaybackBtnMixin.onReInit(self)
@@ -179,17 +192,20 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
     def updateProperties(self):
         self.setProperty('title', self.mediaItem.title)
-        willHidePoster = util.getSetting('hide_poster_with_logo', True)
-        logoDim = willHidePoster and self.CLEAR_LOGO_DIM_NO_POSTER or self.CLEAR_LOGO_DIM
-        logo = util.clearLogoFrom(self.mediaItem, *logoDim)
+        logo = util.clearLogoFrom(self.mediaItem, *self.CLEAR_LOGO_DIM)
         self.setProperty('clear.logo', logo)
-        self.setBoolProperty('hide.poster', bool(logo) and willHidePoster)
         self.setProperty('summary', self.mediaItem.summary)
-        self.setProperty('thumb', self.mediaItem.defaultThumb.asTranscodedImageURL(*self.THUMB_POSTER_DIM))
         self.updateBackgroundFrom(self.mediaItem)
-        self.setProperty('duration', util.durationToText(self.mediaItem.fixedDuration()))
+        self.setProperty('duration', util.durationToShortText(self.mediaItem.fixedDuration(), noSpaces=True))
         self.setProperty('info', '')
         self.setProperty('date', self.mediaItem.year)
+        self.setProperty('content.rating', self.mediaItem.contentRating.split('/', 1)[-1])
+        season_count = self.mediaItem.childCount
+        season_str = T(34006, '{} season') if int(season_count or 0) == 1 else T(34003, '{} seasons')
+        season_text = season_str.format(season_count)
+        words = season_text.split(' ')
+        words[-1] = words[-1].capitalize()
+        self.setProperty('season.count', ' '.join(words))
         self.setBoolProperty('disable_playback', self.fromWatchlist)
         if not self.mediaItem.isWatched:
             self.setProperty('unwatched.count', str(self.mediaItem.unViewedLeafCount) or '')
@@ -207,6 +223,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
         genres = self.mediaItem.genres()
         self.setProperty('info', genres and (u' / '.join([g.tag for g in genres][:3])) or '')
+        # Separate from 'info' above (used by the info/options dialogs elsewhere, 3 genres joined by
+        # ' / ') - the metadata row (pp_meta_row.xml.tpl, shared with pre_play) wants its own shorter,
+        # comma-separated form.
+        self.setProperty('genres.short', genres and u', '.join([g.tag for g in genres][:2]) or '')
 
         if self.fromWatchlist and not self.wl_availability:
             self.setProperty('wl_server_availability_verbose',
@@ -268,6 +288,21 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 return
 
             elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_CONTEXT_MENU):
+                # Matches Recommended's own hub rows (LibraryWindow.checkHubItem(), library.py): Back on
+                # a row scrolled away from its first item resets to item 0 and stops there (swallowed),
+                # rather than immediately leaving the screen - a second Back, now already at item 0,
+                # falls through to the normal handling below.
+                if action == xbmcgui.ACTION_NAV_BACK:
+                    rowControl = {self.SUB_ITEM_LIST_ID: self.subItemListControl,
+                                 self.ROLES_LIST_ID: self.rolesListControl,
+                                 self.EXTRA_LIST_ID: self.extraListControl,
+                                 self.RELATED_LIST_ID: self.relatedListControl}.get(controlID)
+                    if rowControl:
+                        pos = rowControl.getSelectedPos()
+                        if pos is not None and pos > 0:
+                            rowControl.selectItem(0)
+                            return
+
                 if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(
                         self.OPTIONS_GROUP_ID)) and \
                         (not util.addonSettings.fastBack or action == xbmcgui.ACTION_CONTEXT_MENU):
@@ -297,8 +332,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 if self.relatedPaginator and self.relatedPaginator.boundaryHit:
                     self.relatedPaginator.paginate()
                     return
-                elif action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
-                    self.updateBackgroundFrom(self.relatedListControl.getSelectedItem().dataSource)
 
         except:
             util.ERROR()
@@ -328,6 +361,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                     # make the destination window re-check it.
                     self.openItem(item=mli.dataSource, inherit_from_watchlist=False,
                                  is_watchlisted=self.is_watchlisted, directly_from_watchlist=True)
+        elif controlID in (self.SEASON_TABS_LIST_ID, self.SEASON_TABS_LIST_ID_ALT):
+            self.seasonTabClicked(controlID)
         elif controlID == self.PLAYER_STATUS_BUTTON_ID:
             self.showAudioPlayer()
         elif controlID == self.EXTRA_LIST_ID:
@@ -359,25 +394,35 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.checkSectionItem()
 
         if 399 < controlID < 500:
-            self.setProperty('hub.focus', str(controlID - 400))
+            # controlID - 399, not - 400: gives the season row its own tier (1) instead of colliding
+            # with the button row's own reset-to-'0' below, so group 50's slide animations (see the
+            # template) can treat "focus is somewhere in the season row and beyond" as one properly
+            # ordered depth scale - 1=season row, 2=roles, 3=extras, 4=related - instead of needing a
+            # separate one-off condition just for the season row.
+            self.setProperty('hub.focus', str(controlID - 399))
+            self.setProperty('row.focused', '1')
+        else:
+            # row.focused (not hub.focus, which is never cleared once set - the row-collapse slide
+            # animations above key off it staying "seen at least once") drives default_background.xml.tpl's
+            # scroll-dim scrim - same mechanism as Pre-play (preplay.py's own onFocus) - which needs to
+            # toggle back off when focus returns to the season row/button row above.
+            self.setProperty('row.focused', '')
 
-            if controlID == self.RELATED_LIST_ID:
-                self.updateBackgroundFrom(self.relatedListControl.getSelectedItem().dataSource)
-
-        # controlID == SUB_ITEM_LIST_ID counts as "not on extras" too, now that the season row is the
-        # screen's default focus target - otherwise this fires the moment the window opens (and every
-        # time focus returns to the row from the button group) instead of only once focus goes deeper,
-        # into roles/extras/related. Episodes needed the identical fix when its own row became the
-        # default focus target - see episodes.py's onFocus for the same rationale in more detail.
+        # controlID == SUB_ITEM_LIST_ID counts as "not on extras" too: on.extras drives its own -300
+        # slide (group 50, template) that's meant for Roles/Extras/Related only - the season row already
+        # gets its own, correctly-sized tier-1 slide (-415) above, so on.extras firing there too would
+        # stack an unwanted extra -300 on top of it.
         if controlID == self.SUB_ITEM_LIST_ID or xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)'):
             self.setProperty('on.extras', '')
-            # hub.focus (set above, only for controlIDs 400-499) is otherwise never reset once focus
-            # leaves the seasons/roles/extras/related row stack for the button row - it's not in that
-            # range, so it'd keep whatever value the last-focused row left it at. The row-collapse slide
-            # animations on group 50 key off hub.focus, not on.extras, so without this they'd stay
-            # collapsed even after on.extras clears and the header reappears - see episodes.py's onFocus
-            # for the identical fix and rationale.
-            self.setProperty('hub.focus', '0')
+            if controlID != self.SUB_ITEM_LIST_ID:
+                # hub.focus (set above, only for controlIDs 400-499) is otherwise never reset once focus
+                # leaves the seasons/roles/extras/related row stack for the button row - it's not in that
+                # range, so it'd keep whatever value the last-focused row left it at. The row-collapse slide
+                # animations on group 50 key off hub.focus, not on.extras, so without this they'd stay
+                # collapsed even after on.extras clears and the header reappears - see episodes.py's onFocus
+                # for the identical fix and rationale. Guarded to the button row specifically: the season
+                # row must keep its own tier-1 value (1) rather than being stomped back to '0' here too.
+                self.setProperty('hub.focus', '0')
         elif xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + !ControlGroup(300).HasFocus(0)'):
             self.setProperty('on.extras', '1')
 
@@ -594,6 +639,26 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                                         entry_section_id=self.entrySectionId,
                                         entry_from_watchlist=self.entryFromWatchlist, **kw))
 
+    def seasonTabClicked(self, controlID=None):
+        control = self.seasonTabsListControl if controlID == self.SEASON_TABS_LIST_ID_ALT else self.seasonTabsControl
+        mli = control.getSelectedItem()
+        # No dataSource means the pinned "Show" tab - already this screen, nothing to do.
+        if not mli or not mli.dataSource:
+            return
+
+        if not self.fromWatchlist:
+            episodes.EpisodesWindow.open(season=mli.dataSource, show=self.mediaItem,
+                                         parent_list=self.subItemListControl, from_watchlist=self.fromWatchlist,
+                                         directly_from_watchlist=self.directlyFromWatchlist,
+                                         is_watchlisted=self.is_watchlisted,
+                                         entry_section_id=self.entrySectionId,
+                                         entry_from_watchlist=self.entryFromWatchlist)
+        elif self.wl_availability:
+            self.wl_item_opener(mli.dataSource, self.openItem)
+        else:
+            self.openItem(item=mli.dataSource, inherit_from_watchlist=False,
+                         is_watchlisted=self.is_watchlisted, directly_from_watchlist=True)
+
     def subItemListClicked(self):
         mli = self.subItemListControl.getSelectedItem()
         if not mli:
@@ -801,6 +866,37 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     @busy.dialog()
     def fill(self, update=False):
         self.fillSeasons(self.mediaItem, update=update, do_focus=not self.manuallySelectedSeason)
+        self.fillSeasonTabs(update=update)
+
+    def fillSeasonTabs(self, update=False):
+        # Header season-tab row (script-plex-seasons.xml.tpl, header_middle_add block) - a separate,
+        # simpler list from the season row above (id=400): plain title only, no thumb/episode-count,
+        # plus a pinned "Show" entry at the front (no dataSource, always 'current') representing this
+        # screen itself, matching Episodes' own season-tab row's current-season underline treatment.
+        try:
+            seasons = self.mediaItem.seasons()
+        except:
+            seasons = []
+
+        items = [kodigui.ManagedListItem(T(35058, 'Show'))]
+        items[0].setBoolProperty('current', True)
+        for season in seasons:
+            items.append(kodigui.ManagedListItem(season.title or '', data_source=season))
+
+        # 6 seasons or fewer (7 tabs, Show included): the plain-list control (206) - past that: the
+        # fixedlist (205), which needs enough items to fill the row before its focusposition/movement
+        # scrolling makes sense. See that control's own comment in the template for the fixedlist's
+        # short-list quirk this split avoids. The other control is always emptied so its own <visible>
+        # keeps it hidden.
+        target, other = (self.seasonTabsListControl, self.seasonTabsControl) if len(seasons) <= 6 \
+            else (self.seasonTabsControl, self.seasonTabsListControl)
+
+        other.reset()
+        if update:
+            target.replaceItems(items)
+        else:
+            target.reset()
+            target.addItems(items)
 
     def fillExtras(self):
         items = []
@@ -820,6 +916,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
             if mli:
                 mli.setProperty('index', str(idx))
+                mli.setProperty('extra.duration', extra.duration and util.simplifiedTimeDisplay(extra.duration.asInt()))
                 mli.setProperty(
                     'thumb.fallback', 'script.plex/thumb_fallbacks/{0}.png'.format(extra.type in ('show', 'season', 'episode') and 'show' or 'movie')
                 )

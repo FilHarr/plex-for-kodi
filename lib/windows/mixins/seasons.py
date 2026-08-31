@@ -2,6 +2,7 @@
 import math
 
 from lib import util
+from lib.i18n import T
 from lib.windows import kodigui
 
 
@@ -11,7 +12,7 @@ class SeasonsMixin(object):
     THUMB_DIMS = {
         'show': {
             'main.thumb': util.scaleResolution(347, 518),
-            'item.thumb': util.scaleResolution(174, 260)
+            'item.thumb': util.scaleResolution(240, 360)
         },
         'episode': {
             'main.thumb': util.scaleResolution(347, 518),
@@ -29,6 +30,9 @@ class SeasonsMixin(object):
             thumbnailImage=obj.defaultThumb.asTranscodedImageURL(*self.THUMB_DIMS[mediaItem.type]['item.thumb']),
             data_source=obj
         )
+        episode_count = obj.leafCount.asInt()
+        episode_str = T(35057, '{} episode') if episode_count == 1 else T(35056, '{} episodes')
+        mli.setProperty('episode.count', episode_str.format(episode_count))
         return mli
 
     def getSeasonProgress(self, show, season):
@@ -51,7 +55,8 @@ class SeasonsMixin(object):
                 watchedPerc += vPerc / season.leafCount.asFloat()
         return watchedPerc > 0 and math.ceil(watchedPerc) or 0
 
-    def fillSeasons(self, show, update=False, seasonsFilter=None, selectSeason=None, do_focus=True):
+    def fillSeasons(self, show, update=False, seasonsFilter=None, selectSeason=None, do_focus=True,
+                     extraFirstItem=None, altControlAttr=None, altThreshold=6):
         try:
             seasons = show.seasons()
         except:
@@ -64,6 +69,13 @@ class SeasonsMixin(object):
         idx = 0
         focus = None
         current_idx = None
+
+        # Episodes' own season-tab row (EpisodesWindow.SEASONS_LIST_ID) prepends a pinned "Show" entry
+        # ahead of the real seasons - see episodes.py's own fillSeasons() call sites. ShowWindow's own
+        # season row never passes this, so its behavior is unchanged.
+        if extraFirstItem is not None:
+            items.append(extraFirstItem)
+            idx = 1
         for season in seasons:
             mli = self._createListItem(show, season)
             if mli:
@@ -91,6 +103,16 @@ class SeasonsMixin(object):
                 idx += 1
 
         subItemListControl = getattr(self, self.SEASONS_CONTROL_ATTR)
+        # altControlAttr: same "fixedlist needs enough items, plain list doesn't" split as
+        # ShowWindow's own season-tab row (subitems.py's fillSeasonTabs()) - only ever passed by a
+        # caller with its own second, plain-list control to fall back to (EpisodesWindow's tab row);
+        # ShowWindow's own season row (id=400, a plain list already) never passes this, so its own
+        # behavior is unchanged.
+        if altControlAttr is not None:
+            altControl = getattr(self, altControlAttr)
+            if len(seasons) <= altThreshold:
+                subItemListControl, altControl = altControl, subItemListControl
+            altControl.reset()
         if update:
             subItemListControl.replaceItems(items)
         else:

@@ -307,6 +307,7 @@
             <orientation>horizontal</orientation>
             <itemgap>0</itemgap>
             <onup condition="Control.IsVisible(205)">205</onup>
+            <onup condition="Control.IsVisible(206)">206</onup>
             <onup>200</onup>
             <ondown condition="Control.IsVisible(300)">300</ondown>
             <ondown condition="Control.IsVisible(1300)">1300</ondown>
@@ -321,6 +322,7 @@
                 <height>{{ vscale(360) }}</height>
                 <focusposition>2</focusposition>
                 <onup condition="Control.IsVisible(205)">205</onup>
+                <onup condition="Control.IsVisible(206)">206</onup>
                 <onup>200</onup>
                 <ondown condition="Control.IsVisible(300)">300</ondown>
                 <ondown condition="Control.IsVisible(1300)">1300</ondown>
@@ -740,6 +742,7 @@
         <height>{{ vscale(1800) }}</height>
 
         <onup condition="Control.IsVisible(205)">205</onup>
+        <onup condition="Control.IsVisible(206)">206</onup>
         <onup>200</onup>
         <itemgap>0</itemgap>
 
@@ -1309,121 +1312,203 @@
    onright, but that button is gone now that header_topleft is blanked above (id 202 is the sidebar's
    user button instead), so overriding a tag nested inside markup that no longer renders would be
    dead code. #}
-{% block header_audiowidget_onleft %}<onleft condition="Control.IsVisible(205)">205</onleft><onleft>9000</onleft>{% endblock %}
+{% block header_audiowidget_onleft %}<onleft condition="Control.IsVisible(205)">205</onleft><onleft condition="Control.IsVisible(206)">206</onleft><onleft>9000</onleft>{% endblock %}
 
 {% block header_middle_add %}
 <!-- SEASON TABS -->
-<!-- Fixed-center carousel, same technique as the episode row. This grouplist is a clipping mask; its right
-     edge stays fixed at 1540 (posx 100 + width 1440), 20px shy of the audio widget's collapsed hitbox at
-     1920-360=1560 - unchanged from before. Its left edge moved from 380 to 100 (the same sidebar-clearance
-     floor used everywhere else content sits near the rail - see e.g. group 50's own posx comment) now that
-     it no longer needs to leave a symmetric 380px gap to balance the removed header Home/Search buttons
-     (that space is reclaimed here instead - not required to be symmetric any more). Inside the mask,
-     fixedlist 205 is oversized to 9 item-cells of 200 (170 for the label, +30 filling in for the itemgap a
-     fixedlist can't express) and shifted -120 - unchanged from before, so the left edge keeps the same
-     ~80px peek it always had; the extra 2 cells (was 7) just extend the fixedlist's own right edge far
-     enough to still fully cover the mask's new, wider right portion, at the cost of a bigger (~160px) peek
-     there instead of a matching 80px - asymmetric, per the above. focusposition=3 still pins the same
-     cell (4th, now of 9) as the fixed focus; tabs scroll under it, landing left-of-center in the wider bar
-     rather than dead-center. The wrapper's onup/onleft/onright/ondown are required here (duplicated onto
-     the child fixedlist too) for the same reason noted on the episode row's carousel: a grouplist wrapper
-     doesn't reliably forward a nested list's boundary-exit rules on its own. -->
-<control type="grouplist">
+<!-- "Show" (pinned, no dataSource - see EpisodesWindow._showTabItem()/onClick(), episodes.py) followed
+     by every season, plain type="list" rather than the old fixedlist center-pinned carousel - matches
+     the identical row now on script-plex-seasons.xml.tpl (the show/season page this "Show" tab returns
+     to) exactly, both technique and layout: see that file's own comment for the full reasoning ("Show"
+     has to stay pinned at the visible left edge, which a center-focus carousel can't guarantee). posx=120,
+     not the old 100: matches this screen's own content column exactly (group 50's own posx=60 + its
+     children's own posx=60), so the tab row's left edge lines up with the title/summary below instead of
+     sitting 20px left of it. width=1420 (120 + 1420 = 1540) fills the rest of the header out to the same
+     right boundary this row always used - 20px shy of the audio widget's collapsed hitbox at
+     1920-360=1560. -->
+<control type="fixedlist" id="205">
+    <!-- Used once there are more than 6 seasons (7+ tabs including "Show") - below that, sibling
+         control 206 (a plain type="list") takes over instead; fillSeasons()'s altControlAttr
+         (mixins/seasons.py, called from here with EpisodesWindow.SEASONS_CONTROL_ATTR_ALT) decides
+         which of the two gets the items and always leaves the other empty so its own <visible> below
+         keeps it hidden. See script-plex-seasons.xml.tpl's own copy of this row (its 205 control's
+         comment) for why a type="fixedlist" needs this split at low item counts: it computes each
+         item's on-screen slot from distance to BOTH ends of the list, and once total items <=
+         itemsPerPage a plain list flush-aligns correctly where a fixedlist doesn't. focusposition=3
+         makes items 0-3 render at their own natural, unscrolled position and starts scrolling exactly
+         once focus reaches index 4 (the 5th item) - which only matters once there are enough tabs to
+         fill the row, i.e. exactly the >6 case this control now handles. -->
     <visible>Integer.IsGreater(Container(205).NumItems,0)</visible>
-    <posx>100</posx>
+    <!-- The old fixedlist wrapper never carried this (an existing gap, not intentional per
+         includes/section_tabs.xml.tpl's own comment on why every header-row control needs its own copy) -
+         added to match on this rewrite, same as the new copy on script-plex-seasons.xml.tpl. -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <posx>120</posx>
     <posy>0</posy>
-    <width>1440</width>
+    <width>1420</width>
     <height>{{ vscale(135) }}</height>
-    <usecontrolcoords>true</usecontrolcoords>
-    <orientation>horizontal</orientation>
+    <focusposition>3</focusposition>
+    <!-- See script-plex-seasons.xml.tpl's own copy of this row for why this is needed (without it,
+         Kodi pins the focused item at the focusposition slot from the very first item, leaving blank
+         space at the left instead of a tab). Live-verified at cell width 170 (movement=4). At 200,
+         itemsPerPage=floor(1420/200)=7, so movement is capped at 3 (itemsPerPage-1-focusposition) -
+         see seasons.xml.tpl's own comment on the maxCursor off-by-one this avoids. -->
+    <movement>3</movement>
+    <preloaditems>4</preloaditems>
     <onup>200</onup>
     <onleft>9000</onleft>
     <onright condition="Control.IsVisible(204)">204</onright>
     <onright>noop</onright>
     <ondown>400</ondown>
-    <control type="fixedlist" id="205">
-        <posx>-120</posx>
-        <posy>0</posy>
-        <width>1800</width>
-        <height>{{ vscale(135) }}</height>
-        <focusposition>3</focusposition>
-        <onup>200</onup>
-        <onleft>9000</onleft>
-        <onright condition="Control.IsVisible(204)">204</onright>
-        <onright>noop</onright>
-        <ondown>400</ondown>
-        <scrolltime tween="quadratic" easing="out">200</scrolltime>
-        <orientation>horizontal</orientation>
-        <preloaditems>9</preloaditems>
-        <!-- ITEM LAYOUT ########################################## -->
-        <itemlayout width="200" height="{{ vscale(135) }}">
-            <control type="label">
-                <posx>0</posx>
-                <posy>0</posy>
-                <width>170</width>
-                <height>{{ vscale(135) }}</height>
-                <font>font12</font>
-                <align>center</align>
-                <aligny>center</aligny>
-                <textcolor>80FFFFFF</textcolor>
-                <label>$INFO[ListItem.Label]</label>
-            </control>
-            <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(current))</visible>
-                <posx>25</posx>
-                <posy>{{ vscale(94) }}</posy>
-                <width>120</width>
-                <height>2</height>
-                <texture>script.plex/white-square.png</texture>
-                <colordiffuse>FFE5A00D</colordiffuse>
-            </control>
-        </itemlayout>
+    <orientation>horizontal</orientation>
+    <!-- ITEM LAYOUT ########################################## -->
+    <!-- 200, not 170 - matches the same widened cell on script-plex-seasons.xml.tpl's own copy of
+         this row (see its own comment for the full reasoning). -->
+    <itemlayout width="200" height="{{ vscale(135) }}">
+        <control type="label">
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>170</width>
+            <height>{{ vscale(135) }}</height>
+            <font>font10</font>
+            <align>center</align>
+            <aligny>center</aligny>
+            <textcolor>80FFFFFF</textcolor>
+            <label>$INFO[ListItem.Label]</label>
+        </control>
+        <control type="image">
+            <visible>!String.IsEmpty(ListItem.Property(current))</visible>
+            <posx>25</posx>
+            <posy>{{ vscale(94) }}</posy>
+            <width>120</width>
+            <height>2</height>
+            <texture>script.plex/white-square.png</texture>
+            <colordiffuse>FFE5A00D</colordiffuse>
+        </control>
+    </itemlayout>
 
-        <!-- FOCUSED LAYOUT ####################################### -->
-        {# Kodi applies this layout to whichever item holds the list's internal cursor, independent of whether
-           control 205 itself has window focus - so without gating on Control.HasFocus(205), the cursor's item
-           (which defaults to the current season) renders in the "focused" white year-round, making the tab bar
-           look focused even when focus actually sits on the play button, and keeps showing white on whatever tab
-           was last highlighted after focus moves away. Splitting into two labels keyed off actual control focus
-           makes it fall back to the same grey as itemlayout the rest of the time; the current-season underline
-           below is unaffected since it never depended on focus. #}
-        <focusedlayout width="200" height="{{ vscale(135) }}">
-            <control type="label">
-                <visible>Control.HasFocus(205)</visible>
-                <posx>0</posx>
-                <posy>0</posy>
-                <width>170</width>
-                <height>{{ vscale(135) }}</height>
-                <font>font12</font>
-                <align>center</align>
-                <aligny>center</aligny>
-                <scroll>true</scroll>
-                <scrollspeed>25</scrollspeed>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>$INFO[ListItem.Label]</label>
-            </control>
-            <control type="label">
-                <visible>!Control.HasFocus(205)</visible>
-                <posx>0</posx>
-                <posy>0</posy>
-                <width>170</width>
-                <height>{{ vscale(135) }}</height>
-                <font>font12</font>
-                <align>center</align>
-                <aligny>center</aligny>
-                <textcolor>80FFFFFF</textcolor>
-                <label>$INFO[ListItem.Label]</label>
-            </control>
-            <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(current))</visible>
-                <posx>25</posx>
-                <posy>{{ vscale(94) }}</posy>
-                <width>120</width>
-                <height>2</height>
-                <texture>script.plex/white-square.png</texture>
-                <colordiffuse>FFE5A00D</colordiffuse>
-            </control>
-        </focusedlayout>
-    </control>
+    <!-- FOCUSED LAYOUT ####################################### -->
+    {# Kodi applies this layout to whichever item holds the list's internal cursor, independent of whether
+       control 205 itself has window focus - so without gating on Control.HasFocus(205), the cursor's item
+       (which defaults to the current season) renders in the "focused" white year-round, making the tab bar
+       look focused even when focus actually sits on the play button, and keeps showing white on whatever tab
+       was last highlighted after focus moves away. Splitting into two labels keyed off actual control focus
+       makes it fall back to the same grey as itemlayout the rest of the time; the current-season underline
+       below is unaffected since it never depended on focus. #}
+    <focusedlayout width="200" height="{{ vscale(135) }}">
+        <control type="label">
+            <visible>Control.HasFocus(205)</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>170</width>
+            <height>{{ vscale(135) }}</height>
+            <font>font10</font>
+            <align>center</align>
+            <aligny>center</aligny>
+            <scroll>true</scroll>
+            <scrollspeed>25</scrollspeed>
+            <textcolor>FFFFFFFF</textcolor>
+            <label>$INFO[ListItem.Label]</label>
+        </control>
+        <control type="label">
+            <visible>!Control.HasFocus(205)</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>170</width>
+            <height>{{ vscale(135) }}</height>
+            <font>font10</font>
+            <align>center</align>
+            <aligny>center</aligny>
+            <textcolor>80FFFFFF</textcolor>
+            <label>$INFO[ListItem.Label]</label>
+        </control>
+        <control type="image">
+            <visible>!String.IsEmpty(ListItem.Property(current))</visible>
+            <posx>25</posx>
+            <posy>{{ vscale(94) }}</posy>
+            <width>120</width>
+            <height>2</height>
+            <texture>script.plex/white-square.png</texture>
+            <colordiffuse>FFE5A00D</colordiffuse>
+        </control>
+    </focusedlayout>
+</control>
+
+<control type="list" id="206">
+    <!-- Plain-list twin of 205 for <=6 seasons (<=7 tabs) - see 205's own comment above for why. No
+         focusposition/movement/preloaditems: a plain list already renders every item at its natural
+         position and only scrolls if focus would otherwise leave the visible width, which never
+         happens at this item count. -->
+    <visible>Integer.IsGreater(Container(206).NumItems,0)</visible>
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <posx>120</posx>
+    <posy>0</posy>
+    <width>1420</width>
+    <height>{{ vscale(135) }}</height>
+    <onup>200</onup>
+    <onleft>9000</onleft>
+    <onright condition="Control.IsVisible(204)">204</onright>
+    <onright>noop</onright>
+    <ondown>400</ondown>
+    <orientation>horizontal</orientation>
+    <itemlayout width="200" height="{{ vscale(135) }}">
+        <control type="label">
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>170</width>
+            <height>{{ vscale(135) }}</height>
+            <font>font10</font>
+            <align>center</align>
+            <aligny>center</aligny>
+            <textcolor>80FFFFFF</textcolor>
+            <label>$INFO[ListItem.Label]</label>
+        </control>
+        <control type="image">
+            <visible>!String.IsEmpty(ListItem.Property(current))</visible>
+            <posx>25</posx>
+            <posy>{{ vscale(94) }}</posy>
+            <width>120</width>
+            <height>2</height>
+            <texture>script.plex/white-square.png</texture>
+            <colordiffuse>FFE5A00D</colordiffuse>
+        </control>
+    </itemlayout>
+    <focusedlayout width="200" height="{{ vscale(135) }}">
+        <control type="label">
+            <visible>Control.HasFocus(206)</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>170</width>
+            <height>{{ vscale(135) }}</height>
+            <font>font10</font>
+            <align>center</align>
+            <aligny>center</aligny>
+            <scroll>true</scroll>
+            <scrollspeed>25</scrollspeed>
+            <textcolor>FFFFFFFF</textcolor>
+            <label>$INFO[ListItem.Label]</label>
+        </control>
+        <control type="label">
+            <visible>!Control.HasFocus(206)</visible>
+            <posx>0</posx>
+            <posy>0</posy>
+            <width>170</width>
+            <height>{{ vscale(135) }}</height>
+            <font>font10</font>
+            <align>center</align>
+            <aligny>center</aligny>
+            <textcolor>80FFFFFF</textcolor>
+            <label>$INFO[ListItem.Label]</label>
+        </control>
+        <control type="image">
+            <visible>!String.IsEmpty(ListItem.Property(current))</visible>
+            <posx>25</posx>
+            <posy>{{ vscale(94) }}</posy>
+            <width>120</width>
+            <height>2</height>
+            <texture>script.plex/white-square.png</texture>
+            <colordiffuse>FFE5A00D</colordiffuse>
+        </control>
+    </focusedlayout>
 </control>
 {% endblock %}

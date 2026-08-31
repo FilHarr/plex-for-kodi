@@ -3380,3 +3380,15 @@ msgstr ""
 msgctxt "#35055"
 msgid "{0} items"
 msgstr ""
+
+msgctxt "#35056"
+msgid "{} episodes"
+msgstr ""
+
+msgctxt "#35057"
+msgid "{} episode"
+msgstr ""
+
+msgctxt "#35058"
+msgid "Show"
+msgstr ""

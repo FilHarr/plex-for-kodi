@@ -265,6 +265,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     EPISODE_LIST_ID = 400
     SEASONS_LIST_ID = 205
+    # Plain-list twin of the row above, used instead once there are 6 seasons or fewer - see
+    # script-plex-seasons.xml.tpl's own copy of this row (and its 205 control's comment) for why a
+    # type="fixedlist" misbehaves at low item counts.
+    SEASONS_LIST_ID_ALT = 206
     ROLES_LIST_ID = 402
     EXTRA_LIST_ID = 403
     RELATED_LIST_ID = 404
@@ -282,6 +286,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     MEDIA_BUTTON_ID = 307
 
     SEASONS_CONTROL_ATTR = "seasonsListControl"
+    SEASONS_CONTROL_ATTR_ALT = "seasonsListControlAlt"
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -381,6 +386,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.initMediaInfoPillControls()
 
         self.seasonsListControl = kodigui.ManagedControlList(self, self.SEASONS_LIST_ID, 5)
+        self.seasonsListControlAlt = kodigui.ManagedControlList(self, self.SEASONS_LIST_ID_ALT, 5)
         self.rolesListControl = kodigui.ManagedControlList(self, self.ROLES_LIST_ID, 5)
         self.extraListControl = kodigui.ManagedControlList(self, self.EXTRA_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
@@ -505,7 +511,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.reloadItems(items=reload_items, with_progress=True, skip_progress_for=skip_progress_for,
                          set_item_info=True)
         self.postpone_simple(self.fillSeasons, self.show_, seasonsFilter=lambda x: len(x) > 1,
-                             selectSeason=self.season, update=True, do_focus=not self.manuallySelectedSeason)
+                             selectSeason=self.season, update=True, do_focus=not self.manuallySelectedSeason,
+                             extraFirstItem=self._showTabItem(), altControlAttr=self.SEASONS_CONTROL_ATTR_ALT)
 
     def postSetup(self, select_play_button=True):
         self.checkForHeaderFocus(xbmcgui.ACTION_MOVE_DOWN, initial=True)
@@ -563,7 +570,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         # postpone less important tasks
         self.batch_simple([
-            (self.fillSeasons, (self.show_,), dict(seasonsFilter=lambda x: len(x) > 1, selectSeason=self.season)),
+            (self.fillSeasons, (self.show_,), dict(seasonsFilter=lambda x: len(x) > 1, selectSeason=self.season,
+                                                    extraFirstItem=self._showTabItem(),
+                                                    altControlAttr=self.SEASONS_CONTROL_ATTR_ALT)),
             (self.fillExtras, None, None),
             (self.fillRelated, None, None),
             (self.fillRoles, None, None),
@@ -763,10 +772,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             if action in (xbmcgui.ACTION_MOVE_DOWN, xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
                 self.hadUserInteraction = True
 
-            if action == xbmcgui.ACTION_MOVE_UP and controlID in (self.EPISODE_LIST_ID, self.SEASONS_LIST_ID):
+            if action == xbmcgui.ACTION_MOVE_UP and controlID in (self.EPISODE_LIST_ID, self.SEASONS_LIST_ID,
+                                                                    self.SEASONS_LIST_ID_ALT):
                 self.updateBackgroundFrom((self.season or self.show_ or self.season.show()))
 
-            if controlID == self.SEASONS_LIST_ID and action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
+            if controlID in (self.SEASONS_LIST_ID, self.SEASONS_LIST_ID_ALT) and \
+                    action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
                 self.manuallySelectedSeason = True
 
             elif controlID == self.EPISODE_LIST_ID:
@@ -905,14 +916,27 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.mediaButtonClicked()
         elif controlID in (self.INFO_BUTTON_ID, self.INFO_BUTTON_ID+1000):
             self.infoButtonClicked()
-        elif controlID == self.SEASONS_LIST_ID:
+        elif controlID in (self.SEASONS_LIST_ID, self.SEASONS_LIST_ID_ALT):
             if self.fromWatchlist:
                 return
-            mli = self.seasonsListControl.getSelectedItem()
+            seasonsControl = self.seasonsListControl if controlID == self.SEASONS_LIST_ID else self.seasonsListControlAlt
+            mli = seasonsControl.getSelectedItem()
             if not mli:
                 return
             item = mli.dataSource
-            if item != self.season:
+            if item is None:
+                # "Show" tab - open the show/season page directly rather than relying on Back: this
+                # screen can be reached from places other than the show page (Search, On Deck,
+                # Continue Watching, etc.), so Back may not land there. Local import to avoid a circular
+                # import - subitems.py imports this module at its own top level.
+                from . import subitems
+                subitems.ShowWindow.open(media_item=self.show_, parent_list=seasonsControl,
+                                         came_from=self.cameFrom, from_watchlist=self.fromWatchlist,
+                                         directly_from_watchlist=self.directlyFromWatchlist,
+                                         is_watchlisted=self.is_watchlisted,
+                                         entry_section_id=self.entrySectionId,
+                                         entry_from_watchlist=self.entryFromWatchlist)
+            elif item != self.season:
                 self.switchSeason(item)
             else:
                 self.setCondFocusId(self.EPISODE_LIST_ID)
@@ -1089,6 +1113,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.season = season
         self.manuallySelectedSeason = True
         self.setup()
+
+    def _showTabItem(self):
+        # Pinned "Show" entry at the front of the season-tab row (fillSeasons()'s extraFirstItem,
+        # mixins/seasons.py) - no dataSource, so onClick()'s SEASONS_LIST_ID handler recognizes it and
+        # opens the show/season page instead of trying to switch to it as a season.
+        return kodigui.ManagedListItem(T(35058, 'Show'))
 
     def searchButtonClicked(self):
         section_id = self.show_.getLibrarySectionId()
