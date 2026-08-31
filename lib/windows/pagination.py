@@ -253,12 +253,93 @@ class MCLPaginator(object):
 
 
 class BaseRelatedPaginator(MCLPaginator):
+    """
+    Unlike the base class's sliding-window paging (each page replaces the control's entire contents,
+    keeping only a bounded number of items visible at once - appropriate for something like Episodes'
+    own potentially very long episode list), related-item lists are short enough that once a page is
+    loaded it should just stay - matching how recommended-hub rows behave (they only ever grow via
+    hub.more(), never discard earlier items or re-fetch them). This fixes a real bug the base class's
+    approach had here: paging right lost the earlier items (only a left-boundary marker remained to
+    re-fetch them), and paging back left re-fetched - and briefly re-showed a loading placeholder for -
+    items that had already been loaded once. So: append-only, right-direction-only pagination - no
+    left-boundary marker is ever created, so boundaryHit's "left" branch is simply never reached here.
+    """
     initialPageSize = 8
     pageSize = initialPageSize
     orphans = initialPageSize // 2
 
     thumbFallback = lambda self, rel: 'script.plex/thumb_fallbacks/{0}.png'.format(
         rel.type in ('show', 'season', 'episode') and 'show' or 'movie')
+
+    @property
+    def nextPage(self):
+        # Always continues from the total already shown so far - never re-slices backward, unlike the
+        # base class's own nextPage.
+        offset = self._currentAmount
+        amount = self.pageSize
+        itemsLeft = self.leafCount - offset
+        if itemsLeft <= self.pageSize + self.orphans:
+            amount = itemsLeft
+
+        self.offset = offset
+        data = self.getData(offset, amount)
+        self._lastAmount = self._currentAmount
+        self._currentAmount += len(data)
+        return data
+
+    def populate(self, items):
+        if not items:
+            return []
+
+        priorAmount = self._lastAmount or 0
+        moreRight = self._currentAmount < self.leafCount
+
+        finalItems = []
+        thumbFallback = self.thumbFallback
+        idx = priorAmount
+        for item in items:
+            mli = self.createListItem(item)
+            if not mli:
+                continue
+
+            mli.setProperty('index', str(idx))
+            self.prepareListItem(item, mli)
+            if thumbFallback:
+                if callable(thumbFallback):
+                    mli.setProperty('thumb.fallback', thumbFallback(item))
+                else:
+                    mli.setProperty('thumb.fallback', thumbFallback)
+
+            finalItems.append(mli)
+            idx += 1
+
+        if not moreRight:
+            finalItems[-1].setBoolProperty('last.item', True)
+
+        appending = self._direction is not None
+        if appending:
+            # Drop the old trailing boundary marker (the item that triggered this page) before
+            # appending the new items in its place, so it's the marker that's replaced, not any real
+            # item - nothing already shown is ever removed.
+            self.control.removeItem(self.control.size() - 1)
+            selectPos = self.control.size()
+        else:
+            self.control.reset()
+            selectPos = 0
+
+        self.control.addItems(finalItems)
+
+        if moreRight:
+            end = kodigui.ManagedListItem('')
+            end.setBoolProperty('is.boundary', True)
+            end.setBoolProperty('right.boundary', True)
+            end.setProperty("orig.index", str(self._currentAmount))
+            self.control.addItems([end])
+
+        if appending:
+            self.control.setSelectedItemByPos(selectPos)
+
+        return finalItems
 
     def createListItem(self, rel):
         return kodigui.ManagedListItem(
