@@ -23,7 +23,7 @@ STEP_MAP = {
 
 def render_templates(theme=None, templates=None, force=False):
     # apply theme if version changed
-    theme = theme or getSetting('theme', DEF_THEME)
+    theme = theme or DEF_THEME
     target_dir = os.path.join(translatePath(ADDON.getAddonInfo('path')), "resources", "skins", "Main", "1080i")
 
     # try to find custom theme_overrides.json in userdata

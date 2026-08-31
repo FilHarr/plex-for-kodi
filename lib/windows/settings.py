@@ -670,25 +670,10 @@ class Settings(object):
         'ui': (
             T(32467, 'User Interface'), (
                 OptionsSetting(
-                    'theme',
-                    T(32983, 'Theme'),
-                    util.DEF_THEME,
-                    (
-                        ('modern', T(32985, 'Modern')),
-                        ('modern-dotted', T(32986, 'Modern (dotted)')),
-                        ('modern-colored', T(32989, 'Modern (colored)')),
-                        ('classic', T(32987, 'Classic')),
-                        #('custom', T(32988, 'Custom')),
-                    ), theme_relevant=True
-                ).description(
-                    T(32984, 'stub')
-                ),
-                OptionsSetting(
                     'watched_indicators', T(33022, ''),
                     "modern_2024",
                     (
                         ('none', T(32309, 'None')),
-                        ('classic', T(32987, 'Classic')),
                         ('modern', T(32985, 'Modern')),
                         ('modern_2024', T(33076, 'Modern (2024)')),
                     ),
