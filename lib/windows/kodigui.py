@@ -1182,8 +1182,22 @@ class _MWBackground(ControlledWindow):
         if self.started:
             return
         self.started = True
-        self._multiWindow._open()
+        # Real native close, not just close() (ControlledBase.close() only flips self._closing,
+        # see its own docstring) - and done now, before _open() (below), not after. _open() blocks
+        # for the entire session (this onInit() call is itself the "outer blocking .modal() call"
+        # library.py's goHome() docstring describes), so a close() placed after it - the previous
+        # order - would only ever run at genuine session end. Until then this window's native
+        # handle stayed alive, shown-but-hidden, at the bottom of Kodi's window stack for the
+        # whole session: harmless as long as nothing ever routes an action to it, but if one ever
+        # does (a stray/misrouted input reaching the wrong native window - the shell-swap path
+        # below this class also only flag-closes the outgoing shell, e.g. openSection()'s
+        # self._current.doClose(), library.py), this class's blank bgXML template (script-plex-
+        # blank.xml) is what's left on screen, and ControlledWindow.onAction() only reacts to
+        # NAV_BACK, so nothing else in the UI responds either - live-observed as a "blank,
+        # unresponsive" freeze, force-dismissing here removes it as a possible landing spot.
         self.close()
+        self.forceDismiss()
+        self._multiWindow._open()
 
 
 class MultiWindow(object):
