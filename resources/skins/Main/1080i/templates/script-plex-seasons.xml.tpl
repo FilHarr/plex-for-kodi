@@ -109,11 +109,13 @@
         <height>{{ vscale(600) }}</height>
         <!-- No corner poster (dropped on request to match Pre-play's own layout exactly -
              script-plex-pre_play.xml.tpl - see that file's own comment on its details block for the
-             full reasoning): clearlogo/meta/rating/summary all sit at a single fixed posx=60 column
-             instead of being duplicated at two x-offsets and switched by hide.poster's own <visible>. -->
+             full reasoning): clearlogo/meta/rating/summary all sit at a single fixed posx=61 column
+             (absolute x=113, matching Episodes'/Pre-play's own shared baseline - see
+             script-plex-episodes.xml.tpl's header block comment) instead of being duplicated at two
+             x-offsets and switched by hide.poster's own <visible>. -->
         <control type="label">
             <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
-            <posx>60</posx>
+            <posx>61</posx>
             <posy>0</posy>
             <width>616</width>
             <height>{{ vscale(109) }}</height>
@@ -129,7 +131,7 @@
              (subitems.py) requests the transcoded clearlogo at this same size. -->
         <control type="image">
             <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
-            <posx>60</posx>
+            <posx>61</posx>
             <posy>0</posy>
             <width>722</width>
             <height>{{ vscale(162) }}</height>
@@ -145,7 +147,7 @@
              sync by hand if it ever changes. -->
         <control type="grouplist">
             <visible>{% for i in range(1, 7) %}{% if i > 1 %}| {% endif %}!String.IsEmpty(Window.Property(rating{{ i }})){% endfor %}</visible>
-            <posx>60</posx>
+            <posx>61</posx>
             <posy>{{ vscale(219) }}</posy>
             <width>708</width>
             <height>{{ vscale(32) }}</height>
@@ -188,12 +190,12 @@
             </control>
         </control>
 
-        <!-- posx=60, not the old 376: no poster to clear any more, matching the rest of this column. -->
-        {% include "includes/wl_availability.xml.tpl" with posx=60 %}
+        <!-- posx=61, not the old 376: no poster to clear any more, matching the rest of this column. -->
+        {% include "includes/wl_availability.xml.tpl" with posx=61 %}
         <control type="textbox">
             <!-- Matches Pre-play's own summary box exactly - single fixed position, no more poster-
                  shown/poster-hidden slide. -->
-            <posx>60</posx>
+            <posx>61</posx>
             <posy>{{ vscale(277) }}</posy>
             <width>813</width>
             <height>{{ vscale(90) }}</height>
@@ -525,8 +527,11 @@
                  auto-stack still hands Extras (502) the correct start position. -->
             <height>{{ vscale(445) }}</height>
             <control type="label">
-                <!-- posx=63, not 60: nudged 3px right on request, matching the season count label. -->
-                <posx>63</posx>
+                <!-- posx=61, not 60: lands at absolute x=113 (group 50's own posx=52 + this 61), matching
+                     the page-wide baseline (see the list's own comment below and
+                     script-plex-episodes.xml.tpl's header block comment), not this row's own old raw
+                     x=115. -->
+                <posx>61</posx>
                 <posy>{{ vscale(25) }}</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
@@ -538,11 +543,13 @@
                 <label>[B]$ADDON[script.plexmod 33609][/B]</label>
             </control>
             <control type="list" id="401">
-                <!-- posx=53, not 40 (width shrunk to match): see list 400's comment above for the full
-                     rationale (clip-line moved to match Recommended's own, x=105). -->
-                <posx>53</posx>
+                <!-- posx=51, not 40 (width grown to match, keeping the right edge fixed): clip edge lands
+                     at absolute x=103 (group 50's own posx=52 + this 51), 2px inside this screen's own
+                     old x=105 clip line so that art (itemlayout's own unchanged 5+5 margin) reaches
+                     x=113, matching the page-wide baseline instead of this row's own old x=115. -->
+                <posx>51</posx>
                 <posy>{{ vscale(45) }}</posy>
-                <width>1867</width>
+                <width>1869</width>
                 <height>{{ vscale(400) }}</height>
                 <onup>400</onup>
                 <ondown>402</ondown>
@@ -703,8 +710,9 @@
             <height>{{ vscale(450) }}</height>
             <width>1920</width>
             <control type="label">
-                <!-- posx=63, not 60: nudged 3px right on request, matching the season count label. -->
-                <posx>63</posx>
+                <!-- posx=61, not 60: lands at absolute x=113, matching the page-wide baseline - see the
+                     Roles label's own comment above. -->
+                <posx>61</posx>
                 <posy>0</posy>
                 <width>800</width>
                 <height>{{ vscale(80) }}</height>
@@ -716,11 +724,11 @@
                 <label>[B]$INFO[Window.Property(extras.header)][/B]</label>
             </control>
             <control type="list" id="402">
-                <!-- posx=53, not 40 (width shrunk to match): see list 400's comment above for the full
-                     rationale (clip-line moved to match Recommended's own, x=105). -->
-                <posx>53</posx>
+                <!-- posx=51, not 40 (width grown to match): reaches x=113, matching the page-wide
+                     baseline - see the Roles list's own comment above. -->
+                <posx>51</posx>
                 <posy>{{ vscale(18) }}</posy>
-                <width>1867</width>
+                <width>1869</width>
                 <height>{{ vscale(430) }}</height>
                 <onup>401</onup>
                 <ondown>403</ondown>

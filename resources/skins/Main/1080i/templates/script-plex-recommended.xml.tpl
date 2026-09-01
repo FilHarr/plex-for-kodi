@@ -442,10 +442,12 @@
 </control>
 
 <!-- Focused hub item info overlay - clearlogo/title, meta row and summary, matching pre_play's own
-     details block (script-plex-pre_play.xml.tpl) exactly: same posx=52/posy=155 group offset as
-     pre_play's own group id=50, same inner posx=60 controls, so this reads as the same UI language
-     rather than a reinvention. No rating row here (Home has no single focused video the way pre_play
-     does - ratings would only make sense per-hub-item and there's no room to duplicate the rating
+     details block (script-plex-pre_play.xml.tpl) exactly: same posx=52/posy=135 group offset as
+     pre_play's own group id=50, same inner posx=61 controls (absolute x=113, the shared baseline
+     Episodes/Seasons/Pre-play all use - see script-plex-episodes.xml.tpl's header block comment), so
+     this reads as the same UI language rather than a reinvention. No rating row here (Home has no
+     single focused video the way pre_play does - ratings would only make sense per-hub-item and
+     there's no room to duplicate the rating
      row per hub), so the summary sits at pre_play's rating-row height (210) instead of its own
      summary height (252), filling the gap that would otherwise sit empty between the meta row and
      the hero art below. Driven entirely by the Window properties HomeWindow.setHeroInfo() sets on
@@ -466,7 +468,7 @@
     <height>{{ vscale(388) }}</height>
     <control type="label">
         <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
-        <posx>60</posx>
+        <posx>61</posx>
         <posy>0</posy>
         <width>616</width>
         <height>{{ vscale(109) }}</height>
@@ -480,7 +482,7 @@
     </control>
     <control type="image">
         <visible>!String.IsEmpty(Window.Property(clear.logo)) + !String.IsEqual(Window.Property(hero.type),episode)</visible>
-        <posx>60</posx>
+        <posx>61</posx>
         <posy>0</posy>
         <width>722</width>
         <height>{{ vscale(162) }}</height>
@@ -491,7 +493,7 @@
          see this group's own CLEAR_LOGO_DIM_EPISODE comment (library.py) for the budget. -->
     <control type="image">
         <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEqual(Window.Property(hero.type),episode)</visible>
-        <posx>60</posx>
+        <posx>61</posx>
         <posy>0</posy>
         <width>660</width>
         <height>{{ vscale(98) }}</height>
@@ -507,7 +509,7 @@
          non-logo title label above reads. -->
     <control type="label">
         <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEqual(Window.Property(hero.type),episode)</visible>
-        <posx>60</posx>
+        <posx>61</posx>
         <posy>{{ vscale(117) }}</posy>
         <width>660</width>
         <height>{{ vscale(51) }}</height>
@@ -521,7 +523,7 @@
     </control>
     {% include "includes/pp_meta_row.xml.tpl" %}
     <control type="textbox">
-        <posx>60</posx>
+        <posx>61</posx>
         <posy>{{ vscale(239) }}</posy>
         <width>813</width>
         <height>{{ vscale(90) }}</height>

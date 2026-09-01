@@ -129,14 +129,13 @@
                  anchored top-right at x691-1920/y0-691) covers what the small corner poster used to be
                  for, and title/clearlogo/meta/rating/summary now have a single fixed position and width
                  instead of being duplicated at two x-offsets and switched with <visible>. Column runs
-                 x60-618 (width 558) inside this group (absolute x112-670 on screen, group 50 now at
-                 posx=52) to clear the hero-art box's left edge (691) with a 20px margin - width bumped
-                 558 from 550 alongside group 50's own posx move from 60 to 52, so the column's right edge
-                 stays exactly where it was (670) while its left edge gains the same 8px that move closed
-                 up, rather than just leaving that 8px as unused margin. -->
+                 x61-619 (width 558) inside this group (absolute x113-671 on screen, group 50 at posx=52)
+                 to clear the hero-art box's left edge (691) with a 20px margin - the extra 1px past the
+                 old x112 lines the column up with Episodes'/Seasons' own shared x=113 baseline (see
+                 script-plex-episodes.xml.tpl's header block comment). -->
             <control type="label">
                 <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
-                <posx>60</posx>
+                <posx>61</posx>
                 <posy>0</posy>
                 <width>616</width>
                 <height>{{ vscale(109) }}</height>
@@ -153,7 +152,7 @@
                  preplay.py's CLEAR_LOGO_DIM requests the transcoded clearlogo at this same 722x162 size. -->
             <control type="image">
                 <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
-                <posx>60</posx>
+                <posx>61</posx>
                 <posy>0</posy>
                 <width>722</width>
                 <height>{{ vscale(162) }}</height>
@@ -175,7 +174,7 @@
                  with an unusually high rating count, worth an eye on real data. -->
             <control type="grouplist">
                 <visible>{% for i in range(1, 7) %}{% if i > 1 %}| {% endif %}!String.IsEmpty(Window.Property(rating{{ i }})){% endfor %}</visible>
-                <posx>60</posx>
+                <posx>61</posx>
                 <posy>{{ vscale(219) }}</posy>
                 <width>708</width>
                 <height>{{ vscale(32) }}</height>
@@ -241,7 +240,7 @@
                          mismatch recommended's own version has - but that box is masked to fade to
                          transparent along its left edge (see default_background.xml.tpl), so text
                          overlapping that fade zone blends rather than crosses a hard image edge. -->
-                    <posx>60</posx>
+                    <posx>61</posx>
                     <posy>{{ vscale(277) }}</posy>
                     <width>813</width>
                     <height>{{ vscale(90) }}</height>
@@ -308,7 +307,7 @@
                  (script-plex-episodes.xml.tpl id 502) and seasons.xml.tpl id 501 - Plex was missing one
                  here entirely. -->
             <control type="label">
-                <posx>60</posx>
+                <posx>61</posx>
                 <posy>{{ vscale(5) }}</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
@@ -320,9 +319,10 @@
                 <label>[UPPERCASE][B]$ADDON[script.plexmod 33609][/B][/UPPERCASE]</label>
             </control>
             <control type="list" id="400">
-                <posx>0</posx>
+                <!-- 51, not 0 (width shrunk to match, local posx+width=1920 invariant): clip edge lands at absolute x=103 (group 50's own posx=52 + this 51), giving departing thumbnails room to clear the collapsed sidebar rail's icon column before this list's own clip boundary cuts them off, same treatment Seasons'/Episodes' own rows already had (script-plex-seasons.xml.tpl id 401) - this row never got it before. 103, not Seasons' own 105: compensates for this row's own 5px inner padding group so art (clip + 5 outer + 5 inner) still lands at x=113. -->
+                <posx>51</posx>
                 <posy>25</posy>
-                <width>1920</width>
+                <width>1869</width>
                 <height>{{ vscale(410) }}</height>
                 <onup>300</onup>
                 <ondown>401</ondown>
@@ -333,7 +333,8 @@
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="260">
                     <control type="group">
-                       <posx>55</posx>
+                       <!-- 5, back to the old value: a uniform outer margin across every row here (matching Seasons' own convention), with the list's own clip line below doing the per-row x=113 compensation instead - see that control's own comment. -->
+                       <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
                             <posx>5</posx>
@@ -386,7 +387,7 @@
                 <!-- FOCUSED LAYOUT ####################################### -->
                 <focusedlayout width="260">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
                             <animation effect="zoom" start="100" end="110" time="100" center="105,{{ vscale(105) }}" reversible="false">Focus</animation>
@@ -470,7 +471,7 @@
                  the next section (Extras, id 502) doesn't inherit a dead gap. -->
             <height>{{ vscale(376) }}</height>
             <control type="label">
-                <posx>60</posx>
+                <posx>61</posx>
                 <posy>{{ vscale(20) }}</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
@@ -481,9 +482,10 @@
                 <label>[UPPERCASE]$ADDON[script.plexmod 32953][/UPPERCASE]</label>
             </control>
             <control type="list" id="401">
-                <posx>0</posx>
+                <!-- 56, not 0 (width shrunk to match): same sidebar-clearance clip-line fix as the Roles list above. 108, not 103/105: this row has no inner padding group, so the clip line alone (56 + this row's own 5px outer margin) has to cover the full distance to x=113. -->
+                <posx>56</posx>
                 <posy>{{ vscale(36) }}</posy>
-                <width>1920</width>
+                <width>1864</width>
                 <height>{{ vscale(410) }}</height>
                 <onup>400</onup>
                 <ondown>402</ondown>
@@ -494,7 +496,8 @@
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="537">
                     <control type="group">
-                        <posx>55</posx>
+                        <!-- 5, back to the old value - see the Roles row's own comment above; this row's own list clip line compensates for having no inner padding group. -->
+                        <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="image">
                             <posx>0</posx>
@@ -572,7 +575,7 @@
                 <!-- FOCUSED LAYOUT ####################################### -->
                 <focusedlayout width="537">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="image">
                             <posx>0</posx>
@@ -660,7 +663,7 @@
             <height>{{ vscale(450) }}</height>
             <width>1920</width>
             <control type="label">
-                <posx>60</posx>
+                <posx>61</posx>
                 <posy>0</posy>
                 <width>800</width>
                 <height>{{ vscale(80) }}</height>
@@ -671,9 +674,10 @@
                 <label>[UPPERCASE]$ADDON[script.plexmod 32305][/UPPERCASE]</label>
             </control>
             <control type="list" id="402">
-                <posx>0</posx>
+                <!-- 51, not 0 (width shrunk to match): same sidebar-clearance clip-line fix as the Roles list above - identical margin math (5px inner padding group). -->
+                <posx>51</posx>
                 <posy>{{ vscale(18) }}</posy>
-                <width>1920</width>
+                <width>1869</width>
                 <height>{{ vscale(430) }}</height>
                 <onup>401</onup>
                 <ondown>403</ondown>
@@ -684,7 +688,8 @@
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="544">
                     <control type="group">
-                        <posx>55</posx>
+                        <!-- 5, back to the old value - see the Roles row's own comment above. -->
+                        <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
                             <posx>5</posx>
@@ -788,7 +793,7 @@
                 <!-- FOCUSED LAYOUT ####################################### -->
                 <focusedlayout width="544">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
                             <animation effect="zoom" start="100" end="104" time="100" center="261,{{ vscale(149) }}" reversible="false">Focus</animation>
@@ -895,7 +900,7 @@
             <width>1920</width>
             <height>{{ vscale(555) }}</height>
             <control type="label">
-                <posx>60</posx>
+                <posx>61</posx>
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
@@ -906,9 +911,10 @@
                 <label>[UPPERCASE]$INFO[Window.Property(related.header)][/UPPERCASE]</label>
             </control>
             <control type="list" id="403">
-                <posx>0</posx>
+                <!-- 53, not 0 (width shrunk to match): same sidebar-clearance clip-line fix as the Roles list above. 105, not 103: this row's own inner padding group is 3px, not 5, so the clip line only needs to close a 2px-smaller gap to reach the same x=113 art position. -->
+                <posx>53</posx>
                 <posy>{{ vscale(16) }}</posy>
-                <width>1920</width>
+                <width>1867</width>
                 <height>{{ vscale(555) }}</height>
                 <onup>402</onup>
                 <ondown>404</ondown>
@@ -924,7 +930,8 @@
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="272">
                     <control type="group">
-                        <posx>55</posx>
+                        <!-- 5, back to the old value - see the Roles row's own comment above. -->
+                        <posx>5</posx>
                         <posy>{{ vscale(72) }}</posy>
                         <control type="image">
                             <posx>0</posx>
@@ -1031,7 +1038,7 @@
                 <!-- FOCUSED LAYOUT ####################################### -->
                 <focusedlayout width="272">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>5</posx>
                         <posy>{{ vscale(72) }}</posy>
                         <control type="group">
                             <animation effect="zoom" start="100" end="104" time="100" center="120,{{ vscale(180) }}" reversible="false">Focus</animation>
@@ -1161,7 +1168,7 @@
             <width>1920</width>
             <height>{{ vscale(555) }}</height>
             <control type="label">
-                <posx>60</posx>
+                <posx>61</posx>
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
@@ -1172,9 +1179,10 @@
                 <label>[UPPERCASE]$INFO[Window.Property(collection.header.0)][/UPPERCASE]</label>
             </control>
             <control type="list" id="404">
-                <posx>0</posx>
+                <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
+                <posx>53</posx>
                 <posy>{{ vscale(16) }}</posy>
-                <width>1920</width>
+                <width>1867</width>
                 <height>{{ vscale(555) }}</height>
                 <onup>403</onup>
                 <ondown>405</ondown>
@@ -1189,7 +1197,8 @@
                 <preloaditems>4</preloaditems>
                 <itemlayout width="272">
                     <control type="group">
-                        <posx>55</posx>
+                        <!-- 5, back to the old value - see the Roles row's own comment above. -->
+                        <posx>5</posx>
                         <posy>{{ vscale(72) }}</posy>
                         <control type="image">
                             <posx>0</posx>
@@ -1293,7 +1302,7 @@
                 </itemlayout>
                 <focusedlayout width="272">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>5</posx>
                         <posy>{{ vscale(72) }}</posy>
                         <control type="group">
                             <animation effect="zoom" start="100" end="104" time="100" center="120,{{ vscale(180) }}" reversible="false">Focus</animation>
@@ -1422,7 +1431,7 @@
             <width>1920</width>
             <height>{{ vscale(555) }}</height>
             <control type="label">
-                <posx>60</posx>
+                <posx>61</posx>
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
@@ -1433,9 +1442,10 @@
                 <label>[UPPERCASE]$INFO[Window.Property(collection.header.1)][/UPPERCASE]</label>
             </control>
             <control type="list" id="405">
-                <posx>0</posx>
+                <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
+                <posx>53</posx>
                 <posy>{{ vscale(16) }}</posy>
-                <width>1920</width>
+                <width>1867</width>
                 <height>{{ vscale(555) }}</height>
                 <onup>404</onup>
                 <ondown>406</ondown>
@@ -1450,7 +1460,8 @@
                 <preloaditems>4</preloaditems>
                 <itemlayout width="272">
                     <control type="group">
-                        <posx>55</posx>
+                        <!-- 5, back to the old value - see the Roles row's own comment above. -->
+                        <posx>5</posx>
                         <posy>{{ vscale(72) }}</posy>
                         <control type="image">
                             <posx>0</posx>
@@ -1554,7 +1565,7 @@
                 </itemlayout>
                 <focusedlayout width="272">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>5</posx>
                         <posy>{{ vscale(72) }}</posy>
                         <control type="group">
                             <animation effect="zoom" start="100" end="104" time="100" center="120,{{ vscale(180) }}" reversible="false">Focus</animation>
@@ -1683,7 +1694,7 @@
             <width>1920</width>
             <height>{{ vscale(555) }}</height>
             <control type="label">
-                <posx>60</posx>
+                <posx>61</posx>
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
@@ -1694,9 +1705,10 @@
                 <label>[UPPERCASE]$INFO[Window.Property(collection.header.2)][/UPPERCASE]</label>
             </control>
             <control type="list" id="406">
-                <posx>0</posx>
+                <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
+                <posx>53</posx>
                 <posy>{{ vscale(16) }}</posy>
-                <width>1920</width>
+                <width>1867</width>
                 <height>{{ vscale(555) }}</height>
                 <onup>405</onup>
                 <!-- noop was a leftover from a template shared with the bidirectional episode carousel:
@@ -1710,7 +1722,8 @@
                 <preloaditems>4</preloaditems>
                 <itemlayout width="272">
                     <control type="group">
-                        <posx>55</posx>
+                        <!-- 5, back to the old value - see the Roles row's own comment above. -->
+                        <posx>5</posx>
                         <posy>{{ vscale(72) }}</posy>
                         <control type="image">
                             <posx>0</posx>
@@ -1814,7 +1827,7 @@
                 </itemlayout>
                 <focusedlayout width="272">
                     <control type="group">
-                        <posx>55</posx>
+                        <posx>5</posx>
                         <posy>{{ vscale(72) }}</posy>
                         <control type="group">
                             <animation effect="zoom" start="100" end="104" time="100" center="120,{{ vscale(180) }}" reversible="false">Focus</animation>

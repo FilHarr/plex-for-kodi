@@ -21,7 +21,10 @@
          control, not duplicated: with the poster-shown layout removed there's only one position to tune
          any more. -->
     <control type="grouplist">
-        <posx>60</posx>
+        <!-- 61, not the old 60: reaches absolute x=113 (host group's own posx=52 + this 61), matching
+             the shared baseline every includer (Seasons/Pre-play/Recommended) and Episodes' own inline
+             copy of this row now use - see script-plex-episodes.xml.tpl's header block comment. -->
+        <posx>61</posx>
         <posy>{{ vscale(175) }}</posy>
         <width>708</width>
         <height>{{ vscale(30) }}</height>
