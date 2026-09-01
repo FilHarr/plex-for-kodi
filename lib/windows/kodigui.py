@@ -910,6 +910,35 @@ class ManagedControlList(object):
         self.items += managed_items
         self.control.addItems([i._takeListItem(self, self._nextID()) for i in managed_items])
 
+    def prependItems(self, managed_items):
+        """
+        Inserts managed_items at the front of the list, keeping every already-loaded item (nothing
+        is destroyed/invalidated the way replaceItems does) - for append-only-in-both-directions
+        pagination (e.g. Episodes), where growth can happen at either end, not just the end addItems
+        already covers.
+
+        Kodi's own ControlList has no native "insert at position" for multiple items, so this grows
+        the control by len(managed_items) blank slots (same technique replaceItems already uses for
+        a size increase) and then re-pushes every item's content into its correct slot via
+        _updateItems - which also renumbers every item's own 'index' property to match its new
+        position, so nothing needs manual reindexing here.
+        """
+        if not managed_items:
+            return
+
+        n = len(managed_items)
+        selectedPos = self.getSelectedPos()
+
+        self.items[0:0] = managed_items
+
+        for _ in range(n):
+            self.control.addItem(xbmcgui.ListItem())
+
+        self._updateItems(0, self.size())
+
+        if selectedPos is not None:
+            self.control.selectItem(selectedPos + n)
+
     def replaceItem(self, pos, mli):
         self[pos].onDestroy()
         self[pos].invalidate()

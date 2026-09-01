@@ -6238,7 +6238,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             air_date = getattr(ds, 'originallyAvailableAt', None)
             if air_date:
                 try:
-                    date_text = datetime.datetime.strptime(str(air_date), '%Y-%m-%d').strftime('%d %b, %Y')
+                    # Day without zero-padding ("1 Sep, 2026", not "01 Sep, 2026") - matches
+                    # EpisodesWindow.setItemInfo()'s own copy of this format (episodes.py), which
+                    # this was itself the reference for. strftime always zero-pads %d, so the day
+                    # is pulled off the parsed datetime directly instead.
+                    parsed = datetime.datetime.strptime(str(air_date), '%Y-%m-%d')
+                    date_text = u'{0} {1}'.format(parsed.day, parsed.strftime('%b, %Y'))
                 except Exception:
                     util.DEBUG_LOG('setHeroInfo: air date parse failed for {}', ds)
         else:

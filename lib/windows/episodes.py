@@ -90,12 +90,23 @@ class EpisodesReloadTask(backgroundthread.Task):
 
 
 class EpisodesPaginator(pagination.MCLPaginator):
+    """
+    Append-only in both directions, matching how Related/Collection Hub rows (BaseRelatedPaginator)
+    never discard or re-fetch anything already loaded - but unlike those rows, Episodes' initial page
+    starts mid-season (centered on the current episode via initialPage below), not always at offset
+    0, so growth has to be able to happen at either end of the loaded window rather than only the
+    right. self.offset tracks the left edge (index of the first loaded episode, same meaning it
+    always had), self._rightOffset is the new addition tracking the index one-past the last loaded
+    episode. Neither edge is ever rewound or re-sliced once fetched - only ever extended further out.
+    """
     thumbFallback = 'script.plex/thumb_fallbacks/show.png'
     _currentEpisode = None
+    _rightOffset = 0
 
     def reset(self):
         super(EpisodesPaginator, self).reset()
         self._currentEpisode = None
+        self._rightOffset = 0
 
     def wrap(self, mli, last_mli, action):
         # Episodes don't round-robin: the sidebar rail now occupies the left edge, so looping
@@ -170,7 +181,11 @@ class EpisodesPaginator(pagination.MCLPaginator):
                 episodes = self.getData(offset, int(_amount))
 
         else:
-            return super(EpisodesPaginator, self).initialPage
+            episodes = super(EpisodesPaginator, self).initialPage
+            # base class already set self.offset/self._currentAmount for this fallback (no current
+            # episode to center on) - mirror the right edge from those.
+            self._rightOffset = self.offset + self._currentAmount
+            return episodes
 
         episodeFound = episode and episode in episodes
         if episodeFound:
@@ -202,18 +217,128 @@ class EpisodesPaginator(pagination.MCLPaginator):
 
         self.offset = offset
         self._currentAmount = len(episodes)
+        self._rightOffset = offset + len(episodes)
 
         return episodes
 
     def selectItem(self, amount, more_left=False, more_right=False, items=None):
+        # Only ever reached for the initial page (self._direction is None there) - boundary-triggered
+        # pages handle their own selection directly in populate() below, without going through this.
         if not super(EpisodesPaginator, self).selectItem(amount, more_left):
             if (self._currentEpisode and items) and self._currentEpisode in items:
                 self.control.selectItem(items.index(self._currentEpisode) + (1 if more_left else 0))
 
+    @property
+    def boundaryHit(self):
+        # Same trigger condition as the base class (currently-selected item is an unclaimed boundary
+        # marker), but doesn't reuse its self.offset = orig.index assignment: that would clobber
+        # self.offset's meaning here (the left edge) whenever a RIGHT marker is hit, since the base
+        # class only has one offset variable for both directions. This paginator already tracks both
+        # edges itself (self.offset/self._rightOffset, kept live and accurate as items load), so
+        # there's nothing to recover from the marker at all - it only needs a direction.
+        self._boundaryHit = False
 
-class RelatedPaginator(pagination.BaseRelatedPaginator):
-    def getData(self, offset, amount):
-        return self.parentWindow.show_.getRelated(offset=offset, limit=amount)
+        if not self._readyForPaging:
+            return self._boundaryHit
+
+        mli = self.control.getSelectedItem()
+        if mli and mli.getProperty("is.boundary") and not mli.getProperty("is.updating"):
+            mli.setBoolProperty("is.updating", True)
+            self._direction = "left" if mli.getProperty("left.boundary") else "right"
+            self._boundaryHit = True
+
+        return self._boundaryHit
+
+    @property
+    def nextPage(self):
+        # Append-only in both directions - see this class's own docstring. Whichever edge the
+        # boundary marker that triggered this sits on is the one that grows; the other edge, and
+        # everything already loaded, is untouched.
+        if self._direction == "left":
+            newOffset = max(0, self.offset - self.pageSize)
+            amount = self.offset - newOffset
+            data = self.getData(newOffset, amount)
+            self.offset = newOffset
+        else:
+            amount = self.pageSize
+            itemsLeft = self.leafCount - self._rightOffset
+            if itemsLeft <= self.pageSize + self.orphans:
+                amount = itemsLeft
+            data = self.getData(self._rightOffset, amount)
+            self._rightOffset += len(data)
+
+        self._lastAmount = self._currentAmount
+        self._currentAmount += len(data)
+        return data
+
+    def populate(self, items):
+        if self._direction is None:
+            # Initial page: identical shape to the base class's own population (both markers as
+            # needed, selection handled by selectItem() above via self._currentEpisode) - nothing to
+            # append/prepend around yet since this is the first thing loaded.
+            return super(EpisodesPaginator, self).populate(items)
+
+        if not items:
+            return []
+
+        thumbFallback = self.thumbFallback
+        finalItems = []
+        for item in items:
+            mli = self.createListItem(item)
+            if not mli:
+                continue
+
+            self.prepareListItem(item, mli)
+            if thumbFallback:
+                if callable(thumbFallback):
+                    mli.setProperty('thumb.fallback', thumbFallback(item))
+                else:
+                    mli.setProperty('thumb.fallback', thumbFallback)
+
+            finalItems.append(mli)
+
+        if self._direction == "left":
+            # Drop the marker that triggered this before prepending the new items in its place -
+            # nothing already shown is ever removed, only the marker itself.
+            self.control.removeItem(0)
+
+            moreLeft = self.offset > 0
+            if moreLeft:
+                start = kodigui.ManagedListItem('')
+                start.setBoolProperty('is.boundary', True)
+                start.setBoolProperty('left.boundary', True)
+                start.setProperty('orig.index', str(self.offset))
+                finalItems.insert(0, start)
+
+            self.control.prependItems(finalItems)
+            # Land on the newly-revealed item closest to where the marker was (the last of the
+            # newly-prepended batch), continuing in the same direction the user was already moving.
+            self.control.setSelectedItemByPos(len(finalItems) - 1)
+        else:
+            self.control.removeItem(self.control.size() - 1)
+
+            moreRight = self._rightOffset < self.leafCount
+            selectPos = self.control.size()
+            # addItems (unlike prependItems) doesn't renumber anything via _updateItems, so this
+            # batch's own 'index' has to be set explicitly - selectPos is exactly the first real
+            # item's own absolute position, since it's read right after removing the old marker and
+            # before adding anything new.
+            idx = selectPos
+            for mli in finalItems:
+                mli.setProperty('index', str(idx))
+                idx += 1
+
+            if moreRight:
+                end = kodigui.ManagedListItem('')
+                end.setBoolProperty('is.boundary', True)
+                end.setBoolProperty('right.boundary', True)
+                end.setProperty('orig.index', str(self._rightOffset))
+                finalItems.append(end)
+
+            self.control.addItems(finalItems)
+            self.control.setSelectedItemByPos(selectPos)
+
+        return finalItems
 
 
 class RedirectToEpisode(Exception):
@@ -256,10 +381,16 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     THUMB_AR16X9_DIM = util.scaleResolution(657, 393)
     POSTER_DIM = util.scaleResolution(420, 630)
-    RELATED_DIM = util.scaleResolution(268, 402)
-    EXTRA_DIM = util.scaleResolution(329, 185)
+    # 533x300 = 512x288 display size (script-plex-episodes.xml.tpl's extras row) * 104%, the row's own
+    # focus-zoom end value - matches ShowWindow's/PrePlayWindow's own EXTRA_DIM exactly (subitems.py,
+    # preplay.py), now that this row's art was resized to match theirs. The old 329x185 matched the old
+    # 299x168 art this row used before that resize.
+    EXTRA_DIM = util.scaleResolution(533, 300)
     ROLES_DIM = util.scaleResolution(334, 334)
-    CLEAR_LOGO_DIM = util.scaleResolution(784, 106)
+    # 660x98, not the old 784x106: matches Recommended's own episode-variant clearlogo box exactly
+    # (CLEAR_LOGO_DIM_EPISODE, library.py), now that the header was resized to match it
+    # (script-plex-episodes.xml.tpl).
+    CLEAR_LOGO_DIM = util.scaleResolution(660, 98)
 
     LIST_OPTIONS_BUTTON_ID = 111
 
@@ -271,7 +402,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     SEASONS_LIST_ID_ALT = 206
     ROLES_LIST_ID = 402
     EXTRA_LIST_ID = 403
-    RELATED_LIST_ID = 404
 
     OPTIONS_GROUP_ID = 200
     PLAYER_STATUS_BUTTON_ID = 204
@@ -333,11 +463,21 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         except IndexError:
             raise util.NoDataException
 
+        if not self.episode:
+            # Opened from a season tile (subitems.py) with no specific episode - EpisodesPaginator.
+            # initialPage only knows how to center its window on self.episode; with nothing set it
+            # just loads from the very start of the season (episode 1), stranding any unwatched/
+            # in-progress episode further in outside that initial window entirely. See
+            # _defaultEpisode()'s own comment for how the fallback episode is picked.
+            # initialEpisode above deliberately keeps the real original value (None) - doAutoPlay()
+            # treats it as "the episode we were explicitly asked to open with", which this auto-pick
+            # isn't.
+            self.episode = self._defaultEpisode()
+
         self.initialized = False
         self.closing = False
         self.parentList = None
         self.episodesPaginator = None
-        self.relatedPaginator = None
         self.seasons = None
         self.manuallySelected = False
         self.manuallySelectedSeason = False
@@ -351,6 +491,41 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.debouncing = False
         PlaybackBtnMixin.reset(self)
 
+    def _defaultEpisode(self):
+        # Best-effort only: this just picks a nicer starting point than episode 1, it's not required
+        # for the screen to function, so any failure here should fall back to that default silently
+        # rather than surface an error.
+        #
+        # Not sourced from self.show_.onDeck any more - Plex's own on-deck pick is a whole-show
+        # "continue watching" heuristic, not necessarily this season's own first unwatched/in-
+        # progress episode, and live testing showed it doesn't reliably match what's expected here.
+        # Scans this season's own episodes directly instead. One full-season listing call
+        # (Season.episodes() with no offset/limit fetches everything) - a one-time cost paid only
+        # when no episode was explicitly passed in, not on every navigation.
+        #
+        # An in-progress episode always wins, even one later in the season than the first plain
+        # unwatched one - someone mid-episode is more clearly "where they were" than an earlier
+        # episode they just haven't started yet, so the loop returns on the first in-progress hit
+        # immediately rather than waiting to see if an earlier unwatched one exists. isWatched and
+        # not isFullyWatched means "has real progress but hasn't crossed the watched threshold" -
+        # exactly viewOffset>0 (video.py's own isWatched/isFullyWatched checks viewCount OR
+        # viewOffset vs viewCount AND not viewOffset). Only once the whole season has been scanned
+        # with no in-progress episode found does the first plain-unwatched one (remembered along the
+        # way, not re-searched for) get returned instead.
+        try:
+            firstUnwatched = None
+            for ep in self.season.episodes():
+                if ep.isWatched and not ep.isFullyWatched:
+                    return ep
+                if firstUnwatched is None and not ep.isWatched:
+                    firstUnwatched = ep
+
+            return firstUnwatched
+        except:
+            util.ERROR('EpisodesWindow._defaultEpisode: failed, falling back to episode 1')
+
+        return None
+
     @busy.dialog(delay_time=1.0)
     def doClose(self, **kw):
         if self.closing:
@@ -358,7 +533,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             return
         self.closing = True
         self.episodesPaginator = None
-        self.relatedPaginator = None
         TasksMixin.doClose(self)
         try:
             player.PLAYER.off('new.video', self.onNewVideo)
@@ -389,7 +563,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.seasonsListControlAlt = kodigui.ManagedControlList(self, self.SEASONS_LIST_ID_ALT, 5)
         self.rolesListControl = kodigui.ManagedControlList(self, self.ROLES_LIST_ID, 5)
         self.extraListControl = kodigui.ManagedControlList(self, self.EXTRA_LIST_ID, 5)
-        self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
 
         if self.sectionList is None:
             self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
@@ -455,7 +628,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             if redirect.select_episode:
                 util.DEBUG_LOG("Got episode progress for a different season, redirecting")
             self.episodeListControl.reset()
-            self.relatedListControl.reset()
             self.reset(episode=redirect.episode if redirect.select_episode else None, season=redirect.season)
             self.hadUserInteraction = True
             self._setup(from_redirect=True)
@@ -559,10 +731,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                                                        leaf_count=int(self.season.leafCount) if self.season else 0,
                                                        parent_window=self)
 
-        if not self.relatedPaginator:
-            self.relatedPaginator = RelatedPaginator(self.relatedListControl, leaf_count=int(self.show_.relatedCount),
-                                                     parent_window=self)
-
         self.watchlist_setup(self.show_)
         self.updateProperties()
         self.setBoolProperty("initialized", True)
@@ -574,7 +742,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                                                     extraFirstItem=self._showTabItem(),
                                                     altControlAttr=self.SEASONS_CONTROL_ATTR_ALT)),
             (self.fillExtras, None, None),
-            (self.fillRelated, None, None),
             (self.fillRoles, None, None),
         ])
 
@@ -794,13 +961,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                     self.optionsButtonClicked(from_item=True)
                     return
 
-            elif controlID == self.RELATED_LIST_ID:
-                if self.relatedPaginator and self.relatedPaginator.boundaryHit:
-                    self.relatedPaginator.paginate()
-                    return
-                elif action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
-                    self.updateBackgroundFrom(self.relatedListControl.getSelectedItem().dataSource)
-
             elif self.isWatchedAction(action) and xbmc.getCondVisibility('ControlGroup({}).HasFocus(0)'.format(self.MAIN_BUTTON_GROUP_ID)):
                 mli = self.episodeListControl.getSelectedItem()
                 if not mli or mli.getProperty("is.boundary"):
@@ -945,8 +1105,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 return
         elif controlID == self.EXTRA_LIST_ID:
             self.openItem(self.extraListControl)
-        elif controlID == self.RELATED_LIST_ID:
-            self.openItem(self.relatedListControl)
 
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
@@ -964,16 +1122,28 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         if 399 < controlID < 500:
             self.setProperty('hub.focus', str(controlID - 400))
-            if controlID == self.RELATED_LIST_ID:
-                self.updateBackgroundFrom(self.relatedListControl.getSelectedItem().dataSource)
+
+        # row.focused (not hub.focus, which is never cleared once set - other controls key off it
+        # staying "seen at least once") drives default_background.xml.tpl's shared full-canvas dim
+        # scrim, same as PrePlayWindow.onFocus()/ShowWindow.onFocus() (preplay.py/subitems.py) - this
+        # screen just never opted in before now. 401, not 399: unlike those two screens, this one's
+        # own 400 is the episode row itself, this screen's primary content and the default focus
+        # target on open, not "extra" content the way Roles (402)/Extras (403) are - so the dim
+        # should only kick in once focus moves down past the button row into Roles/Extras, not for
+        # the episode row too.
+        if 401 < controlID < 500:
+            self.setProperty('row.focused', '1')
+        else:
+            self.setProperty('row.focused', '')
+
         # the episode row counts as "not on extras" too, now that it's the screen's default focus target -
         # otherwise this fires the very moment the window opens instead of only once focus goes deeper,
-        # into roles/extras/related
+        # into roles/extras
         if controlID == self.EPISODE_LIST_ID or xbmc.getCondVisibility(
                 'ControlGroup(50).HasFocus(0) + [ControlGroup(300).HasFocus(0) | ControlGroup(1300).HasFocus(0)]'):
             self.setProperty('on.extras', '')
             # hub.focus (set above, only for controlIDs 400-499) is otherwise never reset once focus
-            # leaves the roles/extras/related row stack for the button row - it's not in that range, so
+            # leaves the roles/extras row stack for the button row - it's not in that range, so
             # it'd keep whatever value the last-focused row left it at. The row-collapse slide
             # animations on group 50 (script-plex-episodes.xml.tpl) key off hub.focus, not on.extras, so
             # without this they'd stay collapsed even after on.extras clears and the header reappears -
@@ -1025,7 +1195,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         if xbmc.getCondVisibility('!String.IsEmpty(Window.Property(on.extras))'):
             y -= 80
         if xbmc.getCondVisibility('Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500)'):
-            y -= 500
+            # Mirrors the tier-1 hub.focus slide amount in script-plex-episodes.xml.tpl (group 50) -
+            # grown from 500 to 540 along with the episode row's own thumbnail resize, see that
+            # animation's own comment.
+            y -= 540
 
         return super(EpisodesWindow, self).getRoleItemDDPosition(y=y, container_id="402")
 
@@ -1109,8 +1282,22 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     def switchSeason(self, season):
         # reload this window in place rather than opening a new one on top of it - the season tab bar makes
         # switching seasons frequent, and stacking a window per swap would take that many Back presses to undo
-        self.episode = None
         self.season = season
+
+        if self.episodesPaginator:
+            # _setup() below only builds a fresh paginator "if not self.episodesPaginator" - since
+            # this window (and its paginator) is reused in place rather than reopened, the old
+            # season's own navigation state (offset/rightOffset/direction/currentEpisode) and
+            # leafCount would otherwise carry straight over into the new season, which fillEpisodes()
+            # -> paginate() reads before anything else here gets a chance to touch it.
+            self.episodesPaginator.reset()
+            self.episodesPaginator.leafCount = int(self.season.leafCount) if self.season else 0
+
+        # Same "no specific episode" default as reset() (see that method's own comment and
+        # _defaultEpisode() itself) - switching seasons via this in-page tab row bypasses reset()
+        # entirely, so without this it always landed back on episode 1 regardless of the new
+        # season's own watched state.
+        self.episode = self._defaultEpisode()
         self.manuallySelectedSeason = True
         self.setup()
 
@@ -1610,8 +1797,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         else:
             self.setProperty('extras.header', u'Extras')
 
-        self.setProperty('related.header', T(32306, 'Related Shows'))
-        self.genre = self.show_.genres() and self.show_.genres()[0].tag or ''
+        # First 2 genres, comma-joined - matches Pre-play's/Seasons' own genres.short exactly
+        # (PrePlayWindow.updateProperties(), preplay.py; ShowWindow.setup(), subitems.py). Episodes
+        # always inherit the show's own genres (Episode.genres property, video.py), same as the show
+        # logo above, so this is computed once here rather than per-episode.
+        show_genres = self.show_.genres() or []
+        self.genres_short = u', '.join([g.tag for g in show_genres][:2])
 
     @busy.dialog()
     def updateItems(self, item=None):
@@ -1693,11 +1884,17 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             mli.setProperty('season', '')
             mli.setProperty('episode', '')
 
-        mli.setProperty('date', util.cleanLeadingZeros(video.originallyAvailableAt.asDatetime('%B %d, %Y')))
+        # "1 Sep, 2026", not the old "September 1, 2026" - day/month order matches Recommended's own
+        # hub-row air date format (HomeWindow.setHeroInfo(), library.py, '%d %b, %Y'), but with the
+        # day's leading zero dropped on request - util.cleanLeadingZeros can't do that here since its
+        # regex requires a preceding space (built for stripping a zero appearing mid-string, after
+        # the month name in the old format); asDatetime() with no format string returns the raw
+        # datetime instead of a pre-formatted one, so dt.day (a plain int) is used directly instead.
+        air_date = video.originallyAvailableAt.asDatetime()
+        mli.setProperty('date', air_date and u'{0} {1}'.format(air_date.day, air_date.strftime('%b, %Y')) or '')
 
-        # mli.setProperty('related.header', 'Related Shows')
         mli.setProperty('content.rating', video.contentRating.split('/', 1)[-1])
-        mli.setProperty('genre', self.genre)
+        mli.setProperty('genres.short', self.genres_short)
         self.populateRatings(video, mli, hide_ratings=self.hideSpoilers(video) and self.noRatings)
 
     def setPostReloadItemInfo(self, video, mli):
@@ -1913,17 +2110,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         self.extraListControl.reset()
         self.extraListControl.addItems(items)
-        return True
-
-    def fillRelated(self):
-        if not self.relatedPaginator or not self.relatedPaginator.leafCount:
-            self.relatedListControl.reset()
-            return
-
-        items = self.relatedPaginator.paginate()
-        if not items:
-            return False
-
         return True
 
     def fillRoles(self):

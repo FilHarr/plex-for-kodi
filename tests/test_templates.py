@@ -331,8 +331,13 @@ class ClearLogoTest(KodiTestCase):
             visible = control.findtext("visible") or ""
             if "clear.logo" not in visible:
                 continue
-            # the title is the label that actually renders text, not a spacer sized to the logo's width
-            if control.get("type") == "label" and control.findtext("label"):
+            # the title is the no-logo fallback label (visible on String.IsEmpty, the exact opposite
+            # of the logo image's own !String.IsEmpty) - not any "!String.IsEmpty"-gated label, which
+            # would be a logo-present-only companion line instead (e.g. Episodes' own episode-title
+            # line under the show's logo, script-plex-episodes.xml.tpl - matches Recommended's own
+            # hero overlay treatment for a focused episode, not an alternative to the logo).
+            if (control.get("type") == "label" and control.findtext("label")
+                    and visible.startswith("String.IsEmpty")):
                 title = control
             elif control.get("type") == "image":
                 logo = control
