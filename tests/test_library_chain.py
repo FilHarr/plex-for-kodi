@@ -775,7 +775,7 @@ class DeferOpenSectionTest(KodiTestCase):
 
         timer.function()  # simulates the timer actually firing
 
-        self.assertEqual([(('the-section',), {})], host.openSectionCalls)
+        self.assertEqual([(('the-section',), {'force': False})], host.openSectionCalls)
         self.assertEqual('the-section', host.lastSection)
         self.assertIsNone(host._pendingSectionTimer, "must clear itself once fired, or a later call could cancel a dead timer for nothing")
 

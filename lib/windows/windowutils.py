@@ -63,21 +63,30 @@ class GoHomeMixin():
             return None
         return host
 
-    def goHome(self, section=None, with_root=False):
+    def goHome(self, section=None, with_root=False, force=False):
         host = self._liveChainHost()
         if host is not None:
-            host.goHome(section=section, with_root=with_root)
+            host.goHome(section=section, with_root=with_root, force=force)
             return
-        self._goHomeDirect(section=section, with_root=with_root)
+        self._goHomeDirect(section=section, with_root=with_root, force=force)
 
-    def _goHomeDirect(self, section=None, with_root=False):
+    def _goHomeDirect(self, section=None, with_root=False, force=False):
         """The pre-chain-awareness goHome() body, factored out so a self-hosting LibraryWindow
         instance (whose own goHome() override, library.py, falls through to this mixin once it's
         decided "I'm not windowutils.HOME") can invoke it directly, without going back through
         _liveChainHost() - which would just resolve to self again and recurse forever, since
         LibraryWindow always points _chainHost at itself. Delegation only means something for a
         genuinely distinct hosted shell; by the time a self-hosting caller's own override has run,
-        there's no other object to hand off to."""
+        there's no other object to hand off to.
+
+        force=True (threaded from a sidebar click's own force=True - _dispatchSectionOpen() below)
+        matters here specifically for a real hosted shell's own onClick() (a real shell's onClick
+        is NOT monkeypatched to the host's - see handleSidebarDropdownClick()'s own comment - so a
+        sidebar click made from inside one, e.g. EpisodesWindow, runs as this instance, never as
+        HOME itself, always reaching this bubble instead of library.py's own goHome() override
+        directly). Carried through to processCommand()'s pending-section handling (library.py) so
+        clicking the sidebar's already-active section from inside a hosted shell actually reopens
+        it, instead of silently no-opping just because `pending == self.section` there."""
         HOME.go_root = with_root
         # Stashed on the HOME singleton directly, not embedded in the exitCommand string below -
         # HOME never gets discarded/recreated mid-session, so a live object reference survives the
@@ -86,6 +95,7 @@ class GoHomeMixin():
         # HOME - see that method's own comment (Home-ControlledWindow plan, item 4 - "dispatch/
         # bubble generalization").
         HOME._pendingSection = section
+        HOME._pendingSectionForce = force
 
         # closeWithCommand()/doClose() below only flips a flag on windows using the doModal()-emulation
         # pattern (ControlledWindow/MultiWindow) - forceDismiss() is the real Kodi-native dismiss, so
@@ -315,11 +325,20 @@ class SidebarMixin():
 
         self._dispatchSectionOpen(item)
 
-    def _dispatchSectionOpen(self, item):
+    def _dispatchSectionOpen(self, item, force=False):
         """What happens once the debounce settles on a genuinely different section (also reused by
         sectionClicked() below for the immediate click path). is.home is not special-cased at all
         any more (Home-ControlledWindow plan, items 1 and 4): home_section is just another section
         value, whether self can swap in place or has to unwind a descendant chain first.
+
+        force=True (sectionClicked() only) skips the "already on this section" no-op below - an
+        explicit click on the sidebar entry that's already active/focused should still act: for a
+        descendant (nested LibraryWindow, ShowWindow/PrePlayWindow/EpisodesWindow etc.), that means
+        unwinding the chain back to the section's root instead of silently doing nothing, which is
+        the whole point of clicking it - there was previously no way to get back to a focused
+        section's root except detouring through a different section first. The settled-focus
+        debounce path (_sectionChanged() above) never passes force - merely re-focusing/re-settling
+        on the already-active section shouldn't reopen it, only an explicit click should.
 
         Two cases, split on whether self is the true root (windowutils.HOME):
 
@@ -354,7 +373,7 @@ class SidebarMixin():
           _sectionChanged()'s own try/except AttributeError above.
         """
         section = item.dataSource
-        if section == self.lastSection:
+        if section == self.lastSection and not force:
             return
 
         if self is HOME:
@@ -363,10 +382,18 @@ class SidebarMixin():
             # (kodi.log: 7 concurrent openSection() calls racing each other) a bare
             # threading.Timer(...).start() here used to allow, with no coordination against
             # goHome()'s own identical defer or repeated triggers of this same method.
-            self._deferOpenSection(section)
+            self._deferOpenSection(section, force=force)
         else:
+            # This is also the branch a real hosted shell's own onClick() reaches (EpisodesWindow,
+            # PrePlayWindow, etc.) - self is that shell instance here, never HOME, since a real
+            # shell's onClick is deliberately not monkeypatched to the host's (see
+            # handleSidebarDropdownClick()'s own comment). goHome()'s own bubble resolves self back
+            # to HOME internally (via _liveChainHost()) - force has to be threaded through that
+            # bubble too (goHome()/_goHomeDirect() above), or a click on the already-active section
+            # from inside a hosted shell silently no-ops once it reaches library.py's goHome()
+            # override, which has its own identical "already there" guard.
             self.lastSection = section
-            self.goHome(section=section)
+            self.goHome(section=section, force=force)
 
     def sectionClicked(self):
         self._ensureSidebarNavState()
@@ -379,7 +406,10 @@ class SidebarMixin():
             self.searchButtonClicked()
             return
 
-        self._dispatchSectionOpen(item)
+        # force=True: an explicit click on the already-active section should still act (reset it
+        # in place if self is HOME, unwind back to its root if self is a descendant) - see
+        # _dispatchSectionOpen()'s own comment on why this differs from the settled-focus path.
+        self._dispatchSectionOpen(item, force=True)
 
 
 class UtilMixin(GoHomeMixin):

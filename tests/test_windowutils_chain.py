@@ -50,8 +50,8 @@ class FakeChainHost(object):
         self.processCommandCalls = []
         self.swapToCalls = []
 
-    def goHome(self, section=None, with_root=False):
-        self.goHomeCalls.append((section, with_root))
+    def goHome(self, section=None, with_root=False, force=False):
+        self.goHomeCalls.append((section, with_root, force))
 
     def processCommand(self, command):
         self.processCommandCalls.append(command)
@@ -84,7 +84,7 @@ class ChainAwareGoHomeTest(KodiTestCase):
 
         shell.goHome(section="the-section", with_root=True)
 
-        self.assertEqual([("the-section", True)], host.goHomeCalls)
+        self.assertEqual([("the-section", True, False)], host.goHomeCalls)
         # Not the shell's own dismiss/close - operating on self here would only ever close the
         # shell, leaving the host's poll loop to reconstruct and reopen it.
         self.assertFalse(shell.forceDismissCalled)
@@ -96,7 +96,7 @@ class ChainAwareGoHomeTest(KodiTestCase):
 
         shell.goHomeRoot()
 
-        self.assertEqual([(None, True)], host.goHomeCalls)
+        self.assertEqual([(None, True, False)], host.goHomeCalls)
         self.assertFalse(shell.forceDismissCalled)
 
     def test_unchained_goHome_still_dismisses_itself_directly(self):
@@ -220,7 +220,7 @@ class ChainAwareStaleHostTest(KodiTestCase):
 
         shell.goHome(section="the-section")
 
-        self.assertEqual([("the-section", False)], host.goHomeCalls)
+        self.assertEqual([("the-section", False, False)], host.goHomeCalls)
         self.assertFalse(shell.forceDismissCalled)
 
 
@@ -243,10 +243,10 @@ class FakeSelfHostingWindow(windowutils.UtilMixin):
     def doClose(self, **kw):
         self.doCloseCalled = True
 
-    def goHome(self, section=None, with_root=False):
+    def goHome(self, section=None, with_root=False, force=False):
         if self.isRoot:
             return
-        windowutils.GoHomeMixin._goHomeDirect(self, section=section, with_root=with_root)
+        windowutils.GoHomeMixin._goHomeDirect(self, section=section, with_root=with_root, force=force)
 
     def goHomeRoot(self, *args, **kwargs):
         if self.isRoot:

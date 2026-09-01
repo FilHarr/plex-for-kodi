@@ -553,6 +553,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # comment (Home-ControlledWindow plan, item 4). Defined unconditionally here anyway, same as
         # exitCommand above, so every instance (including nested ones that never become HOME) has it.
         self._pendingSection = None
+        self._pendingSectionForce = False
         self.section = kwargs.get('section')
         # openSection() keeps this mirroring self.section on every real section swap (its own
         # comment there explains why: SidebarMixin's _sectionChanged() gates every sidebar click/
@@ -1400,11 +1401,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """
         if command and command.startswith('HOME') and self is windowutils.HOME:
             pending = self._pendingSection
+            pendingForce = self._pendingSectionForce
             self._pendingSection = None
+            self._pendingSectionForce = False
             if self.closeOption is not None:
                 self.doClose()
-            elif pending is not None and pending != self.section:
-                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection, args=(pending,)).start()
+            elif pending is not None and (pending != self.section or pendingForce):
+                # force=True unconditionally here (not just pendingForce) - matches every other
+                # openSection() caller in this bubble/dispatch family (popBack(), _deferOpenSection())
+                # that already skips its own no-op guard once it's decided a real reconstruction is
+                # needed; pendingForce is what decided that above when pending == self.section.
+                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection, args=(pending,),
+                                 kwargs={'force': True}).start()
             return
         if command and command.startswith('HOME'):
             # self is guaranteed not to be windowutils.HOME here (ruled out above) - go straight
@@ -2109,12 +2117,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.setFocusId(self.POSTERS_PANEL_ID)
 
-    def _deferOpenSection(self, section):
+    def _deferOpenSection(self, section, force=False):
         """Single-flight defer for the "self is HOME, safe in-place swap" case both this class's
         own goHome() and windowutils.py's SidebarMixin._dispatchSectionOpen() use (both only ever
         call this when self is windowutils.HOME). Both used to construct their own bare
         threading.Timer(SKIN_RELOAD_DEFER_SECONDS, self.openSection, ...) independently, with no
         coordination between repeated calls.
+
+        force=True (threaded through from an explicit sidebar click on the already-active section,
+        SidebarMixin.sectionClicked()) is passed straight through to openSection() - otherwise its
+        own `section == self.section` no-op would swallow a click that's meant to reset the section
+        in place, the same case serverRefresh() already carries force=True through for.
 
         Live-confirmed reentrancy hazard without this: kodi.log showed 7 concurrent
         openSection() calls, on 7 different threads, all racing to mutate
@@ -2143,13 +2156,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         def _fire():
             self._pendingSectionTimer = None
-            if self.openSection(section):
+            if self.openSection(section, force=force):
                 self.lastSection = section
 
         self._pendingSectionTimer = threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, _fire)
         self._pendingSectionTimer.start()
 
-    def goHome(self, section=None, with_root=False):
+    def goHome(self, section=None, with_root=False, force=False):
         """GoHomeMixin.goHome() (windowutils.py) assumes self is some OTHER (descendant) window
         handing off to a separate Home singleton elsewhere: force-dismiss self, bubble a close
         command, then HOME.show(). Live-confirmed broken once self already IS that singleton
@@ -2162,10 +2175,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         this window, not a descendant - both hit this exact bug before this fix. Just reset root
         state and reactivate in that case instead of falling into the base class's
         descendant-oriented dance; fall through to it unchanged for genuine descendants.
+
+        force=True (threaded from a sidebar click - windowutils.py's SidebarMixin.sectionClicked()/
+        _dispatchSectionOpen()) skips the "already on this section" no-op below, the same way
+        openSection()'s own force param does - needed here specifically because a real hosted
+        shell's own onClick() (EpisodesWindow etc.) always reaches this method through this exact
+        call, never library.py's other sidebar-click path (_deferOpenSection() directly), since a
+        real shell's onClick is never monkeypatched to the host's (see
+        SidebarMixin.handleSidebarDropdownClick()'s own comment).
         """
         if self is windowutils.HOME:
-            if section and section != self.section:
-                self._deferOpenSection(section)
+            if section and (section != self.section or force):
+                self._deferOpenSection(section, force=force)
             if with_root:
                 self.go_root = True
                 self.show()
@@ -2175,7 +2196,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # _liveChainHost() back to self and recurse forever. Once this override has already
         # decided "I'm not windowutils.HOME," self-referential delegation is meaningless - see
         # windowutils.py's GoHomeMixin._goHomeDirect() for the full reasoning.
-        windowutils.GoHomeMixin._goHomeDirect(self, section=section, with_root=with_root)
+        windowutils.GoHomeMixin._goHomeDirect(self, section=section, with_root=with_root, force=force)
 
     def goHomeRoot(self, *args, **kwargs):
         if self is windowutils.HOME:
@@ -2183,6 +2204,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.show()
             return
         windowutils.GoHomeMixin._goHomeRootDirect(self)
+
+    def _needsRootReconstruct(self):
+        """True if reaching go_root's true root (home_section, no chain in progress) requires a
+        real reconstruction (openSection()) rather than just a focus reset - i.e. either we're not
+        already showing home_section, or a real-shell chain (_isHostedShell/_backStack - swapTo(),
+        __init__'s own comment) is currently hosted on top of it. self.section never changes while
+        a chain is hosted (popBack()'s own comment: "root state is never mutated while a shell is
+        hosted"), so section alone isn't enough to detect a chain opened *from* home_section - the
+        exact case that was missing before this method existed. Shared by show()/onReInit() below
+        so both act on the same decision."""
+        return self._isHostedShell or bool(self._backStack) or self.section != home.home_section
 
     def show(self, **kwargs):
         """MultiWindow has no native show() of its own (kodigui.py) - unlike HomeWindow's own
@@ -2192,8 +2224,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         windowutils.py's GoHomeMixin/SidebarMixin.goHomeRoot() all just set self.go_root and call
         self.show(), expecting exactly this contract. Guarded on self._current existing: show()
         can be reached (windowutils.HOME.show()) after real teardown has already del'd it.
+
+        Skips reactivating self._current when onReInit() below is about to reconstruct anyway
+        (_needsRootReconstruct()) - live-confirmed bug otherwise: self._current.show() natively
+        reactivates whatever real shell is currently hosted (e.g. EpisodesWindow), which is enough
+        to re-trigger that shell's own onReInit() (never monkeypatched to the host's - see
+        _setupCurrent()'s own comment) before this method's own onReInit() call below ever gets to
+        close it - EpisodesWindow.onReInit() in particular re-selects an episode from watch
+        progress, visibly jumping focus to the wrong one for a fraction of a second before the
+        real teardown/reconstruct lands. Only the lightweight "already on home_section, no chain"
+        case below still needs this reactivation at all.
         """
-        if self._current:
+        reconstructing = self.go_root and self._needsRootReconstruct()
+        if self._current and not reconstructing:
             self._current.show(**kwargs)
         if self.go_root:
             self.onReInit()
@@ -2206,15 +2249,22 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # (windowutils.py's GoHomeMixin/SidebarMixin) - all three just set self.go_root and
             # call self.show(), same contract HomeWindow's version already has.
             self.go_root = False
-            if self.section != home.home_section:
+            if self._needsRootReconstruct():
                 # Deferred, not called inline: openSection()'s doClose()-based swap, nested
                 # synchronously under this native onReInit() callback, is the same shape as the
                 # confirmed Kodi core OnAction() reentrancy crash this plan's "Known Kodi core bug"
                 # section documents (SKIN_RELOAD_DEFER_SECONDS, windowutils.py) - untested whether
                 # onReInit() is actually exposed to it the same way OnAction() is, so deferring
                 # here too rather than assuming it's safe.
+                #
+                # force=True unconditionally: needed whenever _needsRootReconstruct() returned True
+                # because of a hosted chain rather than a differing section (self.section can
+                # already equal home_section in that case - popBack()'s own comment on why root
+                # state never changes while a shell is hosted - which openSection()'s own no-op
+                # guard would otherwise wrongly honor). Harmless when the section genuinely differs
+                # too, same as every other force=True caller in this dispatch family.
                 threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection,
-                                 args=(home.home_section,)).start()
+                                 args=(home.home_section,), kwargs={'force': True}).start()
             else:
                 self.setFocusId(self.SECTION_LIST_ID)
             # Set at the end, same as HomeWindow's own version - openSection() above is deferred
