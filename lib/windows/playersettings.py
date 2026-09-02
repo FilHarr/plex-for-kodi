@@ -111,7 +111,16 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
 
         audio, subtitle = self.getAudioAndSubtitleInfo()
 
-        options = [
+        options = []
+        # Video entry, above Audio - only when there's an actual choice to make, same gating the
+        # episode button row's own "media" button used to have before it was replaced by this
+        # entry (episodes.py, now removed) - not always offering a single-item picker.
+        accessibleMedia = [m for m in video.media() if m.isAccessible()]
+        if len(accessibleMedia) > 1:
+            options.append(('video', T(32053, 'Video'),
+                            video.mediaChoice and video.mediaChoice.media.versionString() or ''))
+
+        options += [
             ('audio', T(32395, 'Audio'), audio),
             ('subs', T(32396, 'Subtitles'), subtitle),
             ('quality', T(32397, 'Quality'), u'{0}'.format(current)),
@@ -178,11 +187,10 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
                 subtitle = u'{0} \u2022 {1} {2}'.format(sss.getTitle(metadata.apiTranslate), len(self.video.subtitleStreams) - 1, T(32307, 'More'))
             else:
                 subtitle = sss.getTitle(metadata.apiTranslate)
+        elif self.video.subtitleStreams:
+            subtitle = u'{0} \u2022 {1} {2}'.format(T(32481, 'Off'), len(self.video.subtitleStreams), T(32308, 'Available'))
         else:
-            if self.video.subtitleStreams:
-                subtitle = u'{0} \u2022 {1} {2}'.format(T(32309, 'None'), len(self.video.subtitleStreams), T(32308, 'Available'))
-            else:
-                subtitle = T(32309, 'None')
+            subtitle = T(32309, 'None')
 
         return audio, subtitle
 
@@ -193,7 +201,9 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
 
         result = mli.dataSource
 
-        if result == 'audio':
+        if result == 'video':
+            showVideoDialog(self.video, non_playback=self.nonPlayback)
+        elif result == 'audio':
             showAudioDialog(self.video, non_playback=self.nonPlayback, session_id=self.sessionID)
         elif result == 'subs':
             showSubtitlesDialog(self.video, non_playback=self.nonPlayback, session_id=self.sessionID)
@@ -238,6 +248,47 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
         self.showSettings()
 
 
+def showVideoDialog(video, non_playback=False):
+    """
+    Same version-choosing logic the episode button row's own "media" button used to have
+    (mediaButtonClicked() - episodes.py, now removed in favor of this entry) - not
+    preplayutils.py's chooseVersion(), which reads video.media as a plain attribute rather than
+    calling video.media() (a method everywhere else in this codebase, video.py included) and is
+    never actually called anywhere else, unverified.
+    showOptionsDialog, not dropdown.showDropdown, for the same reason: it's the mechanism Audio/
+    Subtitles/Quality below already use successfully from within this same dialog - dropdown's own
+    dialog-over-dialog behavior isn't (every existing dropdown.showDropdown() caller opens it from
+    a full window, not from on top of another dialog like this one).
+    """
+    options = []
+    idx = None
+    for i, media in enumerate(video.media()):
+        if video.mediaChoice and media.id == video.mediaChoice.media.id:
+            idx = i
+        options.append((media, media.versionString()))
+
+    # non_playback must be threaded through: SelectDialog.onAction() (dialog.py) closes itself on
+    # every action - including plain navigation - whenever Player.HasMedia is false and
+    # non_playback wasn't passed (live-confirmed - the episode screen isn't actually playing
+    # anything, so this closed spontaneously without it). Same param Audio/Subtitles above already
+    # forward from self.nonPlayback - this one was missing it.
+    choice = showOptionsDialog(T(32053, 'Video'), options, non_playback=non_playback, selected_idx=idx)
+    if choice is None:
+        return
+
+    for media in video.media():
+        media.set('selected', '')
+
+    video.setMediaChoice(choice)
+    choice.set('selected', 1)
+    # Same persisted media_version preference the episode button row's own version picker set
+    # (mediaButtonClicked() - episodes.py - now removed in favor of this Settings entry - and
+    # preplay.py's own copy still does) - missing this wouldn't break the immediate switch, just
+    # the choice being remembered/synced the same way.
+    plexnet.util.INTERFACE.playbackManager(video, key="media_version", value=choice.id)
+    video.clearCache()
+
+
 def showAudioDialog(video, non_playback=False, session_id=None):
     options = []
     idx = None
@@ -255,7 +306,8 @@ def showAudioDialog(video, non_playback=False, session_id=None):
 
 
 def showSubtitlesDialog(video, non_playback=False, session_id=None):
-    options = [(plexnet.plexstream.NoneStream(), 'None')]
+    none_label = T(32481, 'Off') if video.subtitleStreams else T(32309, 'None')
+    options = [(plexnet.plexstream.NoneStream(), none_label)]
     idx = None
     sss = video.selectedSubtitleStream(
         forced_subtitles_override=util.getSetting("forced_subtitles_override") and plexnet.util.ACCOUNT.subtitlesForced == 0,

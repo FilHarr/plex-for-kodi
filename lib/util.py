@@ -219,6 +219,22 @@ def durationToShortText(ms, shortHourMins=False, shortSeconds=False, noSpaces=Fa
     return noSpaces and '0s' or '0 s'
 
 
+def remainingTimeToShortText(ms):
+    """
+    Formats a remaining-playback-time duration in the same short, no-space style as
+    durationToShortText(noSpaces=True) (e.g. "1h30m"), but with a 90-, not 60-, minute cutoff for
+    switching from minutes-only to hours+minutes - e.g. 82 -> "82m", 95 -> "1h35m". Built for the
+    Episodes Resume button label, not a durationToShortText param, since nothing else needs this
+    cutoff.
+    """
+    mins = int(round(ms / 60000.0))
+    if mins <= 90:
+        return '{0}m'.format(mins)
+    hours = mins // 60
+    mins = mins % 60
+    return '{0}h{1}m'.format(hours, mins)
+
+
 def cleanLeadingZeros(text):
     if not text:
         return ''

@@ -6,8 +6,12 @@
         {% for var, value in elements %}<{{ var }}>{{ value }}</{{ var }}>{% endfor %}{% endspaceless %}
     {% endif %}
     {% if name == "play" and theme.buttons.zoomPlayButton %}
-        <animation effect="zoom" start="100" end="124" time="100" center="63,{{ vscale(50) }}" reversible="false" condition="Control.HasFocus({{ id }})">Conditional</animation>
-        <animation effect="zoom" start="124" end="100" time="100" center="63,{{ vscale(50) }}" reversible="false" condition="!Control.HasFocus({{ id }})">Conditional</animation>
+        {# 35,35: the "modern" theme's own box is 70x70 (episodes/seasons/pre_play - see context.py's
+           own comment on why); not exact for any other caller's box size, but this was already just
+           an approximate center (63,50) tuned for the old 152x121 one, not something every caller
+           overrode either. #}
+        <animation effect="zoom" start="100" end="124" time="100" center="35,{{ vscale(35) }}" reversible="false" condition="Control.HasFocus({{ id }})">Conditional</animation>
+        <animation effect="zoom" start="124" end="100" time="100" center="35,{{ vscale(35) }}" reversible="false" condition="!Control.HasFocus({{ id }})">Conditional</animation>
     {% endif %}
     {% for direction in ("onleft", "onright", "onup", "ondown") %}{% spaceless %}
         {% if resolve("direction") %}<{{ direction }}>{{ resolve("direction") }}</{{ direction }}>{% endif %}

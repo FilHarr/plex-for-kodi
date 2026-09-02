@@ -3392,3 +3392,19 @@ msgstr ""
 msgctxt "#35058"
 msgid "Show"
 msgstr ""
+
+msgctxt "#35059"
+msgid "File info"
+msgstr ""
+
+msgctxt "#35060"
+msgid "Media settings"
+msgstr ""
+
+msgctxt "#35061"
+msgid "Restart"
+msgstr ""
+
+msgctxt "#35062"
+msgid "Add to watchlist"
+msgstr ""

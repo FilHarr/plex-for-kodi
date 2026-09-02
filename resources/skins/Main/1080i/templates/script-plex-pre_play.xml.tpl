@@ -84,17 +84,24 @@
             <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
             <visible>!String.IsEmpty(Window.Property(initialized))</visible>
             <defaultcontrol>302</defaultcontrol>
-            <posx>22</posx>
-            <!-- 435, not the old 481 (or 415): raised to sit under the (now higher, narrower) summary box
-                 like official Plex's own button row does, instead of being anchored a fixed distance above
-                 the cast row below. The button textures are 180x145 source art stretched into a 152x121 box
-                 with no aspectratio, and the icon glyphs don't fill that box - play.png's opaque pixels only
-                 reach row 92 of 145 (~77px once stretched to 121). This group sits inside id 50 (posy 135,
-                 see that control's own comment on the 20px rebase), so the icon's visible bottom is
-                 135+435+77=647 in window coords - unchanged from before the rebase - and the gap above the
-                 cast row's thumbnails (top at 786) is still ~139px, closer to official Plex's own
-                 proportionally larger button-row-to-cast-row gap than the old tight 73px. -->
-            <posy>{{ vscale(435) }}</posy>
+            <!-- 63, not the old 22: the button icons were re-cropped from an 180x145 padded canvas down
+                 to a tight 80x80 one (see context.py's own comment on the 70x70/itemgap-0 box re-tune),
+                 shrinking the box from 152x121 to 70x70 - old absolute glyph center-x was
+                 52(group 50's own posx)+22+76.4(play.png's opaque center, scaled into the old 152-wide
+                 box)=150.4; the outer offset (52) cancels out of the equation, so the new posx is just
+                 22+76.4-35.44(same glyph center, scaled into the new 70-wide box)=62.96. -->
+            <posx>63</posx>
+            <!-- 460, not the old 435 (raised to sit under the (now higher, narrower) summary box like
+                 official Plex's own button row does, instead of being anchored a fixed distance above the
+                 cast row below - still true, unrelated to the value itself). The button textures used to
+                 be 180x145 source art stretched into a 152x121 box with no aspectratio, with play.png's
+                 opaque pixels reaching row 92 of 145 (~77.59px once stretched to 121) - now 80x80 art
+                 (re-cropped, see posx's own comment above) into a 70x70 box, opaque pixels reaching row 60
+                 of 80 (~52.5px once stretched to 70). This group sits inside id 50 (posy 135, see that
+                 control's own comment on the 20px rebase), so re-solving for the same absolute glyph
+                 bottom as before (135+435+77.59=647.59) against the new 52.5 offset keeps the icon's
+                 visible bottom unchanged: 135+460+52.5=647.5. -->
+            <posy>{{ vscale(460) }}</posy>
             <width>1000</width>
             <height>{{ vscale(145) }}</height>
             <onup>200</onup>
@@ -105,7 +112,7 @@
             <scrolltime tween="quadratic" easing="out">200</scrolltime>
             <usecontrolcoords>true</usecontrolcoords>
 
-            {% with attr = theme.pre_play.buttons & template = "includes/themed_button.xml.tpl" %}
+            {% with attr = theme.pre_play.buttons & hitrect = theme.pre_play.buttons_hitrect & template = "includes/themed_button.xml.tpl" %}
                 {% include template with name="info" & id=304 %}
                 {% include template with name="play" & id=302 & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback))" %}
                 {% include "includes/wl_dynamic_buttons.xml.tpl" %}
@@ -258,16 +265,15 @@
                  Kodi/ibis blocks can only be defined once, so a subclass's override would only ever reach
                  one of two physical copies. Now laid out horizontally (see includes/media_info_pills.xml.tpl
                  for how/why the pills themselves are sized - position is the only thing pre_play-specific
-                 left here). posx=1063, not the "flush with the screen's right edge" 1103 (1920 screen
-                 width minus the row's own 765 width (200 + 295 + 260 + 2*5 itemgap) minus 52 to cancel
-                 out group 50's own +52 sidebar-clearance shift - 52, not the original 60, since group
-                 50's own posx moved, see that control's own comment): shifted an explicit 40px further
-                 left on request (two 20px nudges), so the row's right edge now sits 40px inside that
-                 edge rather than flush with it. posy=447, not 417: dropped an explicit 30px on request
-                 (three 10px nudges) from the position that put the row's bottom at absolute y=632,
-                 matching official Plex's own measured pill-row position (614-632) and sitting 59px
-                 above the hero-art box's bottom edge (691) - not the old legacy-vertical-stack-derived
-                 498. The wrapping group's own posy=30
+                 left here). posx=998 is 1920 (screen width) minus 85 (the row's target inset from the
+                 screen's right edge, on request - matching episodes' own identical inset now) minus the
+                 row's own 785 width (200 + 295 + 260 + 2*15 PILLS_ITEMGAP in the mixin) minus 52 to
+                 cancel out group 50's own +52 sidebar-clearance shift (52, not the original 60, since
+                 group 50's own posx moved, see that control's own comment). posy=447, not 417: dropped
+                 an explicit 30px on request (three 10px nudges) from the position that put the row's
+                 bottom at absolute y=632, matching official Plex's own measured pill-row position
+                 (614-632) and sitting 59px above the hero-art box's bottom edge (691) - not the old
+                 legacy-vertical-stack-derived 498. The wrapping group's own posy=30
                  used to be a conditional slide applied only while the poster was hidden, to keep vertical
                  rhythm with the row above it; now applies unconditionally so this row (and pre_play-wl's
                  availability row, which shares this same wrapper) sits at the same place regardless of the
@@ -275,7 +281,7 @@
             <control type="group">
                 <posy>{{ vscale(30) }}</posy>
             {% block streams %}
-                {% include "includes/media_info_pills.xml.tpl" with posx=1063 & posy=447 %}
+                {% include "includes/media_info_pills.xml.tpl" with posx=998 & posy=447 %}
             {% endblock %}
             </control>
         </control>

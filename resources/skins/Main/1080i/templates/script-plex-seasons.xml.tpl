@@ -229,22 +229,31 @@
                 <visible>!String.IsEmpty(Window.Property(initialized))</visible>
                 <defaultcontrol>302</defaultcontrol>
                 <!-- Sits above the season row on request, not below (matching Episodes' original
-                     button-row-under-carousel order, which this used to share) - a plain posy=0, no
-                     pull-up hack needed since there's nothing directly above it to compensate for.
-                     82, not the old 121/145: measured the actual opaque glyph content of each button
-                     icon this row can show (info/play/shuffle/more/play_plus/watchlist/watchlisted,
-                     180x145 native PNGs, see script.plex/buttons/player/modern/) - the widest vertical
-                     extent across all of them (watchlist/watchlisted) runs y49-97 of 145 native, which
-                     scales to ~41-81 at this row's 121-tall display size. usecontrolcoords means each
-                     button still renders at its own full 121-tall stretch regardless of this box's own
-                     height (verified nothing here relies on grouplist-level clipping - each button
-                     already carries its own explicit <hitrect>), so shrinking this to 82 (the glyph's
-                     own display-space bottom, +1px) only trims the empty reserved space below the
-                     icons, not the icons themselves. -->
-                <posx>22</posx>
-                <posy>0</posy>
+                     button-row-under-carousel order, which this used to share).
+                     63, not the old 22: the button icons were re-cropped from an 180x145 padded canvas
+                     down to a tight 80x80 one (see context.py's own comment on the 70x70/itemgap-0 box
+                     re-tune), shrinking the box from 152x121 to 70x70 - old absolute glyph center-x was
+                     52(group 50's own posx, matches pre_play's own tuned value)+22+76.4(play.png's
+                     opaque center, scaled into the old 152-wide box)=150.4; the outer offset (52)
+                     cancels out of the equation, so the new posx is just
+                     22+76.4-35.44(same glyph center, scaled into the new 70-wide box)=62.96.
+                     25, not the old plain 0: the glyph is roughly vertically centered within its own
+                     box on both the old and new icon crops (see context.py's own comment), so shrinking
+                     the box from a fixed top edge (posy) pulls the centered glyph upward with it, same
+                     as it does for Episodes'/PrePlay's own button rows (their own posy comments derive
+                     +25 too) - this row's old 0 never had that compensation baked in only because there
+                     was nothing else it needed to line up against, not because the icon crop doesn't
+                     affect it the same way. Live-confirmed: leaving this at 0 (even after reverting the
+                     height below back to a generous, non-trimming value) still left the row sitting
+                     visibly too high - height was a red herring, this was the actual cause.
+                     145, not 82: kept as the generous, non-trimming box Episodes'/PrePlay's own button
+                     rows already use (200/145, both already much bigger than any button's own 70-tall
+                     render) rather than the old tight trim (82, later 58) - unrelated to the posy fix
+                     above, just not worth re-attempting now that the actual cause is understood. -->
+                <posx>63</posx>
+                <posy>{{ vscale(25) }}</posy>
                 <width>1000</width>
-                <height>{{ vscale(82) }}</height>
+                <height>{{ vscale(145) }}</height>
                 <!-- 205 or 206 first (whichever of the season-tab row's two controls is active - see
                      that block's own comment), falling back to 200 (header) when neither is visible -
                      same dual-onup fallback Episodes' own button/content controls use to reach their
@@ -259,13 +268,57 @@
                 <scrolltime tween="quadratic" easing="out">200</scrolltime>
                 <usecontrolcoords>true</usecontrolcoords>
 
-                {% with attr = theme.seasons.buttons & template = "includes/themed_button.xml.tpl" & hitrect = None %} {# fixme: should hitrect be None? #}
-                    {% include template with name="info" & id=301 %}
-                    {% include template with name="play" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
+                {% with attr = theme.seasons.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.seasons.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
+                    <!-- Info dropped entirely (on request) - this row has no per-episode/per-item
+                         detail to show one for, unlike Episodes' own copy. Label-on-focus overlays
+                         for the rest, same mechanism/geometry as Episodes' button row (icon box
+                         size/itemgap match exactly - theme.seasons.buttons in context.py mirrors
+                         theme.episodes.buttons) - shared include, not a seasons-specific copy. -->
+                    <!-- Real buttons below keep their original bare includes (no onleft/onright) -
+                         this row never had explicit nav overrides between them the way Episodes'
+                         own row does, and the watchlist dynamic-button cluster right after Play
+                         (wl_dynamic_buttons.xml.tpl - multiple mutually-exclusive states this
+                         doesn't touch/fully model) makes guessing a single correct onright target
+                         for Play itself too risky to add here. Only the new overlays get explicit
+                         onleft/onright (mirroring their own button's id, same defensive pattern
+                         Episodes' button row already relies on) - that's the part live-confirmed
+                         necessary there. -->
+                    {% include template with name="play" & id=302 &
+                        visible="String.IsEmpty(Window.Property(disable_playback))"
+                    %}
+                    {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
+                        label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
+                        label_width=48 & pill_width=110 & group_width=66 &
+                        onleft=302 & onright=308
+                    %}
                     {% include "includes/wl_dynamic_buttons.xml.tpl" %}
                     {% include "includes/wl_add_remove_buttons.xml.tpl" %}
-                    {% include template with name="shuffle" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
-                    {% include template with name="more" & id=304 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
+                    {% include ol with id=392 & visible="Control.HasFocus(308)" & name="watchlist" &
+                        label="$ADDON[script.plexmod 35062]" & label_suffix_info="" &
+                        label_width=178 & pill_width=240 & group_width=196 &
+                        onleft=308 & onright=309
+                    %}
+                    {% include ol with id=393 & visible="Control.HasFocus(309)" & name="watchlisted" &
+                        label="$ADDON[script.plexmod 34011]" & label_suffix_info="" &
+                        label_width=249 & pill_width=311 & group_width=267 &
+                        onleft=309 & onright=303
+                    %}
+                    {% include template with name="shuffle" & id=303 &
+                        visible="String.IsEmpty(Window.Property(disable_playback))"
+                    %}
+                    {% include ol with id=394 & visible="Control.HasFocus(303)" & name="shuffle" &
+                        label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
+                        label_width=82 & pill_width=144 & group_width=100 &
+                        onleft=303 & onright=304
+                    %}
+                    {% include template with name="more" & id=304 &
+                        visible="String.IsEmpty(Window.Property(disable_playback))"
+                    %}
+                    {% include ol with id=395 & visible="Control.HasFocus(304)" & name="more" &
+                        label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
+                        label_width=58 & pill_width=120 & group_width=76 &
+                        onleft=304 & onright=""
+                    %}
                 {% endwith %}
 
             </control>

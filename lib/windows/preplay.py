@@ -295,6 +295,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                         return
 
             elif action == xbmcgui.ACTION_NAV_BACK:
+                if self.dismissSidebarPopupOnBack():
+                    return
                 if (not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(
                         self.OPTIONS_GROUP_ID)) or not controlID) and \
                         not util.addonSettings.fastBack:
@@ -531,7 +533,10 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             playerObject = plexplayer.PlexPlayer(self.video)
             playerObject.build()
         playersettings.showDialog(video=self.video, non_playback=True)
-        self.setAudioAndSubtitleInfo()
+        video_text = self.video.resolutionString()
+        if self.video.videoCodecRendering:
+            video_text = u'{0} {1}'.format(video_text, self.video.videoCodecRendering)
+        self.setAudioAndSubtitleInfo(video_text)
 
     def infoButtonClicked(self):
         opener.handleOpen(
@@ -931,12 +936,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             video_text = self.video.resolutionString()
             if self.video.videoCodecRendering:
                 video_text = u'{0} {1}'.format(video_text, self.video.videoCodecRendering)
-            self.resizeInfoPill(self.videoInfoImage, self.videoInfoLabel, video_text, self.VIDEO_PILL_MAX_WIDTH)
 
         self.populateRatings(self.video, self)
 
         if not self.fromWatchlist:
-            self.setAudioAndSubtitleInfo()
+            self.setAudioAndSubtitleInfo(video_text)
 
             self.setProperty('unavailable', all(not v.isAccessible() for v in self.video.media()) and '1' or '')
 
@@ -945,7 +949,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             else:
                 self.setProperty('remainingTime', '')
 
-    def setAudioAndSubtitleInfo(self):
+    def setAudioAndSubtitleInfo(self, video_text):
         # discover external audio files for mapped direct play
         if util.getSetting('use_external_audio', False) and hasattr(type(self.video), 'discoverExternalAudioStreams'):
             self.video.discoverExternalAudioStreams()
@@ -954,31 +958,21 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
         audio_text = ''
         if sas:
-            if len(self.video.audioStreams) > 1:
-                audio_text = sas and u'{0} +{1}'.format(sas.getTitle(metadata.apiTranslate),
-                                                         len(self.video.audioStreams) - 1) \
-                    or T(32309, 'None')
-            else:
-                audio_text = sas and sas.getTitle(metadata.apiTranslate) or T(32309, 'None')
+            audio_text = sas.getTitle(metadata.apiTranslate)
             self.setProperty('audio', audio_text)
 
         sss = self.video.selectedSubtitleStream(
             forced_subtitles_override=util.getSetting("forced_subtitles_override") and pnUtil.ACCOUNT.subtitlesForced == 0,
             deselect_subtitles=getNativeLanguages(util.getSetting("disable_subtitle_languages") or []))
         if sss:
-            if len(self.video.subtitleStreams) > 1:
-                subtitles_text = u'{0} +{1}'.format(sss.getTitle(metadata.apiTranslate), len(self.video.subtitleStreams) - 1)
-            else:
-                subtitles_text = sss.getTitle(metadata.apiTranslate)
+            subtitles_text = sss.getTitle(metadata.apiTranslate)
+        elif self.video.subtitleStreams:
+            subtitles_text = T(32481, 'Off')
         else:
-            if self.video.subtitleStreams:
-                subtitles_text = u'{0} +{1}'.format(T(32309, 'None'), len(self.video.subtitleStreams))
-            else:
-                subtitles_text = T(32309, u'None')
+            subtitles_text = T(32309, u'None')
         self.setProperty('subtitles', subtitles_text)
 
-        self.resizeInfoPill(self.audioInfoImage, self.audioInfoLabel, audio_text, self.AUDIO_PILL_MAX_WIDTH)
-        self.resizeInfoPill(self.subtitleInfoImage, self.subtitleInfoLabel, subtitles_text, self.SUBTITLE_PILL_MAX_WIDTH)
+        self.resizeMediaInfoPills(video_text, audio_text, subtitles_text)
 
     def createListItem(self, obj):
         mli = kodigui.ManagedListItem(obj.title or '', thumbnailImage=obj.thumb.asTranscodedImageURL(*self.EXTRA_DIM), data_source=obj)

@@ -228,18 +228,19 @@
         </control>
 
         <!-- Video/audio/subtitles pill row, shared with pre_play (see includes/media_info_pills.xml.tpl).
-             posx=1095 is 1920 (screen width) minus the row's own 765 width minus 60 to cancel out group
-             50's own +60 sidebar-clearance shift, so its right edge still sits flush with the screen's
-             right edge like it did before the sidebar (see group 50's own posx comment above, and
-             pre_play's identical -60 treatment of this same include). posy=425 is no longer tied to the
-             button row's own position at all (it used to track it, matching pre_play's own 47px-below-
-             the-button-row convention, but drifted from that over a few earlier requests this session) -
-             set directly on request instead, to land its top edge at absolute y=580 (group 50's own
-             posy=155 + this 425 = 580). That puts it above the episode row's own top (absolute y=640, see
-             that group's own comment), not below the buttons any more. propref reads off the currently-
-             focused episode row item instead of the window, since this screen has one row per episode
-             rather than pre_play's single video. -->
-        {% include "includes/media_info_pills.xml.tpl" with posx=1095 & posy=425 & propref="Container(400).ListItem.Property" %}
+             posx=990 is 1920 (screen width) minus 85 (the row's target inset from the screen's right
+             edge, on request) minus the row's own 785 width (200 + 295 + 260 + 2*15 PILLS_ITEMGAP in
+             the mixin) minus 60 to cancel out group 50's own +60 sidebar-clearance shift (see group
+             50's own posx comment above, and pre_play's identical -52 treatment of this same include,
+             both now landing at the same 85px inset). posy=425 is no longer tied to the button row's
+             own position at all (it used to track it, matching pre_play's own 47px-below-the-button-row
+             convention, but drifted from that over a few earlier requests this session) - set directly
+             on request instead, to land its top edge at absolute y=580 (group 50's own posy=155 + this
+             425 = 580). That puts it above the episode row's own top (absolute y=640, see that group's
+             own comment), not below the buttons any more. propref reads off the currently-focused
+             episode row item instead of the window, since this screen has one row per episode rather
+             than pre_play's single video. -->
+        {% include "includes/media_info_pills.xml.tpl" with posx=990 & posy=425 & propref="Container(400).ListItem.Property" %}
 
     </control>
 
@@ -274,8 +275,8 @@
              shifted box the old dead-center version required, since the anchor cell isn't the middle one.
              500's own onup/ondown/onleft/onright are still required here (duplicated onto the child list
              too): a grouplist wrapper doesn't automatically forward its child's direction rules for keys
-             outside its own orientation axis - same reason the buttongroup grouplists (300/1300) below
-             define their own onup/ondown rather than relying on their buttons'.
+             outside its own orientation axis - same reason the buttongroup grouplist (300) below
+             defines its own onup/ondown rather than relying on its buttons'.
 
              posx=45, not 0 (width shrunk from 1920 to 1875 to match, keeping the right edge fixed): clip
              edge lands at absolute x=105 (group 50's own posx=60 + this 45), matching Seasons' own clip
@@ -308,8 +309,16 @@
             <onup condition="Control.IsVisible(205)">205</onup>
             <onup condition="Control.IsVisible(206)">206</onup>
             <onup>200</onup>
-            <ondown condition="Control.IsVisible(300)">300</ondown>
-            <ondown condition="Control.IsVisible(1300)">1300</ondown>
+            <!-- Two conditioned tags routing straight to the actual target button, not
+                 condition="Control.IsVisible(300)">300 (the grouplist's own id) relying on its
+                 <defaultcontrol> to pick between Resume/Play - live-confirmed that doesn't work:
+                 every other <defaultcontrol> in this whole codebase is a single plain value, never
+                 conditioned/duplicated, and testing this one actually conditioned (see its own
+                 comment, still below) broke the non-in-progress case entirely (landed on Info
+                 always, not just when in-progress) - so it silently doesn't support multiple
+                 tags the way onup/onright demonstrably do elsewhere in this exact file. -->
+            <ondown condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">308</ondown>
+            <ondown condition="Control.IsVisible(300)">301</ondown>
             <ondown>402</ondown>
             <onleft condition="!String.IsEmpty(Container(400).ListItem.Property(left.boundary))">noop</onleft>
             <onleft>9000</onleft>
@@ -334,8 +343,9 @@
                 <onup condition="Control.IsVisible(205)">205</onup>
                 <onup condition="Control.IsVisible(206)">206</onup>
                 <onup>200</onup>
-                <ondown condition="Control.IsVisible(300)">300</ondown>
-                <ondown condition="Control.IsVisible(1300)">1300</ondown>
+                <!-- Same fix as this row's own copy above - see its comment. -->
+                <ondown condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">308</ondown>
+                <ondown condition="Control.IsVisible(300)">301</ondown>
                 <ondown>402</ondown>
                 <onleft condition="!String.IsEmpty(Container(400).ListItem.Property(left.boundary))">noop</onleft>
                 <onleft>9000</onleft>
@@ -359,6 +369,20 @@
                         <posx>5</posx>
                         <posy>{{ vscale(4) }}</posy>
                         <control type="image">
+                            <visible>String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                            <posx>0</posx>
+                            <posy>0</posy>
+                            <width>536</width>
+                            <height>{{ vscale(312) }}</height>
+                            <texture border="24">script.plex/drop-shadow-directional.png</texture>
+                        </control>
+                        <!-- Season card's own shadow - kept as a separate control (not merged back into the
+                             one above) only so the art below can skip the off-focus dimming that one applies
+                             (see its own comment) - but sized identically to it (536x312, posx=0), matching
+                             the episode cards' landscape art, not the poster-shaped 216x312/posx=159 an
+                             earlier pass here tried and dropped on request. -->
+                        <control type="image">
+                            <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
                             <posx>0</posx>
                             <posy>0</posy>
                             <width>536</width>
@@ -384,6 +408,7 @@
                                  an earlier request - see git history for the further-back 90%/0x19 figure
                                  this was originally derived from. -->
                             <control type="image">
+                                <visible>String.IsEmpty(ListItem.Property(is.season.card))</visible>
                                 <posx>0</posx>
                                 <posy>0</posy>
                                 <width>512</width>
@@ -391,6 +416,84 @@
                                 <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false">scale</aspectratio>
                                 <colordiffuse>FF333333</colordiffuse>
+                            </control>
+                            <!-- Season card's own art (is.season.card - EpisodesWindow.createSeasonCardItem()):
+                                 a separate control, not just a per-item colordiffuse switch on the one above -
+                                 colordiffuse has no $INFO[]/ListItem.Property binding, it's a fixed XML
+                                 attribute, so skipping the dimming needs its own control. Same 512x288/
+                                 ar16x9-mask.png/scale as the episode art above (a poster-shaped 192x288/
+                                 poster-mask.png box was tried and dropped on request) - $INFO[ListItem.Thumb]
+                                 here is the season's (falling back to the show's) background art, not a
+                                 poster - createSeasonCardItem() picks whichever actually has its own art
+                                 rather than always the show's, so a season's own distinct background shows
+                                 when the server has one. No colordiffuse dimming, on request - this item
+                                 doesn't represent "unfocused among many peers" the way episode thumbs do. -->
+                            <control type="image">
+                                <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>512</width>
+                                <height>{{ vscale(288) }}</height>
+                                <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
+                            </control>
+                            <!-- Season name panel, top-right corner (mirrors the episode-number badge's own
+                                 position/height below) - background color and (via two purpose-built wider
+                                 masks, see below) corner-pairing behavior both match that badge exactly.
+                                 186px = ~33% wider than an earlier 140px pass here, on request - comfortably
+                                 fits real season names at font8 (e.g. "Season 12"), with a scrolling label as
+                                 the overflow fallback rather than a truly content-sized one - see this panel's
+                                 own git history for why real per-item dynamic width
+                                 (MediaInfoPillsMixin.resizeInfoPill(), a runtime Control.setWidth() via
+                                 getControl(id)) doesn't carry over to a list's own itemlayout/focusedlayout
+                                 template: Kodi doesn't expose individual list items as separate Control
+                                 objects, only the list control itself (id 400) is addressable that way. -->
+                            <control type="group">
+                                <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                <posx>326</posx>
+                                <posy>0</posy>
+                                <control type="image">
+                                    <!-- Paired look: this card's own watched indicator (further below, xoff=326
+                                         for the season-card case) sits to the left when shown, so only the outer
+                                         corner (top-right, touching the art's own edge) needs rounding - exact
+                                         same condition as the episode-number badge's own paired mask below, since
+                                         createSeasonCardItem() sets the same watched/unwatched/unwatched.count
+                                         properties a real episode would. badge-mask-tr-only-wide.png: same
+                                         derivation as badge-mask-tr-wide.png below (cut badge-mask-tr-only.png at
+                                         a safe column, widen by duplicating it) - badge-mask-tr-only.png has no
+                                         border scaling either, so a direct stretch would distort its own single
+                                         corner curve the same way. -->
+                                    <visible>{% if indicators.use_unwatched %}[!String.IsEmpty(ListItem.Property(unwatched)) + String.IsEmpty(ListItem.Property(watched))] | !String.IsEmpty(ListItem.Property(unwatched.count)){% else %}!String.IsEmpty(ListItem.Property(watched)) | !String.IsEmpty(ListItem.Property(unwatched.count)){% endif %}</visible>
+                                    <width>186</width>
+                                    <height>{{ vscale(32) }}</height>
+                                    <texture diffuse="script.plex/masks/badge-mask-tr-only-wide.png">script.plex/white-square.png</texture>
+                                    <colordiffuse>{{ indicators.watched_bg|default("CC000000") }}</colordiffuse>
+                                </control>
+                                <control type="image">
+                                    <!-- Standalone look: no watched indicator to seam against, so round both the
+                                         diagonal corners (badge-mask-tr-wide.png, matching badge-mask-tr.png's own
+                                         diagonal style below) for a self-contained shape - exact negation of the
+                                         sibling control's own condition above, same as the episode-number badge's
+                                         own pairing. -->
+                                    <visible>{% if indicators.use_unwatched %}[String.IsEmpty(ListItem.Property(unwatched)) | !String.IsEmpty(ListItem.Property(watched))] + String.IsEmpty(ListItem.Property(unwatched.count)){% else %}String.IsEmpty(ListItem.Property(watched)) + String.IsEmpty(ListItem.Property(unwatched.count)){% endif %}</visible>
+                                    <width>186</width>
+                                    <height>{{ vscale(32) }}</height>
+                                    <texture diffuse="script.plex/masks/badge-mask-tr-wide.png">script.plex/white-square.png</texture>
+                                    <colordiffuse>{{ indicators.watched_bg|default("CC000000") }}</colordiffuse>
+                                </control>
+                                <control type="label">
+                                    <posx>12</posx>
+                                    <width>162</width>
+                                    <height>{{ vscale(32) }}</height>
+                                    <font>font8</font>
+                                    <align>center</align>
+                                    <aligny>center</aligny>
+                                    <scroll>true</scroll>
+                                    <scrollspeed>35</scrollspeed>
+                                    <textcolor>DDFFFFFF</textcolor>
+                                    <shadowcolor>66000000</shadowcolor>
+                                    <label>$INFO[ListItem.Property(title)]</label>
+                                </control>
                             </control>
                             <!-- Inset pill, not the old flush-bottom bar: matches Recommended's/Seasons' own
                                  poster progress bar exactly (includes/hub_itemlayout_poster.xml.tpl, itself
@@ -470,10 +573,27 @@
                                     <label>$INFO[ListItem.Property(episode.number)]</label>
                                 </control>
                             </control>
-                            {% include "includes/watched_indicator.xml.tpl" with xoff=472 & uw_size=35 & wbg_w=40 & wbg="script.plex/masks/badge-mask-bl-only.png" %}
+                            <control type="group">
+                                <visible>String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                {% include "includes/watched_indicator.xml.tpl" with xoff=472 & uw_size=35 & wbg_w=40 & wbg="script.plex/masks/badge-mask-bl-only.png" %}
+                            </control>
+                            <control type="group">
+                                <!-- Season card's own watched indicator - same include, xoff=326 instead of
+                                     472 to sit flush against the season-name panel's own left edge (its own
+                                     posx above) rather than the episode-number badge's, which the season card
+                                     doesn't render. -->
+                                <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                {% include "includes/watched_indicator.xml.tpl" with xoff=326 & uw_size=35 & wbg_w=40 & wbg="script.plex/masks/badge-mask-bl-only.png" %}
+                            </control>
 
                             <control type="group">
-                                <visible>!String.IsEmpty(ListItem.Property(is.boundary))</visible>
+                                <!-- Excludes is.season.card: that pseudo-item also carries is.boundary
+                                     (piggybacking on every "not a real episode" Python guard - see
+                                     EpisodesWindow.createSeasonCardItem()'s own comment) but wants its
+                                     own art (the season poster, via the same ListItem.Thumb control
+                                     above) shown plainly, not hidden under this grey/chevron/spinner
+                                     overlay. -->
+                                <visible>!String.IsEmpty(ListItem.Property(is.boundary)) + String.IsEmpty(ListItem.Property(is.season.card))</visible>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
@@ -527,7 +647,17 @@
                             <posx>0</posx>
                             <posy>0</posy>
                             <control type="image">
-                                <visible>Control.HasFocus(400)</visible>
+                                <visible>Control.HasFocus(400) + String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>536</width>
+                                <height>{{ vscale(312) }}</height>
+                                <texture border="24">script.plex/drop-shadow-directional.png</texture>
+                            </control>
+                            <!-- Season card's own shadow - see itemlayout's own copy of this control/comment
+                                 above for the full reasoning. -->
+                            <control type="image">
+                                <visible>Control.HasFocus(400) + !String.IsEmpty(ListItem.Property(is.season.card))</visible>
                                 <posx>0</posx>
                                 <posy>0</posy>
                                 <width>536</width>
@@ -538,12 +668,60 @@
                                 <posx>3</posx>
                                 <posy>3</posy>
                                 <control type="image">
+                                    <visible>String.IsEmpty(ListItem.Property(is.season.card))</visible>
                                     <posx>0</posx>
                                     <posy>0</posy>
                                     <width>512</width>
                                     <height>{{ vscale(288) }}</height>
                                     <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                     <aspectratio scalediffuse="false">scale</aspectratio>
+                                </control>
+                                <!-- Season card's own art - see itemlayout's own copy of this control/comment
+                                     above for the full reasoning. -->
+                                <control type="image">
+                                    <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                    <posx>0</posx>
+                                    <posy>0</posy>
+                                    <width>512</width>
+                                    <height>{{ vscale(288) }}</height>
+                                    <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
+                                    <aspectratio scalediffuse="false">scale</aspectratio>
+                                </control>
+                                <!-- Season name panel - see itemlayout's own copy of this control/comment
+                                     above for the full reasoning. -->
+                                <control type="group">
+                                    <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                    <posx>326</posx>
+                                    <posy>0</posy>
+                                    <control type="image">
+                                        <!-- Paired/standalone corner pairing - see itemlayout's own copy of these
+                                             two controls for the full reasoning. -->
+                                        <visible>{% if indicators.use_unwatched %}[!String.IsEmpty(ListItem.Property(unwatched)) + String.IsEmpty(ListItem.Property(watched))] | !String.IsEmpty(ListItem.Property(unwatched.count)){% else %}!String.IsEmpty(ListItem.Property(watched)) | !String.IsEmpty(ListItem.Property(unwatched.count)){% endif %}</visible>
+                                        <width>186</width>
+                                        <height>{{ vscale(32) }}</height>
+                                        <texture diffuse="script.plex/masks/badge-mask-tr-only-wide.png">script.plex/white-square.png</texture>
+                                        <colordiffuse>{{ indicators.watched_bg|default("CC000000") }}</colordiffuse>
+                                    </control>
+                                    <control type="image">
+                                        <visible>{% if indicators.use_unwatched %}[String.IsEmpty(ListItem.Property(unwatched)) | !String.IsEmpty(ListItem.Property(watched))] + String.IsEmpty(ListItem.Property(unwatched.count)){% else %}String.IsEmpty(ListItem.Property(watched)) + String.IsEmpty(ListItem.Property(unwatched.count)){% endif %}</visible>
+                                        <width>186</width>
+                                        <height>{{ vscale(32) }}</height>
+                                        <texture diffuse="script.plex/masks/badge-mask-tr-wide.png">script.plex/white-square.png</texture>
+                                        <colordiffuse>{{ indicators.watched_bg|default("CC000000") }}</colordiffuse>
+                                    </control>
+                                    <control type="label">
+                                        <posx>12</posx>
+                                        <width>162</width>
+                                        <height>{{ vscale(32) }}</height>
+                                        <font>font8</font>
+                                        <align>center</align>
+                                        <aligny>center</aligny>
+                                        <scroll>true</scroll>
+                                        <scrollspeed>35</scrollspeed>
+                                        <textcolor>DDFFFFFF</textcolor>
+                                        <shadowcolor>66000000</shadowcolor>
+                                        <label>$INFO[ListItem.Property(title)]</label>
+                                    </control>
                                 </control>
                                 <!-- Inset pill, matching itemlayout's own copy above - see that control's own
                                      comment for the full reasoning. -->
@@ -604,10 +782,21 @@
                                         <label>$INFO[ListItem.Property(episode.number)]</label>
                                     </control>
                                 </control>
-                                {% include "includes/watched_indicator.xml.tpl" with xoff=472 & uw_size=35 & wbg_w=40 & wbg="script.plex/masks/badge-mask-bl-only.png" %}
+                                <control type="group">
+                                    <visible>String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                    {% include "includes/watched_indicator.xml.tpl" with xoff=472 & uw_size=35 & wbg_w=40 & wbg="script.plex/masks/badge-mask-bl-only.png" %}
+                                </control>
+                                <control type="group">
+                                    <!-- Season card's own watched indicator - see itemlayout's own copy of
+                                         this control/comment above for the full reasoning. -->
+                                    <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                    {% include "includes/watched_indicator.xml.tpl" with xoff=326 & uw_size=35 & wbg_w=40 & wbg="script.plex/masks/badge-mask-bl-only.png" %}
+                                </control>
 
                                 <control type="group">
-                                    <visible>!String.IsEmpty(ListItem.Property(is.boundary))</visible>
+                                    <!-- Excludes is.season.card - see itemlayout's own copy of this
+                                         group/comment above for the full reasoning. -->
+                                    <visible>!String.IsEmpty(ListItem.Property(is.boundary)) + String.IsEmpty(ListItem.Property(is.season.card))</visible>
                                     <control type="image">
                                         <posx>0</posx>
                                         <posy>0</posy>
@@ -642,7 +831,19 @@
                                 </control>
                             </control>
                             <control type="image">
-                                <visible>Control.HasFocus(400)</visible>
+                                <visible>Control.HasFocus(400) + String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                <posx>0</posx>
+                                <posy>0.5</posy>
+                                <width>518</width>
+                                <height>{{ vscale(294) }}</height>
+                                <texture diffuse="script.plex/masks/ring-mask-ar16x9.png">script.plex/white-square.png</texture>
+                                <colordiffuse>FFE9A20D</colordiffuse>
+                            </control>
+                            <!-- Season card's own focus ring - see itemlayout's own copy of the shadow/art
+                                 controls' comment for why this stays a separate control despite matching
+                                 the episode ring's own dimensions exactly. -->
+                            <control type="image">
+                                <visible>Control.HasFocus(400) + !String.IsEmpty(ListItem.Property(is.season.card))</visible>
                                 <posx>0</posx>
                                 <posy>0.5</posy>
                                 <width>518</width>
@@ -658,22 +859,44 @@
         <!-- EPISODES -->
 
         <!-- Sits directly below the episode row. Like pre_play's button row (see its own posy comment),
-             these icons are 180x145 source art stretched into their box with no aspectratio, and the opaque
-             glyph is roughly centered with ~37% padding above and below it - so the box's declared top isn't
-             where the icon becomes visible. 307: independently tuned against the episode row group's own
-             posy and the media-info pills row's own posy below (neither is tied to this value, nor vice
-             versa - see git history for the back-and-forth between all three this session) - see this
-             file's own comments if any of the three need to move in step again. -->
+             these icons are 80x80 source art (re-cropped from the old 180x145 padded canvas - see
+             context.py's own comment on the 70x70/itemgap-0 box re-tune) stretched into a 70x70 box with
+             no aspectratio; the opaque glyph still doesn't quite fill that box (~13-19% padding either
+             side now, down from ~37-40%), so the box's declared top still isn't quite where the icon
+             becomes visible. 332, not the old 307: re-derived the same way pre_play's own posy comment
+             derives its 460 (script-plex-pre_play.xml.tpl) - old absolute glyph bottom was
+             155(group 50's own posy)+307+77.59(play.png's opaque bottom, scaled into the old 121-tall
+             box)=539.59; solving the same equation for the new 70-tall box's own glyph bottom (52.5)
+             keeps that same absolute bottom: 155+332+52.5=539.5. -->
         {% block buttons %}
             <control type="group">
-                <posy>{{ vscale(307) }}</posy>
+                <posy>{{ vscale(332) }}</posy>
                 <width>1920</width>
                 <height>{{ vscale(145) }}</height>
                 <control type="grouplist" id="300">
-                    <visible allowhiddenfocus="!String.IsEmpty(Container(400).ListItem.Property(media.multiple))">String.IsEmpty(Container(400).ListItem.Property(media.multiple)) + !String.IsEmpty(Window.Property(initialized)) + String.IsEmpty(Window.Property(disable_playback))</visible>
+                    <!-- Single row now, no media.multiple split (on request) - the multi-version
+                         button row (old group 1300) and its own dedicated "media" button are gone;
+                         choosing between media versions moved to Settings' new Video entry
+                         (playersettings.py) instead. -->
+                    <visible>!String.IsEmpty(Window.Property(initialized)) + String.IsEmpty(Window.Property(disable_playback))</visible>
+                    <!-- Plain single static target, matching every other defaultcontrol in this whole
+                         codebase (none of them condition/duplicate this tag) - a conditioned pair here
+                         (308 in-progress / 301 otherwise) was tried and live-confirmed broken: it made
+                         every case land on 304/Info instead, not just the in-progress one, meaning this
+                         tag doesn't actually support multiple/conditioned entries the way onup/onright
+                         do elsewhere in this file. The in-progress-aware routing now happens one level
+                         up instead, on Container(400)'s own ondown (this row's own comment there) -
+                         still needed for the case where this grouplist gets focus some other way (this
+                         tag stays the harmless "usually right" fallback, Info being the actual first
+                         child only when Play/Resume/Restart are all hidden, e.g. mid-load). -->
                     <defaultcontrol always="true">301</defaultcontrol>
-                    <!-- 22, matching pre_play's no-poster button row x position -->
-                    <posx>22</posx>
+                    <!-- 63, not the old 22: same re-derivation as this block's own posy comment above,
+                         applied to x instead of y - old absolute glyph center-x was
+                         60(group 50's own posx)+22+76.4(play.png's opaque center, scaled into the old
+                         152-wide box)=158.4; the outer offset (60) cancels out of the equation, so the
+                         new posx is just 22+76.4-35.44(same glyph center, scaled into the new 70-wide
+                         box)=62.96 - still matching pre_play's own no-poster button row x position. -->
+                    <posx>63</posx>
                     <posy>0</posy>
                     <width>1000</width>
                     <height>{{ vscale(200) }}</height>
@@ -685,51 +908,91 @@
                     <scrolltime tween="quadratic" easing="out">200</scrolltime>
                     <usecontrolcoords>true</usecontrolcoords>
 
-                    {% with attr = theme.episodes.buttons & template = "includes/themed_button.xml.tpl" %}
-                        {% include template with name="info" & id=304 %}
+                    {% with attr = theme.episodes.buttons & hitrect = theme.episodes.buttons_hitrect & template = "includes/themed_button.xml.tpl" & ol = "includes/episode_button_label.xml.tpl" %}
+                        <!-- Hidden, not omitted, on the season card (is.season.card - createSeasonCardItem()):
+                             Info/Settings act on a specific episode, which the season card isn't - a
+                             grouplist excludes hidden children from layout/reflow entirely (same
+                             mechanism the label overlays below rely on), so this also closes the
+                             gap Info would otherwise leave. Play's own onleft=304/306's onleft=304 and
+                             the label overlays' own onright values are left as plain unconditional values -
+                             Kodi's documented behaviour for onleft/onright pointing at a hidden control is
+                             to fall through to that control's own nav (here: the grouplist's normal
+                             computed neighbour), same as any other hidden-item skip elsewhere in this row -
+                             not live-confirmed for this specific case though, worth an explicit check. -->
+                        {% include template with name="info" & id=304 & visible="!Container(400).ListItem.Property(is.season.card)" %}
+                        {% include ol with id=391 & visible="Control.HasFocus(304)" & name="info" &
+                            label="$ADDON[script.plexmod 35059]" & label_suffix_info="" &
+                            label_width=86 & pill_width=148 & group_width=104 &
+                            onleft=304 & onright=301
+                        %}
+                        <!-- Play/loading/Resume/Restart are mutually exclusive by state: Play once the
+                             focused episode's data is loaded and it has no view offset, PlayLoading
+                             (306, reused for every state) while that data is still loading, Resume+Restart
+                             once loaded with a view offset (in.progress - setProgress(), this file) instead
+                             of a single Play button, on request. -->
                         {% include template with name="play" & id=301 & onleft=304 & onright=305 &
-                            enable="!String.IsEmpty(Window.Property(current_item.loaded))" & visible="!String.IsEmpty(Window.Property(current_item.loaded))" &
-                            allowhiddenfocus=True
+                            enable="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(in.progress))" &
+                            visible="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(in.progress))"
                         %}
                         {% include template with name="play" & id=306 & onleft=304 & onright=305 &
                                             visible="String.IsEmpty(Window.Property(current_item.loaded))"
                         %}
-                        {% include template with name="settings" & id=305 %}
+                        {% include ol with id=390 & visible="Control.HasFocus(301) | Control.HasFocus(306)" & name="play" &
+                            label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
+                            label_width=48 & pill_width=110 & group_width=66 &
+                            onleft=301 & onright=305
+                        %}
+                        {% include template with name="resume" & id=308 & onleft=304 & onright=305 &
+                            visible="!String.IsEmpty(Window.Property(current_item.loaded)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
+                        %}
+                        <!-- Two variants, not one width covering both: remainingTimeToShortText() (util.py)
+                             only ever outputs "Xm" (<=90 min) or "XhYm" (>90) - String.Contains(...,h)
+                             tells them apart cheaply, no extra property needed. "Xm left" is a lot
+                             shorter than "XhYm left" on average, so one shared width would either waste
+                             a lot of space for the common short case or clip the long one - first-pass
+                             estimates below, needs the same precise measurement the other buttons got. -->
+                        {% include ol with id=392 & visible="Control.HasFocus(308) + !String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
+                            label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
+                            label_width=205 & pill_width=267 & group_width=223 &
+                            onleft=308 & onright=305
+                        %}
+                        {% include ol with id=397 & visible="Control.HasFocus(308) + String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
+                            label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
+                            label_width=234 & pill_width=296 & group_width=252 &
+                            onleft=308 & onright=305
+                        %}
+                        {% include template with name="restart" & id=309 & onleft=308 & onright=305 &
+                            visible="!String.IsEmpty(Window.Property(current_item.loaded)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
+                        %}
+                        {% include ol with id=393 & visible="Control.HasFocus(309)" & name="restart" &
+                            label="$ADDON[script.plexmod 35061]" & label_suffix_info="" &
+                            label_width=79 & pill_width=141 & group_width=97 &
+                            onleft=309 & onright=305
+                        %}
+                        {% include template with name="settings" & id=305 & visible="!Container(400).ListItem.Property(is.season.card)" %}
+                        {% include ol with id=394 & visible="Control.HasFocus(305)" & name="settings" &
+                            label="$ADDON[script.plexmod 35060]" & label_suffix_info="" &
+                            label_width=160 & pill_width=222 & group_width=178 &
+                            onleft=305 & onright=303
+                        %}
                         {% include template with name="more" & id=303 %}
-                        {% include template with name="shuffle" & id=302 %}
-                    {% endwith %}
-                </control>
-                <control type="grouplist" id="1300">
-                    <visible>!String.IsEmpty(Container(400).ListItem.Property(media.multiple)) + !String.IsEmpty(Window.Property(initialized)) + String.IsEmpty(Window.Property(disable_playback))</visible>
-                    <defaultcontrol always="true">1301</defaultcontrol>
-                    <!-- 22, matching pre_play's no-poster button row x position -->
-                    <posx>22</posx>
-                    <posy>0</posy>
-                    <width>1000</width>
-                    <height>{{ vscale(200) }}</height>
-                    <onup>400</onup>
-                    <ondown>402</ondown>
-                    <onleft>9000</onleft>
-                    <itemgap>{{ theme.episodes.buttongroup.itemgap }}</itemgap>
-                    <orientation>horizontal</orientation>
-                    <scrolltime tween="quadratic" easing="out">200</scrolltime>
-                    <usecontrolcoords>true</usecontrolcoords>
-
-                    {% with attr = theme.episodes.buttons & template = "includes/themed_button.xml.tpl" %}
-                        {% include template with name="info" & id=1304 %}
-                        {% include template with name="play" & id=1301 & onleft=1304 & onright=1305 &
-                            enable="!String.IsEmpty(Window.Property(current_item.loaded))" & visible="!String.IsEmpty(Window.Property(current_item.loaded))" &
-                            allowhiddenfocus=True
+                        {% include ol with id=395 & visible="Control.HasFocus(303)" & name="more" &
+                            label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
+                            label_width=58 & pill_width=120 & group_width=76 &
+                            onleft=303 & onright=""
                         %}
-                        {% include template with name="play" & id=1306 & onleft=1304 & onright=1307 &
-                                            visible="String.IsEmpty(Window.Property(current_item.loaded))"
+                        <!-- Season-card-only, not every episode card (on request) - shuffles the whole
+                             season/show (shuffleButtonClicked() - episodes.py), which only makes sense
+                             from the season-level card, not a single episode's own. -->
+                        {% include template with name="shuffle" & id=302 & onleft=303 &
+                            visible="Container(400).ListItem.Property(is.season.card)"
                         %}
-                        {% include template with name="media" & id=1307 %}
-                        {% include template with name="settings" & id=1305 %}
-                        {% include template with name="more" & id=1303 %}
-                        {% include template with name="shuffle" & id=1302 %}
+                        {% include ol with id=396 & visible="Control.HasFocus(302)" & name="shuffle" &
+                            label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
+                            label_width=82 & pill_width=144 & group_width=100 &
+                            onleft=302 & onright=""
+                        %}
                     {% endwith %}
-
                 </control>
             </control>
         {% endblock %}
@@ -792,8 +1055,11 @@
                 <posy>0</posy>
                 <width>1877</width>
                 <height>{{ vscale(400) }}</height>
-                <onup condition="Control.IsVisible(300)">300</onup>
-                <onup condition="Control.IsVisible(1300)">1300</onup>
+                <!-- Same fix as Container(400)'s own copy of this (script-plex-episodes.xml.tpl's own
+                     button row comment) - routes straight to the actual button (Resume/Play), not the
+                     grouplist id relying on its unreliable defaultcontrol. -->
+                <onup condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">308</onup>
+                <onup condition="Control.IsVisible(300)">301</onup>
                 <onup>400</onup>
                 <ondown>403</ondown>
                 <onleft>9000</onleft>

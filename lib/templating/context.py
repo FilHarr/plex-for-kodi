@@ -135,31 +135,67 @@ TEMPLATE_CONTEXTS = {
                 "zoomPlayButton": True,
                 "noFocusColor": "88FFFFFF"
             },
+            # 70x70/itemgap 0, not 152x121/-60: the source icons (script.plex/buttons/player/modern/
+            # *.png) used to carry a lot of dead transparent padding around each glyph on a shared
+            # 180x145 canvas (union of every glyph's own opaque bbox across the whole icon set was
+            # only 50x50, centered) - the old width/height/itemgap were all sized/tuned to compensate
+            # for that padding (negative itemgap pulling the padded boxes back together so the
+            # visible glyphs read at a sane distance apart). The icons were cropped to a shared, still
+            # centered 80x80 canvas (~15px margin around the widest glyph) to remove most of that
+            # dead space - width/height/itemgap below are re-tuned to match: 70x70 keeps roughly the
+            # same on-screen glyph size as before while dropping the wasted canvas around it, and
+            # itemgap 0 replaces the old negative-overlap compensation entirely (the tight boxes'
+            # own margins already provide enough visual breathing room, no pull-together needed) -
+            # this also leaves more room to add further buttons to the row later.
+            # x=5,y=5,w=60,h=60: themed_button.xml.tpl's own hitrect default (40,40,96,60) was tuned
+            # for the old 152x121 box and would extend well past this new 70x70 one (and, with
+            # itemgap now 0, into the next button's own box) - passed explicitly per-window below
+            # rather than changed globally in themed_button.xml.tpl, since that default is also
+            # still used by every other themed_button.xml.tpl caller (library grid windows etc.)
+            # whose own box sizes weren't touched here.
             "episodes": {
                 "buttongroup": {
-                    "itemgap": -60,
+                    "itemgap": 0,
                 },
                 "buttons": {
-                    "width": 152,
-                    "height": 121,
+                    "width": 70,
+                    "height": 70,
+                },
+                "buttons_hitrect": {
+                    "x": 5,
+                    "y": 5,
+                    "w": 60,
+                    "h": 60,
                 }
             },
             "seasons": {
                 "buttongroup": {
-                    "itemgap": -60
+                    "itemgap": 0
                 },
                 "buttons": {
-                    "width": 152,
-                    "height": 121,
+                    "width": 70,
+                    "height": 70,
+                },
+                "buttons_hitrect": {
+                    "x": 5,
+                    "y": 5,
+                    "w": 60,
+                    "h": 60,
                 }
             },
             "pre_play": {
                 "buttongroup": {
-                    "itemgap": -60
+                    "itemgap": 0
                 },
                 "buttons": {
-                    "width": 152,
-                    "height": 121,
+                    "width": 70,
+                    "height": 70,
+                },
+                "buttons_hitrect": {
+                    "x": 5,
+                    "y": 5,
+                    "w": 60,
+                    "h": 60,
                 }
             }
         },

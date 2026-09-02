@@ -291,10 +291,14 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 # Matches Recommended's own hub rows (LibraryWindow.checkHubItem(), library.py): Back on
                 # a row scrolled away from its first item resets to item 0 and stops there (swallowed),
                 # rather than immediately leaving the screen - a second Back, now already at item 0,
-                # falls through to the normal handling below.
+                # falls through to the normal handling below. SUB_ITEM_LIST_ID (the season posters) is
+                # deliberately not included here, unlike the peripheral Roles/Extras/Related rows below
+                # it - it's this screen's own primary content, not one of several hub rows sharing space,
+                # so Back from it should leave the screen immediately, on request.
                 if action == xbmcgui.ACTION_NAV_BACK:
-                    rowControl = {self.SUB_ITEM_LIST_ID: self.subItemListControl,
-                                 self.ROLES_LIST_ID: self.rolesListControl,
+                    if self.dismissSidebarPopupOnBack():
+                        return
+                    rowControl = {self.ROLES_LIST_ID: self.rolesListControl,
                                  self.EXTRA_LIST_ID: self.extraListControl,
                                  self.RELATED_LIST_ID: self.relatedListControl}.get(controlID)
                     if rowControl:
@@ -647,12 +651,21 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             return
 
         if not self.fromWatchlist:
-            episodes.EpisodesWindow.open(season=mli.dataSource, show=self.mediaItem,
-                                         parent_list=self.subItemListControl, from_watchlist=self.fromWatchlist,
-                                         directly_from_watchlist=self.directlyFromWatchlist,
-                                         is_watchlisted=self.is_watchlisted,
-                                         entry_section_id=self.entrySectionId,
-                                         entry_from_watchlist=self.entryFromWatchlist)
+            # this class's own openItem() below (item=, not EpisodesWindow.open() directly): it
+            # threads context=self through opener.py's chain-aware dispatch, so when this Seasons
+            # screen is itself a chained shell (reached via a hub/library click, not a raw nested
+            # open), the season tab continues that same chain (host.swapTo()) instead of opening
+            # EpisodesWindow as an unhosted standalone window - a real bug otherwise, live-
+            # confirmed: the sidebar's user-menu popup silently does nothing inside an unhosted
+            # EpisodesWindow, since SidebarMixin.handleSidebarDropdownClick() only calls through on
+            # a live _liveChainHost(). entry_section_id/entry_from_watchlist/from_watchlist aren't
+            # passed - openItem() below already fills those in from self.entrySectionId/
+            # self.entryFromWatchlist/self.fromWatchlist itself; passing them here too would
+            # collide as duplicate kwargs once it forwards to opener.open().
+            self.openItem(item=mli.dataSource, show=self.mediaItem,
+                         parent_list=self.subItemListControl,
+                         directly_from_watchlist=self.directlyFromWatchlist,
+                         is_watchlisted=self.is_watchlisted)
         elif self.wl_availability:
             self.wl_item_opener(mli.dataSource, self.openItem)
         else:
@@ -668,12 +681,26 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
         w = None
         if self.mediaItem.type == 'show':
-            w = episodes.EpisodesWindow.open(season=mli.dataSource, show=self.mediaItem,
-                                             parent_list=self.subItemListControl, from_watchlist=self.fromWatchlist,
-                                             directly_from_watchlist=self.directlyFromWatchlist,
-                                             is_watchlisted=self.is_watchlisted,
-                                             entry_section_id=self.entrySectionId,
-                                             entry_from_watchlist=self.entryFromWatchlist)
+            # this class's own openItem() below (item=) when this Seasons screen is itself a
+            # chained shell, so a season poster click continues the same chain instead of opening
+            # EpisodesWindow unhosted - see seasonTabClicked()'s identical fix, above, for the full
+            # reasoning (sidebar user-menu popup silently breaking otherwise) and for why
+            # entry_section_id/entry_from_watchlist/from_watchlist aren't passed here. openItem()
+            # doesn't block/return a window instance the way EpisodesWindow.open() does though, so
+            # the empty-list cleanup below (which needs w.exitCommand) only applies to the
+            # non-chained, still-blocking fallback path.
+            if self._liveChainHost() is not None:
+                self.openItem(item=mli.dataSource, show=self.mediaItem,
+                             parent_list=self.subItemListControl,
+                             directly_from_watchlist=self.directlyFromWatchlist,
+                             is_watchlisted=self.is_watchlisted)
+            else:
+                w = episodes.EpisodesWindow.open(season=mli.dataSource, show=self.mediaItem,
+                                                 parent_list=self.subItemListControl, from_watchlist=self.fromWatchlist,
+                                                 directly_from_watchlist=self.directlyFromWatchlist,
+                                                 is_watchlisted=self.is_watchlisted,
+                                                 entry_section_id=self.entrySectionId,
+                                                 entry_from_watchlist=self.entryFromWatchlist)
             update = True
         elif self.mediaItem.type == 'artist':
             w = tracks.AlbumWindow.open(album=mli.dataSource, parent_list=self.subItemListControl,
@@ -686,9 +713,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.subItemListControl.removeItem(mli.pos())
 
         if not self.subItemListControl.size():
-            self.closeWithCommand(w.exitCommand)
-            del w
-            gc.collect(2)
+            if w is not None:
+                self.closeWithCommand(w.exitCommand)
+                del w
+                gc.collect(2)
             return
 
         if update:
@@ -697,11 +725,16 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.mediaItem.reload(includeRelated=1, includeRelatedCount=10, includeExtras=1, includeExtrasCount=10)
             self.updateProperties()
 
-        try:
-            self.processCommand(w.exitCommand)
-        finally:
-            del w
-            gc.collect(2)
+        if w is not None:
+            # Only set on the non-chained, still-blocking EpisodesWindow.open()/AlbumWindow.open()
+            # fallback path (see this method's own comment above) - the chained openItem() path
+            # already ran its own processCommand() internally and left w as None, nothing further
+            # to bubble here.
+            try:
+                self.processCommand(w.exitCommand)
+            finally:
+                del w
+                gc.collect(2)
 
     def infoButtonClicked(self):
         fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(self.mediaItem.type == 'show' and 'show' or 'music')
@@ -793,7 +826,21 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         if 'items' in util.getSetting('cache_requests'):
             options.append({'key': 'cache_reset', 'display': T(33728, "Clear cache for item")})
 
-        pos = (880, 618)
+        # 518, not the old 880: stale after this session's Seasons button row rework
+        # (script-plex-seasons.xml.tpl) - same class of bug as episodes.py's own copy of this static
+        # fallback (from_item=False, opened via the More button itself, so there's no per-focus
+        # position to compute from the way the from_item branch below does). Old row was posx=22,
+        # 152-wide boxes, -20 itemgap (132px/button); new is posx=63, 70-wide, 0 itemgap (70px/
+        # button) - scaled the old value's offset from its own row start by that same 70/132 ratio
+        # (858 old offset * 70/132 = ~455) rather than recomputing a fixed button index, since the
+        # watchlist button cluster ahead of More (wl_dynamic_buttons.xml.tpl/
+        # wl_add_remove_buttons.xml.tpl) can show a different number of buttons depending on
+        # availability/watchlist state, same ambiguity the old value already carried. Y (618) left
+        # alone - same reasoning as episodes.py's own fix attempt: the button row's own absolute
+        # glyph position was deliberately preserved through the resize (posy 0 -> vscale(25), see
+        # that control's own comment), so it shouldn't have moved vertically either - unconfirmed
+        # live though.
+        pos = (518, 618)
         if from_item:
             viewPos = self.subItemListControl.getViewPosition()
             optsLen = len(list(filter(None, options)))
