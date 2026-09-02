@@ -2336,6 +2336,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if self._goRootHoldUntil:
             self._goRootHoldUntil = 0
 
+        # Dismiss the sidebar user/server popup first, before it can ever reach the back-stack
+        # pop below - see dismissSidebarPopupOnBack()'s own comment (windowutils.py) for the bug
+        # this fixes: back while the popup was open used to pop the descendant chain a step
+        # instead of just closing the popup.
+        if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and \
+                self.dismissSidebarPopupOnBack(target=self._sidebarTarget()):
+            return
+
         # Descendant-chain back-stack (hashed-orbiting-pizza.md Phase 1) - swapTo() always
         # pushes a root-restore entry on the genesis swap out of this window's own grid, so
         # _backStack is guaranteed non-empty whenever a real shell is hosted; an empty stack

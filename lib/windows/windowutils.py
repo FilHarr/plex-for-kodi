@@ -170,6 +170,42 @@ class SidebarMixin():
             return True
         return False
 
+    def dismissSidebarPopupOnBack(self, target=None):
+        """Call first, before any other NAV_BACK/PREVIOUS_MENU handling, in every SidebarMixin
+        window's own onAction() - not just LibraryWindow's (a real hosted shell's onAction IS
+        delegated to the host, unlike onClick - see handleSidebarDropdownClick()'s own comment on
+        that split - but an *unhosted* real shell still runs its own onAction, so this has to be
+        reachable from both). The user/server dropdowns (includes/sidebar_dropdowns.xml.tpl) are
+        visible off Control.HasFocus(250/260) - remote/keyboard navigation onto the list - OR the
+        show.options/show.servers Window properties (the mouse-click path, which doesn't move
+        focus). Live-confirmed bug otherwise: pressing back while either was open fell through to
+        this window's normal back-handling instead - popping the descendant chain a step
+        (library.py's own _backStack check) or closing the window outright (doClose(), in every
+        real shell's own onAction) - rather than just dismissing the popup, like every other
+        "back closes the topmost overlay first" control in this addon already does (e.g.
+        EpisodesWindow.onAction()'s own OPTIONS_GROUP_ID redirect). Returns True if it dismissed a
+        popup (caller should return immediately, doing no further back-handling), False otherwise.
+
+        target: LibraryWindow._sidebarTarget() from a LibraryWindow caller - setFocusId() (unlike
+        the show.options/show.servers property writes just below, and unlike getFocusId() itself)
+        is a real control write, and must never land on self while self is a LibraryWindow
+        currently hosting a real shell (see _sidebarTarget()'s own comment for the native crash
+        that's confirmed to cause). Omitted (defaults to self) from a real shell's own onAction(),
+        which - per the note above - only ever runs this while genuinely unhosted, where self's
+        own native window is always the live one."""
+        if target is None:
+            target = self
+        controlID = self.getFocusId()
+        if controlID == self.USER_LIST_ID or self.getProperty('show.options'):
+            self.setBoolProperty('show.options', False)
+            target.setFocusId(self.USER_BUTTON_ID)
+            return True
+        if controlID == self.SERVER_LIST_ID or self.getProperty('show.servers'):
+            self.setBoolProperty('show.servers', False)
+            target.setFocusId(self.SERVER_BUTTON_ID)
+            return True
+        return False
+
     def reselectActiveSection(self, controlID, previousFocusID):
         """Call from onFocus(controlID), passing the control that had focus immediately before
         (self.lastFocusID, captured before it gets overwritten with controlID). If focus just moved
