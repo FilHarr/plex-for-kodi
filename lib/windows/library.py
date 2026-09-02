@@ -6790,8 +6790,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             if ds.TYPE in ('episode', 'season'):
                 options.append(dropdown.SEPARATOR)
                 options.append({'key': 'to_show', 'display': T(32323, "Go To Show")})
-                if ds.TYPE == 'episode':
-                    options.append({'key': 'to_season', 'display': T(32400, "Go To Season")})
 
             if 'items' in util.getSetting('cache_requests'):
                 options.append({'key': 'cache_reset', 'display': T(33728, "Clear cache for item")})
@@ -6863,10 +6861,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # the hub, which an in-place property update on this one tile can't do.
             return self.lastSection
 
-        elif choice["key"] in ("to_season", "to_show"):
-            target = ds.show() if choice["key"] == "to_show" else ds.season()
+        elif choice["key"] == "to_show":
             try:
-                command = opener.open(target, dialog_props=getattr(self, 'carriedProps', None))
+                command = opener.open(ds.show(), context=self, dialog_props=getattr(self, 'carriedProps', None))
                 if command == "NODATA":
                     raise util.NoDataException
             except util.NoDataException:
@@ -6875,7 +6872,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         elif choice["key"] == "to_item":
             try:
-                command = opener.open(ds, dialog_props=getattr(self, 'carriedProps', None))
+                command = opener.open(ds, context=self, dialog_props=getattr(self, 'carriedProps', None))
                 if command == "NODATA":
                     raise util.NoDataException
             except util.NoDataException:
