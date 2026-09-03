@@ -1241,10 +1241,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         reconstruction naturally re-derives ITEM_TYPE from the now-persisted LibrarySettings value
         (LibrarySettings._loadSettings()), no separate post-reconstruction hook needed. Only when
         already showing the ordinary library grid (contentMode == 'library', not hosting a shell)
-        is the cheaper in-place refill (_applyItemTypeChoice(), no window reconstruction) enough.
+        is the cheaper in-place refill (_applyItemTypeChoice(), no window reconstruction) enough -
+        keep_focus=False there so this still moves focus onto the grid like the switchTab() branch
+        below does natively, rather than _applyItemTypeChoice()'s own default (built for its
+        dropdown-result caller, which wants the opposite).
         """
         if self.contentMode == 'library' and not self._isHostedShell:
-            self._applyItemTypeChoice('collection')
+            self._applyItemTypeChoice('collection', keep_focus=False)
         else:
             self.switchTab('library', item_type='collection')
 
@@ -3457,6 +3460,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 continue
             if mli.getProperty(key) == active:
                 mli.setProperty('current', '1')
+                # Pre-positions the list's own native cursor on the active tab, independently of
+                # the 'current' property above (which only drives the underline visual) - without
+                # this, Kodi's internal focus position for control 320 stays wherever it last was
+                # (item 0, the first time it's ever focused) regardless of which tab is actually
+                # active, so navigating up into the tab row from the grid below landed on the
+                # first tab rather than the selected one (live-confirmed).
+                self.tabList.selectItem(i)
             elif mli.getProperty('current'):
                 mli.setProperty('current', '')
 
@@ -3912,11 +3922,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self._applyItemTypeChoice(choice)
 
-    def _applyItemTypeChoice(self, choice):
+    def _applyItemTypeChoice(self, choice, keep_focus=True):
         """Switch ITEM_TYPE in place (no window reconstruction) - shared by
         itemTypeButtonClicked()'s dropdown result above and the Playlists tabList's Music/Video
         click (onClick()'s TAB_LIST_ID branch), which needs the exact same effect without a
-        dropdown at all."""
+        dropdown at all.
+
+        keep_focus: forwarded to fill() - True (default) leaves native focus wherever it already
+        was (right for the dropdown-result case above: closing the dropdown already returns focus
+        to the item-type button, and yanking it into the grid instead would undo that). Passed
+        False by switchToCollections() for its own in-place-refill path, since a tab click - unlike
+        a dropdown result - should move focus onto the grid the same way every other tab-switch
+        path here does (live-confirmed otherwise: Library -> Collections left focus sitting on the
+        tab row, with no poster showing as focused at all, unlike every other tab-swap direction,
+        which all go through switchTab()'s full reconstruction and land on the grid naturally)."""
         if choice == ITEM_TYPE:
             return
 
@@ -3970,7 +3989,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             except TypeError:
                 # stored sort isn't valid for this item type
                 self.resetSort()
-            self.fill(keep_focus=True)
+            self.fill(keep_focus=keep_focus)
 
         # No-op for the Recommended/Library tabList flavor (updateActiveTabMarker() keys off
         # self.contentMode there, unaffected by an ITEM_TYPE change) - only meaningfully updates

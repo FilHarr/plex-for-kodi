@@ -90,6 +90,17 @@ TEMPLATE_CONTEXTS = {
                     "width": None,
                     "height": None,
                 }
+            },
+            # library grid windows' own Play/Shuffle (script-plex-posters.xml.tpl etc.) - kept in
+            # lockstep with episodes/seasons/pre_play above, same reasoning: same visual element.
+            "library": {
+                "buttongroup": {
+                    "itemgap": -20
+                },
+                "buttons": {
+                    "width": None,
+                    "height": None,
+                }
             }
         },
         "classic": {
@@ -113,6 +124,15 @@ TEMPLATE_CONTEXTS = {
                 }
             },
             "pre_play": {
+                "buttongroup": {
+                    "itemgap": -50
+                },
+                "buttons": {
+                    "width": 176,
+                    "height": 140,
+                }
+            },
+            "library": {
                 "buttongroup": {
                     "itemgap": -50
                 },
@@ -184,6 +204,21 @@ TEMPLATE_CONTEXTS = {
                 }
             },
             "pre_play": {
+                "buttongroup": {
+                    "itemgap": 0
+                },
+                "buttons": {
+                    "width": 70,
+                    "height": 70,
+                },
+                "buttons_hitrect": {
+                    "x": 5,
+                    "y": 5,
+                    "w": 60,
+                    "h": 60,
+                }
+            },
+            "library": {
                 "buttongroup": {
                     "itemgap": 0
                 },

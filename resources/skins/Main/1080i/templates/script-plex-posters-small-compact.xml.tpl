@@ -42,6 +42,10 @@
             <scrolltime>200</scrolltime>
             <orientation>vertical</orientation>
             <preloaditems>2</preloaditems>
+            <!-- Links this panel to scrollbar 152's real scroll position/drag-to-scroll - was
+                 missing here (same gap found and fixed in script-plex-posters.xml.tpl this
+                 session; script.plexmod-multi's copy of this template already has it). -->
+            <pagecontrol>152</pagecontrol>
             <!-- ITEM LAYOUT ########################################## -->
             <itemlayout width="172" height="{{ vscale(249) }}">
                 <control type="group">
@@ -187,7 +191,7 @@
         {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
         {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
         {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio]" %}
-        {% include template with name="chapters" & id=304 %}
+        {% include template with name="view" & id=304 %}
     {% endwith %}
 
 </control>

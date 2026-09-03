@@ -256,6 +256,10 @@
             <scrolltime>200</scrolltime>
             <orientation>vertical</orientation>
             <preloaditems>2</preloaditems>
+            <!-- Links this panel to scrollbar 152's real scroll position/drag-to-scroll - was
+                 missing here (same gap found and fixed in script-plex-posters.xml.tpl this
+                 session; script.plexmod-multi's copy of this template already has it). -->
+            <pagecontrol>152</pagecontrol>
             <!-- ITEM LAYOUT ########################################## -->
             <itemlayout width="287" height="{{ vscale(343) }}">
                 <control type="group">
@@ -497,7 +501,7 @@
            playlists same as any other section, but "chapters" as a label/icon here never did
            (chapters are a video pre-play concept). Hidden for playlists on that mislabeling
            alone, independent of whether it's ever meaningfully clickable. #}
-        {% include template with name="chapters" & id=304 & visible="String.IsEmpty(Window.Property(hide.filteroptions)) + !String.IsEqual(Window.Property(media),playlists)" %}
+        {% include template with name="view" & id=304 & visible="String.IsEmpty(Window.Property(hide.filteroptions)) + !String.IsEqual(Window.Property(media),playlists)" %}
     {% endwith %}
 
 </control>

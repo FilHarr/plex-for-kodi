@@ -20,10 +20,25 @@
             <posy>0</posy>
             <width>1800</width>
             <height>1190</height>
+            <!-- The actual fix for "scrollbar doesn't drive the grid": Kodi links a scrollbar to
+                 a list/panel's real scroll position (and drag-to-scroll) via <pagecontrol>
+                 referencing the scrollbar's own control id - it does NOT require nesting the
+                 scrollbar inside the container at all. Found by checking script.plexmod-multi's
+                 copy of this same template, which already carries this tag; ours had silently
+                 lost it somewhere along the way. Nesting scrollbar 152 inside this panel (this
+                 session's own earlier, wrong approach) was reverted - it dragged in clipping
+                 issues (panel width) and inherited two of group 50's own animations that never
+                 applied to it before, for no benefit once pagecontrol alone does the job with 152
+                 staying exactly where it always was, as a standalone sibling below. -->
+            <pagecontrol>152</pagecontrol>
             <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),3)">600</onup>
             <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),6) + Integer.IsGreaterOrEqual(Container(101).ListItem.Property(index),3)">300</onup>
             <onleft>9000</onleft>
-            <onright>151</onright>
+            <!-- Straight to the scrollbar (152) when it's the only one of the two showing
+                 (non-alpha orderings) - the scrubber (151) isn't in the chain at all then, so
+                 routing through it first would be a dead press (it's invisible). -->
+            <onright condition="!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">151</onright>
+            <onright condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">152</onright>
             <!-- Kodi panels wrap top<->bottom by default - moving down at the very last row was
                  sending focus back to the first row instead of stopping. Top wasn't an issue (the
                  onup conditions above already route out to controls 600/300). wraparound=false
@@ -37,15 +52,15 @@
             <preloaditems>2</preloaditems>
             <wraparound>false</wraparound>
             <!-- ITEM LAYOUT ########################################## -->
-            <itemlayout width="287" height="{{ vscale(460) }}">
+            <itemlayout width="272" height="{{ vscale(460) }}">
                 <control type="group">
                     <posx>55</posx>
                     <posy>{{ vscale(137) }}</posy>
                     <control type="image">
                         <posx>0</posx>
                         <posy>0</posy>
-                        <width>268</width>
-                        <height>{{ vscale(385) }}</height>
+                        <width>264</width>
+                        <height>{{ vscale(384) }}</height>
                         <texture border="24">script.plex/drop-shadow-directional.png</texture>
                     </control>
                     <control type="group">
@@ -54,38 +69,41 @@
                         <control type="image">
                             <posx>0</posx>
                             <posy>0</posy>
-                            <width>244</width>
-                            <height>{{ vscale(361) }}</height>
+                            <width>240</width>
+                            <height>{{ vscale(360) }}</height>
                             <texture background="true" diffuse="script.plex/masks/poster-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                             <aspectratio scalediffuse="false">scale</aspectratio>
                         </control>
                         <control type="group">
+                            <!-- Matches the recommended-row/pre_play/seasons poster style: inset,
+                                 pill-shaped via the same diffuse-mask technique as the poster
+                                 corners themselves, rather than a full-bleed flat bar. -->
                             <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
-                            <posx>0</posx>
-                            <posy>{{ vscale(351) }}</posy>
+                            <posx>8</posx>
+                            <posy>{{ vscale(344) }}</posy>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(10) }}</height>
-                                <texture>script.plex/white-square.png</texture>
-                                <colordiffuse>C0000000</colordiffuse>
+                                <width>224</width>
+                                <height>{{ vscale(8) }}</height>
+                                <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                                <colordiffuse>E60A0F1A</colordiffuse>
                             </control>
                             <control type="image">
                                 <posx>0</posx>
-                                <posy>1</posy>
-                                <width>244</width>
+                                <posy>0</posy>
+                                <width>224</width>
                                 <height>{{ vscale(8) }}</height>
-                                <texture>$INFO[ListItem.Property(progress)]</texture>
-                                <colordiffuse>FFCC7B19</colordiffuse>
+                                <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                                <colordiffuse>FFE5A00D</colordiffuse>
                             </control>
                         </control>
-                        {% include "includes/watched_indicator.xml.tpl" with xoff=244 & uw_size=45 & wbg_w=34.4 & wbg_h=34.4 & with_count=True & scale="medium" %}
+                        {% include "includes/watched_indicator.xml.tpl" with xoff=240 & uw_size=48 & wbg_w=34.4 & wbg_h=34.4 & with_count=True & scale="medium" %}
                         <control type="label">
                             <scroll>false</scroll>
                             <posx>0</posx>
                             <posy>{{ vscale(371) }}</posy>
-                            <width>244</width>
+                            <width>240</width>
                             <height>{{ vscale(72) }}</height>
                             <font>font10</font>
                             <align>center</align>
@@ -97,7 +115,7 @@
                             <scroll>false</scroll>
                             <posx>0</posx>
                             <posy>{{ vscale(396) }}</posy>
-                            <width>244</width>
+                            <width>240</width>
                             <height>{{ vscale(72) }}</height>
                             <font>font10</font>
                             <align>center</align>
@@ -109,7 +127,7 @@
                             <scroll>false</scroll>
                             <posx>0</posx>
                             <posy>{{ vscale(396) }}</posy>
-                            <width>244</width>
+                            <width>240</width>
                             <height>{{ vscale(72) }}</height>
                             <font>font10</font>
                             <align>center</align>
@@ -121,21 +139,21 @@
             </itemlayout>
 
             <!-- FOCUSED LAYOUT ####################################### -->
-            <focusedlayout width="287" height="{{ vscale(460) }}">
+            <focusedlayout width="272" height="{{ vscale(460) }}">
                 <control type="group">
                     <posx>55</posx>
                     <posy>{{ vscale(137) }}</posy>
                     <control type="group">
-                        <animation effect="zoom" start="100" end="110" time="100" center="127,{{ vscale(185) }}" reversible="false">Focus</animation>
-                        <animation effect="zoom" start="110" end="100" time="100" center="127,{{ vscale(185) }}" reversible="false">UnFocus</animation>
+                        <animation effect="zoom" start="100" end="104" time="100" center="120,{{ vscale(180) }}" reversible="false">Focus</animation>
+                        <animation effect="zoom" start="104" end="100" time="100" center="120,{{ vscale(180) }}" reversible="false">UnFocus</animation>
                         <posx>0</posx>
                         <posy>0</posy>
                         <control type="image">
                             <visible>Control.HasFocus(101)</visible>
                             <posx>0</posx>
                             <posy>0</posy>
-                            <width>268</width>
-                            <height>{{ vscale(385) }}</height>
+                            <width>264</width>
+                            <height>{{ vscale(384) }}</height>
                             <texture border="24">script.plex/drop-shadow-directional.png</texture>
                         </control>
                         <control type="group">
@@ -144,38 +162,38 @@
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(361) }}</height>
+                                <width>240</width>
+                                <height>{{ vscale(360) }}</height>
                                 <texture background="true" diffuse="script.plex/masks/poster-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false">scale</aspectratio>
                             </control>
                             <control type="group">
                                 <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
-                                <posx>0</posx>
-                                <posy>{{ vscale(351) }}</posy>
+                                <posx>8</posx>
+                                <posy>{{ vscale(344) }}</posy>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(10) }}</height>
-                                    <texture>script.plex/white-square.png</texture>
-                                    <colordiffuse>C0000000</colordiffuse>
+                                    <width>224</width>
+                                    <height>{{ vscale(8) }}</height>
+                                    <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                                    <colordiffuse>E60A0F1A</colordiffuse>
                                 </control>
                                 <control type="image">
                                     <posx>0</posx>
-                                    <posy>1</posy>
-                                    <width>244</width>
+                                    <posy>0</posy>
+                                    <width>224</width>
                                     <height>{{ vscale(8) }}</height>
-                                    <texture>$INFO[ListItem.Property(progress)]</texture>
-                                    <colordiffuse>FFCC7B19</colordiffuse>
+                                    <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                                    <colordiffuse>FFE5A00D</colordiffuse>
                                 </control>
                             </control>
-                            {% include "includes/watched_indicator.xml.tpl" with xoff=244 & uw_size=45 & wbg_w=34.4 & wbg_h=34.4 & with_count=True & scale="medium" %}
+                            {% include "includes/watched_indicator.xml.tpl" with xoff=240 & uw_size=48 & wbg_w=34.4 & wbg_h=34.4 & with_count=True & scale="medium" %}
                             <control type="label">
                                 <scroll>true</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(371) }}</posy>
-                                <width>244</width>
+                                <width>240</width>
                                 <height>{{ vscale(72) }}</height>
                                 <font>font10</font>
                                 <align>center</align>
@@ -187,7 +205,7 @@
                                 <scroll>false</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(396) }}</posy>
-                                <width>244</width>
+                                <width>240</width>
                                 <height>{{ vscale(72) }}</height>
                                 <font>font10</font>
                                 <align>center</align>
@@ -199,7 +217,7 @@
                                 <scroll>false</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(396) }}</posy>
-                                <width>244</width>
+                                <width>240</width>
                                 <height>{{ vscale(72) }}</height>
                                 <font>font10</font>
                                 <align>center</align>
@@ -211,8 +229,8 @@
                             <visible>Control.HasFocus(101)</visible>
                             <posx>0</posx>
                             <posy>0</posy>
-                            <width>250</width>
-                            <height>{{ vscale(367) }}</height>
+                            <width>246</width>
+                            <height>{{ vscale(366) }}</height>
                             <texture diffuse="script.plex/masks/ring-mask-poster.png">script.plex/white-square.png</texture>
                             <colordiffuse>FFE9A20D</colordiffuse>
                         </control>
@@ -230,27 +248,101 @@
      sidebar-expand slide 600 needed on the left. -->
 <control type="grouplist" id="300">
     <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
-    <visible>!Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(no.content)) + String.IsEmpty(Window.Property(no.content.filtered)) + !String.IsEmpty(Window.Property(initialized))</visible>
+    <!-- Slides up and off-screen with the header instead of fading: the index>5 clause used to
+         live in this row's own <visible> tag, so scrolling past it cut straight to invisible
+         (via the fade above, triggered by the visible flip itself) rather than sliding away like
+         the header/grid/scrubber/scrollbar all do (live-confirmed: this row faded, everything
+         else moved). Those all stay technically visible throughout and use a Conditional slide
+         instead - Kodi can't animate a transition out for a control whose <visible> has already
+         gone false, so the index clause has to live in the slide's own condition, not here, for
+         the same "keep it visible, slide it away" trick to work. The remaining clauses (no.content/
+         no.content.filtered/initialized) are unrelated to scrolling and still gate real
+         visibility. -->
+    <visible>String.IsEmpty(Window.Property(no.content)) + String.IsEmpty(Window.Property(no.content.filtered)) + !String.IsEmpty(Window.Property(initialized))</visible>
+    <!-- -277.5: matches header(200)'s own "slide by exactly your own height" trick (that one
+         starts at posy=0 so its own -135 height is the delta outright; this row starts at
+         posy=132.5, so the delta needed to land its bottom edge (posy+height) at 0 is
+         -(132.5+145)=-277.5) - same condition group 50 uses for its own header-hide slide, so
+         this moves in lockstep with the grid rather than on its own timing. -->
+    <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
     <defaultcontrol>301</defaultcontrol>
-    <right>120</right>
-    <posy>{{ vscale(110) }}</posy>
+    <!-- 184, not the old 120: moves the whole row left so the view button's new label-pill
+         (overlay 393 below) ends flush with the grid's own right edge when focused, instead of
+         dangling in the margin past it. Grid math: panel(101) left=60 (group 50's own posx; 100/
+         101 contribute 0 on top of it) + item cell's own 55 offset + 5*272 (item pitch) for the
+         6th/last column (CHUNK_SIZE's own comment above confirms 6 columns for this grid) =
+         1475 shadow-left; poster art sits 3px further in (inner group posx=3) and is 240 wide, so
+         art's right edge = 1475+3+240 = 1718 (absolute).
+         Overlay 393's pill sits 18px short of its own group's right edge by construction
+         (group_width = label_width+18, pill's own local right edge = -62+pill_width =
+         label_width - see button-label-overlay-recipe) - and group_width is what actually
+         right-justifies against this row's own <right> anchor, since 393 becomes the last flowed
+         item once visible. So solving for the row's box-right edge that puts the pill's right
+         edge at 1718: box_right = 1718+18 = 1736, and <right> = 1920-1736 = 184. -->
+    <right>184</right>
+    <!-- 132.5, not the old 110: re-centers the icon glyph now that its box shrank from 126x100 to
+         theme.library.buttons' 70x70 (see context.py) - only vertically, since this row is
+         right-anchored (unlike Seasons'/Episodes'/PrePlay's own left-anchored rows, whose own
+         retune needed a posx recompute too - here align=right on a generous, non-trimming width
+         already re-centers the row horizontally as its flowed content shrinks, no manual offset
+         needed). The button textures are stretched into their box with no aspectratio (same as
+         those other rows), so the glyph's opaque-pixel fraction down the box is fixed regardless
+         of box size - Play's own opaque pixels reach row 60 of the 80x80 source art (see
+         pre_play's own identical math), a 0.75 fraction either way: old box, 0.75*100=75px down;
+         new box, 0.75*70=52.5px down. Re-solving for the same absolute glyph bottom as before
+         (110+0+75=185) against the new 52.5 offset: 185-52.5=132.5. -->
+    <posy>{{ vscale(132.5) }}</posy>
     <width>1000</width>
     <height>{{ vscale(145) }}</height>
     <align>right</align>
+    <!-- Missing an unconditional fallback left this row with no up-nav at all outside the
+         audio-widget case (live-confirmed: pressing up did nothing) - library_posters.xml.tpl's
+         filteropts_grouplist (600) already has exactly this same pair for the same reason, since
+         these two rows swapped positions (see this row's own comment above). -->
+    <onup condition="Control.IsVisible(320)">320</onup>
     <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
     <ondown>101</ondown>
     <onleft>210</onleft>
     <onright>151</onright>
-    <itemgap>-20</itemgap>
+    <itemgap>{{ theme.library.buttongroup.itemgap }}</itemgap>
     <orientation>horizontal</orientation>
     <scrolltime tween="quadratic" easing="out">200</scrolltime>
     <usecontrolcoords>true</usecontrolcoords>
 
-    {% with attr = {"width": 126, "height": 100} & template = "includes/themed_button.xml.tpl" & hitrect = {"x": 20, "y": 20, "w": 86, "h": 60} %}
+    {% with attr = theme.library.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.library.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
+        <!-- Play/Shuffle/View get the same label-on-focus pill overlay as Seasons/Episodes/
+             PrePlay's own button rows (icon box size/itemgap match exactly - theme.library.buttons
+             mirrors theme.seasons.buttons) - Play/Shuffle reuse those rows' own $ADDON strings/
+             measured widths since it's the same label text; View's "Change view" is unique to this
+             row (added alongside the view-type icon itself, string 35063). More doesn't get one
+             (not asked for). Bare includes below (no onleft/onright) for the real buttons, matching
+             Seasons' own button row - only the overlays get explicit nav, mirroring their own
+             button's neighbours (needed so Kodi's usecontrolcoords nav doesn't pick the overlay
+             itself once it reflows into the list - see episode_button_label.xml.tpl). -->
         {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+        {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
+            label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
+            label_width=48 & pill_width=110 & group_width=66 &
+            onleft=301 & onright=302
+        %}
         {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+        {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
+            label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
+            label_width=82 & pill_width=144 & group_width=100 &
+            onleft=302 & onright=303
+        %}
         {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio]" %}
-        {% include template with name="chapters" & id=304 %}
+        {% include template with name="view" & id=304 %}
+        <!-- label_width=142: "Change view" measured at font10/23px via InterUI.ttf (PIL
+             font.getlength, 140px) + the same +2px clipping-safety buffer every other call site
+             here uses (see button-label-overlay-recipe) - pill_width/group_width follow the
+             recipe's own +62/+18 formula. No onright: 393 is the last item in this row once
+             visible (nothing follows it to route around), same as 304's own bare include above. -->
+        {% include ol with id=393 & visible="Control.HasFocus(304)" & name="view" &
+            label="$ADDON[script.plexmod 35063]" & label_suffix_info="" &
+            label_width=142 & pill_width=204 & group_width=160 &
+            onleft=304
+        %}
     {% endwith %}
 
 </control>
@@ -259,14 +351,19 @@
 <control type="group" id="150">
     <visible>!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
     <defaultcontrol>151</defaultcontrol>
-    <!-- posx/posy match where the scrollbar (id 152, below) rests when it's showing instead;
-         the slide animation mirrors the zoom the scrollbar does when the header hides on
-         scroll, growing into the space the header vacates instead of resizing.
+    <!-- posx leaves a 15px gap to the scrollbar below (152's left=1885): the scrubber's own list
+         (151) is a flat 34px wide with no internal margin (key_scrubber_items.xml.tpl's item
+         labels fill it edge to edge), so its right edge is posx+34 - solving 1885-(posx+34)=15
+         gives posx=1836. Both now show side by side instead of one instead of the other, room
+         for which opened up left of the scrollbar once the poster grid's own item pitch shrank
+         (itemlayout width, above). posy matches the scrollbar's own resting top; the slide
+         animation mirrors the zoom the scrollbar does when the header hides on scroll, growing
+         into the space the header vacates instead of resizing.
          End position centers the scrubber's full 27-key extent (26 letters + '#', 34px each =
          918) in the 1080-tall screen: (1080-918)/2 = 81 top margin, a 150-81=69px move up from
          the resting posy. -->
     <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
-    <posx>1875</posx>
+    <posx>1836</posx>
     <posy>{{ vscale(150) }}</posy>
     <width>20</width>
     <height>920</height>
@@ -277,23 +374,44 @@
         <height>1050</height>
         <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
         <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),5) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">300</onleft>
+        <onright>152</onright>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
         {% include "includes/key_scrubber_items.xml.tpl" %}
     </control>
 </control>
 
-<!-- Shown instead of the scrubber above for sorts that don't produce alphabetical
-     ordering (script.plex.sort.alpha unset) - a plain proportional position indicator. -->
+<!-- The proportional position indicator - now shown alongside the scrubber above for
+     alphabetical orderings too (not just instead of it), at the same posx/hitrect it always
+     rests at for every other ordering (script.plex.sort.alpha only used to gate the scrubber
+     itself, above). Standalone sibling, not nested inside panel 101 - it doesn't need to be:
+     panel 101's own <pagecontrol>152</pagecontrol> (above) is what actually links this to the
+     grid's real scroll position/drag-to-scroll, and that tag works regardless of where 152 sits
+     in the control tree (confirmed against script.plexmod-multi's own copy of this template,
+     which already has pagecontrol wired up exactly this way, standalone scrollbar included). An
+     earlier attempt this session nested 152 inside the panel instead, on the mistaken assumption
+     that nesting was required for the link - it wasn't, and nesting brought its own problems
+     (panel clipping, inheriting group 50's animations) for no benefit, so it's reverted here. -->
 <control type="scrollbar" id="152">
-    <visible>String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
+    <visible>Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
     <hitrect x="1845" y="150" w="100" h="910" />
     <left>1885</left>
     <top>{{ vscale(150) }}</top>
     <width>12</width>
     <height>910</height>
-    <animation effect="zoom" time="200" start="1885,{{ vscale(150) }},12,910" end="1885,16,12,1055" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <!-- Slide, not the old zoom-to-fill-the-screen: matches the scrubber's own move (group 150,
+         same -69) instead of growing this control's own height to fill the vacated header space.
+         Same delta as the scrubber rather than independently centering this control's own 910
+         height (which would want -85, (1080-910)/2) so the two stay level with each other, since
+         they sit side by side and started level (both resting at posy/top=150). -->
+    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
     {% include "includes/scrollbar_style.xml.tpl" %}
-    <onleft>151</onleft>
+    <!-- Back to the scrubber when it's also showing (alpha orderings); straight to the grid/
+         filter-row otherwise, mirroring the scrubber's own two-tier index routing (100 once the
+         header's scrolled out of view past index 5, 300 while it's still up) since the scrubber
+         itself isn't in the chain to make that hop for us then. -->
+    <onleft condition="!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">151</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).ListItem.Property(index),5)">100</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),5)">300</onleft>
 </control>
 {% endblock content %}
