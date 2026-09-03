@@ -988,9 +988,24 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         triggers native Kodi GUI-subsystem teardown, and doing that off-thread while the main
         thread is simultaneously inside .modal()'s own native GUI code is a cross-thread
         lock-order hazard. Must stay synchronous, before self._current's caller proceeds to the
-        next .modal() call - the flicker is the accepted tradeoff for not deadlocking."""
+        next .modal() call - the flicker is the accepted tradeoff for not deadlocking.
+
+        EXPERIMENTAL mitigation, unproven (not the same standing as SKIN_RELOAD_DEFER_SECONDS's
+        confirmed-upstream-bug fix, windowutils.py - this is a hypothesis, not a diagnosed root
+        cause): the short sleep after gc.collect() below targets a live-reported, intermittent
+        unresponsive-black-screen freeze on Back, WinDbg-confirmed as the language-invoker thread
+        blocked inside a native call (SleepConditionVariableSRW) from deep within .modal() - i.e.
+        genuinely waiting on Kodi's own native side, not a Python-level bug, and not reproducible
+        with Kodi's own debug logging on (which slows native processing down, the same effect a
+        real sleep has). gc.collect() returning doesn't guarantee Kodi's own native teardown of
+        the outgoing shell's window - triggered by freeing it, per this method's own docstring
+        above - has actually finished settling before the next .modal() call starts; giving it a
+        little real wall-clock time here, same shape as every other SKIN_RELOAD_DEFER_SECONDS use
+        in this file, is a cheap, low-risk thing to try. Same accepted-flicker tradeoff as the
+        gc.collect() call itself, just a bit more of it."""
         import gc
         collected = gc.collect()
+        util.MONITOR.waitFor(windowutils.SKIN_RELOAD_DEFER_SECONDS)
         util.DEBUG_LOG("Library: _setupCurrent({0}) forced gc.collect() after real-shell teardown, "
                         "collected={1}", cls, collected)
 
@@ -2362,7 +2377,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # call is the same cheap, low-risk mitigation every other onAction()-triggered reload in
         # this class already uses, not a proven fix for that specific bug.
         if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and self._backStack:
-            threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.popBack).start()
+            def _popBack():
+                try:
+                    self.popBack()
+                except:
+                    # threading.Timer callbacks aren't covered by this addon's normal onAction()-level
+                    # error handling - an uncaught exception here (e.g. popBack()'s own _backStack.pop()
+                    # live-suspected as a contributor to an intermittent unresponsive-black-screen hang
+                    # after Back) would otherwise vanish completely: no traceback anywhere, the outgoing
+                    # window already closed, the next one never opens. Purely diagnostic - doesn't change
+                    # behavior on the success path.
+                    util.ERROR()
+            threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, _popBack).start()
             return
 
         try:
