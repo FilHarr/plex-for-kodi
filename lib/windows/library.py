@@ -4183,9 +4183,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             if ITEM_TYPE == 'episode' or mli.dataSource.TYPE == 'episode' or mli.dataSource.TYPE == 'season':
                 self.openItem(mli.dataSource, **extra_kwargs)
             else:
-                # hashed-orbiting-pizza.md Phase 4 item 3: self.openWindow(), not
-                # opener.handleOpen() directly - same reasoning as the PrePlayWindow branch below.
-                self.openWindow(subitems.ShowWindow, media_item=mli.dataSource, parent_list=self.showPanelControl, **extra_kwargs)
+                # self.openItem() (opener.open() -> opener.showClicked(), context=self), not a
+                # direct self.openWindow(subitems.ShowWindow, ...) any more - showClicked() is where
+                # skipChildren shows (single-season, "Seasons" library option set to Hide) get
+                # redirected straight to EpisodesWindow instead of ShowWindow; a direct openWindow()
+                # call here bypassed that dispatch entirely, live-confirmed (this was still landing
+                # on the Seasons page for skipChildren shows after that fix). Identical outcome to
+                # before for every other show - showClicked()'s own non-skipChildren branch does the
+                # same context.openWindow(subitems.ShowWindow, media_item=show, **kwargs) this used
+                # to do directly.
+                self.openItem(mli.dataSource, parent_list=self.showPanelControl, **extra_kwargs)
             if mli.dataSource.TYPE != 'season': # NOTE: A collection with Seasons doesn't have the leafCount/viewedLeafCount until you actually go into the season so we can't update the unwatched count here
                 updateUnwatchedAndProgress = True
         elif self.section.TYPE == 'movie' or mli.dataSource.TYPE == 'movie':

@@ -13,7 +13,6 @@ from . import kodigui
 from . import pagination
 from . import preplay
 from . import search
-from . import subitems
 from . import windowutils
 from .mixins.common import CommonMixin
 from .mixins.tasks import TasksMixin
@@ -250,8 +249,10 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         if data.TYPE == 'collection':
             self.openWindow(CollectionWindow, collection=data, **extra_kwargs)
         elif data.TYPE == 'show':
-            self.openWindow(subitems.ShowWindow, media_item=data, parent_list=self.gridControl,
-                            **extra_kwargs)
+            # self.openItem() (opener.open() -> opener.showClicked(), context=self), not a direct
+            # self.openWindow(subitems.ShowWindow, ...) - see library.py's own showPanelClicked()
+            # comment (identical fix, same live-confirmed skipChildren-bypass gap) for why.
+            self.openItem(data, parent_list=self.gridControl, **extra_kwargs)
         elif data.isDirectory():
             self.openDirectory(data, extra_kwargs)
         else:

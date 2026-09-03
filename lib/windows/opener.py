@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+import threading
+
 import six
 from plexnet import playqueue, plexapp, plexlibrary
 
@@ -134,6 +136,58 @@ def episodeClicked(episode, context=None, **kwargs):
 
 def showClicked(show, context=None, **kwargs):
     from . import subitems
+
+    # skipChildren (set on the Show - the "Seasons" library option set to Hide for single-season
+    # shows, see episodes.py's own EpisodesWindow.reset() comment for how that's detected/verified
+    # live) means this show's single season isn't a meaningful level of its own - Plex's own apps
+    # skip the season-selection screen entirely for it, going straight to the episode list. Ported
+    # here, opener.open()'s single show-click funnel, so every entry point (library grid, hubs,
+    # watchlist, search, related rows) gets that behavior, not just Continue Watching's episode-level
+    # clicks (which already bypass ShowWindow by construction - they open EpisodesWindow directly
+    # with an episode, never a show, so there's nothing to change there).
+    try:
+        skip_children = show.get('skipChildren').asBool()
+    except AttributeError:
+        # Not a real PlexObject (e.g. a test double) - every genuine Show has .get(), so this only
+        # ever means "can't be a skipChildren show".
+        skip_children = False
+
+    if skip_children:
+        # No busy.widthDialog() wrapper here (deliberately): that creates/shows/closes a real,
+        # separate native BusyWindow synchronously - a plausible contributor to an intermittent
+        # unresponsive-black-screen hang on Back, but live-confirmed NOT the actual cause (removing
+        # it alone didn't stop the hang). The seasons fetch is small (~1KB) - not worth a spinner
+        # regardless.
+        try:
+            seasons = show.seasons()
+        except:
+            seasons = None
+        if seasons:
+            season = seasons[0]
+            if context is not None:
+                # Deferred via SKIN_RELOAD_DEFER_SECONDS, not called inline - an attempted fix for
+                # an intermittent unresponsive-black-screen hang on Back (not yet live-confirmed
+                # fixed): reproducible reliably (3-4 tries) with Kodi's own debug logging off, but
+                # NOT reproducible across many varied attempts with it on - a classic timing-race
+                # signature, since debug logging's overhead alone shifts execution speed, not
+                # logic. The one thing structurally unique to this path versus every other
+                # onClick()-triggered swap in this codebase: the
+                # show.seasons() fetch above runs synchronously, inline, in the same call stack as
+                # the swap below - every other click-driven swap already has its target object in
+                # hand and swaps immediately, no extra fetch first. That fetch's variable duration
+                # shifts exactly when the real-shell teardown/rebuild fires relative to whatever
+                # else is going on, enough to occasionally land badly. Deferring the swap itself by
+                # a beat is this codebase's own established mitigation for precisely this class of
+                # Kodi timing issue - see library.py's onAction() (popBack()), switchTab(),
+                # selectServer(), all deferred the same way, each documented as "a cheap, low-risk
+                # mitigation, not a proven fix" for a Kodi-side timing/reentrancy issue - same
+                # status here, not a guaranteed fix, just the same trusted mitigation shape.
+                from . import windowutils
+                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, seasonClicked,
+                                args=(season,), kwargs=dict(context=context, **kwargs)).start()
+                return ''
+            return seasonClicked(season, context=context, **kwargs)
+
     if context is not None:
         context.openWindow(subitems.ShowWindow, media_item=show, **kwargs)
         return ''

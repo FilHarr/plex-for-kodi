@@ -525,6 +525,19 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         except IndexError:
             raise util.NoDataException
 
+        # skipChildren (set on the Show, not the Season - the "Seasons" library option set to Hide for
+        # single-season shows) is Plex's own signal that this show's single season shouldn't be treated
+        # as a distinct level at all. A real Season object fetched via show.seasons() (subitems.py's
+        # ShowWindow path) carries none of this - it looks like an ordinary season - so without this
+        # override self.season ends up showing "Season 1"/no extras there, while the Continue Watching
+        # path (which resolves self.season via Episode.season(), and that method already redirects to
+        # the show itself when the episode's own skipParent is set) shows the show's own title/extras
+        # instead. Forcing self.season to the show here makes both entry paths land on the same, correct
+        # result: every self.season read throughout this window (title, extras, thumb, etc.) reflects
+        # the show, since there's no meaningful season to show separately.
+        if self.show_.get('skipChildren').asBool():
+            self.season = self.show_
+
         if not self.episode:
             # Opened from a season tile (subitems.py) with no specific episode - EpisodesPaginator.
             # initialPage only knows how to center its window on self.episode; with nothing set it
@@ -1249,8 +1262,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         if watched is None:
             return
 
-        self.show_ = (self.episode or self.season).show().reload(includeExtras=1, includeExtrasCount=10,
-                                                                 includeOnDeck=1)
+        self.show_ = self.show_.reload(includeExtras=1, includeExtrasCount=10, includeOnDeck=1)
         if watched:
             self.wl_auto_remove(self.show_)
             self.checkIsWatchlisted(self.show_)
@@ -2382,8 +2394,14 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # needed, so this updates right alongside the immediate clear in checkForHeaderFocus() -
         # same timing as that clear, not gated behind the Roles/Extras debounce.
         if mli.getProperty("is.season.card"):
-            self.setProperty('extras.header', u'{0} • {1}'.format(
-                T(32305, 'Extras'), T(32303, 'Season').format(self.season.index)))
+            if self.season is self.show_:
+                # skipChildren show (reset()'s own comment) - self.season is the show itself, not a
+                # real season, so there's no season number to name here - just "Extras", matching
+                # the show-flavored title/extras the season card already displays for these.
+                self.setProperty('extras.header', T(32305, 'Extras'))
+            else:
+                self.setProperty('extras.header', u'{0} • {1}'.format(
+                    T(32305, 'Extras'), T(32303, 'Season').format(self.season.index)))
         else:
             self.setProperty('extras.header', u'{0} • {1}'.format(
                 T(32305, 'Extras'), T(32304, 'Episode').format(mli.dataSource.index)))
