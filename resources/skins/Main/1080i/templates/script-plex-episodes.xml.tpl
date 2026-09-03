@@ -1027,7 +1027,16 @@
             <visible>Integer.IsGreater(Container(402).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
             <defaultcontrol>402</defaultcontrol>
             <width>1920</width>
-            <height>{{ vscale(400) }}</height>
+            <!-- 420, not 400: the grouplist (id 60) stacks siblings purely by this declared height, and
+                 Extras' own label (group 503 below) picked up the same -20 posy this group's label
+                 already used, so that it lands at the same height as this one when Roles is hidden and
+                 Extras ends up first in the stack. That shift also pulled Extras' group start 20px closer
+                 when Roles IS visible though (unwanted, live-reported) - this group's own label sits at a
+                 fixed offset from its own top regardless of its declared height, so growing this by the
+                 same 20 pushes Extras back down to its original spacing there without moving anything
+                 about Roles' own layout (a plain group's declared height is informational for stacking,
+                 not a clip). -->
+            <height>{{ vscale(420) }}</height>
             <control type="label">
                 <!-- posx=53, not 60: lands at absolute x=113 (group 50's own posx=60 + this 53), matching
                      the episode row/header block's shared baseline above rather than Seasons' own raw
@@ -1210,9 +1219,14 @@
             <width>1920</width>
             <control type="label">
                 <!-- posx=53, style FFE9E6E7/no uppercase - matches Seasons' own Extras label style, but
-                     lands at x=113 not Seasons' own x=115 (see the Roles label's own comment above). -->
+                     lands at x=113 not Seasons' own x=115 (see the Roles label's own comment above).
+                     posy=-20, not 0: matches Roles' own label offset (group 502 above) - the grouplist
+                     (id 60) skips a hidden Roles entirely and reflows Extras up to take its place, but
+                     that only levels the two groups' own tops, not each label's own position within its
+                     group. Without matching this offset, Extras' label landed 20px lower than Roles' own
+                     would have sat, whenever Roles is empty and Extras ends up first in the stack. -->
                 <posx>53</posx>
-                <posy>0</posy>
+                <posy>{{ vscale(-20) }}</posy>
                 <width>800</width>
                 <height>{{ vscale(80) }}</height>
                 <font>font12</font>

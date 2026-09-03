@@ -1925,7 +1925,18 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             # instant that it reads as "wrong data for this episode" rather than "still loading".
             self.rolesListControl.reset()
             self.extraListControl.reset()
-            self.updateExtrasHeader(mli)
+            # updateExtrasHeader() itself moved to _fillRowData() below, alongside fillExtras() -
+            # live-confirmed bug calling it immediately here instead: the header text (an
+            # Window property, always visible) updated the instant focus moved, but whether this
+            # episode actually HAS extras isn't known yet - fillExtras() below still has to fetch
+            # that per-episode (ds.fetchExternalExtras()), debounced same as fillRoles(). The
+            # section's own visibility is correctly gated on Container(403).NumItems>0, not on this
+            # text, so an extras-less episode still ended up hidden once the debounce settled - but
+            # not before the label itself briefly flashed "Extras • Episode N" first, since nothing
+            # else about updating this particular property is gated on the list actually having
+            # anything in it. Deferring the text to update alongside the real fill instead costs
+            # nothing: while the section is hidden (NumItems==0, true immediately thanks to the
+            # reset above) a stale label underneath it is invisible regardless of its timing.
             self.scheduleRowDataUpdate(immediate=initial)
 
         if action in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_PAGE_UP):
@@ -1992,6 +2003,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             # closing) has already moved lastItem on
             return
 
+        self.updateExtrasHeader(mli)
         self.fillRoles()
         self.fillExtras()
 
@@ -2028,7 +2040,13 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             item.setProperty('watched', item.dataSource.isFullyWatched and '1' or '')
             self.setProgress(item)
             item.setProperty('progress', util.getProgressImage(item.dataSource))
-            (self.season or self.show_).reload()
+            # **VIDEO_RELOAD_KW (includeExtras among them), not a bare reload() - pre-existing bug,
+            # unrelated to tonight's skipChildren work: fillSeasonCardExtras()'s own comment states
+            # self.season/self.show_ is "never independently re-reloaded afterward without
+            # [includeExtras]" as its whole reason for not needing its own fetch - this call broke
+            # that assumption, live-confirmed as the season card's Extras row going blank after
+            # toggling any episode's watched state (any show, not just skipChildren ones).
+            (self.season or self.show_).reload(**VIDEO_RELOAD_KW)
 
             if self.noRatings:
                 self.populateRatings(item.dataSource, item, hide_ratings=self.hideSpoilers(item.dataSource))
@@ -2312,6 +2330,18 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.currentItemLoaded = True
             self.lastItem = cur_mli
             self.setBoolProperty('current_item.loaded', True)
+            # Live-confirmed follow-up bug from setting self.lastItem here: checkForHeaderFocus()'s
+            # own season-card branch only calls updateExtrasHeader() when mli != self.lastItem -
+            # already true by the time its own initial=True call runs (postSetup(), right after
+            # _setup() which is what calls reloadItems(), this method), so that branch always found
+            # them equal and skipped on a genuine cold start landing on the season card, leaving
+            # updateProperties()'s raw "Extras" placeholder in place instead of a real computed
+            # value - correct-looking by coincidence for a skipChildren show (no season to name),
+            # wrong for a real one (missing "• Season N" until the user moved off and back, at
+            # which point self.lastItem no longer matched and it finally computed a real value).
+            # fillSeasonCardExtras()/fillRoles() don't have the same gap - _setup()'s own
+            # batch_simple() call already fills those independently of this branch.
+            self.updateExtrasHeader(cur_mli)
         else:
             util.LOG("Episodes: There's no current item to be loaded, something's wrong.")
 
