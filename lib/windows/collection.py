@@ -53,6 +53,43 @@ class BoundedGridPaginator(pagination.MCLPaginator):
     def prepareListItem(self, data, mli):
         self.parentWindow.setWatchedInfo(data, mli)
 
+    def jumpToPosition(self, pos):
+        """Load and select whichever page contains absolute position `pos` directly - for
+        BoundedGridWindow._selectInitialItem() restoring a position beyond the initial page (see
+        its own docstring). Unlike nextPage()/initialPage() (built for boundary-sentinel-triggered
+        sliding, one page-worth at a time in a known direction inferred from self._direction),
+        this targets an arbitrary absolute index in one fetch, centered so ordinary left/right
+        scrolling from the restored position works normally afterward either way.
+
+        Returns True if it positioned the control on a real item, False if `pos` is out of range
+        or the fetch came back empty - the caller should fall back to its own default then."""
+        if not (0 <= pos < self.leafCount):
+            return False
+
+        amount = self.pageSize + self.orphans
+        offset = max(0, pos - amount // 2)
+        if offset + amount > self.leafCount:
+            offset = max(0, self.leafCount - amount)
+
+        self.offset = offset
+        self._direction = None
+        data = self.getData(offset, amount)
+        if not data:
+            return False
+
+        self._lastAmount = self._currentAmount
+        self._currentAmount = len(data)
+        self.populate(data)
+
+        # A left-boundary sentinel occupies control index 0 whenever this page doesn't start at
+        # the real beginning of the list (moreLeft, populate()'s own condition) - same "+1" shift
+        # MCLPaginator.selectItem()'s own "left" branch (pagination.py) accounts for.
+        relative = pos - offset + (1 if offset > 0 else 0)
+        if not (0 <= relative < self.control.size()):
+            return False
+        self.control.selectItem(relative)
+        return True
+
 
 class CollectionPaginator(BoundedGridPaginator):
     def getData(self, offset, amount):
@@ -106,6 +143,14 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         self.initialized = False
         self.lastItem = None
         self.lastFocusID = None
+
+        # library.py's LibraryWindow._captureHostedShellRestoreState()/popBack() thread this
+        # through when reconstructing this shell for a Back landing back on it, so setup() can
+        # restore the item that was focused when a chain left here, instead of always defaulting
+        # to item 0 (_selectInitialItem() below). None on every other, non-restoring construction
+        # (a genuine fresh entry, or a forward swap to a different shell) - same as no kwarg
+        # passed at all.
+        self._restoreItemPos = kwargs.get('_restoreItemPos')
 
     def onFirstInit(self):
         self.gridControl = kodigui.ManagedControlList(self, self.GRID_ID, 5)
@@ -259,6 +304,34 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
             self.openWindow(preplay.PrePlayWindow, video=data, parent_list=self.gridControl,
                             **extra_kwargs)
 
+    def _selectInitialItem(self):
+        """Shared tail of both CollectionWindow.setup() and SubDirWindow.setup(), called right
+        after self.paginator.paginate()'s initial-page load: selects self._restoreItemPos
+        (an *absolute* list position - library.py's _captureHostedShellRestoreState()) when
+        there's a valid one pending, otherwise item 0 - the plain, always-item-0 behavior both had
+        before this existed.
+
+        self.paginator._currentAmount (set by the paginate() call that always immediately
+        precedes this) is the real item count on the just-loaded initial page (offset always 0
+        here, so a control-relative index and an absolute one are the same thing), excluding the
+        right-boundary sentinel MLI populate() may have appended - selecting that sentinel instead
+        of a real item would be a real, if harmless-looking, bug (it's a focusable `is.boundary`
+        item, not the grid item the position was actually captured against).
+
+        A position beyond that initial page (live-reported, 2026-09-03: "put back to item 0" for
+        anything only reached by scrolling the paginator further) falls to
+        BoundedGridPaginator.jumpToPosition() instead - a direct, one-fetch jump to whichever page
+        actually contains it, rather than the cheap in-page select above. Only once *that* also
+        fails (position no longer exists at all, e.g. the collection changed) does this fall back
+        to item 0, same as always."""
+        pos = self._restoreItemPos
+        if pos is not None and 0 <= pos < self.paginator._currentAmount:
+            self.gridControl.selectItem(pos)
+        elif pos is not None and self.paginator.jumpToPosition(pos):
+            pass
+        else:
+            self.gridControl.selectItem(0)
+
     def openDirectory(self, data, extra_kwargs):
         """Hook: only SubDirWindow (see its own override below) needs to open a further subfolder -
         a CollectionWindow's own members should never themselves be plain directories. Left as a
@@ -397,7 +470,7 @@ class CollectionWindow(BoundedGridWindow):
 
         self.paginator = CollectionPaginator(self.gridControl, parent_window=self, leaf_count=leafCount)
         self.paginator.paginate()
-        self.gridControl.selectItem(0)
+        self._selectInitialItem()
         # Explicit, not relied on via XML <defaultcontrol> - default.xml.tpl's own window-level
         # defaultcontrol (default.xml.tpl:12, the header Home button) wins over a nested one
         # declared on a content group, same reason episodes.py's own template has an abandoned,
@@ -448,7 +521,7 @@ class SubDirWindow(BoundedGridWindow):
 
         self.paginator = SubDirPaginator(self.gridControl, parent_window=self, leaf_count=leafCount)
         self.paginator.paginate()
-        self.gridControl.selectItem(0)
+        self._selectInitialItem()
         # Same explicit-focus requirement as CollectionWindow.setup() - see its own comment for why
         # the XML <defaultcontrol> alone doesn't reliably win initial window focus here.
         self.setFocusId(self.GRID_ID)

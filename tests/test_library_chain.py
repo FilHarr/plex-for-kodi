@@ -32,7 +32,7 @@ from kodi_six import xbmcgui
 from kodienv import ENV
 
 ENV.abort_requested = True
-from lib.windows import library  # noqa: E402
+from lib.windows import collection, library  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
@@ -144,6 +144,20 @@ class FakeHostWindow(object):
     swapToSection = library.LibraryWindow.swapToSection
     _deferOpenSection = library.LibraryWindow._deferOpenSection
 
+    def _captureRootRestoreState(self):
+        # Real LibraryWindow._captureRootRestoreState() reads contentMode/showPanelControl/
+        # visibleHubs, none of which this minimal double carries - stubbed to the "nothing
+        # identifiable" no-op result every real caller already treats as safe. Restore-position
+        # behavior itself is covered directly against the real LibraryWindow method elsewhere.
+        return {}
+
+    def _captureHostedShellRestoreState(self):
+        # Real LibraryWindow._captureHostedShellRestoreState() does an isinstance() check against
+        # collection.BoundedGridWindow that FakeShell/OtherFakeShell (this double's own stand-ins
+        # for "some real shell") deliberately aren't - stubbed to the same no-op result the real
+        # method already returns for every non-BoundedGridWindow shell.
+        return {}
+
     def __init__(self):
         self._current = None
         self._next = None
@@ -179,6 +193,14 @@ class FakeHostWindow(object):
     def onCloseSignal(self, *args, **kwargs):
         self.onCloseSignalCalls.append((args, kwargs))
 
+    def dismissSidebarPopupOnBack(self, target=None):
+        # Real windowutils.SidebarMixin.dismissSidebarPopupOnBack() - stubbed to "no popup showing"
+        # (its own real no-op return), the OnActionTest tests below aren't exercising this.
+        return False
+
+    def _sidebarTarget(self):
+        return None
+
     def onAction(self, action):
         # Never exercised as real dispatch logic here - _setupCurrent() only needs *some* bound
         # callable on the host to capture-and-forward onto the hosted shell. OnActionTest below
@@ -210,6 +232,12 @@ swapToSection = library.LibraryWindow.swapToSection
 switchTab = library.LibraryWindow.switchTab
 switchToCollections = library.LibraryWindow.switchToCollections
 onAction = library.LibraryWindow.onAction
+_captureRootRestoreState = library.LibraryWindow._captureRootRestoreState
+_consumeRestoreItemPos = library.LibraryWindow._consumeRestoreItemPos
+_captureHostedShellRestoreState = library.LibraryWindow._captureHostedShellRestoreState
+_extendHubToPosition = library.LibraryWindow._extendHubToPosition
+_ensureHubReselectReach = library.LibraryWindow._ensureHubReselectReach
+onFocus = library.LibraryWindow.onFocus
 
 
 class IsRealShellTest(KodiTestCase):
@@ -441,6 +469,229 @@ class SwapToAndBackStackTest(KodiTestCase):
         popBack(host)
         self.assertEqual([], host._backStack)
         self.assertEqual(1, len(host.openSectionCalls))
+
+    def test_pop_back_on_a_root_restore_entry_strips_restore_kwargs_into_pending_state(self):
+        """_restoreItemPos/_restoreHubId (_captureRootRestoreState()) aren't real openSection()
+        kwargs - popBack() must peel them off into self._pendingRestore*/hand openSection() only
+        section/filter_, so a stale/unexpected kwarg doesn't reach it directly."""
+        host = FakeHostWindow()
+        host._backStack = [(None, {'section': 'the-section', 'filter_': 'the-filter',
+                                    '_restoreItemPos': 5, '_restoreHubId': 'hub-x'})]
+        _setupCurrent(host, FakeShell)
+
+        popBack(host)
+
+        self.assertEqual(5, host._pendingRestoreItemPos)
+        self.assertEqual('hub-x', host._pendingRestoreHubId)
+        self.assertEqual([((), {'force': True, 'section': 'the-section', 'filter_': 'the-filter'})],
+                          host.openSectionCalls)
+
+    def test_pop_back_on_a_root_restore_entry_without_restore_kwargs_clears_pending_state(self):
+        host = FakeHostWindow()
+        host._backStack = [(None, {'section': 'the-section', 'filter_': 'the-filter'})]
+        _setupCurrent(host, FakeShell)
+
+        popBack(host)
+
+        self.assertIsNone(host._pendingRestoreItemPos)
+        self.assertIsNone(host._pendingRestoreHubId)
+
+
+class CaptureRootRestoreStateTest(KodiTestCase):
+    """LibraryWindow._captureRootRestoreState() - what swapTo()/swapToSection() merge into a
+    fresh (None, {...}) root-restore _backStack entry so popBack() can land back on whichever
+    grid item or hub row was actually focused, instead of always resetting to item 0 / hub 0."""
+
+    class _Bag(object):
+        """Plain attribute holder - _captureRootRestoreState() only ever reads attributes off
+        self, no methods, so this is enough of a double without a full LibraryWindow."""
+
+    class _FakePanelItem(object):
+        def __init__(self, pos):
+            self._pos = pos
+
+        def pos(self):
+            return self._pos
+
+    class _FakeShowPanelControl(object):
+        def __init__(self, selected=None):
+            self.selected = selected
+
+        def getSelectedItem(self):
+            return self.selected
+
+    class _FakeHub(object):
+        def __init__(self, identifier):
+            self.identifier = identifier
+
+        def getCleanHubIdentifier(self, is_home=False):
+            return self.identifier
+
+    class _FakeSection(object):
+        def __init__(self, key=None):
+            self.key = key
+
+    def test_library_mode_captures_the_selected_grid_item_position(self):
+        host = self._Bag()
+        host.contentMode = 'library'
+        host.showPanelControl = self._FakeShowPanelControl(self._FakePanelItem(17))
+
+        self.assertEqual({'_restoreItemPos': 17}, _captureRootRestoreState(host))
+
+    def test_library_mode_with_no_selected_item_is_a_no_op(self):
+        host = self._Bag()
+        host.contentMode = 'library'
+        host.showPanelControl = self._FakeShowPanelControl(None)
+
+        self.assertEqual({}, _captureRootRestoreState(host))
+
+    def test_library_mode_with_no_panel_control_yet_is_a_no_op(self):
+        host = self._Bag()
+        host.contentMode = 'library'
+        host.showPanelControl = None
+
+        self.assertEqual({}, _captureRootRestoreState(host))
+
+    def test_recommended_mode_captures_the_focused_hubs_identifier(self):
+        host = self._Bag()
+        host.contentMode = 'recommended'
+        host.visibleHubs = [self._FakeHub('hub-a'), self._FakeHub('hub-b')]
+        host.focusedHubIndex = 1
+        host.section = self._FakeSection(key='1')
+
+        self.assertEqual({'_restoreHubId': 'hub-b'}, _captureRootRestoreState(host))
+
+    def test_recommended_mode_with_no_visible_hubs_is_a_no_op(self):
+        host = self._Bag()
+        host.contentMode = 'recommended'
+        host.visibleHubs = []
+        host.focusedHubIndex = 0
+        host.section = self._FakeSection(key='1')
+
+        self.assertEqual({}, _captureRootRestoreState(host))
+
+
+class ConsumeRestoreItemPosTest(KodiTestCase):
+    """LibraryWindow._consumeRestoreItemPos() - the fillShows()/fillPlaylists()/fillPhotos() end
+    of the same mechanism: one-shot read-and-clear of self._pendingRestoreItemPos, clamped to the
+    freshly loaded item count."""
+
+    class _Bag(object):
+        pass
+
+    def test_returns_the_pending_position_when_in_range(self):
+        host = self._Bag()
+        host._pendingRestoreItemPos = 3
+
+        self.assertEqual(3, _consumeRestoreItemPos(host, 10))
+        self.assertIsNone(host._pendingRestoreItemPos)
+
+    def test_falls_back_to_zero_when_out_of_range(self):
+        host = self._Bag()
+        host._pendingRestoreItemPos = 99
+
+        self.assertEqual(0, _consumeRestoreItemPos(host, 10))
+        self.assertIsNone(host._pendingRestoreItemPos)
+
+    def test_falls_back_to_zero_when_nothing_pending(self):
+        host = self._Bag()
+        host._pendingRestoreItemPos = None
+
+        self.assertEqual(0, _consumeRestoreItemPos(host, 10))
+
+
+class CaptureHostedShellRestoreStateTest(KodiTestCase):
+    """LibraryWindow._captureHostedShellRestoreState() - the counterpart to
+    _captureRootRestoreState() for a hosted real shell with its own grid concept
+    (collection.py's CollectionWindow/SubDirWindow specifically - live-reported (2026-09-03) as
+    never restoring focus at all before this existed, then live-reported again the same day: a
+    position only reached by scrolling the paginator past its initial page still fell back to item
+    0, because this method used to no-op entirely once offset != 0). Captures an *absolute* list
+    position now, regardless of paginator offset - see the real method's own docstring for the
+    offset-shift math, and collection.py's BoundedGridPaginator.jumpToPosition()/
+    _selectInitialItem() for the consuming side."""
+
+    class _Bag(object):
+        pass
+
+    class _FakePanelItem(object):
+        def __init__(self, pos, is_boundary=False):
+            self._pos = pos
+            self._is_boundary = is_boundary
+
+        def pos(self):
+            return self._pos
+
+        def getProperty(self, key):
+            if key == 'is.boundary':
+                return '1' if self._is_boundary else ''
+            return ''
+
+    class _FakeGridControl(object):
+        def __init__(self, selected=None):
+            self.selected = selected
+
+        def getSelectedItem(self):
+            return self.selected
+
+    @staticmethod
+    def _fakeBoundedGridWindow(offset, selected=None):
+        # object.__new__(), not CollectionWindow(...) - a real construction needs a genuine
+        # xbmcgui.WindowXML underneath (xmlFile/path/theme/res, native control binding), well
+        # beyond what this unit deliberately touches. This is enough for the isinstance() check
+        # _captureHostedShellRestoreState() does, with only the two attributes it actually reads
+        # set directly.
+        inst = object.__new__(collection.CollectionWindow)
+        inst.paginator = CaptureHostedShellRestoreStateTest._Bag()
+        inst.paginator.offset = offset
+        inst.gridControl = CaptureHostedShellRestoreStateTest._FakeGridControl(selected)
+        return inst
+
+    def test_captures_the_selected_items_position_on_the_initial_page(self):
+        host = self._Bag()
+        host._current = self._fakeBoundedGridWindow(offset=0, selected=self._FakePanelItem(9))
+
+        self.assertEqual({'_restoreItemPos': 9}, _captureHostedShellRestoreState(host))
+
+    def test_captures_an_absolute_position_once_scrolled_past_the_initial_page(self):
+        """offset=60, control-relative index 5 - index 0 on this page is the left-boundary
+        sentinel (any page that doesn't start at the real beginning of the list has one), so the
+        5th control slot is the page's 4th real item: absolute position 60 + (5 - 1) = 64, not the
+        raw control-relative 5."""
+        host = self._Bag()
+        host._current = self._fakeBoundedGridWindow(offset=60, selected=self._FakePanelItem(5))
+
+        self.assertEqual({'_restoreItemPos': 64}, _captureHostedShellRestoreState(host))
+
+    def test_shifts_for_the_left_boundary_sentinel_once_past_the_initial_page(self):
+        """offset=60, control-relative index 1 (index 0 is the left-boundary sentinel on any page
+        that doesn't start at the real beginning of the list) - real position is 60 + (1-1) = 60,
+        the page's own first real item."""
+        host = self._Bag()
+        host._current = self._fakeBoundedGridWindow(offset=60, selected=self._FakePanelItem(1))
+
+        self.assertEqual({'_restoreItemPos': 60}, _captureHostedShellRestoreState(host))
+
+    def test_no_op_when_the_selected_item_is_the_boundary_sentinel_itself(self):
+        host = self._Bag()
+        host._current = self._fakeBoundedGridWindow(
+            offset=60, selected=self._FakePanelItem(0, is_boundary=True))
+
+        self.assertEqual({}, _captureHostedShellRestoreState(host))
+
+    def test_no_op_with_no_selected_item(self):
+        host = self._Bag()
+        host._current = self._fakeBoundedGridWindow(offset=0, selected=None)
+
+        self.assertEqual({}, _captureHostedShellRestoreState(host))
+
+    def test_no_op_for_a_shell_thats_not_a_bounded_grid_window(self):
+        """PrePlayWindow/EpisodesWindow/ShowWindow/... - every other real shell - deliberately
+        out of scope (see the real method's own docstring)."""
+        host = self._Bag()
+        host._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
+
+        self.assertEqual({}, _captureHostedShellRestoreState(host))
 
 
 class SwapToSectionTest(KodiTestCase):
@@ -810,6 +1061,11 @@ class OnActionTest(KodiTestCase):
         host = FakeHostWindow()
         host._shuttingDown = False
         host._goRootHoldUntil = 0
+        # contentMode == 'recommended' (not 'library'): short-circuits the grid "snap to item 0
+        # first" check just above the branch under test here without needing self.getFocusId()/
+        # self.POSTERS_PANEL_ID (neither of which this minimal fake defines) - that check's own
+        # guard is covered directly by the hosted-shell test below instead.
+        host.contentMode = 'recommended'
         host._backStack = [(FakeShell, {})]
         popCalls = []
         host.popBack = lambda: popCalls.append(True)
@@ -825,8 +1081,46 @@ class OnActionTest(KodiTestCase):
         self.assertEqual([], popCalls, "popBack() must not run inline, only once the timer fires")
         self.assertEqual(1, len(FakeTimer.instances))
         timer = FakeTimer.instances[0]
-        self.assertEqual(host.popBack, timer.function)
         self.assertTrue(timer.started)
+        # Not host.popBack directly - onAction() wraps it in its own try/except closure
+        # (_popBack(), see its comment there) so a timer callback exception doesn't vanish
+        # silently. Calling the real captured function proves it still actually reaches
+        # host.popBack(), same intent the old direct-identity check had.
+        timer.function()
+        self.assertEqual([True], popCalls)
+
+    def test_navback_with_a_hosted_shell_does_not_touch_grid_specific_attributes(self):
+        """Regression guard for a real live bug (2026-09-03): the grid "snap to item 0 first"
+        Back handling (onAction(), immediately above the chain-pop branch covered by the test
+        above) must short-circuit on `not self._isHostedShell` before touching
+        self.contentMode/self.getFocusId()/self.POSTERS_PANEL_ID - none of which a real
+        shell-hosting LibraryWindow actually has as its own attributes (they resolve via
+        MultiWindow.__getattr__ delegation to self._current, and a real shell like PrePlayWindow
+        doesn't define POSTERS_PANEL_ID at all). Without the guard this raised a bare
+        AttributeError on every single Back press while any shell was hosted - Back appeared to
+        just stop doing anything after opening an item from a grid. FakeHostWindow deliberately
+        doesn't define contentMode (see module docstring), so a regressed guard fails this test
+        with that same AttributeError instead of silently passing."""
+        host = FakeHostWindow()
+        host._shuttingDown = False
+        host._goRootHoldUntil = 0
+        host._isHostedShell = True
+        host._backStack = [(FakeShell, {})]
+        popCalls = []
+        host.popBack = lambda: popCalls.append(True)
+
+        FakeTimer.instances = []
+        originalTimer = library.threading.Timer
+        library.threading.Timer = FakeTimer
+        try:
+            onAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
+        finally:
+            library.threading.Timer = originalTimer
+
+        # Same expected outcome as the test above (defers to popBack() via a timer) - what this
+        # test actually guards is that the grid check above it didn't raise first.
+        self.assertEqual([], popCalls)
+        self.assertEqual(1, len(FakeTimer.instances))
 
     def test_navback_with_an_empty_backstack_falls_through_unmodified(self):
         """Regression guard for the "empty stack means never chained" contract: swapTo() always
@@ -864,3 +1158,252 @@ class OnActionTest(KodiTestCase):
         onAction(host, action)
 
         self.assertEqual([action], dispatchCalls)
+
+
+class _FakeHubValue(object):
+    """Stands in for a PlexValue - real Hub.offset/size/more (plexlibrary.py) are all this
+    shape, read via .asInt()/.asBool()."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def asInt(self):
+        return int(self._value)
+
+    def asBool(self):
+        return bool(self._value)
+
+
+class _FakeExtendableHub(object):
+    """A hub double carrying only what LibraryWindow._extendHubToPosition() (the real, unbound
+    method under test below - it never touches self, only its hub/pos arguments) actually reads
+    or calls."""
+
+    def __init__(self, offset, size, items, more=True, extend_returns=(), extend_raises=False):
+        self.offset = _FakeHubValue(offset)
+        self.size = _FakeHubValue(size)
+        self.items = list(items)
+        self.more = _FakeHubValue(more)
+        self._extend_returns = list(extend_returns)
+        self._extend_raises = extend_raises
+        self.extendCalls = []
+
+    def extend(self, start=None, size=None):
+        self.extendCalls.append((start, size))
+        if self._extend_raises:
+            raise RuntimeError("simulated request failure")
+        return self._extend_returns
+
+
+class ExtendHubToPositionTest(KodiTestCase):
+    """LibraryWindow._extendHubToPosition() - the one-shot fetch _bindHubToControl() uses to close
+    a reselect-position gap before binding (live-reported, 2026-09-03): a hub row item only
+    reached last visit via ExtendHubTask's own load-more pagination couldn't be restored on Back,
+    because a fresh 'recommended' entry always re-fetches brand-new Hub objects starting back at
+    their first page. Fetches the deficit *plus* HUB_ROW_SELECT_OVERCOMMIT in one request - not
+    home.ExtendHubTask's usual HUB_PAGE_SIZE=10-at-a-time walk (would otherwise need several round
+    trips for a position this deep), and not just the bare deficit either (live-reported,
+    2026-09-04: fetching exactly enough to cover the target position left it as hub.items' own
+    last real item, so _bindHubToControl()'s "select ahead, then back" scroll-in trick had nothing
+    real to select ahead onto and landed on the is.end placeholder instead)."""
+
+    class _Host(object):
+        """self is only ever read for HUB_ROW_SELECT_OVERCOMMIT - a real LibraryWindow class
+        attribute (2, library.py), not delegated/instance state, so a plain stand-in is enough."""
+        HUB_ROW_SELECT_OVERCOMMIT = 2
+
+    def test_fetches_the_deficit_plus_overcommit_and_appends_it(self):
+        """offset=0, size=10 (10 items already held), target position 24 - needs items
+        10..24+HUB_ROW_SELECT_OVERCOMMIT(2)=26, i.e. 17 more, not just the bare 15-item deficit to
+        24 alone, and not just one more HUB_PAGE_SIZE=10 page."""
+        hub = _FakeExtendableHub(offset=0, size=10, items=list(range(10)),
+                                  extend_returns=list(range(10, 27)))
+
+        _extendHubToPosition(self._Host(), hub, 24)
+
+        self.assertEqual([(10, 17)], hub.extendCalls)
+        self.assertEqual(list(range(27)), hub.items)
+
+    def test_no_op_when_hub_reports_no_more_content(self):
+        hub = _FakeExtendableHub(offset=0, size=10, items=list(range(10)), more=False)
+
+        _extendHubToPosition(self._Host(), hub, 24)
+
+        self.assertEqual([], hub.extendCalls)
+        self.assertEqual(list(range(10)), hub.items)
+
+    def test_no_op_when_the_position_and_its_overcommit_buffer_are_already_covered(self):
+        """Shouldn't happen given _bindHubToControl()'s own pre-check (pos >= len(hub.items)) -
+        covered directly anyway as a safety net against a negative/zero-size fetch."""
+        hub = _FakeExtendableHub(offset=0, size=10, items=list(range(10)))
+
+        _extendHubToPosition(self._Host(), hub, 5)
+
+        self.assertEqual([], hub.extendCalls)
+
+    def test_swallows_a_request_failure_and_leaves_items_unchanged(self):
+        """Best-effort enhancement to an already-working fallback (item 0) - a network/server
+        error here must not raise out of _bindHubToControl()'s own bind."""
+        hub = _FakeExtendableHub(offset=0, size=10, items=list(range(10)), extend_raises=True)
+
+        _extendHubToPosition(self._Host(), hub, 24)  # must not raise
+
+        self.assertEqual(list(range(10)), hub.items)
+
+    def test_an_empty_result_leaves_items_unchanged(self):
+        """The server can legitimately return nothing (e.g. hub.more lied, or content changed
+        between fetches) - must not append a falsy result."""
+        hub = _FakeExtendableHub(offset=0, size=10, items=list(range(10)), extend_returns=[])
+
+        _extendHubToPosition(self._Host(), hub, 24)
+
+        self.assertEqual(list(range(10)), hub.items)
+
+    def test_starts_from_the_hubs_own_offset_plus_size_not_len_items(self):
+        """start = hub.offset + hub.size (home.ExtendHubTask's own formula, mirrored exactly) -
+        not len(hub.items), in case the two have ever diverged."""
+        hub = _FakeExtendableHub(offset=5, size=10, items=list(range(20)),
+                                  extend_returns=list(range(15, 27)))
+
+        _extendHubToPosition(self._Host(), hub, 24)
+
+        self.assertEqual([(15, 12)], hub.extendCalls)
+
+
+class _FakeHubItem(object):
+    def __init__(self, rating_key):
+        self.ratingKey = rating_key
+
+
+class _FakeHubWithItems(object):
+    def __init__(self, items):
+        self.items = items
+
+
+class EnsureHubReselectReachTest(KodiTestCase):
+    """LibraryWindow._ensureHubReselectReach() - the shared gap-check both _previewSelectedItem()
+    (hero art/info preview) and _bindHubToControl() (the row's own item binding) use before
+    reading self._hubReselectPositions for real, so both agree on whether hub.items needs
+    extending first (live-reported, 2026-09-04: without sharing this, the hero panel showed the
+    wrong (first) item's info while the row itself correctly showed the restored one).
+    _extendHubToPosition() itself is stubbed here to isolate this method's own trigger logic from
+    that method's own fetch math (ExtendHubToPositionTest, above)."""
+
+    class _Bag(object):
+        def __init__(self):
+            self._hubReselectPositions = {}
+            self.extendCalls = []
+
+        def _extendHubToPosition(self, hub, pos):
+            self.extendCalls.append((hub, pos))
+
+    def test_extends_when_position_is_beyond_hub_items_and_ratingkey_not_present(self):
+        host = self._Bag()
+        host._hubReselectPositions['hub-a'] = ('999', 15)
+        hub = _FakeHubWithItems([_FakeHubItem('1'), _FakeHubItem('2')])
+
+        _ensureHubReselectReach(host, hub, 'hub-a')
+
+        self.assertEqual([(hub, 15)], host.extendCalls)
+
+    def test_no_op_when_ratingkey_already_present_even_if_pos_is_out_of_range(self):
+        host = self._Bag()
+        host._hubReselectPositions['hub-a'] = ('2', 15)
+        hub = _FakeHubWithItems([_FakeHubItem('1'), _FakeHubItem('2')])
+
+        _ensureHubReselectReach(host, hub, 'hub-a')
+
+        self.assertEqual([], host.extendCalls)
+
+    def test_no_op_when_position_is_already_within_range(self):
+        host = self._Bag()
+        host._hubReselectPositions['hub-a'] = ('999', 1)
+        hub = _FakeHubWithItems([_FakeHubItem('1'), _FakeHubItem('2')])
+
+        _ensureHubReselectReach(host, hub, 'hub-a')
+
+        self.assertEqual([], host.extendCalls)
+
+    def test_no_op_when_nothing_remembered_for_this_hub(self):
+        host = self._Bag()
+        hub = _FakeHubWithItems([_FakeHubItem('1')])
+
+        _ensureHubReselectReach(host, hub, 'hub-a')
+
+        self.assertEqual([], host.extendCalls)
+
+    def test_no_op_when_remembered_position_is_none(self):
+        """A ratingKey-only reselect entry (pos=None) - _extendHubToPosition() itself couldn't
+        act on a None position anyway (needs pos+1 to compute a fetch size)."""
+        host = self._Bag()
+        host._hubReselectPositions['hub-a'] = ('999', None)
+        hub = _FakeHubWithItems([_FakeHubItem('1')])
+
+        _ensureHubReselectReach(host, hub, 'hub-a')
+
+        self.assertEqual([], host.extendCalls)
+
+
+class _FakeOnFocusHost(object):
+    """A hand-built double carrying only what LibraryWindow.onFocus() (the real, unbound method
+    under test below) actually touches for a 'recommended'-mode, non-SECTION_LIST_ID focus event -
+    contentMode == 'recommended' returns early (library.py:3546-3551) right after the
+    _hubJustEnteredFromOutside computation and the SECTION_LIST_ID branch (never taken here, its
+    own attributes never read - see that branch's short-circuit), so nothing past that point
+    (KEY_LIST_ID/selectKey()) needs a stand-in."""
+
+    SECTION_LIST_ID = 900  # any value distinct from the hub control ids used below
+
+    def __init__(self, last_focus_id):
+        self.contentMode = 'recommended'
+        self.lastFocusID = last_focus_id
+        self._hubJustEnteredFromOutside = False
+        self._goRootHoldUntil = 0
+        self.reselectActiveSectionCalls = []
+
+    def reselectActiveSection(self, control_id, last_focus_id):
+        self.reselectActiveSectionCalls.append((control_id, last_focus_id))
+
+
+class OnFocusHubEntryFlagTest(KodiTestCase):
+    """LibraryWindow.onFocus()'s _hubJustEnteredFromOutside detector (library.py:3495-3520) - live-
+    reported regression (2026-09-04) from onFirstInit()'s 'recommended' branch forcing focus onto
+    the anchor hub control on every fresh entry (the focus-ring fix from earlier the same day):
+    that setFocusId() call fires a real onFocus() the same as any other focus move, and this
+    detector couldn't tell it apart from a genuine native cross-container arrow move (sidebar/tabs
+    -> hub row) - it read self.lastFocusID as still outside the hub range and set the flag as if a
+    duplicate native replay were coming to swallow, which then never arrived, silently eating the
+    user's next real press instead. Fixed by pre-seeding self.lastFocusID to the anchor control
+    itself right before that setFocusId() call - these tests pin the mechanism that relies on."""
+
+    ANCHOR_CONTROL_ID = 400
+
+    def test_flag_stays_false_when_last_focus_id_was_pre_seeded_to_the_anchor_itself(self):
+        """The actual fix: onFirstInit()'s 'recommended' branch sets self.lastFocusID to the
+        anchor control id immediately before calling setFocusId(anchor) - by the time onFocus()
+        for that call runs (now or later, timing doesn't matter), was_outside_hub reads False."""
+        host = _FakeOnFocusHost(last_focus_id=self.ANCHOR_CONTROL_ID)
+
+        onFocus(host, self.ANCHOR_CONTROL_ID)
+
+        self.assertFalse(host._hubJustEnteredFromOutside)
+
+    def test_flag_would_have_been_set_without_the_pre_seed(self):
+        """Contrast case, proving the fix actually matters: without pre-seeding lastFocusID (the
+        pre-fix shape - whatever native default control focus/None left it at), the exact same
+        onFocus(<hub control>) call sets the flag, which then goes on to wrongly swallow the
+        user's next real press (onAction()'s own hub-branch, library.py:2638-2660)."""
+        host = _FakeOnFocusHost(last_focus_id=None)
+
+        onFocus(host, self.ANCHOR_CONTROL_ID)
+
+        self.assertTrue(host._hubJustEnteredFromOutside)
+
+    def test_flag_stays_false_for_an_ordinary_in_hub_move(self):
+        """Not just the initial-entry case - moving between two hub controls (both already inside
+        399-500) must never set this either, the same as before any of this session's changes."""
+        host = _FakeOnFocusHost(last_focus_id=401)
+
+        onFocus(host, self.ANCHOR_CONTROL_ID)
+
+        self.assertFalse(host._hubJustEnteredFromOutside)

@@ -592,6 +592,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._nextKwargs = {}
         self._currentKwargs = {}
         self._isHostedShell = False
+        # Consumed one-shot by popBack()'s (None, {...}) branch to restore whatever grid item /
+        # hub row was focused when a chain started, instead of always landing back on item 0 /
+        # hub 0 - see _captureRootRestoreState()'s own docstring for the full picture. Set just
+        # before openSection() is called from popBack(), read (and cleared) by fillShows()/
+        # fillPlaylists() and _recommendedHubsCallback() respectively, whichever one the restored
+        # section's own contentMode actually lands on.
+        self._pendingRestoreItemPos = None
+        self._pendingRestoreHubId = None
         # Resolve to self as chain host, unconditionally - windowutils.UtilMixin.openWindow()
         # checks self._liveChainHost() to decide whether a click should swapTo() in place or
         # fall back to opener.handleOpen(); pointing this at self lets LibraryWindow's own
@@ -741,13 +749,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # "never set yet", not just "currently False", so the very first real call (True or False)
         # always actually applies rather than being wrongly treated as a no-op.
         self._lastNoHeroArt = None
-        # One-shot, ported from HomeWindow's identical flag (home.py) - consumed by
-        # onFirstInit()'s 'recommended' branch below. Without this, cold start left focus on the
-        # sidebar's Search entry (buildSectionList()'s default native list position) instead of
-        # the first hub - live-confirmed regression, HomeWindow avoided it via this exact
-        # mechanism (applyInitialHubFocus()) that never got ported when Recommended-tab sharing
-        # (Stage C/D) was built.
-        self._initialHubFocusApplied = False
         # Built once per LibraryWindow lifetime, then rebound via newControl() on every later
         # 'recommended' entry - see onFirstInit()'s own comment for why (a fresh discard-and-
         # recreate every entry, the original shape here, is the one remaining structural
@@ -1009,6 +1010,66 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         util.DEBUG_LOG("Library: _setupCurrent({0}) forced gc.collect() after real-shell teardown, "
                         "collected={1}", cls, collected)
 
+    def _captureRootRestoreState(self):
+        """Extra entries merged into the (None, {...}) root-restore _backStack entry (swapTo()/
+        swapToSection() below), so popBack() can land back on whichever grid item or hub row was
+        actually focused the moment a chain started, instead of always resetting to item 0 / the
+        first hub - live-reported as jarring on a large grid or a hub row entered partway down.
+        Best-effort: an empty dict is a safe no-op for popBack() (falls back to its existing
+        default-position behavior), used whenever nothing focused is identifiable (e.g. an empty
+        section, or hub focus not settled on a real hub yet).
+
+        Deliberately keys off self.contentMode, not which control currently has native focus -
+        this only ever runs while self is genuinely showing its own grid/hubs (the "not
+        _isHostedShell" branch in both callers), so contentMode alone is enough to know which of
+        the two restore shapes applies; no need to inspect self.getFocusId()."""
+        if self.contentMode == 'recommended':
+            if self.visibleHubs and 0 <= self.focusedHubIndex < len(self.visibleHubs):
+                hub = self.visibleHubs[self.focusedHubIndex]
+                identifier = hub.getCleanHubIdentifier(is_home=self.section.key is None)
+                return {'_restoreHubId': identifier}
+            return {}
+        if self.showPanelControl:
+            mli = self.showPanelControl.getSelectedItem()
+            if mli:
+                return {'_restoreItemPos': mli.pos()}
+        return {}
+
+    def _captureHostedShellRestoreState(self):
+        """Extra entries merged into the (ShellClass, kwargs) hosted-shell _backStack entry
+        (swapTo()/swapToSection() below), so popBack() can restore focus within a hosted shell's
+        own grid too, not just LibraryWindow's own (_captureRootRestoreState()) - live-reported as
+        never restored at all for collection.py's CollectionWindow/SubDirWindow, the two hosted
+        shells with their own grid concept.
+
+        Deliberately scoped to collection.BoundedGridWindow only - the seven real shells are
+        otherwise too structurally different from each other (PrePlayWindow/EpisodesWindow/
+        ShowWindow/ArtistWindow/GenreBrowserWindow each have their own, unrelated internal
+        state/control shape) to share one generic restore mechanism; out of scope here.
+
+        Captures the item's *absolute* position in the full list, not its raw control-relative
+        index - BoundedGridPaginator's sliding-window model (pagination.py) only ever materializes
+        a page of items around the current offset, so a control-relative index means nothing once
+        reconstructed fresh later. Control index 0 is a left-boundary sentinel, not a real item,
+        whenever this page doesn't start at the real beginning of the list (offset > 0) - skipped
+        via the same "-1" shift collection.py's own jumpToPosition() uses in reverse.
+        _selectInitialItem() (collection.py) is what actually consumes this - it can select
+        directly within the freshly (re)loaded initial page for a small absolute position, or
+        re-fetch the right page via BoundedGridPaginator.jumpToPosition() for one beyond it; falls
+        back to the shell's own existing item-0 default only if neither applies (e.g. the position
+        no longer exists at all)."""
+        current = self._current
+        if (isinstance(current, collection.BoundedGridWindow) and current.paginator is not None
+                and current.gridControl):
+            mli = current.gridControl.getSelectedItem()
+            if mli and not mli.getProperty('is.boundary'):
+                relative = mli.pos()
+                offset = current.paginator.offset
+                if offset > 0:
+                    relative -= 1
+                return {'_restoreItemPos': offset + relative}
+        return {}
+
     def swapTo(self, cls, push=True, **kwargs):
         """Swap this already-open, already-hosting LibraryWindow to one of the seven real
         descendant shell types in place - same construct-fresh-via-_open()'s-loop pattern
@@ -1017,13 +1078,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         for the two entry shapes pushed here."""
         if push and self._current is not None:
             if self._isHostedShell:
-                self._backStack.append((self._current.__class__, self._currentKwargs))
+                entryKwargs = dict(self._currentKwargs)
+                entryKwargs.update(self._captureHostedShellRestoreState())
+                self._backStack.append((self._current.__class__, entryKwargs))
             else:
                 # Genesis swap out of LibraryWindow's own grid: push root-restore state so the
                 # *last* pop of this chain reveals the grid again instead of running off the
                 # stack - this is what makes _backStack empty mean "never started a chain"
                 # unambiguously, every time.
-                self._backStack.append((None, {'section': self.section, 'filter_': self.filter}))
+                entryKwargs = {'section': self.section, 'filter_': self.filter}
+                entryKwargs.update(self._captureRootRestoreState())
+                self._backStack.append((None, entryKwargs))
         self._next = cls
         self._nextKwargs = kwargs
         self._current.doClose()
@@ -1031,6 +1096,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def popBack(self):
         cls, kwargs = self._backStack.pop()
         if cls is None:
+            # _restoreItemPos/_restoreHubId (_captureRootRestoreState()) aren't real
+            # openSection() kwargs - peel them off into the pending-restore attributes fillShows()/
+            # fillPlaylists()/_recommendedHubsCallback() each consume one-shot, whichever one this
+            # section's contentMode actually lands on.
+            kwargs = dict(kwargs)
+            self._pendingRestoreItemPos = kwargs.pop('_restoreItemPos', None)
+            self._pendingRestoreHubId = kwargs.pop('_restoreHubId', None)
             # force=True: section == self.section will be true here (root state is never
             # mutated while a shell is hosted), which openSection()'s own no-op guard would
             # otherwise decline.
@@ -1064,9 +1136,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """
         precedingBackStack = self._backStack
         if self._isHostedShell:
-            entry = (self._current.__class__, self._currentKwargs)
+            entryKwargs = dict(self._currentKwargs)
+            entryKwargs.update(self._captureHostedShellRestoreState())
+            entry = (self._current.__class__, entryKwargs)
         else:
-            entry = (None, {'section': self.section, 'filter_': self.filter})
+            entryKwargs = {'section': self.section, 'filter_': self.filter}
+            entryKwargs.update(self._captureRootRestoreState())
+            entry = (None, entryKwargs)
         self.openSection(section, filter_=filter_, force=True)
         self._backStack = precedingBackStack + [entry]
 
@@ -2050,19 +2126,44 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # shifted before the window shows instead of popping in after.
             hubsTask.run()
 
-            if not self._initialHubFocusApplied:
-                # Ported from HomeWindow.applyInitialHubFocus() (home.py) - one-time, on the very
-                # first hubs draw of this LibraryWindow instance's session: land in the first
-                # hub's first item instead of leaving focus on the sidebar's Search entry.
-                # hubsTask.run() above is synchronous/inline, so self.visibleHubs is already
-                # populated by the time this runs (or empty, if the fetch found nothing) - no
-                # callback timing to race, unlike HomeWindow's own background-thread version.
-                # Only acts if focus is still on the sidebar list (the native default this window
-                # construction starts with) - if the user already moved focus elsewhere by the
-                # time this fires, leave it alone.
-                self._initialHubFocusApplied = True
-                if self.getFocusId() == self.SECTION_LIST_ID and self.visibleHubs:
-                    self.setFocusId(self._anchorControlId())
+            # Explicitly (re-)assert focus on the anchor hub row - ported from
+            # HomeWindow.applyInitialHubFocus() (home.py), which only ever did this once, the very
+            # first hubs draw of a whole session (self._initialHubFocusApplied, guarded on
+            # self.getFocusId() == self.SECTION_LIST_ID, the native default this window
+            # construction starts with) - broadened 2026-09-04 (live-reported) to run
+            # unconditionally, every fresh 'recommended' entry, not just the first ever: this whole
+            # branch only ever runs once per freshly-constructed RecommendedWindow shell (see this
+            # method's own docstring), so there's no live user interaction between hubsTask.run()
+            # returning and here for a later entry to have raced past the way HomeWindow's own
+            # background-thread version could. A restored hub/item position
+            # (_captureHostedShellRestoreState()'s chain, or _bindHubToControl()'s own
+            # self._hubReselectPositions) gets selected via plain Python selectItem() calls, all
+            # before this window has ever painted - live-confirmed Kodi doesn't reliably render a
+            # focus ring for a pre-selected item from that alone, only once the control's focus is
+            # genuinely (re-)asserted like this does; needing an unrelated input (Kodi's own
+            # cursor-move on the very next repaint that follows) before the ring appeared was the
+            # visible symptom. Harmless when nothing needed restoring - the anchor control was
+            # already going to end up focused by native <defaultcontrol> in the common case, this
+            # just makes it explicit/unconditional instead of leaving it to chance.
+            if self.visibleHubs:
+                # Live-confirmed regression from the setFocusId() call itself (2026-09-04): it
+                # triggers a real onFocus(<hub control>) callback the same as any other focus
+                # move, and onFocus()'s own _hubJustEnteredFromOutside detector (see its own
+                # docstring) can't tell this deliberate, one-time initial focus apart from a
+                # genuine native cross-container arrow move (sidebar/tabs -> hub row) - it read
+                # self.lastFocusID as still outside the hub range (None, or wherever native
+                # default control focus happened to leave it) and set the flag exactly as if a
+                # real duplicate native replay were coming to swallow. None ever arrives after a
+                # programmatic setFocusId(), so the flag just sat there and silently ate the
+                # user's very next real navigation press instead - symptoms ranged from a dead
+                # first move (hero/reselect-position not updating) to a dead first "load more"
+                # trigger, both self-correcting on a second press. Pre-seeding lastFocusID to the
+                # anchor control itself - true in spirit, there's no real prior focus to speak of
+                # on a window that has never painted - makes onFocus()'s own was_outside_hub read
+                # False regardless of exactly when its callback actually runs relative to this
+                # line, rather than trying to race a reset against it afterward.
+                self.lastFocusID = self._anchorControlId()
+                self.setFocusId(self._anchorControlId())
 
             self.setBoolProperty("initialized", True)
         elif self.showPanelControl and not self.refill:
@@ -2074,7 +2175,28 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.doRefill()
 
+    def _consumeRestoreItemPos(self, count):
+        """One-shot: the grid position popBack() asked to land back on (_captureRootRestoreState()/
+        self._pendingRestoreItemPos), clamped to the freshly (re)loaded item count, or 0 if
+        there's nothing pending or it's out of range (e.g. the section's content changed size
+        since the position was captured). Clears the pending state regardless of outcome, so a
+        request that doesn't apply to this fill (e.g. it was captured for 'recommended' mode, and
+        this section unexpectedly landed on 'library' instead) can't leak into some later,
+        unrelated fill(). Called from fillShows()/fillPlaylists()/fillPhotos() in place of each
+        one's own hardcoded selectItem(0)."""
+        pos = self._pendingRestoreItemPos
+        self._pendingRestoreItemPos = None
+        if pos is not None and 0 <= pos < count:
+            return pos
+        return 0
+
     def doRefill(self):
+        # Defensive: a hub-row restore request (_pendingRestoreHubId) only ever gets consumed by
+        # _recommendedHubsCallback(), which doRefill() never leads to (see the 'recommended'
+        # branch above, which returns before reaching here) - clear it here too so a mismatched
+        # capture (contentMode ended up 'library'/'playlists' instead of 'recommended') can't sit
+        # around and wrongly apply to some later, unrelated 'recommended' entry.
+        self._pendingRestoreHubId = None
         # The previous panel's ListItems are about to be freed and replaced; bump the
         # generation so any caller holding a stale ListItem reference can detect it.
         self._listGeneration += 1
@@ -2358,6 +2480,33 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and \
                 self.dismissSidebarPopupOnBack(target=self._sidebarTarget()):
             return
+
+        # Grid "home" on Back, requested directly: Back while scrolled down the poster/list grid
+        # snaps to item 0 first, rather than immediately leaving the section/chain - only once
+        # already on item 0 does Back fall through to its normal meaning (below). Checked ahead of
+        # the chain-pop branch immediately below so this applies even mid-chain (e.g. browsing a
+        # Collection's own grid, reached via swapToSection() with a non-empty _backStack) - a
+        # scrolled-down position there should also snap home before that chain pops a level.
+        #
+        # not self._isHostedShell first, and short-circuiting before anything else: self.
+        # POSTERS_PANEL_ID/self.getFocusId() aren't real attributes of this outer host object,
+        # they resolve via MultiWindow.__getattr__ delegation to self._current - fine whenever
+        # self._current is one of LibraryWindow's own thin view-type proxies (PostersWindow etc.,
+        # which do define POSTERS_PANEL_ID), but once a real shell is hosted (e.g. PrePlayWindow,
+        # after clicking an item from this exact grid) self._current has no such attribute at all.
+        # Live-confirmed regression without this guard: raised a bare AttributeError from inside
+        # onAction() on every single Back press while any shell was hosted, silently swallowed
+        # somewhere above this call - Back appeared to simply stop doing anything at all after
+        # opening an item from a grid. contentMode == 'library' (not 'recommended') and focus on
+        # POSTERS_PANEL_ID specifically - hub-row Back has its own separate semantics, untouched
+        # here.
+        if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and \
+                not self._isHostedShell and self.contentMode == 'library' \
+                and self.getFocusId() == self.POSTERS_PANEL_ID:
+            mli = self.showPanelControl.getSelectedItem() if self.showPanelControl else None
+            if mli and mli.pos():
+                self.showPanelControl.selectItem(0)
+                return
 
         # Descendant-chain back-stack (hashed-orbiting-pizza.md Phase 1) - swapTo() always
         # pushes a root-restore entry on the genesis swap out of this window's own grid, so
@@ -4477,7 +4626,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         util.setGlobalProperty('sort.alpha', jitems and '1' or '')
 
-        self.showPanelControl.selectItem(0)
+        restorePos = self._consumeRestoreItemPos(totalSize)
+        self.showPanelControl.selectItem(restorePos)
         if not keep_focus:
             self.setFocusId(self.POSTERS_PANEL_ID)
 
@@ -4502,6 +4652,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self.tasks.add(tasks)
         backgroundthread.BGThreader.addTasksToFront(tasks)
+
+        if restorePos:
+            # Real art/metadata only exists for whichever chunk(s) have actually been fetched -
+            # by default (retrieveAllMediaUpFront off) only chunk 0 is requested up front, above;
+            # real chunks are otherwise only ever requested by MOVE_SET arrow-key navigation
+            # (onAction()) or keyClicked()'s identical jump-and-request pattern, which this
+            # mirrors. selectItem() above is a plain Python-side position set - it never generates
+            # that arrow-key navigation, so a restored position past chunk 0 would otherwise sit on
+            # fallback-thumb placeholders until the user nudges focus. Deliberately placed after
+            # the loop above, not alongside selectItem() - requestChunk() reads
+            # self.finalChunkPosition/self.alreadyFetchedChunkList, both only just set to their
+            # real values by that loop (still 0/empty, their __init__/top-of-method reset, before
+            # it runs). Requests the position's own chunk plus CHUNK_OVERCOMMIT ahead of it, same
+            # as keyClicked(), so the row(s) around it don't show blank/fallback art either.
+            chunkOC = getattr(self._current, "CHUNK_OVERCOMMIT", self.CHUNK_OVERCOMMIT)
+            self.requestChunk(restorePos)
+            self.requestChunk(restorePos + chunkOC)
 
     def showPhotoItemProperties(self, photo):
         if photo.isFullObject():
@@ -4639,7 +4806,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.backgroundSet = True
 
         self.showPanelControl.addItems(items)
-        self.showPanelControl.selectItem(0)
+        self.showPanelControl.selectItem(self._consumeRestoreItemPos(len(items)))
         if not keep_focus:
             self.setFocusId(self.POSTERS_PANEL_ID)
 
@@ -4718,6 +4885,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self.showPanelControl.addItems(items)
         self.keyListControl.addItems(litems)
+        self.showPanelControl.selectItem(self._consumeRestoreItemPos(len(items)))
 
         util.setGlobalProperty('sort.alpha', litems and '1' or '')
 
@@ -6145,6 +6313,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # which is never inside grouplist 50's own clip range regardless of which two controls
     # currently hold it, that rebind is always safely off-screen, never visible.
     HUB_ROTATION_RING = (403, 401, 400, 402, 404)
+    # _bindHubToControl()'s "select ahead, then back" scroll-in trick (mirrors keyClicked()'s own
+    # CHUNK_OVERCOMMIT for the poster grid) - a plain constant, not per-viewtype like
+    # CHUNK_OVERCOMMIT, since hub display type (poster/square/ar16x9) is a per-*hub* property, not
+    # a per-window one the way grid viewtype is; no single control class to hang a delegated
+    # override off. An approximation of "enough items to not land the target at the row's very
+    # trailing edge" across every display type, not pixel-exact.
+    HUB_ROW_SELECT_OVERCOMMIT = 2
     # Each ring control's own wrapper control id (script-plex-recommended.xml.tpl groups
     # 500-504) - fixed, structural, so "moving" a control between roles means repositioning
     # *its* wrapper, not re-parenting the list control itself. Ported verbatim from
@@ -6405,11 +6580,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         _bindHubToControl()'s own reselect resolution (ratingKey first, then position), reading
         the same self._hubReselectPositions entry that method will use moments later. Falls back
         to the hub's first item when there's no remembered position (never-visited hub) or it
-        can't be resolved (e.g. a still-unextended page)."""
+        can't be resolved (e.g. a still-unextended page).
+
+        _ensureHubReselectReach() first (live-reported 2026-09-04): without it, a remembered
+        position beyond hub.items' freshly-(re)fetched first page always fell through to
+        hub.items[0] here specifically, even once _bindHubToControl() correctly extended and
+        selected the real target moments later - the hero art/title/summary showed the wrong
+        item's info while the row itself showed the right one."""
         if not hub.items:
             return None
         is_home = self.section.key is None
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
+        self._ensureHubReselectReach(hub, identifier)
         reselect = self._hubReselectPositions.get(identifier)
         if reselect:
             rk, pos = reselect
@@ -6959,6 +7141,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         though, ported from that same HomeWindow.showHub()."""
         is_home = self.section.key is None
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
+
+        # Close any reselect-position gap (see _ensureHubReselectReach()'s own docstring) before
+        # items gets built below, so this method binds the fully-extended hub in a single pass -
+        # _bindAllHubSlots() already called this once for the anchor hub, before hero-art preview
+        # (_previewSelectedItem()), so this is usually already a no-op by the time it gets here for
+        # that same hub - kept anyway, both for every non-anchor hub (peek rows) and as a harmless
+        # safety net.
+        self._ensureHubReselectReach(hub, identifier)
+
         display_type = self.getHubDisplayType(hub, identifier)
         flags = self.getHubRenderFlags(hub, identifier)
         title = hub.__dict__.get('_displayTitle') or hub.title or ''
@@ -7022,16 +7213,96 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Reselect-position memory (plan item 10, Group A) - ported from
         # HomeWindow._hubReselectPositions, restored here since every rebind path (the initial
         # full bind and _startHubSlide()'s wrap-control rebind) funnels through this one method.
-        # ratingKey resolution first, falling back to the stored position, since the remembered
-        # item may have scrolled out of this page (a fresh page always starts at offset 0) by the
-        # time this hub is revisited.
+        # ratingKey resolution first, falling back to the stored position - items now normally
+        # extends far enough to resolve either one, thanks to _ensureHubReselectReach() above;
+        # this final bounds check is what's left for a position that never existed at all (e.g.
+        # the hub's real content shrank) or that a failed/short fetch couldn't actually reach.
         reselect = self._hubReselectPositions.get(identifier)
         if reselect and items:
             rk, pos = reselect
             resolved = next((i for i, mli in enumerate(items)
                               if mli.dataSource and str(mli.dataSource.ratingKey) == rk), pos)
             if resolved is not None and 0 <= resolved < len(items):
+                # Select ahead first, then back to the real target - same idiom keyClicked() uses
+                # for the poster grid's own alphabet-jump (CHUNK_OVERCOMMIT there). A single
+                # selectItem() straight to a position that was never previously visible only
+                # scrolls the row the minimum needed to bring it on-screen, which for a jump this
+                # size (live-reported, 2026-09-04) lands it right at the trailing edge, partially
+                # clipped - selecting past it first, then back, gives the row somewhere further to
+                # have already scrolled to, leaving real breathing room on either side of the
+                # actual target. HUB_ROW_SELECT_OVERCOMMIT is an approximation (item width varies
+                # by hub display type - poster/square/ar16x9), not pixel-exact, same as
+                # CHUNK_OVERCOMMIT's own per-viewtype approximation.
+                overcommit_target = min(resolved + self.HUB_ROW_SELECT_OVERCOMMIT, len(items) - 1)
+                if overcommit_target != resolved:
+                    control.selectItem(overcommit_target)
                 control.selectItem(resolved)
+
+    def _ensureHubReselectReach(self, hub, identifier):
+        """Extends hub (via _extendHubToPosition()) if its own remembered reselect position
+        (self._hubReselectPositions) isn't resolvable within hub.items yet - a fresh 'recommended'
+        entry always re-fetches brand-new Hub objects starting back at their first page, even if
+        the position was only ever reached last visit by scrolling further (live-reported,
+        2026-09-03/04).
+
+        Shared by _bindAllHubSlots() (for the anchor hub, before _previewSelectedItem() - hero
+        art/title/summary must see the same, already-extended hub.items the row binding will use
+        moments later, or the hero panel shows the wrong (first) item's info while the row itself
+        correctly shows the restored one, live-reported 2026-09-04) and _bindHubToControl() (every
+        hub actually being bound, anchor included - idempotent by the time it gets here for the
+        anchor, a cheap len() check, no duplicate fetch).
+
+        Only attempted when the position genuinely isn't resolvable yet (ratingKey not already
+        present, mirroring the real resolution both callers do afterward) - avoids a wasted fetch
+        whenever the plain reselect would have succeeded anyway."""
+        reselect = self._hubReselectPositions.get(identifier)
+        if not reselect:
+            return
+        rk, pos = reselect
+        if (pos is not None and pos >= len(hub.items)
+                and not any(getattr(item, 'ratingKey', None) and str(item.ratingKey) == rk
+                            for item in hub.items)):
+            self._extendHubToPosition(hub, pos)
+
+    def _extendHubToPosition(self, hub, pos):
+        """One bounded, direct fetch to grow hub.items to at least pos+1+HUB_ROW_SELECT_OVERCOMMIT
+        real items (not just pos+1) - the consuming half of _bindHubToControl()'s own
+        reselect-gap check just above it, which is the only caller. Sequential from wherever
+        hub.items currently ends (home.ExtendHubTask's own `start = hub.offset + hub.size`
+        formula, mirrored exactly here, including its own side effect of overwriting
+        hub.offset/size/more to describe this fetch - Hub.extend() itself does that,
+        plexlibrary.py) - Hub.extend()'s underlying request supports an arbitrary start on its
+        own, but hub.items is an append-only accumulator with no gap-filling (see
+        ExtendHubTask.run()'s own comment on why it's kept authoritative at all), so a genuinely
+        non-sequential jump straight to `pos` would leave a hole every later position lookup would
+        silently misread against. Bounded by hub.more/leafCount naturally - the server just
+        returns fewer items than asked once it runs out, no explicit cap needed the way an
+        unbounded walk would need one. Swallows its own request failure (network/server error) -
+        this is a best-effort enhancement to an already-working fallback (item 0), not allowed to
+        break the Recommended tab bind it's called from.
+
+        The +HUB_ROW_SELECT_OVERCOMMIT (live-reported, 2026-09-04): fetching exactly pos+1 leaves
+        `pos` as hub.items' own last real item, so whatever _bindHubToControl()'s own "select
+        ahead, then back" scroll-in trick (same overcommit constant) selects ahead of `pos` lands
+        on the is.end "load more" placeholder instead of a real item - live-confirmed as landing
+        the placeholder immediately to the restored item's right, not a real item. Fetching a bit
+        further than strictly necessary gives that trick real content to select ahead onto, same
+        as how it was always intended to work for an ordinarily-scrolled-to position. No effect
+        when the hub's real content genuinely ends at/near `pos` - hub.more/leafCount still bound
+        this fetch exactly like before, this only asks for more, never guarantees it exists."""
+        if not hub.more.asBool():
+            return
+        start = hub.offset.asInt() + hub.size.asInt()
+        size = pos + 1 + self.HUB_ROW_SELECT_OVERCOMMIT - start
+        if size <= 0:
+            return
+        try:
+            items = hub.extend(start=start, size=size)
+        except Exception:
+            util.ERROR()
+            return
+        if items:
+            hub.items.extend(items)
 
     def _recommendedHubsCallbackFor(self, generation):
         """Wraps _recommendedHubsCallback() with the _listGeneration snapshot taken when the
@@ -7095,6 +7366,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 util.DEBUG_LOG("Library: _recommendedHubsCallback() declined post-lock - stale")
                 return
 
+            # Defensive, mirroring doRefill()'s identical clear in the other direction: a grid
+            # restore request (_pendingRestoreItemPos) only ever gets consumed by fillShows()/
+            # fillPlaylists()/fillPhotos(), none of which this 'recommended' path leads to.
+            self._pendingRestoreItemPos = None
+
             is_home = section.key is None
             # A hub can be returned by the server with zero current items (e.g. a personalized/
             # dynamic hub with nothing to show right now). Left in, such a hub would still
@@ -7115,7 +7391,22 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                           if hub.items and not self.isHubHidden(hub.getCleanHubIdentifier(is_home=is_home), section.key)]
             self.sectionHubs[section.key] = sorted_hubs
             self.visibleHubs = sorted_hubs
+            # One-shot: popBack() asked to land back on a specific hub row (_pendingRestoreHubId,
+            # set via _captureRootRestoreState()/popBack()) - find it by its stable identifier,
+            # not position (sortHubsByUserOrder()/hub visibility can shift index between visits).
+            # Falls back to the canonical start (hub 0) if there's nothing pending, or the
+            # remembered hub isn't in this fetch any more (e.g. it emptied out or got hidden).
+            # Item-within-that-hub restoration is already handled separately and automatically by
+            # self._hubReselectPositions (_bindHubToControl()/_previewSelectedItem() below) - only
+            # *which* hub is anchor is new here.
+            restoreHubId = self._pendingRestoreHubId
+            self._pendingRestoreHubId = None
             self.focusedHubIndex = 0
+            if restoreHubId:
+                for i, hub in enumerate(sorted_hubs):
+                    if hub.getCleanHubIdentifier(is_home=is_home) == restoreHubId:
+                        self.focusedHubIndex = i
+                        break
             self._anchorRingPos = self.HUB_ROTATION_RING.index(self.HUB_CONTROL_ID)
 
             # Group 51 has no correct position at all until this is set explicitly - see
