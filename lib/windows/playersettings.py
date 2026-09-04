@@ -281,10 +281,10 @@ def showVideoDialog(video, non_playback=False):
 
     video.setMediaChoice(choice)
     choice.set('selected', 1)
-    # Same persisted media_version preference the episode button row's own version picker set
-    # (mediaButtonClicked() - episodes.py - now removed in favor of this Settings entry - and
-    # preplay.py's own copy still does) - missing this wouldn't break the immediate switch, just
-    # the choice being remembered/synced the same way.
+    # Same persisted media_version preference the button row's own version picker used to set
+    # directly (mediaButtonClicked() - episodes.py and preplay.py, both now removed in favor of
+    # this single Settings entry, 2026-09-04 for preplay.py's own copy) - missing this wouldn't
+    # break the immediate switch, just the choice being remembered/synced the same way.
     plexnet.util.INTERFACE.playbackManager(video, key="media_version", value=choice.id)
     video.clearCache()
 

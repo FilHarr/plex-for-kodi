@@ -112,15 +112,60 @@
             <scrolltime tween="quadratic" easing="out">200</scrolltime>
             <usecontrolcoords>true</usecontrolcoords>
 
-            {% with attr = theme.pre_play.buttons & hitrect = theme.pre_play.buttons_hitrect & template = "includes/themed_button.xml.tpl" %}
+            <!-- Label-on-focus pill overlays (390-396) below: same treatment/recipe Episodes'/
+                 Seasons'/library-posters' own button rows already have (episode_button_label.xml.tpl -
+                 see button-label-overlay-recipe). Info/Play/Add-remove-watchlist/Media settings/More
+                 reuse those rows' own $ADDON strings/measured widths since it's the same label text;
+                 Trailer is new here (string 35064 "Watch trailer", measured 140px, same +4px buffer
+                 convention as every other call site as of 2026-09-04 - see that recipe). No overlay
+                 for the watchlist-availability dynamic play states (2302-2305, wl_dynamic_buttons.xml.tpl)
+                 - matching Seasons' own scope, never given one either. onleft on each overlay is its
+                 own button's id, onright the next button in the row - mirroring the neighbours plain
+                 usecontrolcoords geometric nav would already resolve to, since none of the real
+                 buttons below pass explicit onleft/onright of their own to literally copy. -->
+            {% with attr = theme.pre_play.buttons & hitrect = theme.pre_play.buttons_hitrect & template = "includes/themed_button.xml.tpl" & ol = "includes/episode_button_label.xml.tpl" %}
                 {% include template with name="info" & id=304 %}
+                {% include ol with id=390 & visible="Control.HasFocus(304)" & name="info" &
+                    label="$ADDON[script.plexmod 35059]" & label_suffix_info="" &
+                    label_width=88 & pill_width=150 & group_width=106 &
+                    onleft=304 & onright=302
+                %}
                 {% include template with name="play" & id=302 & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback))" %}
+                {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
+                    label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
+                    label_width=50 & pill_width=112 & group_width=68 &
+                    onleft=302 & onright=303
+                %}
                 {% include "includes/wl_dynamic_buttons.xml.tpl" %}
                 {% include template with name="trailer" & id=303 & visible="!String.IsEmpty(Window.Property(trailer.button))" %}
+                {% include ol with id=392 & visible="Control.HasFocus(303)" & name="trailer" &
+                    label="$ADDON[script.plexmod 35064]" & label_suffix_info="" &
+                    label_width=144 & pill_width=206 & group_width=162 &
+                    onleft=303 & onright=308
+                %}
                 {% include "includes/wl_add_remove_buttons.xml.tpl" %}
-                {% include template with name="media" & id=307 & visible="!String.IsEmpty(Window.Property(media.multiple))" %}
+                {% include ol with id=393 & visible="Control.HasFocus(308)" & name="watchlist" &
+                    label="$ADDON[script.plexmod 35062]" & label_suffix_info="" &
+                    label_width=180 & pill_width=242 & group_width=198 &
+                    onleft=308 & onright=309
+                %}
+                {% include ol with id=394 & visible="Control.HasFocus(309)" & name="watchlisted" &
+                    label="$ADDON[script.plexmod 34011]" & label_suffix_info="" &
+                    label_width=251 & pill_width=313 & group_width=269 &
+                    onleft=309 & onright=305
+                %}
                 {% include template with name="settings" & id=305 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
+                {% include ol with id=395 & visible="Control.HasFocus(305)" & name="settings" &
+                    label="$ADDON[script.plexmod 35060]" & label_suffix_info="" &
+                    label_width=162 & pill_width=224 & group_width=180 &
+                    onleft=305 & onright=306
+                %}
                 {% include template with name="more" & id=306 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
+                {% include ol with id=396 & visible="Control.HasFocus(306)" & name="more" &
+                    label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
+                    label_width=60 & pill_width=122 & group_width=78 &
+                    onleft=306 & onright=""
+                %}
             {% endwith %}
 
         </control>
@@ -289,9 +334,12 @@
 
     <control type="grouplist" id="60">
         <posx>0</posx>
-        <!-- 560, not the old 540: compensates group 50's own posy rebase (155 -> 135, see that
-             control's own comment) so this row keeps the exact same absolute position it always had. -->
-        <posy>{{ vscale(560) }}</posy>
+        <!-- 562, not the old 540/560: 540->560 compensated group 50's own posy rebase (155 -> 135,
+             see that control's own comment) so this row kept the exact same absolute position it
+             always had; +2 more on top of that (two 1px nudges, 2026-09-04, on request) nudges
+             Credits and everything stacked below it (Reviews/Extras/Related/Collections, via this
+             grouplist's own itemgap=0 auto-stacking) down 2px total. -->
+        <posy>{{ vscale(562) }}</posy>
         <width>1920</width>
         <height>{{ vscale(3400) }}</height>
 
@@ -303,12 +351,11 @@
             <visible>Integer.IsGreater(Container(400).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
             <defaultcontrol>400</defaultcontrol>
             <width>1920</width>
-            <!-- 416, not 446: trimmed 30px on request to bring Reviews (and everything stacked after
-                 it, via this grouplist's own itemgap=0 auto-stacking) up - safe since the Roles list's
-                 own real content (item/focused layout content bottoms out well under 400 wide, see id
-                 400 below) sits comfortably inside 416, this just trims otherwise-unused trailing
-                 whitespace at the bottom of this section's box. -->
-            <height>{{ vscale(416) }}</height>
+            <!-- 460, not the old 416 (+44, same delta as id 400's own list height bump below): the
+                 Roles art grew 200->244 to match Episodes/Seasons (2026-09-04, on request), so this
+                 needs the same extra room or Reviews (stacked right after via this grouplist's own
+                 itemgap=0 auto-stacking) would inherit a too-tight gap. -->
+            <height>{{ vscale(460) }}</height>
             <!-- Same heading pattern/string ("Credits", 33609) as the episode screen's own Roles section
                  (script-plex-episodes.xml.tpl id 502) and seasons.xml.tpl id 501 - Plex was missing one
                  here entirely. -->
@@ -320,16 +367,21 @@
                 <font>font12</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <shadowcolor>66000000</shadowcolor>
-                <label>[UPPERCASE][B]$ADDON[script.plexmod 33609][/B][/UPPERCASE]</label>
+                <!-- Matches Episodes'/Seasons' own Roles heading style: font12, bold, no shadow, no
+                     uppercase (script-plex-seasons.xml.tpl id 401's own label, script-plex-episodes.xml.tpl
+                     id 502's own label - normalized here 2026-09-04, on request). -->
+                <textcolor>FFE9E6E7</textcolor>
+                <label>[B]$ADDON[script.plexmod 33609][/B]</label>
             </control>
             <control type="list" id="400">
                 <!-- 51, not 0 (width shrunk to match, local posx+width=1920 invariant): clip edge lands at absolute x=103 (group 50's own posx=52 + this 51), giving departing thumbnails room to clear the collapsed sidebar rail's icon column before this list's own clip boundary cuts them off, same treatment Seasons'/Episodes' own rows already had (script-plex-seasons.xml.tpl id 401) - this row never got it before. 103, not Seasons' own 105: compensates for this row's own 5px inner padding group so art (clip + 5 outer + 5 inner) still lands at x=113. -->
                 <posx>51</posx>
                 <posy>25</posy>
                 <width>1869</width>
-                <height>{{ vscale(410) }}</height>
+                <!-- 454, not the old 410 (+44, the same delta as the art's own 200->244 growth below) -
+                     keeps Reviews (stacked right after via grouplist 60's auto-stacking) from
+                     inheriting a too-tight gap now that Roles' own content is taller. -->
+                <height>{{ vscale(454) }}</height>
                 <onup>300</onup>
                 <ondown>401</ondown>
                 <onleft>9000</onleft>
@@ -337,7 +389,10 @@
                 <orientation>horizontal</orientation>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
-                <itemlayout width="260">
+                <!-- 244x244 art (was 200x200), role-selected-thin.png focus ring, name label in
+                     FFFFFFFF (was AAFFFFFF, matching the character label's own dimmed tone below it) -
+                     matches Episodes'/Seasons' own Roles row exactly (2026-09-04, on request). -->
+                <itemlayout width="274">
                     <control type="group">
                        <!-- 5, back to the old value: a uniform outer margin across every row here (matching Seasons' own convention), with the list's own clip line below doing the per-row x=113 compensation instead - see that control's own comment. -->
                        <posx>5</posx>
@@ -348,37 +403,37 @@
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>200</width>
-                                <height>{{ vscale(200) }}</height>
+                                <width>244</width>
+                                <height>{{ vscale(244) }}</height>
                                 <texture diffuse="script.plex/masks/role.png">script.plex/thumb_fallbacks/role.png</texture>
                             </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>200</width>
-                                <height>{{ vscale(200) }}</height>
+                                <width>244</width>
+                                <height>{{ vscale(244) }}</height>
                                 <texture background="true" diffuse="script.plex/masks/role.png">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false" aligny="top">scale</aspectratio>
                             </control>
                             <control type="group">
                                 <posx>0</posx>
-                                <posy>{{ vscale(209) }}</posy>
+                                <posy>{{ vscale(253) }}</posy>
                                 <control type="label">
                                     <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>200</width>
+                                    <width>244</width>
                                     <height>{{ vscale(60) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
-                                    <textcolor>AAFFFFFF</textcolor>
+                                    <textcolor>FFFFFFFF</textcolor>
                                     <label>$INFO[ListItem.Label]</label>
                                 </control>
                                 <control type="label">
                                     <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>{{ vscale(30) }}</posy>
-                                    <width>200</width>
+                                    <width>244</width>
                                     <height>{{ vscale(60) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
@@ -391,21 +446,26 @@
                 </itemlayout>
 
                 <!-- FOCUSED LAYOUT ####################################### -->
-                <focusedlayout width="260">
+                <focusedlayout width="274">
                     <control type="group">
                         <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
-                            <animation effect="zoom" start="100" end="110" time="100" center="105,{{ vscale(105) }}" reversible="false">Focus</animation>
-                            <animation effect="zoom" start="110" end="100" time="100" center="105,{{ vscale(105) }}" reversible="false">UnFocus</animation>
+                            <animation effect="zoom" start="100" end="104" time="100" center="127,{{ vscale(127) }}" reversible="false">Focus</animation>
+                            <animation effect="zoom" start="104" end="100" time="100" center="127,{{ vscale(127) }}" reversible="false">UnFocus</animation>
                             <posx>0</posx>
                             <posy>0</posy>
                             <control type="image">
-                                <visible>Control.HasFocus(403)</visible>
+                                <!-- Control.HasFocus(400), not the pre-existing 403 (Related's own list id,
+                                     not this one) - a copy-paste leftover that meant this shadow never
+                                     actually showed on Roles focus at all, live-confirmed by the ring
+                                     overlay just below already correctly using 400. Found/fixed alongside
+                                     the 2026-09-04 art-size pass, not otherwise related to it. -->
+                                <visible>Control.HasFocus(400)</visible>
                                 <posx>-40</posx>
                                 <posy>{{ vscale(-40) }}</posy>
-                                <width>290</width>
-                                <height>{{ vscale(290) }}</height>
+                                <width>334</width>
+                                <height>{{ vscale(334) }}</height>
                                 <texture border="42">script.plex/buttons/role-shadow.png</texture>
                             </control>
                             <control type="group">
@@ -414,37 +474,37 @@
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>200</width>
-                                    <height>{{ vscale(200) }}</height>
+                                    <width>244</width>
+                                    <height>{{ vscale(244) }}</height>
                                     <texture diffuse="script.plex/masks/role.png">script.plex/thumb_fallbacks/role.png</texture>
                                 </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>200</width>
-                                    <height>{{ vscale(200) }}</height>
+                                    <width>244</width>
+                                    <height>{{ vscale(244) }}</height>
                                     <texture background="true" diffuse="script.plex/masks/role.png">$INFO[ListItem.Thumb]</texture>
                                     <aspectratio scalediffuse="false" aligny="top">scale</aspectratio>
                                 </control>
                                 <control type="group">
                                     <posx>0</posx>
-                                    <posy>{{ vscale(209) }}</posy>
+                                    <posy>{{ vscale(253) }}</posy>
                                     <control type="label">
                                         <scroll>Control.HasFocus(400)</scroll>
                                         <posx>0</posx>
                                         <posy>0</posy>
-                                        <width>200</width>
+                                        <width>244</width>
                                         <height>{{ vscale(60) }}</height>
                                         <font>font10</font>
                                         <align>center</align>
-                                        <textcolor>AAFFFFFF</textcolor>
+                                        <textcolor>FFFFFFFF</textcolor>
                                         <label>$INFO[ListItem.Label]</label>
                                     </control>
                                     <control type="label">
                                         <scroll>Control.HasFocus(400)</scroll>
                                         <posx>0</posx>
                                         <posy>{{ vscale(30) }}</posy>
-                                        <width>200</width>
+                                        <width>244</width>
                                         <height>{{ vscale(60) }}</height>
                                         <font>font10</font>
                                         <align>center</align>
@@ -457,9 +517,9 @@
                                 <visible>Control.HasFocus(400)</visible>
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>210</width>
-                                <height>{{ vscale(210) }}</height>
-                                <texture>script.plex/buttons/role-selected.png</texture>
+                                <width>254</width>
+                                <height>{{ vscale(254) }}</height>
+                                <texture>script.plex/buttons/role-selected-thin.png</texture>
                             </control>
                         </control>
                     </control>
@@ -484,8 +544,12 @@
                 <font>font12</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>[UPPERCASE]$ADDON[script.plexmod 32953][/UPPERCASE]</label>
+                <!-- Same heading style as Roles/Extras/Related below - font12, bold, no shadow, no
+                     uppercase, matching Episodes'/Seasons' own section headers (normalized 2026-09-04,
+                     on request) - Reviews has no direct Episodes/Seasons counterpart to copy verbatim
+                     from, so this just applies their shared convention. -->
+                <textcolor>FFE9E6E7</textcolor>
+                <label>[B]$ADDON[script.plexmod 32953][/B]</label>
             </control>
             <control type="list" id="401">
                 <!-- 56, not 0 (width shrunk to match): same sidebar-clearance clip-line fix as the Roles list above. 108, not 103/105: this row has no inner padding group, so the clip line alone (56 + this row's own 5px outer margin) has to cover the full distance to x=113. -->
@@ -676,8 +740,11 @@
                 <font>font12</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>[UPPERCASE]$ADDON[script.plexmod 32305][/UPPERCASE]</label>
+                <!-- Matches Episodes'/Seasons' own Extras heading style: font12, bold, no shadow, no
+                     uppercase (normalized 2026-09-04, on request) - see the Roles label's own comment
+                     above. -->
+                <textcolor>FFE9E6E7</textcolor>
+                <label>[B]$ADDON[script.plexmod 32305][/B]</label>
             </control>
             <control type="list" id="402">
                 <!-- 51, not 0 (width shrunk to match): same sidebar-clearance clip-line fix as the Roles list above - identical margin math (5px inner padding group). -->
@@ -913,8 +980,11 @@
                 <font>font12</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>[UPPERCASE]$INFO[Window.Property(related.header)][/UPPERCASE]</label>
+                <!-- Matches Episodes'/Seasons' own Related heading style: font12, bold, no shadow, no
+                     uppercase (normalized 2026-09-04, on request) - see the Roles label's own comment
+                     above. -->
+                <textcolor>FFE9E6E7</textcolor>
+                <label>[B]$INFO[Window.Property(related.header)][/B]</label>
             </control>
             <control type="list" id="403">
                 <!-- 53, not 0 (width shrunk to match): same sidebar-clearance clip-line fix as the Roles list above. 105, not 103: this row's own inner padding group is 3px, not 5, so the clip line only needs to close a 2px-smaller gap to reach the same x=113 art position. -->
@@ -1181,8 +1251,10 @@
                 <font>font12</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>[UPPERCASE]$INFO[Window.Property(collection.header.0)][/UPPERCASE]</label>
+                <!-- Same normalized heading style as Roles/Extras/Related above (2026-09-04, on
+                     request) - see the Roles label's own comment. -->
+                <textcolor>FFE9E6E7</textcolor>
+                <label>[B]$INFO[Window.Property(collection.header.0)][/B]</label>
             </control>
             <control type="list" id="404">
                 <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
@@ -1444,8 +1516,10 @@
                 <font>font12</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>[UPPERCASE]$INFO[Window.Property(collection.header.1)][/UPPERCASE]</label>
+                <!-- Same normalized heading style as Roles/Extras/Related above (2026-09-04, on
+                     request) - see the Roles label's own comment. -->
+                <textcolor>FFE9E6E7</textcolor>
+                <label>[B]$INFO[Window.Property(collection.header.1)][/B]</label>
             </control>
             <control type="list" id="405">
                 <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
@@ -1707,8 +1781,10 @@
                 <font>font12</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <textcolor>FFFFFFFF</textcolor>
-                <label>[UPPERCASE]$INFO[Window.Property(collection.header.2)][/UPPERCASE]</label>
+                <!-- Same normalized heading style as Roles/Extras/Related above (2026-09-04, on
+                     request) - see the Roles label's own comment. -->
+                <textcolor>FFE9E6E7</textcolor>
+                <label>[B]$INFO[Window.Property(collection.header.2)][/B]</label>
             </control>
             <control type="list" id="406">
                 <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->

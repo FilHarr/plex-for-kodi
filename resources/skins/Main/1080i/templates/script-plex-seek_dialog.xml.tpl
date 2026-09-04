@@ -481,20 +481,38 @@
         <height>{{ vscale(124) }}</height>
         <align>center</align>
         <onup>100</onup>
-        <itemgap>-40</itemgap>
+        <!-- 0, not the old -40: matches Episodes'/Seasons'/Pre-play's own button rows' itemgap
+             exactly (theme.episodes/seasons/pre_play.buttongroup.itemgap, context.py), now that this
+             row's own boxes match theirs too (see id 421's own comment below) - the old -40 overlap
+             existed to compensate for how much dead transparent padding the OLD 125x101 boxes/icon
+             set carried around a much smaller glyph; that reasoning no longer applies now these are
+             the same 70x70/5-5-60-60 boxes those other rows already use unpadded. Left at -40 this
+             would badly overlap (70-40=30 effective pitch) rather than just look distorted. -->
+        <itemgap>0</itemgap>
         <orientation>horizontal</orientation>
         <scrolltime tween="quadratic" easing="out">200</scrolltime>
         <usecontrolcoords>true</usecontrolcoords>
+        <!-- Every button/icon-group box below is 70x70 (was 125x101, then a 2026-09-04 101x101
+             interim square-only fix, now this) - matches Episodes'/Seasons'/Pre-play's own button
+             box size exactly (theme.*.buttons, context.py), on request, since this row's icons are
+             the same modern-folder set those rows already use at that size. Matching hitrects
+             (x/y=5, w/h=60 - or x=35 for the posx=30 twin-icon slots below, same 30 offset added to
+             the new 5 margin the old 58 added to the old 28 margin) mirror theme.*.buttons_hitrect
+             exactly too. The original 125x101 box's own ~1.238 aspect ratio had almost exactly
+             matched the OLD (pre-2026-09-04) icon set's 180x145 canvas (~1.241) - not a coincidence,
+             it was sized to it - which is why a plain resize (not just a square fix) is what actually
+             matches these icons' real, already-correct convention elsewhere, rather than an arbitrary
+             new number. -->
         <control type="group" id="421">
             <visible>!String.IsEmpty(Window.Property(nav.repeat))</visible>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <control type="button" id="401">
-                <hitrect x="28" y="28" w="69" h="45" />
+                <hitrect x="5" y="5" w="60" h="60" />
                 <posx>0</posx>
                 <posy>0</posy>
-                <width>125</width>
-                <height>{{ vscale(101) }}</height>
+                <width>70</width>
+                <height>{{ vscale(70) }}</height>
                 <onup>100</onup>
                 <onright>402</onright>
                 <onleft>412</onleft>
@@ -511,24 +529,24 @@
                     <visible>!Playlist.IsRepeatOne + !Playlist.IsRepeat + String.IsEmpty(Window.Property(pq.repeat))</visible>
                     <posx>0</posx>
                     <posy>0</posy>
-                    <width>125</width>
-                    <height>{{ vscale(101) }}</height>
+                    <width>70</width>
+                    <height>{{ vscale(70) }}</height>
                     <texture{% if theme.buttons.useNoFocusColor %} colordiffuse="{{ theme.buttons.noFocusColor|default('99FFFFFF') }}"{% endif %}>{{ theme.assets.buttons.base }}repeat.png</texture>
                 </control>
                 <control type="image">
                     <visible>Playlist.IsRepeat | !String.IsEmpty(Window.Property(pq.repeat))</visible>
                     <posx>0</posx>
                     <posy>0</posy>
-                    <width>125</width>
-                    <height>{{ vscale(101) }}</height>
+                    <width>70</width>
+                    <height>{{ vscale(70) }}</height>
                     <texture colordiffuse="FFCC7B19">{{ theme.assets.buttons.base }}repeat.png</texture>
                 </control>
                 <control type="image">
                     <visible>Playlist.IsRepeatOne | !String.IsEmpty(Window.Property(pq.repeat.one))</visible>
                     <posx>0</posx>
                     <posy>0</posy>
-                    <width>125</width>
-                    <height>{{ vscale(101) }}</height>
+                    <width>70</width>
+                    <height>{{ vscale(70) }}</height>
                     <texture colordiffuse="FFCC7B19">{{ theme.assets.buttons.base }}repeat-one.png</texture>
                 </control>
             </control>
@@ -539,24 +557,24 @@
                     <visible>!Playlist.IsRepeatOne + !Playlist.IsRepeat + String.IsEmpty(Window.Property(pq.repeat))</visible>
                     <posx>0</posx>
                     <posy>0</posy>
-                    <width>125</width>
-                    <height>{{ vscale(101) }}</height>
+                    <width>70</width>
+                    <height>{{ vscale(70) }}</height>
                     <texture{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}repeat{{ theme.assets.buttons.focusSuffix }}.png</texture>
                 </control>
                 <control type="image">
                     <visible>Playlist.IsRepeat | !String.IsEmpty(Window.Property(pq.repeat))</visible>
                     <posx>0</posx>
                     <posy>0</posy>
-                    <width>125</width>
-                    <height>{{ vscale(101) }}</height>
+                    <width>70</width>
+                    <height>{{ vscale(70) }}</height>
                     <texture{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}repeat{{ theme.assets.buttons.focusSuffix }}.png</texture>
                 </control>
                 <control type="image">
                     <visible>Playlist.IsRepeatOne | !String.IsEmpty(Window.Property(pq.repeat.one))</visible>
                     <posx>0</posx>
                     <posy>0</posy>
-                    <width>125</width>
-                    <height>{{ vscale(101) }}</height>
+                    <width>70</width>
+                    <height>{{ vscale(70) }}</height>
                     <texture{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}repeat-one{{ theme.assets.buttons.focusSuffix }}.png</texture>
                 </control>
             </control>
@@ -564,11 +582,11 @@
 
         <control type="togglebutton" id="402">
             <visible>!String.IsEmpty(Window.Property(has.playlist)) + !String.IsEmpty(Window.Property(nav.shuffle))</visible>
-            <hitrect x="28" y="28" w="69" h="45" />
+            <hitrect x="5" y="5" w="60" h="60" />
             <posx>0</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}shuffle{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -583,8 +601,8 @@
             <visible>String.IsEmpty(Window.Property(has.playlist)) + !String.IsEmpty(Window.Property(nav.shuffle))</visible>
             <posx>0</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus colordiffuse="40FFFFFF">{{ theme.assets.buttons.base }}shuffle{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -593,11 +611,11 @@
         </control>
 
         <control type="button" id="403">
-            <hitrect x="28" y="28" w="69" h="45" />
+            <hitrect x="5" y="5" w="60" h="60" />
             <posx>0</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}settings{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -608,11 +626,11 @@
 
         <control type="button" id="404">
             <visible>!String.IsEmpty(Window.Property(pq.hasprev)) + !String.IsEmpty(Window.Property(nav.prevnext))</visible>
-            <hitrect x="58" y="28" w="69" h="45" />
+            <hitrect x="35" y="5" w="60" h="60" />
             <posx>30</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus flipx="true"{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}next{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -624,8 +642,8 @@
             <visible>String.IsEmpty(Window.Property(pq.hasprev)) + !String.IsEmpty(Window.Property(nav.prevnext))</visible>
             <posx>30</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus flipx="true" colordiffuse="40FFFFFF">{{ theme.assets.buttons.base }}next{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -634,11 +652,11 @@
         </control>
         <control type="button" id="405">
             <visible>!String.IsEmpty(Window.Property(nav.ffwdrwd))</visible>
-            <hitrect x="28" y="28" w="69" h="45" />
+            <hitrect x="5" y="5" w="60" h="60" />
             <posx>0</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus flipx="true" colordiffuse="FFE5A00D">{{ theme.assets.buttons.base }}skip-forward{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -651,14 +669,14 @@
                 <animation effect="zoom" start="100" end="124" time="100" center="63,{{ vscale(50) }}" reversible="false" condition="Control.HasFocus(406)">Conditional</animation>
                 <animation effect="zoom" start="124" end="100" time="100" center="63,{{ vscale(50) }}" reversible="false" condition="!Control.HasFocus(406)">Conditional</animation>
             {% endif %}
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <control type="button" id="406">
-                <hitrect x="28" y="28" w="69" h="45" />
+                <hitrect x="5" y="5" w="60" h="60" />
                 <posx>0</posx>
                 <posy>0</posy>
-                <width>125</width>
-                <height>{{ vscale(101) }}</height>
+                <width>70</width>
+                <height>{{ vscale(70) }}</height>
                 <onup>100</onup>
                 <onright>407</onright>
                 <onleft>405</onleft>
@@ -676,16 +694,16 @@
                     <visible>!Player.Paused + !Player.Forwarding + !Player.Rewinding</visible>
                     <posx>0</posx>
                     <posy>0</posy>
-                    <width>125</width>
-                    <height>{{ vscale(101) }}</height>
+                    <width>70</width>
+                    <height>{{ vscale(70) }}</height>
                     <texture{% if theme.buttons.useNoFocusColor %} colordiffuse="{{ theme.buttons.noFocusColor|default('99FFFFFF') }}"{% endif %}>{{ theme.assets.buttons.base }}pause.png</texture>
                 </control>
                 <control type="image">
                     <visible>Player.Paused | Player.Forwarding | Player.Rewinding</visible>
                     <posx>0</posx>
                     <posy>0</posy>
-                    <width>125</width>
-                    <height>{{ vscale(101) }}</height>
+                    <width>70</width>
+                    <height>{{ vscale(70) }}</height>
                     <texture{% if theme.buttons.useNoFocusColor %} colordiffuse="{{ theme.buttons.noFocusColor|default('99FFFFFF') }}"{% endif %}>{{ theme.assets.buttons.base }}play.png</texture>
                 </control>
             </control>
@@ -696,27 +714,27 @@
                     <visible>!Player.Paused + !Player.Forwarding + !Player.Rewinding</visible>
                     <posx>0</posx>
                     <posy>0</posy>
-                    <width>125</width>
-                    <height>{{ vscale(101) }}</height>
+                    <width>70</width>
+                    <height>{{ vscale(70) }}</height>
                     <texture{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}pause{{ theme.assets.buttons.focusSuffix }}.png</texture>
                 </control>
                 <control type="image">
                     <visible>Player.Paused | Player.Forwarding | Player.Rewinding</visible>
                     <posx>0</posx>
                     <posy>0</posy>
-                    <width>125</width>
-                    <height>{{ vscale(101) }}</height>
+                    <width>70</width>
+                    <height>{{ vscale(70) }}</height>
                     <texture{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}play{{ theme.assets.buttons.focusSuffix }}.png</texture>
                 </control>
             </control>
         </control>
 
         <control type="button" id="407">
-            <hitrect x="28" y="28" w="69" h="45" />
+            <hitrect x="5" y="5" w="60" h="60" />
             <posx>0</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}stop{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -725,11 +743,11 @@
         </control>
         <control type="button" id="408">
             <visible>!String.IsEmpty(Window.Property(nav.ffwdrwd))</visible>
-            <hitrect x="28" y="28" w="69" h="45" />
+            <hitrect x="5" y="5" w="60" h="60" />
             <posx>0</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}skip-forward{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -738,11 +756,11 @@
         </control>
         <control type="button" id="409">
             <visible>!String.IsEmpty(Window.Property(pq.hasnext)) + !String.IsEmpty(Window.Property(nav.prevnext))</visible>
-            <hitrect x="28" y="28" w="69" h="45" />
+            <hitrect x="5" y="5" w="60" h="60" />
             <posx>0</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}next{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -754,8 +772,8 @@
             <visible>String.IsEmpty(Window.Property(pq.hasnext)) + !String.IsEmpty(Window.Property(nav.prevnext))</visible>
             <posx>0</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <ondown>501</ondown>
             <texturefocus colordiffuse="40FFFFFF">{{ theme.assets.buttons.base }}next{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
             <texturenofocus colordiffuse="40FFFFFF">{{ theme.assets.buttons.base }}next.png</texturenofocus>
@@ -765,11 +783,11 @@
 
         <control type="button" id="410">
             <visible>[!String.IsEmpty(Window.Property(pq.hasnext)) | !String.IsEmpty(Window.Property(pq.hasprev))] + !String.IsEmpty(Window.Property(nav.playlist))</visible>
-            <hitrect x="58" y="28" w="69" h="45" />
+            <hitrect x="35" y="5" w="60" h="60" />
             <posx>30</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}pqueue{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -779,11 +797,11 @@
         <control type="button" id="430">
             <enable>false</enable>
             <visible>String.IsEmpty(Window.Property(pq.hasnext)) + String.IsEmpty(Window.Property(pq.hasprev)) + !String.IsEmpty(Window.Property(nav.playlist))</visible>
-            <hitrect x="28" y="28" w="69" h="45" />
+            <hitrect x="5" y="5" w="60" h="60" />
             <posx>30</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus colordiffuse="40FFFFFF">{{ theme.assets.buttons.base }}pqueue{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -792,11 +810,11 @@
         </control>
         <control type="button" id="412">
             <visible>!String.IsEmpty(Window.Property(nav.quick_subtitles))</visible>
-            <hitrect x="28" y="28" w="69" h="45" />
+            <hitrect x="5" y="5" w="60" h="60" />
             <posx>0</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}subtitle{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
@@ -809,11 +827,11 @@
              self.setBoolProperty('nav.vs10', xbmc.getCondVisibility('System.AddonIsEnabled(service.coreelec.settings)')) -->
         <control type="button" id="413">
             <visible>!String.IsEmpty(Window.Property(nav.vs10))</visible>
-            <hitrect x="28" y="28" w="69" h="45" />
+            <hitrect x="5" y="5" w="60" h="60" />
             <posx>0</posx>
             <posy>0</posy>
-            <width>125</width>
-            <height>{{ vscale(101) }}</height>
+            <width>70</width>
+            <height>{{ vscale(70) }}</height>
             <font>font12</font>
             <ondown>501</ondown>
             <texturefocus{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>script.plex/buttons/player/modern/vs10.png</texturefocus>

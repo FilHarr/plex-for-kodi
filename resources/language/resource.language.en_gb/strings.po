@@ -3412,3 +3412,7 @@ msgstr ""
 msgctxt "#35063"
 msgid "Change view"
 msgstr ""
+
+msgctxt "#35064"
+msgid "Watch trailer"
+msgstr ""

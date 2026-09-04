@@ -744,6 +744,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._hubSlideMovers = []
         self._hubSliding = False
         self._hubSlideThread = None
+        # Pending threading.Timer for _bindPeekHubsDeferred() (see _bindAllHubSlots()'s own
+        # defer_peek param) - a fresh 'recommended' entry defers binding the ring's two always-
+        # off-screen extreme controls instead of doing it inline. Cancelled by _startHubSlide()/
+        # _settleHubSlide() so it can never fire concurrently with a slide's own Control mutation.
+        self._hubPeekBindTimer = None
         # Hero art (plan item 11) - ported verbatim from HomeWindow.__init__'s own initial value
         # (home.py). None, not False - _setNoHeroArt()'s own no-op guard checks identity against
         # "never set yet", not just "currently False", so the very first real call (True or False)
@@ -6381,8 +6386,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     GROUP51_BASELINE_OFFSET = 381
     # Hub-switch slide animation step count/total time - ported verbatim from
     # HomeWindow.HUB_SLIDE_STEPS/HUB_SLIDE_TIME.
-    HUB_SLIDE_STEPS = 24
-    HUB_SLIDE_TIME = 0.15
+    HUB_SLIDE_STEPS = 12
+    HUB_SLIDE_TIME = 0.25
+    # How long after a fresh 'recommended' entry _bindPeekHubsDeferred() waits before binding the
+    # ring's two extreme (role +-half) controls - always outside grouplist 50's clip region (see
+    # _startHubSlide()'s own docstring), so never visible at the moment they'd otherwise be bound
+    # inline. Long enough that the window has definitely painted with its immediately-visible rows
+    # (anchor + peek +-1) before this fires; short enough to almost always land before a user could
+    # plausibly slide that far. Not tied to HUB_SLIDE_TIME/SKIN_RELOAD_DEFER_SECONDS - a distinct
+    # concern (background content bind, not animation or click-debounce), sized on its own.
+    HUB_PEEK_BIND_DEFER_SECONDS = 0.2
     # Hero art/info overlay (plan item 11) - ported verbatim from HomeWindow's own constants
     # (home.py). HUB_SLIDE_CLIP_SHIFT_HERO: how far grouplist 50 shifts down (script-plex-
     # recommended.xml.tpl's own Conditional animation, keyed on no_hero_art) to make room for the
@@ -7438,12 +7451,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # '' - which matches has-hero-art's *empty* state, not no-hero-art's '1' - so
             # no_hero_art must always be written explicitly, never left implicit, in every branch).
 
-            self._bindAllHubSlots()
+            self._bindAllHubSlots(defer_peek=True)
             util.DEBUG_LOG("Library: _recommendedHubsCallback() bound {0} hub(s) for {1}, anchor={2}",
                            min(len(sorted_hubs), len(self.hubControls)), section.key,
                            self._anchorControlId())
 
-    def _bindAllHubSlots(self):
+    def _bindAllHubSlots(self, defer_peek=False):
         """Bind all 5 physical hub-row controls to their current roles, from
         self.visibleHubs/self.focusedHubIndex (already set by the caller) - factored out of
         _recommendedHubsCallback()'s own per-control loop (Stage D2) since it's also needed
@@ -7452,7 +7465,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         position should be restored - handled by _bindHubToControl() itself, called from here).
         Ported in spirit from HomeWindow._bindAllHubSlots() (home.py) - "visibleHubs by
         construction only ever contains non-empty hubs, so any in-range index is automatically
-        valid" (focusFirstValidHub()'s own comment there) still applies verbatim here."""
+        valid" (focusFirstValidHub()'s own comment there) still applies verbatim here.
+
+        defer_peek: True only from _recommendedHubsCallback()'s own fresh-entry call. Skips
+        binding (just resets) the ring's two extreme (role +-half) controls here and schedules
+        _bindPeekHubsDeferred() to do it ~HUB_PEEK_BIND_DEFER_SECONDS later instead - both are
+        always fully outside grouplist 50's clip region (see _startHubSlide()'s own docstring),
+        so this never leaves anything visible unbound, it just moves 2 of the 5 initial
+        createListItem() passes off the synchronous tab-entry path. False (the reset()-then-
+        continue "out of range" branch below already covers a real gap) for every other caller -
+        those run mid-session, off the hot tab-entry path, where the eager behavior's own
+        correctness (e.g. not leaving stale content from a just-deleted hub) matters more than
+        shaving a few controls' worth of bind time."""
         if not self.visibleHubs:
             for index in range(len(self.hubControls)):
                 self.hubControls[index].reset()
@@ -7482,11 +7506,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         anchor_ds = self._previewSelectedItem(anchor_hub)
         self.updateHeroFrom(anchor_ds, hub=anchor_hub)
 
+        half = len(self.HUB_ROTATION_RING) // 2
         for control_id in sorted(self.HUB_ROTATION_RING, key=lambda cid: abs(self._ringRoleOffset(cid))):
             role = self._ringRoleOffset(control_id)
             index = control_id - self.HUB_CONTROL_ID
             wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
             self._setRoleGeometry(wrapper, role, self.focusedHubIndex)
+
+            if defer_peek and abs(role) == half:
+                self.hubControls[index].reset()
+                self.setProperty('hub.display.4{0:02d}'.format(index), '')
+                continue
 
             hub_index = self.focusedHubIndex + role
             if not (0 <= hub_index < len(self.visibleHubs)):
@@ -7503,6 +7533,51 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self.setBoolProperty('hub.has_prev', True)
             elif role == 1:
                 self.setBoolProperty('hub.has_next', True)
+
+        if defer_peek:
+            generation = self._listGeneration
+            timer = threading.Timer(self.HUB_PEEK_BIND_DEFER_SECONDS,
+                                    self._bindPeekHubsDeferred, args=[generation])
+            timer.name = 'hubpeekbind'
+            self._hubPeekBindTimer = timer
+            timer.start()
+
+    def _bindPeekHubsDeferred(self, generation):
+        """threading.Timer target scheduled by _bindAllHubSlots(defer_peek=True) - binds the
+        ring's two extreme (role +-half) controls that call left skipped (reset only),
+        ~HUB_PEEK_BIND_DEFER_SECONDS after a fresh 'recommended' entry. Re-derives which physical
+        control currently holds each extreme role, and which hub belongs there, from live state
+        (self.focusedHubIndex/self._anchorRingPos) rather than anything captured at schedule time,
+        so this is still correct even if the user has already slid once or more by the time it
+        fires - same as every other role/content lookup in this file.
+
+        Declines under self.lock if stale (same generation/closing/contentMode guard
+        _recommendedHubsCallback() itself uses) or if a slide is actively mid-animation
+        (self._hubSliding): _startHubSlide()'s own wrap-control rebind already touches these same
+        two roles as part of every slide, so racing it from this second thread for content that's
+        about to be superseded anyway buys nothing and risks a genuine concurrent-Control-mutation
+        collision - the one thing this whole mechanism has stayed deliberately cautious about (see
+        _recommendedHubsCallback()'s own docstring). _settleHubSlide() - called by _startHubSlide()
+        before every new slide, and directly by switchTab()/openSection() before tearing this
+        window down - cancel()s and join()s this timer outright first, so this decline branch is
+        normally only reached in the narrow window where the timer had already started running
+        (past cancel()'s reach) just as _settleHubSlide() ran. Worst case either way: the role
+        stays unbound - still never visible - until the user's own next slide binds it for real
+        via the normal wrap path, never a wrong-content or missing-content-while-visible bug."""
+        with self.lock:
+            if (generation != self._listGeneration or self.closing
+                    or self.contentMode != 'recommended' or self._hubSliding):
+                return
+
+            half = len(self.HUB_ROTATION_RING) // 2
+            for control_id in self.HUB_ROTATION_RING:
+                role = self._ringRoleOffset(control_id)
+                if abs(role) != half:
+                    continue
+                index = control_id - self.HUB_CONTROL_ID
+                hub_index = self.focusedHubIndex + role
+                if 0 <= hub_index < len(self.visibleHubs):
+                    self._bindHubToControl(self.visibleHubs[hub_index], index)
 
     def _startHubSlide(self, delta):
         """Move the logical focus delta positions (+1 down / -1 up) and animate the transition.
@@ -7682,10 +7757,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         what was actually firing). join()ing it here, before this method's own final setPosition()
         snap, still closes a real (if apparently unobserved) window: once join() returns, no other
         thread can still be calling into these controls, so the snap below is provably the last
-        write. HUB_SLIDE_TIME is 0.15s total, so a bounded wait is cheap insurance either way, not
+        write. HUB_SLIDE_TIME is 0.25s total, so a bounded wait is cheap insurance either way, not
         a real stall - left in place as legitimate defensiveness, not reverted just because it
         wasn't the actual fix.
+
+        Also unconditionally cancels/joins any pending _bindPeekHubsDeferred() timer (see
+        _bindAllHubSlots()'s defer_peek param) before the _hubSliding check below - that check is
+        specific to the slide-animation thread, but this method is also every caller's (including
+        switchTab()/openSection()) one chokepoint for "about to touch or tear down these controls
+        from another thread, make sure nothing else still can" - the peek-bind timer is exactly
+        such a thing, whether or not a slide happens to be in flight at the same moment.
         """
+        timer = self._hubPeekBindTimer
+        if timer is not None:
+            timer.cancel()
+            self._hubPeekBindTimer = None
+            timer.join(1.0)
+
         if not self._hubSliding:
             return
         self._hubSlideGen += 1

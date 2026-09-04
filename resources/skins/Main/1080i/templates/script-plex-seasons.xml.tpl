@@ -288,19 +288,19 @@
                     %}
                     {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
                         label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-                        label_width=48 & pill_width=110 & group_width=66 &
+                        label_width=50 & pill_width=112 & group_width=68 &
                         onleft=302 & onright=308
                     %}
                     {% include "includes/wl_dynamic_buttons.xml.tpl" %}
                     {% include "includes/wl_add_remove_buttons.xml.tpl" %}
                     {% include ol with id=392 & visible="Control.HasFocus(308)" & name="watchlist" &
                         label="$ADDON[script.plexmod 35062]" & label_suffix_info="" &
-                        label_width=178 & pill_width=240 & group_width=196 &
+                        label_width=180 & pill_width=242 & group_width=198 &
                         onleft=308 & onright=309
                     %}
                     {% include ol with id=393 & visible="Control.HasFocus(309)" & name="watchlisted" &
                         label="$ADDON[script.plexmod 34011]" & label_suffix_info="" &
-                        label_width=249 & pill_width=311 & group_width=267 &
+                        label_width=251 & pill_width=313 & group_width=269 &
                         onleft=309 & onright=303
                     %}
                     {% include template with name="shuffle" & id=303 &
@@ -308,7 +308,7 @@
                     %}
                     {% include ol with id=394 & visible="Control.HasFocus(303)" & name="shuffle" &
                         label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
-                        label_width=82 & pill_width=144 & group_width=100 &
+                        label_width=84 & pill_width=146 & group_width=102 &
                         onleft=303 & onright=304
                     %}
                     {% include template with name="more" & id=304 &
@@ -316,7 +316,7 @@
                     %}
                     {% include ol with id=395 & visible="Control.HasFocus(304)" & name="more" &
                         label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
-                        label_width=58 & pill_width=120 & group_width=76 &
+                        label_width=60 & pill_width=122 & group_width=78 &
                         onleft=304 & onright=""
                     %}
                 {% endwith %}
@@ -738,10 +738,12 @@
                                 <width>254</width>
                                 <height>{{ vscale(254) }}</height>
                                 <!-- role-selected-thin.png, not the shared role-selected.png: a dedicated,
-                                     thinner-stroke variant of that same ring texture, scoped to this row
-                                     only (Pre-play/Episodes/Search/Video-player all still use the original,
-                                     unaffected) - reduces the native stroke from ~6px to ~5px (of a 299px
-                                     canvas) to sit closer to the poster ring's own thickness on request. -->
+                                     thinner-stroke variant of that same ring texture - reduces the native
+                                     stroke from ~6px to ~5px (of a 299px canvas) to sit closer to the
+                                     poster ring's own thickness on request. Episodes' own Roles row
+                                     (script-plex-episodes.xml.tpl) and Pre-play's own (script-plex-pre_play.xml.tpl,
+                                     2026-09-04) both since matched this too, on request each time - Search/
+                                     Video-player still use the original role-selected.png, unaffected. -->
                                 <texture>script.plex/buttons/role-selected-thin.png</texture>
                             </control>
                         </control>

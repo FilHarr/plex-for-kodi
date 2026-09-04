@@ -91,7 +91,10 @@ class MediaInfoPillsMixin(object):
         else:
             left_inset = self.PILL_PADDING // 2
 
-        width = min(max(left_inset + right_inset + self.measureFont8Width(text), self.PILL_MIN_WIDTH), max_width)
+        # +2: small fudge on top of the measured text width itself (not the insets) - measureFont8Width()
+        # is a real per-glyph measurement but still an estimate (see this class's own header comment),
+        # and text was landing a couple px tighter than the padding alone accounts for.
+        width = min(max(left_inset + right_inset + self.measureFont8Width(text) + 2, self.PILL_MIN_WIDTH), max_width)
         width = int(round(width))
 
         group_ctrl.setWidth(width)

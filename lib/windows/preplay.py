@@ -125,7 +125,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     TRAILER_BUTTON_ID = 303
     SETTINGS_BUTTON_ID = 305
     OPTIONS_BUTTON_ID = 306
-    MEDIA_BUTTON_ID = 307
 
     POSSIBLE_PLAY_BUTTON_IDS = [302, 2302, 2303, 2304, 2305]
 
@@ -255,7 +254,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
         util.setGlobalProperty('hide.resume', '' if self.video.viewOffset.asInt() else '1')
         # skip setting background when coming from reinit (other window) if we've focused something other than main
-        self.setInfo(skip_bg=from_reinit and not (self.PLAY_BUTTON_ID <= oldFocusId <= self.MEDIA_BUTTON_ID))
+        self.setInfo(skip_bg=from_reinit and not (self.PLAY_BUTTON_ID <= oldFocusId <= self.OPTIONS_BUTTON_ID))
 
         if not from_reinit:
             show_reviews = util.getSetting('show_reviews1')
@@ -371,8 +370,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.openItem(item=self.trailer)
         elif controlID == self.OPTIONS_BUTTON_ID:
             self.optionsButtonClicked()
-        elif controlID == self.MEDIA_BUTTON_ID:
-            self.mediaButtonClicked()
 
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
@@ -533,23 +530,30 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             playerObject = plexplayer.PlexPlayer(self.video)
             playerObject.build()
         playersettings.showDialog(video=self.video, non_playback=True)
-        video_text = self.video.resolutionString()
-        if self.video.videoCodecRendering:
-            video_text = u'{0} {1}'.format(video_text, self.video.videoCodecRendering)
+        # The dialog's own Video entry (playersettings.showVideoDialog()) can change mediaChoice
+        # itself - the video pill's own visible text is driven by the video.res/video.rendering
+        # *properties* (media_info_pills.xml.tpl's label markup), separate from video_text below
+        # (only ever used for the pill's width, via setAudioAndSubtitleInfo() ->
+        # resizeMediaInfoPills()). Without refreshing these two properties here too, the pill kept
+        # showing the previous version's resolution/codec even though the underlying media had
+        # actually switched (live-reported) - setInfo() sets them the same way on a full refresh,
+        # this is just that same pair repeated for this narrower post-dialog case.
+        res = self.video.resolutionString()
+        rendering = self.video.videoCodecRendering
+        self.setProperty('video.res', res)
+        self.setProperty('video.rendering', rendering)
+        video_text = u'{0} {1}'.format(res, rendering) if rendering else res
         self.setAudioAndSubtitleInfo(video_text)
 
     def infoButtonClicked(self):
-        opener.handleOpen(
-            info.InfoWindow,
-            title=self.video.defaultTitle,
-            sub_title=self.getProperty('info'),
-            thumb=self.video.type == 'episode' and self.video.thumb or self.video.defaultThumb,
-            thumb_fallback='script.plex/thumb_fallbacks/{0}.png'.format(self.video.type == 'episode' and 'show' or 'movie'),
-            info=self.video.summary,
-            background=self.getProperty('background'),
-            is_16x9=self.video.type == 'episode',
-            video=self.video
-        )
+        # Popup, not opener.handleOpen(info.InfoWindow, ...) any more - same change episodes.py's
+        # own Info button already got (infoButtonClicked() there):
+        # title/subtitle/thumb/summary all duplicate what's already visible on this screen itself,
+        # only the media/file/stream detail block (formatMediaDetails() - info.py, shared with
+        # InfoWindow's own getVideoInfo()) was actually new information. A dialog like Settings'/
+        # More's own popups, not a full window transition, so no cameFrom bookkeeping needed either
+        # (that existed only for InfoWindow's own close-and-return-to-this-window flow).
+        info.showMediaDetails(self.video)
 
     def optionsButtonClicked(self):
         options = []
@@ -626,25 +630,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 self.refreshInfo()
             except Exception as e:
                 util.DEBUG_LOG("Couldn't clear cache: {}", e)
-
-    def mediaButtonClicked(self):
-        options = []
-        for media in self.video.media:
-            ind = ''
-            if self.video.mediaChoice and media.id == self.video.mediaChoice.media.id:
-                ind = 'script.plex/home/device/check.png'
-            options.append({'key': media, 'display': media.versionString(), 'indicator': ind})
-        choice = dropdown.showDropdown(options, header=T(32450, 'Choose Version'), with_indicator=True)
-        if not choice:
-            return False
-
-        for media in self.video.media:
-            media.set('selected', '')
-
-        self.video.setMediaChoice(choice['key'])
-        choice['key'].set('selected', 1)
-        pnUtil.INTERFACE.playbackManager(self.video, key="media_version", value=choice['key'].id)
-        self.setInfo()
 
     def delete(self):
         button = optionsdialog.show(
@@ -931,7 +916,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.setProperty('video.codec', self.video.videoCodecString())
             self.setProperty('video.rendering', self.video.videoCodecRendering)
             self.setProperty('audio.channels', self.video.audioChannelsString(metadata.apiTranslate))
-            self.setBoolProperty('media.multiple', len(list(filter(lambda x: x.isAccessible(), self.video.media()))) > 1)
 
             video_text = self.video.resolutionString()
             if self.video.videoCodecRendering:

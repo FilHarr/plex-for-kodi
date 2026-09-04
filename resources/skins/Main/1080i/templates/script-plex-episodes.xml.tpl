@@ -922,7 +922,7 @@
                         {% include template with name="info" & id=304 & visible="!Container(400).ListItem.Property(is.season.card)" %}
                         {% include ol with id=391 & visible="Control.HasFocus(304)" & name="info" &
                             label="$ADDON[script.plexmod 35059]" & label_suffix_info="" &
-                            label_width=86 & pill_width=148 & group_width=104 &
+                            label_width=88 & pill_width=150 & group_width=106 &
                             onleft=304 & onright=301
                         %}
                         <!-- Play/loading/Resume/Restart are mutually exclusive by state: Play once the
@@ -939,7 +939,7 @@
                         %}
                         {% include ol with id=390 & visible="Control.HasFocus(301) | Control.HasFocus(306)" & name="play" &
                             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-                            label_width=48 & pill_width=110 & group_width=66 &
+                            label_width=50 & pill_width=112 & group_width=68 &
                             onleft=301 & onright=305
                         %}
                         {% include template with name="resume" & id=308 & onleft=304 & onright=305 &
@@ -953,12 +953,12 @@
                              estimates below, needs the same precise measurement the other buttons got. -->
                         {% include ol with id=392 & visible="Control.HasFocus(308) + !String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
                             label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
-                            label_width=205 & pill_width=267 & group_width=223 &
+                            label_width=207 & pill_width=269 & group_width=225 &
                             onleft=308 & onright=305
                         %}
                         {% include ol with id=397 & visible="Control.HasFocus(308) + String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
                             label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
-                            label_width=234 & pill_width=296 & group_width=252 &
+                            label_width=236 & pill_width=298 & group_width=254 &
                             onleft=308 & onright=305
                         %}
                         {% include template with name="restart" & id=309 & onleft=308 & onright=305 &
@@ -966,19 +966,19 @@
                         %}
                         {% include ol with id=393 & visible="Control.HasFocus(309)" & name="restart" &
                             label="$ADDON[script.plexmod 35061]" & label_suffix_info="" &
-                            label_width=79 & pill_width=141 & group_width=97 &
+                            label_width=81 & pill_width=143 & group_width=99 &
                             onleft=309 & onright=305
                         %}
                         {% include template with name="settings" & id=305 & visible="!Container(400).ListItem.Property(is.season.card)" %}
                         {% include ol with id=394 & visible="Control.HasFocus(305)" & name="settings" &
                             label="$ADDON[script.plexmod 35060]" & label_suffix_info="" &
-                            label_width=160 & pill_width=222 & group_width=178 &
+                            label_width=162 & pill_width=224 & group_width=180 &
                             onleft=305 & onright=303
                         %}
                         {% include template with name="more" & id=303 %}
                         {% include ol with id=395 & visible="Control.HasFocus(303)" & name="more" &
                             label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
-                            label_width=58 & pill_width=120 & group_width=76 &
+                            label_width=60 & pill_width=122 & group_width=78 &
                             onleft=303 & onright=""
                         %}
                         <!-- Season-card-only, not every episode card (on request) - shuffles the whole
@@ -989,7 +989,7 @@
                         %}
                         {% include ol with id=396 & visible="Control.HasFocus(302)" & name="shuffle" &
                             label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
-                            label_width=82 & pill_width=144 & group_width=100 &
+                            label_width=84 & pill_width=146 & group_width=102 &
                             onleft=302 & onright=""
                         %}
                     {% endwith %}

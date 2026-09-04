@@ -22,11 +22,13 @@
          since even for plain ones). Formula: pill_width = label_width + 62, group_width =
          label_width + 18 (both derived from the label's own -8 posx and the pill's own -62 posx
          below) - NOT +64/+22 despite the label's own -8/pill's own -62 math implying that: every
-         call site's label_width already carries a +2px clipping-safety buffer over its actually-
-         measured text width (this session's own InterUI.ttf measurement, font10/23px), so sizing
-         the pill directly off label_width would show that buffer as extra empty pill space past
-         the text instead of keeping it invisible - confirmed live (pill's right-side gap read
-         visibly bigger than the left's). -62/-2 undoes exactly that 2px per call site.
+         call site's label_width already carries a buffer over its actually-measured text width
+         (InterUI.ttf, font10/23px) - originally +2px clipping safety, +2px more on top of that
+         (2026-09-04, every call site in this file/episodes/seasons/posters) - so sizing the pill
+         directly off label_width would show that buffer as extra empty pill space past the text
+         instead of keeping it invisible - confirmed live (pill's right-side gap read visibly
+         bigger than the left's). The formula's own +62/+18 nets that buffer back out regardless
+         of its size, since it's baked into label_width itself, not added again on top of it.
          ibis's inline math doesn't reliably resolve variables as arithmetic operands (confirmed
          earlier this session - raised "Malformed 'with' tag" on a dotted-path case, not trusted
          since even for plain ones)

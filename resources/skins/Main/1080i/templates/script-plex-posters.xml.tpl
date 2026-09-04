@@ -11,7 +11,12 @@
         <visible>Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
         <defaultcontrol>101</defaultcontrol>
         <posx>0</posx>
-        <posy>{{ vscale(-35) }}</posy>
+        <!-- -34, not the old -35: nudges the poster grid down 1px (2026-09-04, on request) without
+             moving the button row above it (a sibling under group 50, not a child of this group) or
+             the scrollbar (152, a standalone top-level control positioned via its own <top>, not
+             derived from this group's posy at all - see that control's own comment on why it isn't
+             nested here). -->
+        <posy>{{ vscale(-34) }}</posy>
         <width>1920</width>
         <height>1080</height>
         <control type="panel" id="101">
@@ -322,25 +327,26 @@
         {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
         {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-            label_width=48 & pill_width=110 & group_width=66 &
+            label_width=50 & pill_width=112 & group_width=68 &
             onleft=301 & onright=302
         %}
         {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
         {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
             label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
-            label_width=82 & pill_width=144 & group_width=100 &
+            label_width=84 & pill_width=146 & group_width=102 &
             onleft=302 & onright=303
         %}
         {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio]" %}
         {% include template with name="view" & id=304 %}
-        <!-- label_width=142: "Change view" measured at font10/23px via InterUI.ttf (PIL
-             font.getlength, 140px) + the same +2px clipping-safety buffer every other call site
-             here uses (see button-label-overlay-recipe) - pill_width/group_width follow the
-             recipe's own +62/+18 formula. No onright: 393 is the last item in this row once
+        <!-- label_width=144: "Change view" measured at font10/23px via InterUI.ttf (PIL
+             font.getlength, 140px) + the +2px clipping-safety buffer every other call site here
+             uses, +2px more (2026-09-04 pass, applied to every label_width in this file/
+             episodes/seasons - see button-label-overlay-recipe) - pill_width/group_width follow
+             the recipe's own +62/+18 formula. No onright: 393 is the last item in this row once
              visible (nothing follows it to route around), same as 304's own bare include above. -->
         {% include ol with id=393 & visible="Control.HasFocus(304)" & name="view" &
             label="$ADDON[script.plexmod 35063]" & label_suffix_info="" &
-            label_width=142 & pill_width=204 & group_width=160 &
+            label_width=144 & pill_width=206 & group_width=162 &
             onleft=304
         %}
     {% endwith %}
