@@ -132,6 +132,17 @@
             <colordiffuse>$INFO[Window.Property(background_panel_br_b)]</colordiffuse>
         </control>
     </control>
+    {# Whole top-right hero-art box (both art layers plus the scrim over them). Dropped at render
+       time for the screens that never want it, rather than hidden at runtime via the no_hero_art
+       window property below: library grids, list views and Genres are structurally incapable of
+       wanting it, and driving that from Python proved unreliable - the property is only ever
+       written by LibraryWindow.doRefill(), which onFirstInit()'s fast path (library.py, the
+       `elif self.showPanelControl and not self.refill` branch) skips on every view-type swap,
+       leaving each freshly constructed window's property unset and the box visible until the
+       section was left and re-entered. library.xml.tpl passes suppress_hero_art=True for that
+       whole chain. Negative flag deliberately: an undefined variable is falsy here, so every
+       other caller of this include keeps the box with no change. #}
+    {% if not suppress_hero_art %}
     <!-- shrunk to ~64% and anchored top-right, matching official Plex's own pre_play framing.
          The vignette mask below is a rounded-rectangle falloff (flat sides, curved corners only),
          not a smooth ellipse - fit against real pixel measurements off official Plex renders. An
@@ -202,6 +213,7 @@
         <texture diffuse="script.plex/masks/background-vignette.png">script.plex/white-square.png</texture>
         <colordiffuse>33000000</colordiffuse>
     </control>
+    {% endif %}
     <!-- Full-canvas dim while focus is down in the row content (Roles/Reviews/Extras/Related/etc.)
          below the details block, so that content doesn't have to compete with the backdrop. Driven
          by row.focused (PrePlayWindow.onFocus, preplay.py; ShowWindow.onFocus, subitems.py;

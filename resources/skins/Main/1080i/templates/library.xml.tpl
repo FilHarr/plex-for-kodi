@@ -1,6 +1,13 @@
 {% extends "default.xml.tpl" %}
 {% block headers %}<defaultcontrol>100</defaultcontrol>{% endblock %}
 
+{# No top-right hero-art box on anything in this chain - the poster/square grids and both list
+   views (via library_posters.xml.tpl) plus Genres. Only Recommended's hub-focused item wants it,
+   and script-plex-recommended.xml.tpl extends default.xml.tpl directly, so it is unaffected.
+   Replaces the runtime no_hero_art property for these screens; see default_background.xml.tpl's
+   own comment on the flag for the view-swap bug that made the property approach unreliable. #}
+{% block background %}{% include "includes/default_background.xml.tpl" with suppress_hero_art=True %}{% endblock %}
+
 {# Blanked, same as script-plex-episodes.xml.tpl: the sidebar (header_sidebar below) already
    provides Search and Home as its own first two entries (LibraryWindow.buildSectionList()),
    making these icons a pure duplicate left over from before the sidebar existed - safe to drop

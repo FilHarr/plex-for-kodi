@@ -2243,6 +2243,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # unchanged into library mode - not reliably hidden, just whatever it happened to be.
         # Plain setBoolProperty(), not _setNoHeroArt() - that method also repositions control 51,
         # which doesn't exist in any library-grid template (RuntimeError: Non-Existent Control).
+        #
+        # Belt-and-braces only, as of the library.xml.tpl change: that template now passes
+        # suppress_hero_art=True into default_background.xml.tpl, so the hero-art controls aren't
+        # rendered into any template in this chain at all and there is nothing left for this
+        # property to hide. Kept because it costs nothing and keeps the property honest for
+        # anything that reads it, but note it CANNOT be relied on by itself - onFirstInit()'s
+        # `elif self.showPanelControl and not self.refill` fast path skips doRefill() entirely on
+        # every view-type swap, so on a swapped-into window this never runs (live-confirmed: the
+        # hero-art box stayed visible through every view cycle until the section was left and
+        # re-entered). The same fast path drops nine other property writes from this method.
         self.setBoolProperty('no_hero_art', True)
         # ...but _setNoHeroArt()'s own no-op guard (self._lastNoHeroArt) still needs to know about
         # this write, or it goes stale: onFirstInit()'s 'recommended' branch already resets it to
