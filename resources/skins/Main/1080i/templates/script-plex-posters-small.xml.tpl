@@ -122,7 +122,7 @@
                             <posy>{{ vscale(218) }}</posy>
                             <width>144</width>
                             <height>{{ vscale(72) }}</height>
-                            <font>font10</font>
+                            <font>font8</font>
                             <align>center</align>
                             <textcolor>FFFFFFFF</textcolor>
                             <label>$INFO[ListItem.Label] [COLOR A0FFFFFF]($INFO[ListItem.Property(year)])[/COLOR]</label>
@@ -134,7 +134,7 @@
                             <posy>{{ vscale(218) }}</posy>
                             <width>144</width>
                             <height>{{ vscale(72) }}</height>
-                            <font>font10</font>
+                            <font>font8</font>
                             <align>center</align>
                             <textcolor>FFFFFFFF</textcolor>
                             <label>$INFO[ListItem.Label]</label>
@@ -146,7 +146,7 @@
                             <posy>{{ vscale(218) }}</posy>
                             <width>144</width>
                             <height>{{ vscale(72) }}</height>
-                            <font>font10</font>
+                            <font>font8</font>
                             <align>center</align>
                             <textcolor>FFFFFFFF</textcolor>
                             <label>$INFO[ListItem.Property(subtitle)]</label>
@@ -161,12 +161,32 @@
                     <posx>55</posx>
                     <posy>{{ vscale(137) }}</posy>
                     <control type="group">
-                        <animation effect="zoom" start="100" end="105" time="100" center="127,{{ vscale(185) }}" reversible="false">Focus</animation>
-                        <animation effect="zoom" start="105" end="100" time="100" center="127,{{ vscale(185) }}" reversible="false">UnFocus</animation>
+                        <!-- center = half the focus border's own size: the border (150x219 at
+                             posx/posy 0, below) and the poster (144x213 at the inner group's 3,3)
+                             share a centre exactly, since the border is 6px larger and starts 3px
+                             earlier - so both centre on 75,109.5.
+
+                             The old 127,185 was a pre-template holdover (679ede4c) that was never
+                             retuned when this grid's poster geometry changed, and it pivoted 52px
+                             right and 75.5px below the real centre. Live-measured result: the
+                             border grew 6.35px left but only 1.15px right, leaving a 10.65px gap
+                             to the poster on the left against 15.85px on the right (reported as
+                             "approx 10px and 15px"), and it climbed 9.25px up against 1.7px down
+                             instead of expanding in place.
+
+                             end=104, not the old 105: matches script-plex-posters.xml.tpl so both
+                             grids zoom by the same proportion. -->
+                        <animation effect="zoom" start="100" end="104" time="100" center="75,{{ vscale(109.5) }}" reversible="false">Focus</animation>
+                        <animation effect="zoom" start="104" end="100" time="100" center="75,{{ vscale(109.5) }}" reversible="false">UnFocus</animation>
                         <posx>0</posx>
                         <posy>0</posy>
+                        <!-- No Control.HasFocus(101) gate on the drop shadow, unlike the focus
+                             border at the end of this layout - same reasoning as
+                             script-plex-posters.xml.tpl's own copy of this control: itemlayout
+                             draws this shadow unconditionally, so gating it here made the selected
+                             item the only poster without one once focus left the grid, and it
+                             popped back in as Kodi settled the item's layout. -->
                         <control type="image">
-                            <visible>Control.HasFocus(101)</visible>
                             <posx>0</posx>
                             <posy>0</posy>
                             <width>168</width>
@@ -214,7 +234,7 @@
                                 <posy>{{ vscale(218) }}</posy>
                                 <width>144</width>
                                 <height>{{ vscale(72) }}</height>
-                                <font>font10</font>
+                                <font>font8</font>
                                 <align>center</align>
                                 <textcolor>FFFFFFFF</textcolor>
                                 <label>$INFO[ListItem.Label] [COLOR A0FFFFFF]($INFO[ListItem.Property(year)])[/COLOR]</label>
@@ -227,7 +247,7 @@
                                 <posy>{{ vscale(218) }}</posy>
                                 <width>144</width>
                                 <height>{{ vscale(72) }}</height>
-                                <font>font10</font>
+                                <font>font8</font>
                                 <align>center</align>
                                 <textcolor>FFFFFFFF</textcolor>
                                 <label>$INFO[ListItem.Label]</label>
@@ -240,7 +260,7 @@
                                 <posy>{{ vscale(218) }}</posy>
                                 <width>144</width>
                                 <height>{{ vscale(20) }}</height>
-                                <font>font10</font>
+                                <font>font8</font>
                                 <align>center</align>
                                 <textcolor>FFFFFFFF</textcolor>
                                 <label>$INFO[ListItem.Property(subtitle)] - $INFO[ListItem.Label]</label>

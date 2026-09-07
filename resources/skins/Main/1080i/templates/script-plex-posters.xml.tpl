@@ -149,12 +149,26 @@
                     <posx>55</posx>
                     <posy>{{ vscale(137) }}</posy>
                     <control type="group">
-                        <animation effect="zoom" start="100" end="104" time="100" center="120,{{ vscale(180) }}" reversible="false">Focus</animation>
-                        <animation effect="zoom" start="104" end="100" time="100" center="120,{{ vscale(180) }}" reversible="false">UnFocus</animation>
+                        <!-- center = half the focus ring's own size, not half the poster's: the ring
+                             (246x366 at posx/posy 0, below) and the poster (240x360 at the inner
+                             group's 3,3) share a centre exactly, since the ring is 6px larger and
+                             starts 3px earlier - so both centre on 123,183. The old 120,180 was
+                             half the poster's own dimensions with the 3px inset forgotten, which
+                             pivoted 3px up and left of the real centre. Only ~0.25px of asymmetry
+                             at this zoom, so invisible here, but script-plex-posters-small.xml.tpl
+                             had the same class of error at 52px and was very visible. -->
+                        <animation effect="zoom" start="100" end="104" time="100" center="123,{{ vscale(183) }}" reversible="false">Focus</animation>
+                        <animation effect="zoom" start="104" end="100" time="100" center="123,{{ vscale(183) }}" reversible="false">UnFocus</animation>
                         <posx>0</posx>
                         <posy>0</posy>
+                        <!-- No Control.HasFocus(101) gate on the drop shadow, unlike the focus ring
+                             at the end of this layout. The ring genuinely should only show while
+                             the grid holds focus; the shadow should not, because every unfocused
+                             item in itemlayout draws it unconditionally. Gating it made the
+                             selected item the only poster on screen without a shadow the moment
+                             focus moved to the button row/sidebar/scrubber, and the shadow
+                             visibly popped back in as Kodi settled the item's layout. -->
                         <control type="image">
-                            <visible>Control.HasFocus(101)</visible>
                             <posx>0</posx>
                             <posy>0</posy>
                             <width>264</width>
