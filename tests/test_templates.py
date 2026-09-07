@@ -25,7 +25,15 @@ from lib.templating.core import prepare_template_data
 from .base import KodiTestCase, MEDIA_DIR, TEMPLATE_DIR, make_engine
 from . import REPO_ROOT
 
-THEMES = sorted(TEMPLATE_CONTEXTS["themes"])
+# The theme is not user-selectable - there is no setting for it, and render_templates()
+# always falls through to util.DEF_THEME - so "modern-colored" is the only theme that ever
+# renders on a real device. "base" is excluded because it is an abstract root that exists
+# only to be inherited from: it is not reachable at runtime and does not ship a complete
+# asset set of its own (no view/restart button icons under the flat script.plex/buttons/
+# path). Derived from the context rather than hardcoded so a genuinely new theme is picked
+# up here automatically.
+ABSTRACT_THEMES = {"base"}
+THEMES = sorted(set(TEMPLATE_CONTEXTS["themes"]) - ABSTRACT_THEMES)
 INDICATOR_STYLES = sorted(TEMPLATE_CONTEXTS["indicators"])
 
 # ibis syntax that must never survive into the generated XML

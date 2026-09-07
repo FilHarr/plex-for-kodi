@@ -103,45 +103,6 @@ TEMPLATE_CONTEXTS = {
                 }
             }
         },
-        "classic": {
-            "INHERIT": "base",
-            "episodes": {
-                "buttongroup": {
-                    "itemgap": -50
-                },
-                "buttons": {
-                    "width": 176,
-                    "height": 140
-                }
-            },
-            "seasons": {
-                "buttongroup": {
-                    "itemgap": -50
-                },
-                "buttons": {
-                    "width": 176,
-                    "height": 140,
-                }
-            },
-            "pre_play": {
-                "buttongroup": {
-                    "itemgap": -50
-                },
-                "buttons": {
-                    "width": 176,
-                    "height": 140,
-                }
-            },
-            "library": {
-                "buttongroup": {
-                    "itemgap": -50
-                },
-                "buttons": {
-                    "width": 176,
-                    "height": 140,
-                }
-            },
-        },
         "modern": {
             "INHERIT": "base",
             "assets": {
@@ -241,18 +202,5 @@ TEMPLATE_CONTEXTS = {
                 "zoomPlayButton": False,
             }
         },
-        "modern-dotted": {
-            "INHERIT": "modern",
-            "assets": {
-                "buttons": {
-                    "base": "script.plex/buttons/player/modern-dotted/",
-                    "focusSuffix": "-focus",
-                }
-            },
-            "buttons": {
-                "useFocusColor": False,
-                "zoomPlayButton": False,
-            }
-        }
     }
 }
