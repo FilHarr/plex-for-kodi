@@ -393,7 +393,13 @@
         <width>34</width>
         <height>1050</height>
         <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
-        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),5) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">300</onleft>
+        <!-- 304 (View), not 300: entering the button row from the right has to land on its
+             RIGHTMOST button rather than restoring the row's own remembered child. Targeting the
+             grouplist by id gives you whatever was focused last, which is right for up/down entry
+             but wrong from the side. View is the last real button in the row and carries no
+             visibility condition here, so no fallback chain is needed in this direction (unlike
+             the leftmost, see library_posters.xml.tpl). -->
+        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),5) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">304</onleft>
         <onright>152</onright>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
@@ -432,6 +438,6 @@
          itself isn't in the chain to make that hop for us then. -->
     <onleft condition="!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">151</onleft>
     <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).ListItem.Property(index),5)">100</onleft>
-    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),5)">300</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),5)">304</onleft>
 </control>
 {% endblock content %}

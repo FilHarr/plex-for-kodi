@@ -18,7 +18,20 @@
     <itemgap>0</itemgap>
     <orientation>horizontal</orientation>
     <onleft>9000</onleft>
-    <onright>300</onright>
+    <!-- Right into the button row lands on its LEFTMOST button, not on whatever it happened to
+         have focused last. Targeting the grouplist (300) by id makes Kodi restore the row's own
+         remembered child, which is what you want entering from above or below but not from the
+         side - it let a press of right from here land on the rightmost button (Change view).
+         Naming a child control by id is how the button row's own <onleft>210</onleft> already
+         crosses back into this row, so this is the symmetric form of what that already does.
+
+         Three clauses because the leftmost button is not always 301: Play and Shuffle share one
+         visibility condition (disable_playback / collection item type), so when Play is hidden
+         Shuffle is too and the leftmost visible button is More, or View when More is hidden as
+         well. View carries no visibility condition in this chain, so it is the safe fallback. -->
+    <onright condition="Control.IsVisible(301)">301</onright>
+    <onright condition="!Control.IsVisible(301) + Control.IsVisible(303)">303</onright>
+    <onright>304</onright>
     <ondown>101</ondown>
     <onup condition="Control.IsVisible(320)">320</onup>
     <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>

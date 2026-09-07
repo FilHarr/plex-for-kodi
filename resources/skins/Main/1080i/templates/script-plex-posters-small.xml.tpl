@@ -399,7 +399,10 @@
         <width>34</width>
         <height>1050</height>
         <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),9) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
-        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),9) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">300</onleft>
+        <!-- 304 (View), not 300: entering the button row from the right has to land on its
+             RIGHTMOST button rather than restoring the row's own remembered child - see
+             script-plex-posters.xml.tpl's own copy of this control for the full reasoning. -->
+        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),9) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">304</onleft>
         <onright>152</onright>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
@@ -431,6 +434,6 @@
          onleft to 151 sent focus into a hidden scrubber for every non-alphabetical sort. -->
     <onleft condition="!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">151</onleft>
     <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).ListItem.Property(index),9)">100</onleft>
-    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),9)">300</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),9)">304</onleft>
 </control>
 {% endblock content %}
