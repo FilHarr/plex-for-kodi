@@ -247,8 +247,8 @@ class TemplateContextTest(KodiTestCase):
 
         indicators = resolved["indicators"]
         self.assertEqual("watched_2024.png", indicators["assets"]["watched"])
-        # from modern
-        self.assertTrue(indicators["use_scaling"])
+        # from modern (there was a use_scaling assertion here too, but that key was dropped
+        # from the indicators context in f4ddffdc and exists nowhere in the addon any more)
         self.assertEqual("CC000000", indicators["watched_bg"])
         # from base
         self.assertTrue(indicators["show"])
