@@ -60,12 +60,21 @@
              below it too, well beyond this block), so every posy below is each reference screen's own
              raw value minus 20 to land at the same absolute y those screens reach with theirs. -->
         <control type="label">
+            <!-- font45_title, not font45; height=61, not the old 109 (on request, matching Artist's/
+                 Seasons' own title control - script-plex-artist.xml.tpl/script-plex-seasons.xml.tpl).
+                 posy=28, not the old -20: aligny=bottom anchors text to the box's own BOTTOM edge,
+                 so shrinking height by 48px (109-61) while leaving posy alone would have pulled the
+                 text up 48px and left dead space below it, between the new bottom edge and the
+                 metadata row underneath (tuned against the old 109-tall box's own bottom) - moving
+                 posy down by that same 48px (-20+48=28) keeps the bottom edge (and the text anchored
+                 to it) exactly where it was. width=660, not the old 616 (on request) - now matches
+                 the clearlogo/episode-title lines' own width below instead of being the odd one out. -->
             <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
             <posx>53</posx>
-            <posy>{{ vscale(-20) }}</posy>
-            <width>616</width>
-            <height>{{ vscale(109) }}</height>
-            <font>font45</font>
+            <posy>{{ vscale(28) }}</posy>
+            <width>660</width>
+            <height>{{ vscale(61) }}</height>
+            <font>font45_title</font>
             <align>left</align>
             <aligny>bottom</aligny>
             <scroll>true</scroll>
@@ -75,9 +84,11 @@
         </control>
         <!-- 660x98, not the old 1440x106: matches Recommended's own episode-variant clearlogo box exactly
              (CLEAR_LOGO_DIM_EPISODE, library.py) - leaves room for the episode-title line below it,
-             replacing the old small always-on episode-name line that used to sit above the logo. -->
+             replacing the old small always-on episode-name line that used to sit above the logo.
+             Excludes the season card on a skipChildren show (is.skip.children.card,
+             createSeasonCardItem()) - see the full-size variant below for why. -->
         <control type="image">
-            <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
+            <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEmpty(Container(400).ListItem.Property(is.skip.children.card))</visible>
             <posx>53</posx>
             <posy>{{ vscale(-20) }}</posy>
             <width>660</width>
@@ -85,12 +96,51 @@
             <aspectratio align="left" aligny="bottom">keep</aspectratio>
             <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
         </control>
+        <!-- Full-size clearlogo, matching Seasons' own CLEAR_LOGO_DIM exactly (722x162,
+             script-plex-seasons.xml.tpl) - on request, for the season card on a skipChildren show
+             specifically: that show has no real season layer (self.season is self.show_ - see
+             createSeasonCardItem()'s own comment), so the reduced clearlogo + "Season X" title line
+             below it (the normal treatment, still used for a real episode or a season card on an
+             ordinary multi-season show) read as a redundant, wrong caption under a clearlogo that
+             already names the show. This is exactly what the season page itself
+             (script-plex-seasons.xml.tpl) shows for that same show. -->
+        <control type="image">
+            <visible>!String.IsEmpty(Window.Property(clear.logo)) + !String.IsEmpty(Container(400).ListItem.Property(is.skip.children.card))</visible>
+            <posx>53</posx>
+            <posy>{{ vscale(-20) }}</posy>
+            <width>722</width>
+            <height>{{ vscale(162) }}</height>
+            <aspectratio align="left" aligny="bottom">keep</aspectratio>
+            <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
+        </control>
         <!-- Episode title, sitting under the show's clearlogo - matches Recommended's own episode-variant
-             title label exactly (position, size, font, color). Only shown alongside the logo, same as
-             Recommended's own: its no-logo fallback (the label above) has no room for a second line
-             either. -->
+             title label exactly (position, size, font, color). Same skipChildren-season-card exclusion
+             as the reduced clearlogo above - the full-size variant replaces this line entirely rather
+             than just growing underneath it. -->
         <control type="label">
-            <visible>!String.IsEmpty(Window.Property(clear.logo))</visible>
+            <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEmpty(Container(400).ListItem.Property(is.skip.children.card))</visible>
+            <posx>53</posx>
+            <posy>{{ vscale(97) }}</posy>
+            <width>660</width>
+            <height>{{ vscale(51) }}</height>
+            <font>font32_title</font>
+            <align>left</align>
+            <aligny>top</aligny>
+            <scroll>true</scroll>
+            <scrollspeed>35</scrollspeed>
+            <textcolor>FFD2CCCE</textcolor>
+            <label>$INFO[Container(400).ListItem.Property(title)]</label>
+        </control>
+        <!-- No-logo fallback's own episode title - on request, this used to have no episode-name line
+             at all (only the show-title label above it), unlike the clearlogo variant. Same
+             posy/font/color/scroll as that variant's own copy above; width normalized to 660 (on
+             request), matching the clearlogo variant's own copy below instead of the two disagreeing.
+             Same skipChildren-season-card exclusion as the clearlogo variant's own subtitle line
+             above - that show has no real season identity to caption, so its season card should
+             read as a single title line only, matching how its title shows on the season page itself
+             (script-plex-seasons.xml.tpl) with no clearlogo either. -->
+        <control type="label">
+            <visible>String.IsEmpty(Window.Property(clear.logo)) + String.IsEmpty(Container(400).ListItem.Property(is.skip.children.card))</visible>
             <posx>53</posx>
             <posy>{{ vscale(97) }}</posy>
             <width>660</width>
@@ -226,6 +276,49 @@
             <autoscroll delay="2000" time="2000" repeat="10000">true</autoscroll>
             <label>$INFO[Container(400).ListItem.Property(summary)]</label>
         </control>
+        <!-- Invisible click/focus target laid directly over the summary textbox above - textboxes
+             have no click or focus of their own in Kodi, so this is a separate button control sized
+             and positioned to match it exactly, wired to summaryButtonClicked() (SUMMARY_BUTTON_ID,
+             episodes.py) - same recipe as Artist's/Seasons' own copy (script-plex-artist.xml.tpl/
+             script-plex-seasons.xml.tpl), which this was ported from. Blank label (matches
+             themed_button.xml.tpl's own convention) so nothing draws over the textbox's real text.
+             texturenofocus/texturefocus both "-" (explicit none, not just omitted - Kodi otherwise
+             falls back to its own default button look) - the focus highlight itself is the separate
+             image below instead, not this control's own texture, so it can be sized bigger than the
+             actual hit area. onup carries the 205/206/200 season-tab fallback the episode carousel
+             (400) used to have directly - that control's own onup now just points here instead, and
+             the season tabs' own ondown was repointed here too, both visiting this control in
+             top-to-bottom order on the way through. id=350, not 310: that collided with
+             includes/media_info_pills.xml.tpl's own video-pill background image (also id 310, live
+             in this same window) - live-reported as "the background does not extend the full length
+             of the label", since Control.setWidth() calls meant for that pill
+             (MediaInfoPillsMixin.resizeMediaInfoPills()) were hitting this button instead. -->
+        <control type="button" id="350">
+            <posx>53</posx>
+            <posy>{{ vscale(257) }}</posy>
+            <width>813</width>
+            <height>{{ vscale(90) }}</height>
+            <onup condition="Control.IsVisible(205)">205</onup>
+            <onup condition="Control.IsVisible(206)">206</onup>
+            <onup>200</onup>
+            <ondown>400</ondown>
+            <onleft>9000</onleft>
+            <label> </label>
+            <texturenofocus>-</texturenofocus>
+            <texturefocus>-</texturefocus>
+        </control>
+        <!-- Focus highlight for 350 above, kept as its own image rather than that button's own
+             texturefocus so it can extend 5px past the button's own hit area on every side, matching
+             Artist's/Seasons' own copy. -->
+        <control type="image">
+            <visible>Control.HasFocus(350)</visible>
+            <posx>48</posx>
+            <posy>{{ vscale(252) }}</posy>
+            <width>823</width>
+            <height>{{ vscale(100) }}</height>
+            <colordiffuse>33FFFFFF</colordiffuse>
+            <texture border="10">script.plex/white-square-rounded.png</texture>
+        </control>
 
         <!-- Video/audio/subtitles pill row, shared with pre_play (see includes/media_info_pills.xml.tpl).
              posx=990 is 1920 (screen width) minus 85 (the row's target inset from the screen's right
@@ -306,9 +399,9 @@
             <usecontrolcoords>true</usecontrolcoords>
             <orientation>horizontal</orientation>
             <itemgap>0</itemgap>
-            <onup condition="Control.IsVisible(205)">205</onup>
-            <onup condition="Control.IsVisible(206)">206</onup>
-            <onup>200</onup>
+            <!-- 350 (the summary click-target), not straight to 205/206/200 - see the inner
+                 fixedlist's own identical copy of this fix, just below, for the full reasoning. -->
+            <onup>350</onup>
             <!-- Two conditioned tags routing straight to the actual target button, not
                  condition="Control.IsVisible(300)">300 (the grouplist's own id) relying on its
                  <defaultcontrol> to pick between Resume/Play - live-confirmed that doesn't work:
@@ -340,9 +433,12 @@
                 <posy>{{ vscale(18) }}</posy>
                 <width>1875</width>
                 <height>{{ vscale(400) }}</height>
-                <onup condition="Control.IsVisible(205)">205</onup>
-                <onup condition="Control.IsVisible(206)">206</onup>
-                <onup>200</onup>
+                <!-- 350 (the summary click-target), not straight to 205/206/200: keeps that focus
+                     stop reachable from the episode row via remote/keyboard, not just mouse/touch -
+                     matching Seasons' own identical fix to its button row. The season-tab row
+                     fallback (205/206/200) this used to carry directly has moved up onto 350's own
+                     onup instead, one level further up the chain. -->
+                <onup>350</onup>
                 <!-- Same fix as this row's own copy above - see its comment. -->
                 <ondown condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">308</ondown>
                 <ondown condition="Control.IsVisible(300)">301</ondown>
@@ -1491,7 +1587,9 @@
     <onleft>9000</onleft>
     <onright condition="Control.IsVisible(204)">204</onright>
     <onright>noop</onright>
-    <ondown>400</ondown>
+    <!-- 350 (the summary click-target), not straight to 400: visits it in top-to-bottom order on
+         the way down, matching 350's own onup back up to here/206. -->
+    <ondown>350</ondown>
     <orientation>horizontal</orientation>
     <!-- ITEM LAYOUT ########################################## -->
     <!-- 200, not 170 - matches the same widened cell on script-plex-seasons.xml.tpl's own copy of
@@ -1528,6 +1626,19 @@
        makes it fall back to the same grey as itemlayout the rest of the time; the current-season underline
        below is unaffected since it never depended on focus. #}
     <focusedlayout width="200" height="{{ vscale(135) }}">
+        <!-- Focus background, gated the same as the white-text label below (real window focus, not
+             just cursor position) - same 33FFFFFF rounded pill used elsewhere for a focus highlight
+             (e.g. the summary click-target, button-row label overlays). Drawn first so the label/
+             underline render on top of it. -->
+        <control type="image">
+            <visible>Control.HasFocus(205)</visible>
+            <posx>0</posx>
+            <posy>{{ vscale(42) }}</posy>
+            <width>170</width>
+            <height>{{ vscale(50) }}</height>
+            <colordiffuse>33FFFFFF</colordiffuse>
+            <texture border="10">script.plex/white-square-rounded.png</texture>
+        </control>
         <control type="label">
             <visible>Control.HasFocus(205)</visible>
             <posx>0</posx>
@@ -1581,7 +1692,9 @@
     <onleft>9000</onleft>
     <onright condition="Control.IsVisible(204)">204</onright>
     <onright>noop</onright>
-    <ondown>400</ondown>
+    <!-- 350 (the summary click-target), not straight to 400: visits it in top-to-bottom order on
+         the way down, matching 350's own onup back up to here/205. -->
+    <ondown>350</ondown>
     <orientation>horizontal</orientation>
     <itemlayout width="200" height="{{ vscale(135) }}">
         <control type="label">
@@ -1606,6 +1719,16 @@
         </control>
     </itemlayout>
     <focusedlayout width="200" height="{{ vscale(135) }}">
+        <!-- Focus background - see 205's own copy of this control above for the full reasoning. -->
+        <control type="image">
+            <visible>Control.HasFocus(206)</visible>
+            <posx>0</posx>
+            <posy>{{ vscale(42) }}</posy>
+            <width>170</width>
+            <height>{{ vscale(50) }}</height>
+            <colordiffuse>33FFFFFF</colordiffuse>
+            <texture border="10">script.plex/white-square-rounded.png</texture>
+        </control>
         <control type="label">
             <visible>Control.HasFocus(206)</visible>
             <posx>0</posx>

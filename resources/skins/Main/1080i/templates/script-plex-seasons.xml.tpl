@@ -114,12 +114,20 @@
              script-plex-episodes.xml.tpl's header block comment) instead of being duplicated at two
              x-offsets and switched by hide.poster's own <visible>. -->
         <control type="label">
+            <!-- font45_title, not font45; height=61, not the old 109 (on request, matching Artist's
+                 own title control - script-plex-artist.xml.tpl). posy=48, not 0: aligny=bottom
+                 anchors text to the box's own BOTTOM edge, so shrinking height by 48px (109-61) while
+                 leaving posy alone would have pulled the text up 48px and left dead space below it,
+                 between the new bottom edge and the metadata row underneath (tuned against the old
+                 109-tall box's own bottom) - moving posy down by that same 48px keeps the bottom
+                 edge (and the text anchored to it) exactly where it was. width=660, not the old 616
+                 (on request, matching Episodes' own copy of this control). -->
             <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
             <posx>61</posx>
-            <posy>0</posy>
-            <width>616</width>
-            <height>{{ vscale(109) }}</height>
-            <font>font45</font>
+            <posy>{{ vscale(48) }}</posy>
+            <width>660</width>
+            <height>{{ vscale(61) }}</height>
+            <font>font45_title</font>
             <align>left</align>
             <aligny>bottom</aligny>
             <scroll>true</scroll>
@@ -207,6 +215,41 @@
             <autoscroll delay="2000" time="2000" repeat="10000">true</autoscroll>
             <label>$INFO[Window.Property(summary)]</label>
         </control>
+        <!-- Invisible click/focus target laid directly over the summary textbox above - textboxes
+             have no click or focus of their own in Kodi, so this is a separate button control sized
+             and positioned to match it exactly, wired to summaryButtonClicked() (SUMMARY_BUTTON_ID,
+             subitems.py) - same recipe as Artist's own copy (script-plex-artist.xml.tpl), which this
+             was ported from. Blank label (matches themed_button.xml.tpl's own convention) so nothing
+             draws over the textbox's real text. texturenofocus/texturefocus both "-" (explicit none,
+             not just omitted - Kodi otherwise falls back to its own default button look) - the focus
+             highlight itself is the separate image below instead, not this control's own texture, so
+             it can be sized bigger than the actual hit area. -->
+        <control type="button" id="305">
+            <posx>61</posx>
+            <posy>{{ vscale(277) }}</posy>
+            <width>813</width>
+            <height>{{ vscale(90) }}</height>
+            <onup condition="Control.IsVisible(205)">205</onup>
+            <onup condition="Control.IsVisible(206)">206</onup>
+            <onup>200</onup>
+            <ondown>300</ondown>
+            <onleft>9000</onleft>
+            <label> </label>
+            <texturenofocus>-</texturenofocus>
+            <texturefocus>-</texturefocus>
+        </control>
+        <!-- Focus highlight for 305 above, kept as its own image rather than that button's own
+             texturefocus so it can extend 5px past the button's own hit area on every side, matching
+             Artist's own copy. -->
+        <control type="image">
+            <visible>Control.HasFocus(305)</visible>
+            <posx>56</posx>
+            <posy>{{ vscale(272) }}</posy>
+            <width>823</width>
+            <height>{{ vscale(100) }}</height>
+            <colordiffuse>33FFFFFF</colordiffuse>
+            <texture border="10">script.plex/white-square-rounded.png</texture>
+        </control>
     </control>
 
     <!-- SEASON ROW + BUTTONS -->
@@ -254,13 +297,12 @@
                 <posy>{{ vscale(25) }}</posy>
                 <width>1000</width>
                 <height>{{ vscale(145) }}</height>
-                <!-- 205 or 206 first (whichever of the season-tab row's two controls is active - see
-                     that block's own comment), falling back to 200 (header) when neither is visible -
-                     same dual-onup fallback Episodes' own button/content controls use to reach their
-                     identical tab row. -->
-                <onup condition="Control.IsVisible(205)">205</onup>
-                <onup condition="Control.IsVisible(206)">206</onup>
-                <onup>200</onup>
+                <!-- 305 (the summary click-target), not straight to 205/206/200: keeps that focus
+                     stop reachable from the button row via remote/keyboard, not just mouse/touch -
+                     same reasoning as Artist's own copy. The season-tab row fallback (205/206/200)
+                     this used to carry directly has moved up onto 305's own onup instead, one level
+                     further up the chain. -->
+                <onup>305</onup>
                 <ondown>400</ondown>
                 <onleft>9000</onleft>
                 <itemgap>{{ theme.seasons.buttongroup.itemgap }}</itemgap>
@@ -1291,7 +1333,9 @@
          header, not dead-end at noop - previously missing here (Episodes' own copy already had it). -->
     <onright condition="Control.IsVisible(204)">204</onright>
     <onright>noop</onright>
-    <ondown>300</ondown>
+    <!-- 305 (the summary click-target), not straight to 300: visits it in top-to-bottom order on
+         the way down, matching 305's own onup back up to here/206. -->
+    <ondown>305</ondown>
     <orientation>horizontal</orientation>
     <!-- ITEM LAYOUT ########################################## -->
     <!-- 200, not 170: cell widened again on request (7 tabs visible instead of ~8.4). Label 170 (200-30,
@@ -1325,6 +1369,19 @@
          without it, whichever item holds the list's internal cursor renders "focused" white even when
          real window focus sits elsewhere (e.g. the play button). -->
     <focusedlayout width="200" height="{{ vscale(135) }}">
+        <!-- Focus background, gated the same as the white-text label below (real window focus, not
+             just cursor position) - same 33FFFFFF rounded pill used elsewhere for a focus highlight
+             (e.g. the summary click-target, button-row label overlays). Drawn first so the label/
+             underline render on top of it. -->
+        <control type="image">
+            <visible>Control.HasFocus(205)</visible>
+            <posx>0</posx>
+            <posy>{{ vscale(42) }}</posy>
+            <width>170</width>
+            <height>{{ vscale(50) }}</height>
+            <colordiffuse>33FFFFFF</colordiffuse>
+            <texture border="10">script.plex/white-square-rounded.png</texture>
+        </control>
         <control type="label">
             <visible>Control.HasFocus(205)</visible>
             <posx>0</posx>
@@ -1378,7 +1435,9 @@
     <onleft>9000</onleft>
     <onright condition="Control.IsVisible(204)">204</onright>
     <onright>noop</onright>
-    <ondown>300</ondown>
+    <!-- 305 (the summary click-target), not straight to 300: visits it in top-to-bottom order on
+         the way down, matching 305's own onup back up to here/206. -->
+    <ondown>305</ondown>
     <orientation>horizontal</orientation>
     <itemlayout width="200" height="{{ vscale(135) }}">
         <control type="label">
@@ -1403,6 +1462,16 @@
         </control>
     </itemlayout>
     <focusedlayout width="200" height="{{ vscale(135) }}">
+        <!-- Focus background - see 205's own copy of this control above for the full reasoning. -->
+        <control type="image">
+            <visible>Control.HasFocus(206)</visible>
+            <posx>0</posx>
+            <posy>{{ vscale(42) }}</posy>
+            <width>170</width>
+            <height>{{ vscale(50) }}</height>
+            <colordiffuse>33FFFFFF</colordiffuse>
+            <texture border="10">script.plex/white-square-rounded.png</texture>
+        </control>
         <control type="label">
             <visible>Control.HasFocus(206)</visible>
             <posx>0</posx>

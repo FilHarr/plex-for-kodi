@@ -22,82 +22,177 @@
     <!-- Slide right while the sidebar rail is expanded (focused), matching every other ported screen. -->
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
 
-    <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column - see includes/sidebar.xml.tpl. -->
-    <posx>60</posx>
+    <!-- posx=52, not 60: matches Seasons'/Pre-play's own tuned value exactly
+         (script-plex-seasons.xml.tpl) so the content column lands at the same absolute x as those
+         screens - see includes/sidebar.xml.tpl for why some offset is still needed at all (clears
+         the collapsed sidebar rail's icon column). -->
+    <posx>52</posx>
     <posy>{{ vscale(135) }}</posy>
     <defaultcontrol>400</defaultcontrol>
 
     {% block buttons %}
-        <control type="grouplist" id="300">
-            <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
-            <defaultcontrol>301</defaultcontrol>
-            <posx>594</posx>
-            <posy>{{ vscale(418) }}</posy>
-            <width>600</width>
-            <height>{{ vscale(145) }}</height>
-            <onup>200</onup>
-            <ondown>400</ondown>
-            <itemgap>-50</itemgap>
-            <orientation>horizontal</orientation>
-            <align>center</align>
-            <scrolltime tween="quadratic" easing="out">200</scrolltime>
-            <usecontrolcoords>true</usecontrolcoords>
+        <!-- Repositioned/retuned to match Seasons' own button row (script-plex-seasons.xml.tpl) -
+             same 0/358 outer offset and 63/25 inner offset, same icon-box retune (theme.artist
+             mirrors theme.seasons in context.py: 70x70 icons, itemgap 0, hitrect 5,5,60,60 in the
+             modern theme) in place of this row's own old one-off 174x139/-50-itemgap tuning. No
+             season-tab row to fall back onto (unlike Seasons' own dual onup), so onup just stays 200;
+             onleft=9000 added to reach the sidebar - every other ported screen's button row already
+             has this, this one just never did. -->
+        <control type="group">
+            <posx>0</posx>
+            <posy>{{ vscale(358) }}</posy>
+            <width>1920</width>
+            <height>{{ vscale(200) }}</height>
+            <control type="grouplist" id="300">
+                <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
+                <!-- 302 (Play), not the old 301 (Info) - the Info button itself is gone from this
+                     row now (on request): the summary textbox is its own click/focus target for the
+                     same action (SUMMARY_BUTTON_ID, id 305, subitems.py), so the explicit button was
+                     redundant. -->
+                <defaultcontrol>302</defaultcontrol>
+                <posx>63</posx>
+                <posy>{{ vscale(25) }}</posy>
+                <width>1000</width>
+                <height>{{ vscale(145) }}</height>
+                <!-- 305 (the summary click-target), not straight to 200: keeps that new focus stop
+                     reachable from the button row via remote/keyboard, not just mouse/touch. -->
+                <onup>305</onup>
+                <ondown>400</ondown>
+                <onleft>9000</onleft>
+                <itemgap>{{ theme.artist.buttongroup.itemgap }}</itemgap>
+                <orientation>horizontal</orientation>
+                <scrolltime tween="quadratic" easing="out">200</scrolltime>
+                <usecontrolcoords>true</usecontrolcoords>
 
-            {% with attr = {"width": 174, "height": 139} & template = "includes/themed_button.xml.tpl" & hitrect = {"w": 94, "h": 59} %}
-                {% include template with name="info" & id=301 %}
-                {% include template with name="play" & id=302 %}
-                {% include template with name="shuffle" & id=303 %}
-                {% include template with name="more" & id=304 %}
-            {% endwith %}
+                <!-- Label-on-focus pill overlays (392-394): same recipe as every other button row
+                     (episode_button_label.xml.tpl - see button-label-overlay-recipe). Play/More
+                     reuse Pre-play's/Seasons' own $ADDON strings and measured widths, since it's the
+                     same label text; Shuffle reuses Seasons' own. -->
+                {% with attr = theme.artist.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.artist.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
+                    {% include template with name="play" & id=302 %}
+                    {% include ol with id=392 & visible="Control.HasFocus(302)" & name="play" &
+                        label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
+                        label_width=50 & pill_width=112 & group_width=68 &
+                        onleft=302 & onright=303
+                    %}
+                    {% include template with name="shuffle" & id=303 %}
+                    {% include ol with id=393 & visible="Control.HasFocus(303)" & name="shuffle" &
+                        label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
+                        label_width=84 & pill_width=146 & group_width=102 &
+                        onleft=303 & onright=304
+                    %}
+                    {% include template with name="more" & id=304 %}
+                    {% include ol with id=394 & visible="Control.HasFocus(304)" & name="more" &
+                        label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
+                        label_width=60 & pill_width=122 & group_width=78 &
+                        onleft=304 & onright=""
+                    %}
+                {% endwith %}
 
+            </control>
         </control>
     {% endblock %}
 
     <control type="group">
-        <posx>60</posx>
+        <!-- posx=0, not the old thumb-layout's 60: that offset existed to clear the (now-removed)
+             519-wide thumb, stacking on top of group 50's own posx and pushing title/genre/summary
+             68px further right than Seasons' own column (52+0+61=113) once they were moved in to
+             posx=61 each - matches Seasons' own inner group (posx=0) exactly now. -->
+        <posx>0</posx>
         <posy>0</posy>
         <width>1920</width>
-        <height>{{ vscale(200) }}</height>
-        <control type="image">
-            <posx>0</posx>
-            <posy>0</posy>
-            <width>519</width>
-            <height>{{ vscale(519) }}</height>
-            <texture background="true" fallback="script.plex/thumb_fallbacks/music.png">$INFO[Window.Property(thumb)]</texture>
-            <aspectratio>scale</aspectratio>
-        </control>
+        <height>{{ vscale(367) }}</height>
+        <!-- Title/genre-line/summary repositioned, resized and restyled to match Seasons' own
+             header block exactly (script-plex-seasons.xml.tpl) - title's own big/bottom-aligned
+             style, genre line using the seasons meta row's own position/size/style
+             (includes/pp_meta_row.xml.tpl) but keeping this screen's own single artist.genre
+             property rather than that include's compound duration/date/genres/rating line, summary
+             matching Seasons' own textbox (autoscroll, not a scrollbar - the old pagecontrol=152
+             here never had a matching scrollbar control to pair with, so it was always dead). Thumb
+             dropped entirely (on request) - ArtistWindow.updateProperties() (subitems.py) no longer
+             sets the now-unused 'thumb' property either. -->
         <control type="label">
-            <posx>579</posx>
-            <posy>5</posy>
-            <width>1190</width>
-            <height>{{ vscale(40) }}</height>
-            <font>font13</font>
+            <!-- Position/style originally copied from Episodes' own episode-name label
+                 (script-plex-episodes.xml.tpl, no-logo variant - Artist never has a clearlogo):
+                 FFD2CCCE/aligny=top instead of the previous font45/FFFFFFFF/aligny=bottom big-title
+                 treatment. posy=117, not that label's own raw 97: Episodes' own comment there notes
+                 its 97 is "the reference screens' value minus 20" to compensate for Episodes' group
+                 50 sitting at posy=155 instead of 135 - Artist's group already sits at 135 (matches
+                 Seasons'/Pre-play's own baseline), so the untranslated 117 is the correct equivalent
+                 here, not a literal copy of 97. Font since bumped up from that label's own
+                 font32_title to font45_title (on request, through several intermediate sizes) and
+                 width/height retuned to 708/61 (on request) - width now matches the genre line
+                 below rather than that label's own 616/660. -->
+            <posx>61</posx>
+            <posy>{{ vscale(107) }}</posy>
+            <width>708</width>
+            <height>{{ vscale(61) }}</height>
+            <font>font45_title</font>
             <align>left</align>
-            <aligny>center</aligny>
-            <textcolor>FFFFFFFF</textcolor>
+            <aligny>top</aligny>
+            <scroll>true</scroll>
+            <scrollspeed>35</scrollspeed>
+            <textcolor>FFD2CCCE</textcolor>
             <label>$INFO[Window.Property(artist.title)]</label>
         </control>
         <control type="label">
-            <posx>579</posx>
-            <posy>{{ vscale(55) }}</posy>
-            <width>1190</width>
-            <height>{{ vscale(40) }}</height>
-            <font>font13</font>
+            <posx>61</posx>
+            <posy>{{ vscale(175) }}</posy>
+            <width>708</width>
+            <height>{{ vscale(30) }}</height>
+            <font>font10</font>
             <align>left</align>
-            <aligny>center</aligny>
-            <textcolor>FFDDDDDD</textcolor>
+            <textcolor>FFD2CCCE</textcolor>
+            <shadowcolor>66000000</shadowcolor>
             <label>$INFO[Window.Property(artist.genre)]</label>
         </control>
         <control type="textbox">
-            <posx>579</posx>
-            <posy>{{ vscale(158) }}</posy>
-            <width>1221</width>
-            <height>{{ vscale(250) }}</height>
-            <font>font13</font>
+            <posx>61</posx>
+            <posy>{{ vscale(277) }}</posy>
+            <width>813</width>
+            <height>{{ vscale(90) }}</height>
+            <font>font10</font>
             <align>left</align>
-            <textcolor>FFDDDDDD</textcolor>
+            <textcolor>FFD2CCCE</textcolor>
+            <shadowcolor>66000000</shadowcolor>
+            <scrolltime>200</scrolltime>
+            <autoscroll delay="2000" time="2000" repeat="10000">true</autoscroll>
             <label>$INFO[Window.Property(summary)]</label>
-            <pagecontrol>152</pagecontrol>
+        </control>
+        <!-- Invisible click/focus target laid directly over the summary textbox above - textboxes
+             have no click or focus of their own in Kodi, so this is a separate button control sized
+             and positioned to match it exactly, wired to infoButtonClicked() (SUMMARY_BUTTON_ID,
+             subitems.py) - the only way left to reach it now that the button row's own explicit
+             Info button (301) has been dropped entirely (on request, this became redundant with it).
+             Blank label (matches themed_button.xml.tpl's own convention) so nothing draws over the
+             textbox's real text.
+             texturenofocus/texturefocus both "-" (explicit none, not just omitted - Kodi otherwise
+             falls back to its own default button look, seen live as a dark box over the textbox) -
+             the focus highlight itself is the separate image below instead, not this control's own
+             texture, so it can be sized bigger than the actual hit area. -->
+        <control type="button" id="305">
+            <posx>61</posx>
+            <posy>{{ vscale(277) }}</posy>
+            <width>813</width>
+            <height>{{ vscale(90) }}</height>
+            <onup>200</onup>
+            <ondown>300</ondown>
+            <onleft>9000</onleft>
+            <label> </label>
+            <texturenofocus>-</texturenofocus>
+            <texturefocus>-</texturefocus>
+        </control>
+        <!-- Focus highlight for 305 above, kept as its own image rather than that button's own
+             texturefocus so it can extend 5px past the button's own hit area on every side (on
+             request) without changing what's actually clickable/focusable. -->
+        <control type="image">
+            <visible>Control.HasFocus(305)</visible>
+            <posx>56</posx>
+            <posy>{{ vscale(272) }}</posy>
+            <width>823</width>
+            <height>{{ vscale(100) }}</height>
+            <colordiffuse>33FFFFFF</colordiffuse>
+            <texture border="10">script.plex/white-square-rounded.png</texture>
         </control>
     </control>
 

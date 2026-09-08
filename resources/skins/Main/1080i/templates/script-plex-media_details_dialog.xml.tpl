@@ -3,15 +3,19 @@
 {% block controls %}
 <!-- Compact popup shell copied from script-plex-video_settings_dialog.xml.tpl (playersettings.py's
      own "Settings" popup) - same drop-shadow/rounded-rect panel, on request (Info button,
-     episodes.py's button row, should look like the same kind of popup as Settings/More rather than
-     opening the old full-screen InfoWindow). No title bar (dropped from both this and Settings' own
-     copy, on request) - just the one panel layer, content starting near the top instead of below a
-     header band. The list control there is swapped for a textbox+scrollbar instead
-     (script-plex-info.xml.tpl's own pattern for its "info" property) since this shows one block of
-     wrapped technical text (MediaDetailsDialog.onFirstInit() - info.py), not a list of selectable
-     rows. No player-OSD visibility guards (sliderdialog/osdvideosettings/etc, unlike Settings' own
-     copy) - this dialog is only ever opened from the episode button row, never from the video-
-     playback OSD. -->
+     episodes.py's/preplay.py's button rows, should look like the same kind of popup as Settings/More
+     rather than opening the old full-screen InfoWindow). No title bar (dropped from both this and
+     Settings' own copy, on request) - just the one panel layer, content starting near the top
+     instead of below a header band. The list control there is swapped for a textbox+scrollbar
+     instead (script-plex-info.xml.tpl's own pattern for its "info" property) since this shows one
+     block of wrapped text, not a list of selectable rows. No player-OSD visibility guards
+     (sliderdialog/osdvideosettings/etc, unlike Settings' own copy) - this dialog is only ever opened
+     from a button row, never from the video-playback OSD. Only MediaDetailsDialog (info.py) renders
+     through this file - SummaryDialog briefly shared it too (as ArtistInfoDialog, before it was
+     generalized past just Artist) but was forked into its own
+     (script-plex-artist_info_dialog.xml.tpl) once its size/font needs diverged; see that file's own
+     comment for the reasoning, and info.py's own comment for why sharing one xml file across
+     distinct window classes is fine in Kodi/this codebase in the first place. -->
 <control type="group">
     <posx>460</posx>
     <posy>{{ vperc(vscale(600)) }}</posy>

@@ -104,7 +104,10 @@
             <posy>{{ vscale(460) }}</posy>
             <width>1000</width>
             <height>{{ vscale(145) }}</height>
-            <onup>200</onup>
+            <!-- 350 (the summary click-target), not straight to 200: keeps that focus stop reachable
+                 from the button row via remote/keyboard, not just mouse/touch - same fix Artist's/
+                 Seasons'/Episodes' own button rows already got. -->
+            <onup>350</onup>
             <ondown>400</ondown>
             <onleft>9000</onleft>
             <itemgap>{{ theme.pre_play.buttongroup.itemgap }}</itemgap>
@@ -303,6 +306,47 @@
                     <scrolltime>200</scrolltime>
                     <autoscroll delay="2000" time="2000" repeat="10000">!Control.HasFocus(13)</autoscroll>
                     <label>$INFO[Window.Property(summary)]</label>
+                </control>
+                <!-- Invisible click/focus target laid directly over the summary textbox above -
+                     textboxes have no click or focus of their own in Kodi, so this is a separate
+                     button control sized and positioned to match it exactly, wired to
+                     summaryButtonClicked() (SUMMARY_BUTTON_ID, preplay.py) - same recipe as Artist's/
+                     Seasons'/Episodes' own copy, which this was ported from. Blank label (matches
+                     themed_button.xml.tpl's own convention) so nothing draws over the textbox's real
+                     text. texturenofocus/texturefocus both "-" (explicit none, not just omitted -
+                     Kodi otherwise falls back to its own default button look) - the focus highlight
+                     itself is the separate image below instead, not this control's own texture, so
+                     it can be sized bigger than the actual hit area. No season-tab-style fallback
+                     chain on its own onup (unlike Seasons'/Episodes' copy) - this screen has no
+                     equivalent tab row, just the plain header (200) above. id=350, not 310: that
+                     collided with includes/media_info_pills.xml.tpl's own video-pill background
+                     image (also id 310, live in this same window) - live-reported as "the
+                     background does not extend the full length of the label", since
+                     Control.setWidth() calls meant for that pill
+                     (MediaInfoPillsMixin.resizeMediaInfoPills()) were hitting this button instead. -->
+                <control type="button" id="350">
+                    <posx>61</posx>
+                    <posy>{{ vscale(277) }}</posy>
+                    <width>813</width>
+                    <height>{{ vscale(90) }}</height>
+                    <onup>200</onup>
+                    <ondown>300</ondown>
+                    <onleft>9000</onleft>
+                    <label> </label>
+                    <texturenofocus>-</texturenofocus>
+                    <texturefocus>-</texturefocus>
+                </control>
+                <!-- Focus highlight for 350 above, kept as its own image rather than that button's
+                     own texturefocus so it can extend 5px past the button's own hit area on every
+                     side, matching Artist's/Seasons'/Episodes' own copy. -->
+                <control type="image">
+                    <visible>Control.HasFocus(350)</visible>
+                    <posx>56</posx>
+                    <posy>{{ vscale(272) }}</posy>
+                    <width>823</width>
+                    <height>{{ vscale(100) }}</height>
+                    <colordiffuse>33FFFFFF</colordiffuse>
+                    <texture border="10">script.plex/white-square-rounded.png</texture>
                 </control>
             {% endblock %}
             <!-- The streams block below (audio/subtitle pills, overridden by pre_play-wl.xml.tpl for the

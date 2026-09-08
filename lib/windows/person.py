@@ -356,7 +356,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
         self.personDetails = details
         self.setProperty('person.name', details.get('name', ''))
-        self.setProperty('person.summary', details.get('summary', ''))
+        self.setProperty('person.summary', util.widenParagraphBreaks(details.get('summary', '')))
         self.setProperty('person.birthPlace', details.get('birthPlace', ''))
 
         birthDate = details.get('birthDate', '')

@@ -607,7 +607,7 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
                 self.setProperty('info.summary', T(33008, ''))
             else:
                 self.setProperty('info.title', self.next.title)
-                self.setProperty('info.summary', self.next.summary)
+                self.setProperty('info.summary', util.widenParagraphBreaks(self.next.summary))
             self.setProperty('info.duration', util.durationToText(self.next.duration.asInt()))
 
         if self.prev:
@@ -617,7 +617,7 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
             )
             self.setProperty('prev.info.title', self.prev.title)
             self.setProperty('prev.info.duration', util.durationToText(self.prev.duration.asInt()))
-            self.setProperty('prev.info.summary', self.prev.summary)
+            self.setProperty('prev.info.summary', util.widenParagraphBreaks(self.prev.summary))
 
         if self.prev.type == 'episode':
             self.setProperty('related.header', T(32306, 'Related Shows'))

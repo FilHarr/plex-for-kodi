@@ -82,6 +82,17 @@ TEMPLATE_CONTEXTS = {
                     "height": None,
                 }
             },
+            # ArtistWindow's own button row (script-plex-artist.xml.tpl) - retuned to match
+            # episodes/seasons/pre_play above (same visual element, same reasoning).
+            "artist": {
+                "buttongroup": {
+                    "itemgap": -20
+                },
+                "buttons": {
+                    "width": None,
+                    "height": None,
+                }
+            },
             "pre_play": {
                 "buttongroup": {
                     "itemgap": -20
@@ -150,6 +161,21 @@ TEMPLATE_CONTEXTS = {
                 }
             },
             "seasons": {
+                "buttongroup": {
+                    "itemgap": 0
+                },
+                "buttons": {
+                    "width": 70,
+                    "height": 70,
+                },
+                "buttons_hitrect": {
+                    "x": 5,
+                    "y": 5,
+                    "w": 60,
+                    "h": 60,
+                }
+            },
+            "artist": {
                 "buttongroup": {
                     "itemgap": 0
                 },

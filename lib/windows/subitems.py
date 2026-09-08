@@ -87,6 +87,13 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     PLAY_BUTTON_ID = 302
     SHUFFLE_BUTTON_ID = 303
     OPTIONS_BUTTON_ID = 304
+    # Click/focus target laid over this screen's own summary textbox (script-plex-seasons.xml.tpl/
+    # script-plex-artist.xml.tpl both use id 305 for it) - wired to summaryButtonClicked() below.
+    # 305, not the old INFO_BUTTON_ID (301): neither screen has a real rendered control at 301 any
+    # more (Seasons dropped its Info button first; Artist's own copy was dropped once this became
+    # the only way to reach the same popup) - INFO_BUTTON_ID above is now just OPTIONS_BUTTON_ID's
+    # own range-check boundary (see onAction()).
+    SUMMARY_BUTTON_ID = 305
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -194,7 +201,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.setProperty('title', self.mediaItem.title)
         logo = util.clearLogoFrom(self.mediaItem, *self.CLEAR_LOGO_DIM)
         self.setProperty('clear.logo', logo)
-        self.setProperty('summary', self.mediaItem.summary)
+        self.setProperty('summary', util.widenParagraphBreaks(self.mediaItem.summary))
         self.updateBackgroundFrom(self.mediaItem)
         self.setProperty('duration', util.durationToShortText(self.mediaItem.fixedDuration(), noSpaces=True))
         self.setProperty('info', '')
@@ -376,8 +383,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         elif controlID == self.ROLES_LIST_ID:
             if not self.roleClicked():
                 return
-        elif controlID == self.INFO_BUTTON_ID:
-            self.infoButtonClicked()
+        elif controlID == self.SUMMARY_BUTTON_ID:
+            self.summaryButtonClicked()
         elif controlID == self.PLAY_BUTTON_ID:
             self.playButtonClicked()
         elif controlID in self.WL_RELEVANT_BTNS and self.fromWatchlist and self.wl_availability:
@@ -415,8 +422,14 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         # controlID == SUB_ITEM_LIST_ID counts as "not on extras" too: on.extras drives its own -300
         # slide (group 50, template) that's meant for Roles/Extras/Related only - the season row already
         # gets its own, correctly-sized tier-1 slide (-415) above, so on.extras firing there too would
-        # stack an unwanted extra -300 on top of it.
-        if controlID == self.SUB_ITEM_LIST_ID or xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)'):
+        # stack an unwanted extra -300 on top of it. SUMMARY_BUTTON_ID needs the same exclusion: it's
+        # a header control (script-plex-seasons.xml.tpl/script-plex-artist.xml.tpl) that happens to
+        # live inside group 50 but outside group 300, so without this the elif below misread focusing
+        # it as "focus moved into deeper content" and slid the whole header up (live-reported on
+        # Artist as "moving navigation up to focus the textbox button causes all the content to move
+        # up" - fixed there first, applies identically here now that Seasons shares the same button).
+        if (controlID == self.SUB_ITEM_LIST_ID or controlID == self.SUMMARY_BUTTON_ID or
+                xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)')):
             self.setProperty('on.extras', '')
             if controlID != self.SUB_ITEM_LIST_ID:
                 # hub.focus (set above, only for controlIDs 400-499) is otherwise never reset once focus
@@ -736,22 +749,15 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 del w
                 gc.collect(2)
 
-    def infoButtonClicked(self):
-        fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(self.mediaItem.type == 'show' and 'show' or 'music')
-        genres = u' / '.join([g.tag for g in util.removeDups(self.mediaItem.genres())][:6])
-
-        w = info.InfoWindow.open(
-            title=self.mediaItem.title,
-            sub_title=genres,
-            thumb=self.mediaItem.defaultThumb,
-            thumb_fallback=fallback,
-            info=self.mediaItem.summary,
-            background=self.getProperty('background'),
-            is_square=bool(isinstance(self, ArtistWindow)),
-            video=self.mediaItem
-        )
-        del w
-        util.garbageCollect()
+    def summaryButtonClicked(self):
+        # Popup, not opener.handleOpen(info.InfoWindow, ...) any more - same change episodes.py's/
+        # preplay.py's own Info buttons already got (infoButtonClicked() there): everything
+        # InfoWindow showed here duplicated what's already visible on this screen itself except the
+        # title/summary, so a dialog like Settings'/More's own popups is enough (no cameFrom
+        # bookkeeping needed either, that existed only for InfoWindow's own close-and-return flow).
+        # Shared by Seasons (this class directly) and Artist (ArtistWindow below) - both just need
+        # their own title/summary, nothing type-specific.
+        info.showSummary(self.mediaItem.title, self.mediaItem.summary)
 
     def playButtonClicked(self, shuffle=False):
         if self.playBtnClicked:
@@ -1051,8 +1057,7 @@ class ArtistWindow(ShowWindow):
         self.processCommand(opener.handleOpen(musicplayer.MusicPlayerWindow, track=pl.current(), playlist=pl))
 
     def updateProperties(self):
-        self.setProperty('summary', self.mediaItem.summary)
-        self.setProperty('thumb', self.mediaItem.defaultThumb.asTranscodedImageURL(*self.THUMB_DIMS[self.mediaItem.type]['main.thumb']))
+        self.setProperty('summary', util.widenParagraphBreaks(self.mediaItem.summary))
         self.setProperty('related.header', T(32960, 'Similar Artists'))
         self.updateBackgroundFrom(self.mediaItem)
 

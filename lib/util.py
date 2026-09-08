@@ -163,6 +163,32 @@ def sortTitle(title):
     return title.startswith('The ') and title[4:] or title
 
 
+def widenParagraphBreaks(text):
+    """
+    Plex summaries (artist bios, show/season/episode/movie/collection descriptions, person bios)
+    are inconsistent about paragraph spacing - some sources separate paragraphs with a blank line
+    (a doubled break), others with just a single one (live-confirmed against real server data -
+    library/metadata/30707 uses doubled \\r\\n\\r\\n, library/metadata/32058 uses single \\r\\n) - the
+    latter reads as one dense wall of text wherever it's shown as a big block of prose. Normalizes
+    \\r\\n/\\r to \\n first (Kodi doesn't visibly choke on a lone \\r either way, live-confirmed - this
+    is purely to make the regex below simpler/more robust against whichever style a given source
+    uses), then doubles any \\n that's on its own (not already part of a \\n\\n+ run) so every
+    paragraph boundary ends up with the same blank-line spacing regardless of the source's own
+    convention.
+
+    Whitespace-only lines are collapsed to truly empty ones first - some sources' "blank line"
+    between paragraphs is actually a stray space rather than nothing at all (live-confirmed:
+    library/metadata/86321 uses "\\r\\n \\r\\n"), which without this step the doubling above treats as
+    two separate single breaks either side of that space and doubles independently, producing a
+    much bigger gap than intended ("\\n \\n" -> "\\n\\n \\n\\n", a 3-blank-line gap instead of 1).
+    """
+    if not text:
+        return text
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    text = re.sub(r'(?m)^[ \t]+$', '', text)
+    return re.sub(r'(?<!\n)\n(?!\n)', '\n\n', text)
+
+
 def durationToText(seconds):
     """
     Converts seconds to a short user friendly string

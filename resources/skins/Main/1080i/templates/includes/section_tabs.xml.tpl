@@ -83,6 +83,19 @@
         </control>
     </itemlayout>
     <focusedlayout width="200" height="{{ vscale(135) }}">
+        <!-- Focus background, gated the same as the white-text label below (real window focus, not
+             just cursor position) - same 33FFFFFF rounded pill used elsewhere for a focus highlight
+             (e.g. Seasons'/Episodes' own season tabs, the summary click-target, button-row label
+             overlays). Drawn first so the label/underline render on top of it. -->
+        <control type="image">
+            <visible>Control.HasFocus(320)</visible>
+            <posx>5</posx>
+            <posy>{{ vscale(42) }}</posy>
+            <width>190</width>
+            <height>{{ vscale(50) }}</height>
+            <colordiffuse>33FFFFFF</colordiffuse>
+            <texture border="10">script.plex/white-square-rounded.png</texture>
+        </control>
         <control type="label">
             <visible>Control.HasFocus(320)</visible>
             <posx>0</posx>

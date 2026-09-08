@@ -5,10 +5,11 @@ import datetime
 
 from plexnet.video import Episode, Movie, Clip
 
+from kodi_six import xbmcgui
+
 from lib import util
 from lib.util import T
 from . import kodigui
-from . import windowutils
 from lib import seamless_branching
 
 
@@ -20,15 +21,14 @@ def split2len(s, n):
     return list(_f(s, n))
 
 
-def formatMediaDetails(video, leading_newlines=4):
+def formatMediaDetails(video, leading_newlines=0):
     """
     Formats technical media/part/stream details (file/part counts, per-part filename/size/
-    duration, per-stream video/audio/subtitle detail, chapters, markers) for a video - shared by
-    InfoWindow's own getVideoInfo() (appended after its title/summary) and MediaDetailsDialog's
-    standalone popup (Info button, episodes.py's button row - on request, since everything else
-    InfoWindow showed there duplicated what's already visible on the episode screen itself).
-    Returns '' (not None) when there's nothing to show, so callers can concatenate/strip freely
-    without a None-check of their own.
+    duration, per-stream video/audio/subtitle detail, chapters, markers) for a video -
+    MediaDetailsDialog's standalone popup (Info button, episodes.py's/preplay.py's button rows - on
+    request, since everything else the old full-screen InfoWindow showed there duplicated what's
+    already visible on the episode/pre-play screen itself). Returns '' (not None) when there's
+    nothing to show, so callers can concatenate/strip freely without a None-check of their own.
     """
     if not isinstance(video, (Episode, Movie, Clip)):
         return ''
@@ -141,65 +141,16 @@ def formatMediaDetails(video, leading_newlines=4):
     return "".join(addMedia)
 
 
-class InfoWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
-    xmlFile = 'script-plex-info.xml'
-    path = util.ADDON.getAddonInfo('path')
-    theme = 'Main'
-    res = '1080i'
-    width = 1920
-    height = 1080
-
-    PLAYER_STATUS_BUTTON_ID = 204
-
-    THUMB_DIM_POSTER = util.scaleResolution(519, 469)
-    THUMB_DIM_SQUARE = util.scaleResolution(519, 519)
-
-    def __init__(self, *args, **kwargs):
-        kodigui.ControlledWindow.__init__(self, *args, **kwargs)
-        self.title = kwargs.get('title')
-        self.subTitle = kwargs.get('sub_title')
-        self.thumb = kwargs.get('thumb')
-        self.thumb_opts = kwargs.get('thumb_opts', {})
-        self.thumbFallback = kwargs.get('thumb_fallback')
-        self.info = kwargs.get('info')
-        self.background = kwargs.get('background')
-        self.isSquare = kwargs.get('is_square')
-        self.is16x9 = kwargs.get('is_16x9')
-        self.isPoster = not (self.isSquare or self.is16x9)
-        self.thumbDim = self.isSquare and self.THUMB_DIM_SQUARE or self.THUMB_DIM_POSTER
-        self.video = kwargs.get('video')
-
-    def getVideoInfo(self):
-        """
-        Append media/part/stream info to summary
-        """
-        return (self.info or '') + formatMediaDetails(self.video)
-
-    def onFirstInit(self):
-        self.setProperty('is.poster', self.isPoster and '1' or '')
-        self.setProperty('is.square', self.isSquare and '1' or '')
-        self.setProperty('is.16x9', self.is16x9 and '1' or '')
-        self.setProperty('title.main', self.title)
-        self.setProperty('title.sub', self.subTitle)
-        self.setProperty('thumb.fallback', self.thumbFallback)
-        self.setProperty('thumb', self.thumb.asTranscodedImageURL(*self.thumbDim, **self.thumb_opts))
-        self.setProperty('info', self.getVideoInfo())
-        self.setProperty('background', self.background)
-
-    def onClick(self, controlID):
-        if controlID == self.PLAYER_STATUS_BUTTON_ID:
-            self.showAudioPlayer()
-
-
 class MediaDetailsDialog(kodigui.BaseDialog):
     """
     Compact popup (matches VideoSettingsDialog's own shell - playersettings.py) showing just
     formatMediaDetails()'s technical breakdown, in place of InfoWindow's full-screen title/
     thumb/summary/media display - on request, since everything but the media details there
-    duplicated what's already visible on the episode screen itself (Info button, episodes.py's
-    button row). No onAction override needed for back/close: BaseDialog's own default already
-    forwards to Kodi's native WindowXMLDialog handling, which closes a dialog on
-    ACTION_NAV_BACK/ACTION_PREVIOUS_MENU without anything extra.
+    duplicated what's already visible on the episode screen itself (Info button, episodes.py's/
+    preplay.py's button rows). BaseDialog's own default already forwards to Kodi's native
+    WindowXMLDialog handling, which closes a dialog on ACTION_NAV_BACK/ACTION_PREVIOUS_MENU without
+    anything extra - onAction below only needs to add ACTION_SELECT_ITEM (OK/Enter) on top of that,
+    on request.
     """
     xmlFile = 'script-plex-media_details_dialog.xml'
     path = util.ADDON.getAddonInfo('path')
@@ -212,17 +163,77 @@ class MediaDetailsDialog(kodigui.BaseDialog):
         kodigui.BaseDialog.__init__(self, *args, **kwargs)
         self.video = kwargs.get('video')
 
+    def onAction(self, action):
+        if action == xbmcgui.ACTION_SELECT_ITEM:
+            self.doClose()
+            return
+        kodigui.BaseDialog.onAction(self, action)
+
     def onFirstInit(self):
         self.setProperty('heading', T(35059, 'File info'))
-        # leading_newlines=0, not the default 4: those exist to separate this block from a
-        # preceding title/summary in InfoWindow's own layout, which this standalone popup
-        # doesn't have - lstrip() as a second guard in case the video has no media at all,
-        # which would otherwise leave the textbox showing a lone leading blank line.
-        details = formatMediaDetails(self.video, leading_newlines=0).lstrip('\n')
+        # lstrip() guards against the video having no media at all, which would otherwise leave
+        # the textbox showing a lone leading blank line.
+        details = formatMediaDetails(self.video).lstrip('\n')
         self.setProperty('info', details)
+        # The textbox itself isn't in Kodi's focus chain - only its scrollbar (id 101) is, and
+        # nothing focuses it automatically (no <defaultcontrol> in base.xml.tpl). Without this,
+        # up/down never reaches the scrollbar, so long text just sits unscrollable.
+        self.setFocusId(101)
 
 
 def showMediaDetails(video):
     w = MediaDetailsDialog.open(video=video)
+    del w
+    util.garbageCollect()
+
+
+class SummaryDialog(kodigui.BaseDialog):
+    """
+    Title (+ optional subtitle) + summary popup - originally ArtistWindow's own Info popup
+    (subitems.py: name + summary is all that button ever showed there, no episode/file/stream
+    detail to add, unlike Episodes'/PrePlay's own copy, so there's nothing left to justify a
+    full-screen InfoWindow transition for it either), generalized to a shared dialog once
+    Seasons'/Episodes'/PrePlay's own summary text got the same click-to-expand treatment (on
+    request) - none of them needed anything artist-specific either, just a title and a body of
+    text. Episodes is the only caller that populates subtitle (the episode's own name, under the
+    show title) - every other caller leaves it empty. Was briefly rendered through
+    MediaDetailsDialog's own shared xml file; forked into its own
+    (script-plex-artist_info_dialog.xml) once this popup's own size (600x1000, centered) and its
+    title/summary needing independently sized fonts diverged from that dialog's own layout - kept
+    that filename even once this stopped being artist-specific, rather than a churn-only rename.
+    """
+    xmlFile = 'script-plex-artist_info_dialog.xml'
+    path = util.ADDON.getAddonInfo('path')
+    theme = 'Main'
+    res = '1080i'
+    width = 1920
+    height = 1080
+
+    def __init__(self, *args, **kwargs):
+        kodigui.BaseDialog.__init__(self, *args, **kwargs)
+        self.title = kwargs.get('title')
+        self.subtitle = kwargs.get('subtitle')
+        self.info = kwargs.get('info')
+
+    def onAction(self, action):
+        if action == xbmcgui.ACTION_SELECT_ITEM:
+            self.doClose()
+            return
+        kodigui.BaseDialog.onAction(self, action)
+
+    def onFirstInit(self):
+        # Separate title/subtitle/info properties, not one combined "[B]title[/B]\n\nsummary"
+        # string (this dialog's own previous shape, sharing MediaDetailsDialog's single-textbox
+        # layout) - the template renders these as distinct controls with their own fonts.
+        self.setProperty('title', self.title or '')
+        self.setProperty('subtitle', self.subtitle or '')
+        self.setProperty('info', util.widenParagraphBreaks(self.info) if self.info else '')
+        # See MediaDetailsDialog's own onFirstInit() comment - same underlying scrollbar mechanism,
+        # same fix needed to make a long summary actually scrollable.
+        self.setFocusId(101)
+
+
+def showSummary(title, info, subtitle=None):
+    w = SummaryDialog.open(title=title, subtitle=subtitle, info=info)
     del w
     util.garbageCollect()

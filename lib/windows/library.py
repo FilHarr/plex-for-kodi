@@ -4747,7 +4747,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if photo.media[0].exposure:
             settings.append('{0}'.format(photo.media[0].exposure))
         mli.setProperty('camera.settings', u' \u2022 '.join(settings))
-        mli.setProperty('photo.summary', photo.get('summary'))
+        mli.setProperty('photo.summary', util.widenParagraphBreaks(photo.get('summary')))
 
     def createPlaylistGridListItem(self, obj):
         # Square tiles for both audio/video, 'thumb' composite (matches what the playlist detail
@@ -4999,7 +4999,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
                         mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
 
-                        mli.setProperty('summary', obj.summary)
+                        mli.setProperty('summary', util.widenParagraphBreaks(obj.summary))
 
                         #mli.setLabel2(util.durationToText(obj.fixedDuration()))
                         mli.setLabel2(subtitle)
@@ -5028,7 +5028,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
                         mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
 
-                        mli.setProperty('summary', obj.summary)
+                        mli.setProperty('summary', util.widenParagraphBreaks(obj.summary))
 
                         mli.setLabel2(obj.year)
                     else:
@@ -5069,7 +5069,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                             else:
                                 mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
                         mli.dataSource = obj
-                        mli.setProperty('summary', obj.get('summary'))
+                        mli.setProperty('summary', util.widenParagraphBreaks(obj.get('summary')))
 
                         # get secondary sort based info
                         sk_data = SORT_KEYS[self.section.TYPE].get(self.sort, {'subDisplay': None})
@@ -6539,7 +6539,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.setProperty('duration', duration and util.durationToShortText(duration.asInt(), noSpaces=True) or '')
 
         summary = getattr(ds, 'summary', None)
-        self.setProperty('summary', summary and str(summary).strip().replace('\t', ' ') or '')
+        self.setProperty('summary', summary and util.widenParagraphBreaks(str(summary).strip().replace('\t', ' ')) or '')
 
         date_text = ''
         if ds_type == 'episode':

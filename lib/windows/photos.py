@@ -412,7 +412,7 @@ class PhotoWindow(kodigui.BaseWindow):
         if photo.media[0].exposure:
             settings.append('{0}'.format(photo.media[0].exposure))
         self.setProperty('camera.settings', u' \u2022 '.join(settings))
-        self.setProperty('photo.summary', photo.summary)
+        self.setProperty('photo.summary', util.widenParagraphBreaks(photo.summary))
         container = photo.media[0].container_ or os.path.splitext(photo.media[0].parts[0].file)[-1][1:].lower()
         if container == 'jpg':
             container = 'jpeg'

@@ -227,7 +227,7 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         # contain. defaultTitle/defaultThumb/defaultArt are all base PlexObject-level fallbacks
         # (plexobjects.py), so this works unchanged for a Generic/TYPE=='Directory' folder entry too.
         mli.setLabel(data.defaultTitle)
-        mli.setProperty('summary', data.get('summary'))
+        mli.setProperty('summary', util.widenParagraphBreaks(data.get('summary')))
         if data.TYPE == 'collection':
             # Collections often have no own poster - fall back to a composite of member posters,
             # same as library.py's _chunkCallback() (library.py:4071-4076) and the dead-code
@@ -457,7 +457,7 @@ class CollectionWindow(BoundedGridWindow):
         # convention library.py's _chunkCallback() uses for the same kind of field - live-confirmed
         # against a real server response (2026-08-24): both populate correctly.
         self.setProperty('collection.title', self.collection.title)
-        self.setProperty('collection.summary', self.collection.get('summary'))
+        self.setProperty('collection.summary', util.widenParagraphBreaks(self.collection.get('summary')))
         # Same clearlogo-with-title-fallback pattern as PrePlayWindow/EpisodesWindow - the template
         # shows whichever of the two sibling controls matches whether this property is empty, not
         # a Python-side branch. util.clearLogoFrom() itself already returns '' safely when the

@@ -459,6 +459,16 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     SETTINGS_BUTTON_ID = 305
     RESUME_BUTTON_ID = 308
     RESTART_BUTTON_ID = 309
+    # Click/focus target laid over the summary textbox (script-plex-episodes.xml.tpl) - 350, not
+    # something in the 300-309 button cluster (all already taken here, unlike Seasons'/Artist's own
+    # copy of this control, which reuses 305 since neither of them has a button at that id any
+    # more) or 310-322 (includes/media_info_pills.xml.tpl's own ids, also live in this window -
+    # 310 specifically collided with that include's video-pill background image, live-reported as
+    # "the background does not extend the full length of the label": Control.setWidth() calls
+    # meant for that pill (MediaInfoPillsMixin.resizeMediaInfoPills()) were hitting this button
+    # instead, since Kodi doesn't guarantee which same-id control a getControl() call resolves to).
+    # Wired to summaryButtonClicked() below.
+    SUMMARY_BUTTON_ID = 350
 
     SEASONS_CONTROL_ATTR = "seasonsListControl"
     SEASONS_CONTROL_ATTR_ALT = "seasonsListControlAlt"
@@ -1190,6 +1200,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.settingsButtonClicked()
         elif controlID == self.INFO_BUTTON_ID:
             self.infoButtonClicked()
+        elif controlID == self.SUMMARY_BUTTON_ID:
+            self.summaryButtonClicked()
         elif controlID in (self.SEASONS_LIST_ID, self.SEASONS_LIST_ID_ALT):
             if self.fromWatchlist:
                 return
@@ -1237,9 +1249,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         # the episode row counts as "not on extras" too, now that it's the screen's default focus target -
         # otherwise this fires the very moment the window opens instead of only once focus goes deeper,
-        # into roles/extras
-        if controlID == self.EPISODE_LIST_ID or xbmc.getCondVisibility(
-                'ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)'):
+        # into roles/extras. SUMMARY_BUTTON_ID needs the same exclusion: it's a header control that
+        # happens to live inside group 50 but outside group 300, so without this the elif below misread
+        # focusing it as "focus moved into deeper content" and slid the whole header up - same bug/fix
+        # as ShowWindow.onFocus()'s own copy of this (subitems.py), which this was ported from.
+        if (controlID == self.EPISODE_LIST_ID or controlID == self.SUMMARY_BUTTON_ID or
+                xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)')):
             self.setProperty('on.extras', '')
             # hub.focus (set above, only for controlIDs 400-499) is otherwise never reset once focus
             # leaves the roles/extras row stack for the button row - it's not in that range, so
@@ -1611,6 +1626,41 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # More's own popups, not a full window transition, so no cameFrom bookkeeping needed either
         # (that existed only for InfoWindow's own close-and-return-to-this-window flow).
         info.showMediaDetails(episode)
+
+    def summaryButtonClicked(self):
+        mli = self.episodeListControl.getSelectedItem()
+        if not mli:
+            return
+
+        if mli.getProperty("is.season.card"):
+            # The season card has no dataSource at all (createSeasonCardItem()'s own docstring -
+            # giving it one crashes the window elsewhere), so unlike a real episode its title/summary
+            # come straight from the window's own self.season/self.show_, same as the card's own
+            # on-screen title/summary properties (createSeasonCardItem() itself). Show name as the
+            # main title (live-reported: "Season X" alone read wrong there, should be a subtitle
+            # under the show name) - same title/subtitle split as a real episode's own popup, just
+            # season instead of episode. self.season is self.show_ for a skipChildren show (no real
+            # season layer - see this window's own setup() where that flag is checked), so no
+            # subtitle then.
+            seasonOrShow = self.season or self.show_
+            if not seasonOrShow:
+                return
+            showTitle = self.show_.title if self.show_ else seasonOrShow.title
+            subtitle = self.season.title if self.season and self.season is not self.show_ else None
+            info.showSummary(showTitle, seasonOrShow.summary.strip().replace('\t', ' '), subtitle=subtitle)
+            return
+
+        if mli.getProperty("is.boundary"):
+            # A plain pagination boundary marker (left/right chevron/spinner) - no title/summary of
+            # its own to show, unlike the season card above.
+            return
+
+        episode = mli.dataSource
+        # grandparentTitle, not self.show_.title directly: same fallback setItemInfo() already uses
+        # for the 'show.title' ListItem property this same row reads elsewhere (mli.setProperty
+        # above in this file).
+        showTitle = episode.grandparentTitle or (self.show_.title if self.show_ else '')
+        info.showSummary(showTitle, episode.summary, subtitle=episode.title)
 
     def episodeListClicked(self, force_episode=None, from_auto_play=False, force_resume_menu=False,
                            start_over=False, force_resume=False):
@@ -2071,7 +2121,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 properties["title"] = video.title
                 methods.append(("setLabel", video.title))
             if "summary" in types:
-                properties["summary"] = video.summary.strip().replace('\t', ' ')
+                properties["summary"] = util.widenParagraphBreaks(video.summary.strip().replace('\t', ' '))
 
             if "thumbnail" in types:
                 methods.append(("setThumbnailImage", video.thumb.asTranscodedImageURL(*self.THUMB_AR16X9_DIM)))
@@ -2087,7 +2137,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
             if "summary" in types:
                 properties["summary"] = ((hide_spoilers and self.noSummaries and T(33008, '')) or
-                                         video.summary.strip().replace('\t', ' '))
+                                         util.widenParagraphBreaks(video.summary.strip().replace('\t', ' ')))
 
             if "thumbnail" in types:
                 methods.append(("setThumbnailImage",
@@ -2253,8 +2303,22 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         )
         mli.setBoolProperty('is.boundary', True)
         mli.setBoolProperty('is.season.card', True)
+        # self.season is self.show_ for a skipChildren show (no real season layer - see this
+        # window's own setup() where that flag is checked) - the header (script-plex-episodes.xml.tpl)
+        # uses this to swap in Seasons' own full-size clearlogo/no-title-line treatment instead of
+        # the normal reduced-clearlogo-plus-title-line one, on request: "Season X" read as a
+        # redundant, wrong title line under a skipChildren show's own clearlogo, which already
+        # names the show and has no real season identity to caption separately.
+        mli.setBoolProperty('is.skip.children.card', self.season is self.show_)
+        # show.title, not left unset like every other property on this item: the header's own
+        # no-clearlogo big-title label reads this (same property a real episode's own
+        # setUserItemInfo()/setItemInfo() sets), so without it that label just showed nothing for
+        # this item (live-reported: "season cards for shows without clearlogos only show a
+        # subtitle") - the "title" property below covers the smaller subtitle line underneath it,
+        # not the title itself.
+        mli.setProperty('show.title', self.show_.title if self.show_ else '')
         mli.setProperty('title', seasonOrShow.title)
-        mli.setProperty('summary', seasonOrShow.summary.strip().replace('\t', ' '))
+        mli.setProperty('summary', util.widenParagraphBreaks(seasonOrShow.summary.strip().replace('\t', ' ')))
 
         # watched/unwatched: same properties, same meaning, as a real episode's own
         # (EpisodesPaginator.prepareListItem()) - Season has the same isFullyWatched/isWatched

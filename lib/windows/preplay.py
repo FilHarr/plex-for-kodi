@@ -125,6 +125,15 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     TRAILER_BUTTON_ID = 303
     SETTINGS_BUTTON_ID = 305
     OPTIONS_BUTTON_ID = 306
+    # Click/focus target laid over the summary textbox (script-plex-pre_play.xml.tpl) - 350, not
+    # something in the 300-306 button cluster (all already taken here) or 310-322
+    # (includes/media_info_pills.xml.tpl's own ids, also live in this window - 310 specifically
+    # collided with that include's video-pill background image, live-reported as "the background
+    # does not extend the full length of the label": Control.setWidth() calls meant for that pill
+    # (MediaInfoPillsMixin.resizeMediaInfoPills()) were hitting this button instead, since Kodi
+    # doesn't guarantee which same-id control a getControl() call resolves to). Wired to
+    # summaryButtonClicked() below.
+    SUMMARY_BUTTON_ID = 350
 
     POSSIBLE_PLAY_BUTTON_IDS = [302, 2302, 2303, 2304, 2305]
 
@@ -364,6 +373,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.showAudioPlayer()
         elif controlID == self.INFO_BUTTON_ID:
             self.infoButtonClicked()
+        elif controlID == self.SUMMARY_BUTTON_ID:
+            self.summaryButtonClicked()
         elif controlID == self.SETTINGS_BUTTON_ID:
             self.settingsButtonClicked()
         elif controlID == self.TRAILER_BUTTON_ID:
@@ -388,7 +399,13 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             # row list.
             self.setProperty('row.focused', '')
 
-        if xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)'):
+        # SUMMARY_BUTTON_ID needs the same exclusion as ControlGroup(300)'s own focus below: it's a
+        # header control that happens to live inside group 50 but outside group 300, so without this
+        # the elif below misread focusing it as "focus moved into deeper content" and slid the whole
+        # header up - same bug/fix as ShowWindow.onFocus()'s own copy of this (subitems.py), which
+        # this was ported from.
+        if (controlID == self.SUMMARY_BUTTON_ID or
+                xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)')):
             self.setProperty('on.extras', '')
         elif xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + !ControlGroup(300).HasFocus(0)'):
             self.setProperty('on.extras', '1')
@@ -554,6 +571,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         # More's own popups, not a full window transition, so no cameFrom bookkeeping needed either
         # (that existed only for InfoWindow's own close-and-return-to-this-window flow).
         info.showMediaDetails(self.video)
+
+    def summaryButtonClicked(self):
+        info.showSummary(self.video.title, self.video.summary)
 
     def optionsButtonClicked(self):
         options = []
@@ -876,7 +896,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         logo = util.clearLogoFrom(self.video, *self.CLEAR_LOGO_DIM)
         self.setProperty('clear.logo', logo)
         self.setProperty('duration', self.video.duration and util.durationToShortText(self.video.duration.asInt(), noSpaces=True))
-        self.setProperty('summary', self.video.summary.strip().replace('\t', ' '))
+        self.setProperty('summary', util.widenParagraphBreaks(self.video.summary.strip().replace('\t', ' ')))
         self.setProperty('unwatched', not self.video.isWatched and '1' or '')
         self.setBoolProperty('watched', self.video.isFullyWatched)
         self.setBoolProperty('disable_playback', self.fromWatchlist)
