@@ -68,6 +68,14 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     ROLES_LIST_ID = 401
     EXTRA_LIST_ID = 402
     RELATED_LIST_ID = 403
+    # ArtistWindow-only (base stays None/empty so the onClick branches below are simply unreachable
+    # for every other ShowWindow-based screen, same idiom as EXTRA_LIST_ID/ROLES_LIST_ID above).
+    POPULAR_TRACKS_LIST_ID = None
+    ALBUM_TYPE_LIST_IDS = ()
+    # Explicit "399 < controlID < 500" -> hub.focus tier override (see onFocus() below) - None means
+    # "use the plain controlID-399 arithmetic", true everywhere except ArtistWindow, whose row-list
+    # ids aren't allocated in top-to-bottom visual order (see its own override for why).
+    HUB_FOCUS_TIERS = None
 
     # Header season-tab row, same id Episodes' own equivalent uses (script-plex-episodes.xml.tpl) -
     # unrelated to (and doesn't collide with) the ids above, since it lives in the shared header
@@ -307,7 +315,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                         return
                     rowControl = {self.ROLES_LIST_ID: self.rolesListControl,
                                  self.EXTRA_LIST_ID: self.extraListControl,
-                                 self.RELATED_LIST_ID: self.relatedListControl}.get(controlID)
+                                 self.RELATED_LIST_ID: self.relatedListControl,
+                                 self.POPULAR_TRACKS_LIST_ID: getattr(self, 'popularTracksListControl', None)}.get(
+                        controlID) or getattr(self, 'albumTypeListControls', {}).get(controlID)
                     if rowControl:
                         pos = rowControl.getSelectedPos()
                         if pos is not None and pos > 0:
@@ -380,6 +390,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.openItem(self.extraListControl)
         elif controlID == self.RELATED_LIST_ID:
             self.openItem(self.relatedListControl)
+        elif controlID == self.POPULAR_TRACKS_LIST_ID:
+            self.popularTrackClicked()
+        elif controlID in self.ALBUM_TYPE_LIST_IDS:
+            self.albumListClicked(self.albumTypeListControls[controlID])
         elif controlID == self.ROLES_LIST_ID:
             if not self.roleClicked():
                 return
@@ -409,8 +423,12 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             # with the button row's own reset-to-'0' below, so group 50's slide animations (see the
             # template) can treat "focus is somewhere in the season row and beyond" as one properly
             # ordered depth scale - 1=season row, 2=roles, 3=extras, 4=related - instead of needing a
-            # separate one-off condition just for the season row.
-            self.setProperty('hub.focus', str(controlID - 399))
+            # separate one-off condition just for the season row. HUB_FOCUS_TIERS overrides this
+            # arithmetic explicitly for screens (ArtistWindow) whose row-list ids don't already
+            # ascend in visual/stacking order the way every other ShowWindow-based screen's do.
+            tier = self.HUB_FOCUS_TIERS.get(controlID, controlID - 399) if self.HUB_FOCUS_TIERS \
+                else controlID - 399
+            self.setProperty('hub.focus', str(tier))
             self.setProperty('row.focused', '1')
         else:
             # row.focused (not hub.focus, which is never cleared once set - the row-collapse slide
@@ -1024,10 +1042,48 @@ class ArtistWindow(ShowWindow):
     EXTRA_LIST_ID = None
     ROLES_LIST_ID = None
     RELATED_LIST_ID = 401
+    POPULAR_TRACKS_LIST_ID = 402
+
+    # One row per otherAlbums hub (Artist.OTHER_ALBUM_HUBS, plexnet/audio.py), each its own list
+    # control (on request: separate lists per album type, not everything dumped into one row sorted
+    # by year) - (mediaItem attr, control id, header Window.Property name, string id, default text).
+    # Control ids/order match script-plex-artist.xml.tpl's grouplist 600 album-row includes.
+    ALBUM_TYPE_ROWS = (
+        ('liveAlbums', 404, 'live_albums.header', 35066, 'Live Albums'),
+        ('compilationAlbums', 405, 'compilation_albums.header', 35067, 'Compilations'),
+        ('singleAlbums', 406, 'single_albums.header', 35068, 'Singles & EPs'),
+        ('soundtrackAlbums', 407, 'soundtrack_albums.header', 35069, 'Soundtracks'),
+        ('demoAlbums', 408, 'demo_albums.header', 35070, 'Demos'),
+        ('remixAlbums', 409, 'remix_albums.header', 35071, 'Remixes'),
+    )
+    ALBUM_TYPE_LIST_IDS = tuple(cid for _attr, cid, _hp, _sid, _default in ALBUM_TYPE_ROWS)
+
+    # Explicit hub.focus tier per row-list id, in visual/grouplist-stacking order - Popular Tracks
+    # (402) is drawn first despite Albums (400) having the lower numeric id (SUB_ITEM_LIST_ID can't
+    # move off 400, the shared base class's own convention), so the plain controlID-399 arithmetic
+    # onFocus() normally uses would give tiers wildly out of visual order (402->3, 400->1, 404->5...).
+    # script-plex-artist.xml.tpl's own per-tier reveal animations (group 50) key off these same
+    # numbers 1-9 paired with each row's own group id (501-508, Related's existing 500) - the two
+    # must be kept in sync by hand.
+    HUB_FOCUS_TIERS = {
+        402: 1,  # Popular Tracks (group id 501)
+        400: 2,  # Albums (group id 502)
+        404: 3,  # Live Albums (group id 503)
+        405: 4,  # Compilations (group id 504)
+        406: 5,  # Singles & EPs (group id 505)
+        407: 6,  # Soundtracks (group id 506)
+        408: 7,  # Demos (group id 507)
+        409: 8,  # Remixes (group id 508)
+        401: 9,  # Related Artists (group id 500)
+    }
 
     def onFirstInit(self):
         self.subItemListControl = kodigui.ManagedControlList(self, self.SUB_ITEM_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
+        self.popularTracksListControl = kodigui.ManagedControlList(self, self.POPULAR_TRACKS_LIST_ID, 5)
+        self.albumTypeListControls = {}
+        for _attr, cid, _header_prop, _sid, _default in self.ALBUM_TYPE_ROWS:
+            self.albumTypeListControls[cid] = kodigui.ManagedControlList(self, cid, 5)
 
         # This fully overrides ShowWindow.onFirstInit() rather than calling super(), so unlike
         # every other ShowWindow-based screen the sidebar's section list is never populated for
@@ -1044,32 +1100,101 @@ class ArtistWindow(ShowWindow):
 
         self.setFocusId(self.PLAY_BUTTON_ID)
 
+    def onFocus(self, controlID):
+        # Full override, not ShowWindow.onFocus()'s shared version - that one exempts
+        # SUB_ITEM_LIST_ID (400) from on.extras on the theory it's "the season row", which already
+        # gets its own dedicated tier-1 slide separate from the general -300 (true for Seasons, whose
+        # season row really is first). On Artist, 400 is Albums, not the first row (Popular Tracks,
+        # 402, is) - inheriting that exemption cleared on.extras right at the Popular Tracks->Albums
+        # boundary while the animation's own tier2 condition was simultaneously switching on, so the
+        # -300 retracting and the new tier's -500 extending fought each other for one frame (live-
+        # reported as "content moves up before dropping back down slightly"). This screen's reveal
+        # animations are all uniform stacked tiers (script-plex-artist.xml.tpl's group 50), the same
+        # scheme script-plex-pre_play.xml.tpl uses - so this is a straight port of PrePlayWindow's own
+        # onFocus() (preplay.py), not ShowWindow's: only SUMMARY_BUTTON_ID is exempted, and hub.focus
+        # is never reset back to 0 (same as Pre-play - other controls key off it staying "seen at
+        # least once", not off returning to exactly 0).
+        self.reselectActiveSection(controlID, self.lastFocusID)
+        self.lastFocusID = controlID
+
+        if controlID == self.SECTION_LIST_ID:
+            self.checkSectionItem()
+
+        if 399 < controlID < 500:
+            tier = self.HUB_FOCUS_TIERS.get(controlID, controlID - 399)
+            self.setProperty('hub.focus', str(tier))
+            self.setProperty('row.focused', '1')
+        else:
+            self.setProperty('row.focused', '')
+
+        if (controlID == self.SUMMARY_BUTTON_ID or
+                xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + ControlGroup(300).HasFocus(0)')):
+            self.setProperty('on.extras', '')
+        elif xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + !ControlGroup(300).HasFocus(0)'):
+            self.setProperty('on.extras', '1')
+
     def setup(self):
         self.relatedPaginator = RelatedPaginator(self.relatedListControl, leaf_count=int(self.mediaItem.relatedCount),
                                                  parent_window=self)
         self.updateProperties()
         self.fill()
         self.fillRelated()
+        self.fillPopularTracks()
+        self.fillAlbumTypeRows()
 
     def playButtonClicked(self, shuffle=False):
         pl = playlist.LocalPlaylist(self.mediaItem.all(), self.mediaItem.getServer(), self.mediaItem)
         pl.startShuffled = shuffle
         self.processCommand(opener.handleOpen(musicplayer.MusicPlayerWindow, track=pl.current(), playlist=pl))
 
+    def popularTrackClicked(self):
+        mli = self.popularTracksListControl.getSelectedItem()
+        if not mli:
+            return
+        # A playlist of just the popular-tracks row itself, not the artist's full discography
+        # (unlike playButtonClicked() above) - so Next/Previous during playback walks this same
+        # popularity-ranked row rather than jumping out to album-order playback.
+        tracks = [item.dataSource for item in self.popularTracksListControl]
+        pl = playlist.LocalPlaylist(tracks, self.mediaItem.getServer())
+        pl.setCurrent(mli.pos())
+        self.processCommand(opener.handleOpen(musicplayer.MusicPlayerWindow, track=pl.current(), playlist=pl))
+
+    def albumListClicked(self, listControl):
+        # The 'artist' branch of subItemListClicked() above, generalized to any of the 6 otherAlbums
+        # rows - those never need that method's 'show' branch (seasons) or its empty-list
+        # close-the-screen cleanup (this is a secondary row, not the screen's own primary content).
+        mli = listControl.getSelectedItem()
+        if not mli:
+            return
+        tracks.AlbumWindow.open(album=mli.dataSource, parent_list=listControl,
+                                entry_section_id=self.entrySectionId)
+        if not mli.dataSource.exists():
+            listControl.removeItem(mli.pos())
+
     def updateProperties(self):
         self.setProperty('summary', util.widenParagraphBreaks(self.mediaItem.summary))
         self.setProperty('related.header', T(32960, 'Similar Artists'))
+        self.setProperty('popular_tracks.header', T(35065, 'Popular Tracks'))
+        # 'Albums' (35072), not the album-type rows' own headers below - the primary/studio row
+        # (Artist.albums(), the /children listing) never had a header of its own before these other
+        # rows existed alongside it, sorted-and-merged into a single unlabeled row.
+        self.setProperty('albums.header', T(35072, 'Albums'))
+        for _attr, _cid, header_prop, string_id, default in self.ALBUM_TYPE_ROWS:
+            self.setProperty(header_prop, T(string_id, default))
         self.updateBackgroundFrom(self.mediaItem)
 
     @busy.dialog()
     def fill(self):
-        self.mediaItem.reload(includeRelated=1, includeRelatedCount=20)
+        self.mediaItem.reload(includeRelated=1, includeRelatedCount=20, includePopularLeaves=1)
         self.setProperty('artist.title', self.mediaItem.title)
         genres = u' / '.join([g.tag for g in util.removeDups(self.mediaItem.genres())][:6])
         self.setProperty('artist.genre', genres)
+        # Primary/studio row only now - the otherAlbums hub types (Live/Compilation/Singles &
+        # EPs/Soundtracks/Demos/Remixes) get their own separate rows below (fillAlbumTypeRows()),
+        # rather than being merged in here sorted by year alongside these (on request).
         items = []
         idx = 0
-        for album in sorted(self.mediaItem.albums() + list(self.mediaItem.otherAlbums), key=lambda x: x.year):
+        for album in sorted(self.mediaItem.albums(), key=lambda x: x.year):
             mli = self.createListItem(album)
             if mli:
                 mli.setProperty('index', str(idx))
@@ -1080,3 +1205,44 @@ class ArtistWindow(ShowWindow):
 
         self.subItemListControl.reset()
         self.subItemListControl.addItems(items)
+
+    def fillAlbumTypeRows(self):
+        for attr, cid, _header_prop, _string_id, _default in self.ALBUM_TYPE_ROWS:
+            listControl = self.albumTypeListControls[cid]
+            items = []
+            idx = 0
+            for album in sorted(getattr(self.mediaItem, attr), key=lambda x: x.year):
+                mli = self.createListItem(album)
+                if mli:
+                    mli.setProperty('index', str(idx))
+                    mli.setProperty('year', album.year)
+                    mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/music.png')
+                    items.append(mli)
+                    idx += 1
+
+            listControl.reset()
+            listControl.addItems(items)
+
+    def fillPopularTracks(self):
+        items = []
+        idx = 0
+        # A real track row (number/title/duration, script-plex-album.xml.tpl's own recipe), not
+        # another square-art carousel like Albums/Related above it - this is a list of tracks you
+        # click to play (popularTrackClicked() below), not another set of things you open (on
+        # request, after the first pass wrongly copied the card-carousel treatment).
+        # PopularLeaves entries arrive already sorted by ratingCount (server-side, see the request's
+        # own &sort= in fill()'s reload()) - no local re-sort, unlike the album loop above.
+        for track in self.mediaItem.popularTracks:
+            mli = kodigui.ManagedListItem(track.title or '', data_source=track)
+            mli.setProperty('index', str(idx))
+            mli.setProperty('track.number', str(idx + 1))
+            mli.setProperty('track.ID', track.ratingKey)
+            mli.setProperty('track.duration', util.simplifiedTimeDisplay(track.duration.asInt()))
+            items.append(mli)
+            idx += 1
+
+        if items:
+            items[-1].setProperty('is.footer', '1')
+
+        self.popularTracksListControl.reset()
+        self.popularTracksListControl.addItems(items)

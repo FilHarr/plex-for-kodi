@@ -3416,3 +3416,35 @@ msgstr ""
 msgctxt "#35064"
 msgid "Watch trailer"
 msgstr ""
+
+msgctxt "#35065"
+msgid "Popular Tracks"
+msgstr ""
+
+msgctxt "#35066"
+msgid "Live Albums"
+msgstr ""
+
+msgctxt "#35067"
+msgid "Compilations"
+msgstr ""
+
+msgctxt "#35068"
+msgid "Singles & EPs"
+msgstr ""
+
+msgctxt "#35069"
+msgid "Soundtracks"
+msgstr ""
+
+msgctxt "#35070"
+msgid "Demos"
+msgstr ""
+
+msgctxt "#35071"
+msgid "Remixes"
+msgstr ""
+
+msgctxt "#35072"
+msgid "Albums"
+msgstr ""

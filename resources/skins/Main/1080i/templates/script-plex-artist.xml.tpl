@@ -15,8 +15,42 @@
 <control type="group" id="50">
     <animation effect="slide" end="0,{{ vscale(-300) }}" time="200" tween="quadratic" easing="out" condition="!String.IsEmpty(Window.Property(on.extras))">Conditional</animation>
 
-    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500)" reversible="true">
-        <effect type="slide" end="0,{{ vscale(-500) }}" time="200" tween="quadratic" easing="out"/>
+    <!-- One progressive depth scale, hub.focus 1-9 (ArtistWindow.onFocus()/HUB_FOCUS_TIERS,
+         subitems.py: Popular Tracks=1, Albums=2, Live=3, Compilations=4, Singles & EPs=5,
+         Soundtracks=6, Demos=7, Remixes=8, Related Artists=9 - control ids aren't allocated in that
+         order, hence the explicit tier map instead of the plain controlID-399 arithmetic every other
+         ShowWindow screen uses). Conditional animations that are simultaneously true stack additively
+         (matches Seasons' own identical cascade, script-plex-seasons.xml.tpl - see that block's own
+         comment for the mechanism) - each tier below is an INCREMENT equal to the height+itemgap of
+         the row that just scrolled above it, not an absolute offset, and is gated on that same row's
+         own Visible() so an artist missing a given album type (common - most have no Live/Demo/Remix
+         albums) doesn't leave a gap-sized hole in the slide (grouplist 600 skips invisible children
+         entirely when auto-stacking, so a row that contributed no real height shouldn't contribute a
+         slide increment either). Row heights: Popular Tracks 460, every album-type/Albums row 400,
+         Related 520, itemgap 5 - see grouplist 600 and includes/artist_album_row.xml.tpl below. -->
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),1) + Control.IsVisible(501)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-481) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),2) + Control.IsVisible(502)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-410) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),3) + Control.IsVisible(503)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-410) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),4) + Control.IsVisible(504)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-410) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),5) + Control.IsVisible(505)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-410) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),6) + Control.IsVisible(506)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-410) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),7) + Control.IsVisible(507)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-410) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),8) + Control.IsVisible(508)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-410) }}" time="200" tween="quadratic" easing="out"/>
     </animation>
 
     <!-- Slide right while the sidebar rail is expanded (focused), matching every other ported screen. -->
@@ -28,7 +62,9 @@
          the collapsed sidebar rail's icon column). -->
     <posx>52</posx>
     <posy>{{ vscale(135) }}</posy>
-    <defaultcontrol>400</defaultcontrol>
+    <!-- 402 (Popular Tracks), not 400 (Albums): Popular Tracks is now the first row in grouplist 600's
+         stack - see HUB_FOCUS_TIERS' own comment (subitems.py) for why. -->
+    <defaultcontrol>402</defaultcontrol>
 
     {% block buttons %}
         <!-- Repositioned/retuned to match Seasons' own button row (script-plex-seasons.xml.tpl) -
@@ -57,7 +93,8 @@
                 <!-- 305 (the summary click-target), not straight to 200: keeps that new focus stop
                      reachable from the button row via remote/keyboard, not just mouse/touch. -->
                 <onup>305</onup>
-                <ondown>400</ondown>
+                <!-- 402 (Popular Tracks), not 400 - see group 50's own defaultcontrol comment above. -->
+                <ondown>402</ondown>
                 <onleft>9000</onleft>
                 <itemgap>{{ theme.artist.buttongroup.itemgap }}</itemgap>
                 <orientation>horizontal</orientation>
@@ -196,184 +233,239 @@
         </control>
     </control>
 
-    <control type="group" id="100">
-        <visible>Integer.IsGreater(Container(400).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
-        <defaultcontrol>400</defaultcontrol>
+    <!-- One grouplist for the whole hub-row stack, matching Seasons'/Episodes'/Pre-play's own
+         grouplist 60 convention - auto-stacks each row by its declared height+itemgap, in visual
+         order: Popular Tracks, Albums, then the 6 otherAlbums hub types, then Related Artists.
+         Control ids/order match ArtistWindow.ALBUM_TYPE_ROWS/HUB_FOCUS_TIERS exactly (subitems.py) -
+         the two have to be kept in sync by hand. -->
+    <!-- SHARED HUB-ROW RECIPE - every row in this grouplist is built to the same geometry, and so
+         are the hub rows on the other three screens (Seasons/Episodes/Pre-play/Artist). Change it
+         in all four together, not per row:
+             heading label          1000x80 at posy 0, posx = 113 - group 50's own posx
+                                    (61 here on Seasons/Pre-play/Artist, 53 on Episodes, whose
+                                    group 50 sits 8px further right) -> absolute x=113 everywhere
+             heading -> art         6                           -> art top is always 86
+             art -> caption         9
+             caption block          60 (two 30px font10 lines, the second one optional)
+             caption -> row bottom  10, plus this grouplist's own itemgap 5 = a 15px row gap
+             row height             86 + art_h + 9 + 60 + 10  =  art_h + 165
+             list posy              22  (= 86 - the itemlayout's own 61 - the inner group's own 3)
+             list posx              113 - group 50's own posx - 8 (the item's own 5 + 3 left margin)
+             card                   shadow box = art + 24 at (0,0), art inset (3,3),
+                                    ring = art + 6 at (0,0)
+         The card part is the same recipe the home hubs and every library grid already use
+         (includes/hub_itemlayout_*.xml.tpl): drop-shadow-directional.png at border=24, a real cast
+         shadow with zero alpha along its top and left edge. The circular Roles card is the one that
+         can't use a rounded-rect texture, so it fills the identical box with
+         role-shadow-directional.png (a disc built to the same measured falloff), plain stretch.
+         Rows with no caption slot - Pre-play's Reviews, Artist's Popular Tracks - use
+         86 + content height + 10 for their row height instead. -->
+    <control type="grouplist" id="600">
         <posx>0</posx>
-        <posy>{{ vscale(585) }}</posy>
+        <!-- 466, not the old 585: moved up 119px so the gap from the button row's bottom edge to the
+             first heading box matches Seasons'. This screen's buttons end at exactly the same absolute
+             y as Seasons' (both 358 + 25 + the modern theme's 70px button height = 453), and Seasons
+             sits its first label's 80px box 13px below that, so 453 + 13 = 466. Seasons and Episodes
+             are deliberately tuned and were left alone. The old 585 came from the pre-grouplist
+             group 100 and was never re-derived. -->
+        <posy>{{ vscale(466) }}</posy>
         <width>1920</width>
-        <height>{{ vscale(360) }}</height>
-        <control type="image">
+        <height>{{ vscale(3820) }}</height>
+        <onup>300</onup>
+        <itemgap>5</itemgap>
+
+        <!-- POPULAR TRACKS -->
+        <!-- A real track row (number/title/duration, script-plex-album.xml.tpl's own list recipe),
+             not another square-art carousel like the rows below it - these are tracks you click to
+             play (popularTrackClicked(), subitems.py), not things you open. PopularLeaves entries
+             arrive pre-sorted by ratingCount (server-side) - no client sort/pagination needed. -->
+        <control type="group" id="501">
+            <visible>Integer.IsGreater(Container(402).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
+            <defaultcontrol>402</defaultcontrol>
             <posx>0</posx>
             <posy>0</posy>
             <width>1920</width>
-            <height>{{ vscale(360) }}</height>
-            <texture>script.plex/white-square.png</texture>
-            <colordiffuse>20000000</colordiffuse>
-        </control>
-        <control type="list" id="400">
-            <posx>0</posx>
-            <posy>{{ vscale(-20) }}</posy>
-            <width>1920</width>
-            <height>{{ vscale(700) }}</height>
-            <onup>300</onup>
-            <ondown>401</ondown>
-            <!-- No pagination on this list (fill() adds every album up front), so no boundary
-                 markers to protect - straight to the sidebar. -->
-            <onleft>9000</onleft>
-            <scrolltime>200</scrolltime>
-            <orientation>horizontal</orientation>
-            <preloaditems>2</preloaditems>
-            <!-- ITEM LAYOUT ########################################## -->
-            <itemlayout width="260">
-                <control type="group">
-                    <posx>60</posx>
-                    <posy>{{ vscale(60) }}</posy>
+            <height>{{ vscale(476) }}</height>
+            <control type="label">
+                <posx>61</posx>
+                <posy>0</posy>
+                <width>1000</width>
+                <height>{{ vscale(80) }}</height>
+                <font>font12</font>
+                <align>left</align>
+                <aligny>center</aligny>
+                <textcolor>FFE9E6E7</textcolor>
+                <label>[B]$INFO[Window.Property(popular_tracks.header)][/B]</label>
+            </control>
+            <control type="list" id="402">
+                <posx>53</posx>
+                <posy>{{ vscale(86) }}</posy>
+                <width>1867</width>
+                <height>{{ vscale(380) }}</height>
+                <onup>300</onup>
+                <ondown>400</ondown>
+                <onleft>9000</onleft>
+                <onright>noop</onright>
+                <scrolltime>200</scrolltime>
+                <orientation>vertical</orientation>
+                <preloaditems>4</preloaditems>
+                <!-- ITEM LAYOUT ########################################## -->
+                <itemlayout height="{{ vscale(76) }}">
                     <control type="group">
-                        <posx>0</posx>
+                        <posx>8</posx>
+                        <posy>0</posy>
+                        <control type="label">
+                            <visible>!String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+                            <posx>0</posx>
+                            <posy>0</posy>
+                            <width>60</width>
+                            <height>{{ vscale(76) }}</height>
+                            <font>font10</font>
+                            <align>center</align>
+                            <aligny>center</aligny>
+                            <textcolor>D8FFFFFF</textcolor>
+                            <label>[B]$INFO[ListItem.Property(track.number)][/B]</label>
+                        </control>
+                        <control type="image">
+                            <visible>String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+                            <posx>12</posx>
+                            <posy>{{ vscale(21) }}</posy>
+                            <width>35</width>
+                            <height>{{ vscale(35) }}</height>
+                            <texture>script.plex/indicators/playing-circle.png</texture>
+                            <colordiffuse>FFE5A00D</colordiffuse>
+                        </control>
+                        <control type="label">
+                            <posx>90</posx>
+                            <posy>0</posy>
+                            <width>1600</width>
+                            <height>{{ vscale(76) }}</height>
+                            <font>font10</font>
+                            <align>left</align>
+                            <aligny>center</aligny>
+                            <textcolor>FFFFFFFF</textcolor>
+                            <label>[B]$INFO[ListItem.Label][/B]</label>
+                        </control>
+                        <control type="label">
+                            <posx>1697</posx>
+                            <posy>0</posy>
+                            <width>150</width>
+                            <height>{{ vscale(76) }}</height>
+                            <font>font10</font>
+                            <align>right</align>
+                            <aligny>center</aligny>
+                            <textcolor>D8FFFFFF</textcolor>
+                            <label>[B]$INFO[ListItem.Property(track.duration)][/B]</label>
+                        </control>
+                        <control type="image">
+                            <visible>String.IsEmpty(ListItem.Property(is.footer))</visible>
+                            <posx>0</posx>
+                            <posy>{{ vscale(73) }}</posy>
+                            <width>1847</width>
+                            <height>{{ vscale(2) }}</height>
+                            <texture>script.plex/white-square.png</texture>
+                            <colordiffuse>40000000</colordiffuse>
+                        </control>
+                    </control>
+                </itemlayout>
+
+                <!-- FOCUSED LAYOUT ####################################### -->
+                <focusedlayout height="{{ vscale(76) }}">
+                    <control type="group">
+                        <posx>10</posx>
                         <posy>0</posy>
                         <control type="image">
                             <posx>0</posx>
                             <posy>0</posy>
-                            <width>215</width>
-                            <height>{{ vscale(215) }}</height>
-                            <texture>$INFO[ListItem.Property(thumb.fallback)]</texture>
+                            <width>1847</width>
+                            <height>{{ vscale(76) }}</height>
+                            <texture>script.plex/white-square-rounded.png</texture>
+                            <colordiffuse>22FFFFFF</colordiffuse>
                         </control>
-                        <control type="image">
+                        <control type="label">
+                            <visible>!String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
                             <posx>0</posx>
                             <posy>0</posy>
-                            <width>215</width>
-                            <height>{{ vscale(215) }}</height>
-                            <texture background="true">$INFO[ListItem.Thumb]</texture>
-                            <aspectratio>scale</aspectratio>
-                        </control>
-                        <control type="group">
-                            <posx>0</posx>
-                            <posy>{{ vscale(220) }}</posy>
-                            <control type="label">
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>215</width>
-                                <height>{{ vscale(30) }}</height>
-                                <font>font10</font>
-                                <align>center</align>
-                                <textcolor>FFFFFFFF</textcolor>
-                                <label>$INFO[ListItem.Label]</label>
-                            </control>
-                            <control type="label">
-                                <posx>0</posx>
-                                <posy>{{ vscale(30) }}</posy>
-                                <width>215</width>
-                                <height>{{ vscale(30) }}</height>
-                                <font>font10</font>
-                                <align>center</align>
-                                <textcolor>FFFFFFFF</textcolor>
-                                <label>$INFO[ListItem.Property(year)]</label>
-                            </control>
-                        </control>
-                    </control>
-                </control>
-            </itemlayout>
-
-            <!-- FOCUSED LAYOUT ####################################### -->
-            <focusedlayout width="260">
-                <control type="group">
-                    <posx>60</posx>
-                    <posy>{{ vscale(60) }}</posy>
-                    <control type="group">
-                        <animation effect="zoom" start="100" end="110" time="100" center="107.5,{{ vscale(107.5) }}" reversible="false">Focus</animation>
-                        <animation effect="zoom" start="110" end="100" time="100" center="107.5,{{ vscale(107.5) }}" reversible="false">UnFocus</animation>
-                        <control type="group">
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <control type="image">
-                                <visible>Control.HasFocus(400)</visible>
-                                <posx>-40</posx>
-                                <posy>{{ vscale(-40) }}</posy>
-                                <width>295</width>
-                                <height>{{ vscale(295) }}</height>
-                                <texture border="40">script.plex/square-rounded-shadow.png</texture>
-                            </control>
-                            <control type="image">
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>215</width>
-                                <height>{{ vscale(215) }}</height>
-                                <texture>$INFO[ListItem.Property(thumb.fallback)]</texture>
-                            </control>
-                            <control type="image">
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>215</width>
-                                <height>{{ vscale(215) }}</height>
-                                <texture background="true">$INFO[ListItem.Thumb]</texture>
-                                <aspectratio>scale</aspectratio>
-                            </control>
-                            <control type="group">
-                                <posx>0</posx>
-                                <posy>{{ vscale(220) }}</posy>
-                                <control type="label">
-                                    <scroll>false</scroll>
-                                    <posx>0</posx>
-                                    <posy>0</posy>
-                                    <width>215</width>
-                                    <height>{{ vscale(30) }}</height>
-                                    <font>font10</font>
-                                    <align>center</align>
-                                    <textcolor>FFFFFFFF</textcolor>
-                                    <label>$INFO[ListItem.Label]</label>
-                                </control>
-                                <control type="label">
-                                    <posx>0</posx>
-                                    <posy>{{ vscale(30) }}</posy>
-                                    <width>215</width>
-                                    <height>{{ vscale(30) }}</height>
-                                    <font>font10</font>
-                                    <align>center</align>
-                                    <textcolor>FFFFFFFF</textcolor>
-                                    <label>$INFO[ListItem.Property(year)]</label>
-                                </control>
-                            </control>
+                            <width>60</width>
+                            <height>{{ vscale(76) }}</height>
+                            <font>font10</font>
+                            <align>center</align>
+                            <aligny>center</aligny>
+                            <textcolor>FFFFFFFF</textcolor>
+                            <label>[B]$INFO[ListItem.Property(track.number)][/B]</label>
                         </control>
                         <control type="image">
-                            <visible>Control.HasFocus(400)</visible>
-                            <posx>-5</posx>
-                            <posy>{{ vscale(-5) }}</posy>
-                            <width>225</width>
-                            <height>{{ vscale(225) }}</height>
-                            <texture border="10">script.plex/home/selected.png</texture>
+                            <visible>String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+                            <posx>12</posx>
+                            <posy>{{ vscale(21) }}</posy>
+                            <width>35</width>
+                            <height>{{ vscale(35) }}</height>
+                            <texture>script.plex/indicators/playing-circle.png</texture>
+                            <colordiffuse>FFE5A00D</colordiffuse>
+                        </control>
+                        <control type="label">
+                            <posx>90</posx>
+                            <posy>0</posy>
+                            <width>1600</width>
+                            <height>{{ vscale(76) }}</height>
+                            <font>font10</font>
+                            <align>left</align>
+                            <aligny>center</aligny>
+                            <textcolor>FFFFFFFF</textcolor>
+                            <label>[B]$INFO[ListItem.Label][/B]</label>
+                        </control>
+                        <control type="label">
+                            <posx>1697</posx>
+                            <posy>0</posy>
+                            <width>150</width>
+                            <height>{{ vscale(76) }}</height>
+                            <font>font10</font>
+                            <align>right</align>
+                            <aligny>center</aligny>
+                            <textcolor>FFFFFFFF</textcolor>
+                            <label>[B]$INFO[ListItem.Property(track.duration)][/B]</label>
                         </control>
                     </control>
-                </control>
-            </focusedlayout>
+                </focusedlayout>
+            </control>
         </control>
-    </control>
+        <!-- POPULAR TRACKS -->
+
+        {% with row = "includes/artist_album_row.xml.tpl" %}
+            {% include row with id=400 & group_id=502 & onup=402 & ondown=404 & header_prop="albums.header" %}
+            {% include row with id=404 & group_id=503 & onup=400 & ondown=405 & header_prop="live_albums.header" %}
+            {% include row with id=405 & group_id=504 & onup=404 & ondown=406 & header_prop="compilation_albums.header" %}
+            {% include row with id=406 & group_id=505 & onup=405 & ondown=407 & header_prop="single_albums.header" %}
+            {% include row with id=407 & group_id=506 & onup=406 & ondown=408 & header_prop="soundtrack_albums.header" %}
+            {% include row with id=408 & group_id=507 & onup=407 & ondown=409 & header_prop="demo_albums.header" %}
+            {% include row with id=409 & group_id=508 & onup=408 & ondown=401 & header_prop="remix_albums.header" %}
+        {% endwith %}
 
     <!-- similar artists -->
     <control type="group" id="500">
         <visible>Integer.IsGreater(Container(401).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
         <defaultcontrol>401</defaultcontrol>
         <width>1920</width>
-        <height>{{ vscale(520) }}</height>
+        <height>{{ vscale(405) }}</height>
         <posx>0</posx>
-        <posy>{{ vscale(945) }}</posy>
+        <posy>0</posy>
         <control type="label">
-            <posx>60</posx>
+            <posx>61</posx>
             <posy>0</posy>
             <width>1000</width>
             <height>{{ vscale(80) }}</height>
             <font>font12</font>
             <align>left</align>
             <aligny>center</aligny>
-            <textcolor>FFFFFFFF</textcolor>
-            <label>[UPPERCASE]$INFO[Window.Property(related.header)][/UPPERCASE]</label>
+            <textcolor>FFE9E6E7</textcolor>
+            <label>[B]$INFO[Window.Property(related.header)][/B]</label>
         </control>
         <control type="list" id="401">
-            <posx>0</posx>
-            <posy>{{ vscale(16) }}</posy>
-            <width>1920</width>
-            <height>{{ vscale(520) }}</height>
-            <onup>400</onup>
+            <posx>53</posx>
+            <posy>{{ vscale(22) }}</posy>
+            <width>1867</width>
+            <height>{{ vscale(380) }}</height>
+            <onup>409</onup>
             <ondown>false</ondown>
             <!-- RelatedPaginator always starts at offset=0 and never produces a left-boundary
                  marker (same as Episodes' Related row), so noop here was already a dead end -
@@ -386,33 +478,44 @@
             <!-- ITEM LAYOUT ########################################## -->
             <itemlayout width="260">
                 <control type="group">
-                    <posx>60</posx>
-                    <posy>{{ vscale(60) }}</posy>
-                    <control type="group">
+                    <posx>5</posx>
+                    <posy>{{ vscale(61) }}</posy>
+                    <!-- Resting shadow, ungated: matches the poster rows, the home hubs and every library
+                         grid, where an unfocused card still sits on its own shadow. The focusedlayout draws
+                         the same box gated on Control.HasFocus, so the focused card keeps its own. -->
+                    <control type="image">
                         <posx>0</posx>
                         <posy>0</posy>
+                        <width>264</width>
+                        <height>{{ vscale(264) }}</height>
+                        <texture border="24">script.plex/drop-shadow-directional.png</texture>
+                    </control>
+                    <control type="group">
+                        <posx>3</posx>
+                        <posy>3</posy>
                         <control type="image">
                             <posx>0</posx>
                             <posy>0</posy>
-                            <width>215</width>
-                            <height>{{ vscale(215) }}</height>
-                            <texture>$INFO[ListItem.Property(thumb.fallback)]</texture>
+                            <width>240</width>
+                            <height>{{ vscale(240) }}</height>
+                            <texture diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
                         </control>
                         <control type="image">
                             <posx>0</posx>
                             <posy>0</posy>
-                            <width>215</width>
-                            <height>{{ vscale(215) }}</height>
-                            <texture background="true">$INFO[ListItem.Thumb]</texture>
-                            <aspectratio>scale</aspectratio>
+                            <width>240</width>
+                            <height>{{ vscale(240) }}</height>
+                            <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
+                            <aspectratio scalediffuse="false">scale</aspectratio>
                         </control>
                         <control type="group">
                             <posx>0</posx>
-                            <posy>{{ vscale(220) }}</posy>
+                            <posy>{{ vscale(249) }}</posy>
                             <control type="label">
+                                <scroll>false</scroll>
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>215</width>
+                                <width>240</width>
                                 <height>{{ vscale(30) }}</height>
                                 <font>font10</font>
                                 <align>center</align>
@@ -420,9 +523,10 @@
                                 <label>$INFO[ListItem.Label]</label>
                             </control>
                             <control type="label">
+                                <scroll>false</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(30) }}</posy>
-                                <width>215</width>
+                                <width>240</width>
                                 <height>{{ vscale(30) }}</height>
                                 <font>font10</font>
                                 <align>center</align>
@@ -430,35 +534,37 @@
                                 <label>$INFO[ListItem.Property(year)]</label>
                             </control>
                         </control>
+                        <!-- Boundary/updating overlays, re-centred for 240 art: chevron (240-61)/2 = 89.5,
+                             (240-100)/2 = 70; busy (240-128)/2 = 56. -->
                         <control type="group">
                             <visible>!String.IsEmpty(ListItem.Property(is.boundary))</visible>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>215</width>
-                                <height>{{ vscale(215) }}</height>
+                                <width>240</width>
+                                <height>{{ vscale(240) }}</height>
                                 <texture colordiffuse="FF404040">script.plex/white-square.png</texture>
                             </control>
                             <control type="image">
                                 <visible>String.IsEmpty(ListItem.Property(is.updating)) + !String.IsEmpty(ListItem.Property(right.boundary))</visible>
-                                <posx>77</posx>
-                                <posy>{{ vscale(57.5) }}</posy>
+                                <posx>89.5</posx>
+                                <posy>{{ vscale(70) }}</posy>
                                 <width>61</width>
                                 <height>{{ vscale(100) }}</height>
                                 <texture colordiffuse="40000000">script.plex/indicators/chevron-white.png</texture>
                             </control>
                             <control type="image">
                                 <visible>String.IsEmpty(ListItem.Property(is.updating)) + !String.IsEmpty(ListItem.Property(left.boundary))</visible>
-                                <posx>77</posx>
-                                <posy>{{ vscale(57.5) }}</posy>
+                                <posx>89.5</posx>
+                                <posy>{{ vscale(70) }}</posy>
                                 <width>61</width>
                                 <height>{{ vscale(100) }}</height>
                                 <texture colordiffuse="40000000">script.plex/indicators/chevron-white-l.png</texture>
                             </control>
                             <control type="image">
                                 <visible>!String.IsEmpty(ListItem.Property(is.updating))</visible>
-                                <posx>43.5</posx>
-                                <posy>{{ vscale(43.5) }}</posy>
+                                <posx>56</posx>
+                                <posy>{{ vscale(56) }}</posy>
                                 <width>128</width>
                                 <height>{{ vscale(128) }}</height>
                                 <texture>script.plex/home/busy.gif</texture>
@@ -471,45 +577,52 @@
             <!-- FOCUSED LAYOUT ####################################### -->
             <focusedlayout width="260">
                 <control type="group">
-                    <posx>60</posx>
-                    <posy>{{ vscale(60) }}</posy>
+                    <posx>5</posx>
+                    <posy>{{ vscale(61) }}</posy>
                     <control type="group">
-                        <animation effect="zoom" start="100" end="110" time="100" center="107.5,{{ vscale(107.5) }}" reversible="false">Focus</animation>
-                        <animation effect="zoom" start="110" end="100" time="100" center="107.5,{{ vscale(107.5) }}" reversible="false">UnFocus</animation>
-                        <control type="group">
+                        <animation effect="zoom" start="100" end="104" time="100" center="123,{{ vscale(123) }}" reversible="false">Focus</animation>
+                        <animation effect="zoom" start="104" end="100" time="100" center="123,{{ vscale(123) }}" reversible="false">UnFocus</animation>
+                        <posx>0</posx>
+                        <posy>0</posy>
+                        <control type="image">
+                            <!-- Ungated, unlike the focus ring below it: f10d4074 established that gating
+                                 a card's drop shadow on Control.HasFocus makes the selected card the only
+                                 one on screen without a shadow the moment focus leaves the list for the
+                                 button row, sidebar or scrubber - and the shadow visibly pops back in as
+                                 Kodi settles the layout. The itemlayout draws this same box
+                                 unconditionally, so this one matches it. -->
                             <posx>0</posx>
                             <posy>0</posy>
+                            <width>264</width>
+                            <height>{{ vscale(264) }}</height>
+                            <texture border="24">script.plex/drop-shadow-directional.png</texture>
+                        </control>
+                        <control type="group">
+                            <posx>3</posx>
+                            <posy>3</posy>
                             <control type="image">
-                                <visible>Control.HasFocus(400)</visible>
-                                <posx>-40</posx>
-                                <posy>{{ vscale(-40) }}</posy>
-                                <width>295</width>
-                                <height>{{ vscale(295) }}</height>
-                                <texture border="40">script.plex/square-rounded-shadow.png</texture>
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>240</width>
+                                <height>{{ vscale(240) }}</height>
+                                <texture diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
                             </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>215</width>
-                                <height>{{ vscale(215) }}</height>
-                                <texture>$INFO[ListItem.Property(thumb.fallback)]</texture>
-                            </control>
-                            <control type="image">
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>215</width>
-                                <height>{{ vscale(215) }}</height>
-                                <texture background="true">$INFO[ListItem.Thumb]</texture>
-                                <aspectratio>scale</aspectratio>
+                                <width>240</width>
+                                <height>{{ vscale(240) }}</height>
+                                <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
                             </control>
                             <control type="group">
                                 <posx>0</posx>
-                                <posy>{{ vscale(220) }}</posy>
+                                <posy>{{ vscale(249) }}</posy>
                                 <control type="label">
-                                    <scroll>false</scroll>
+                                    <scroll>Control.HasFocus(401)</scroll>
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>215</width>
+                                    <width>240</width>
                                     <height>{{ vscale(30) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
@@ -517,9 +630,10 @@
                                     <label>$INFO[ListItem.Label]</label>
                                 </control>
                                 <control type="label">
+                                    <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>{{ vscale(30) }}</posy>
-                                    <width>215</width>
+                                    <width>240</width>
                                     <height>{{ vscale(30) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
@@ -527,53 +641,57 @@
                                     <label>$INFO[ListItem.Property(year)]</label>
                                 </control>
                             </control>
+                            <!-- Boundary/updating overlays, re-centred for 240 art: chevron (240-61)/2 = 89.5,
+                                 (240-100)/2 = 70; busy (240-128)/2 = 56. -->
+                            <control type="group">
+                                <visible>!String.IsEmpty(ListItem.Property(is.boundary))</visible>
+                                <control type="image">
+                                    <posx>0</posx>
+                                    <posy>0</posy>
+                                    <width>240</width>
+                                    <height>{{ vscale(240) }}</height>
+                                    <texture colordiffuse="FF404040">script.plex/white-square.png</texture>
+                                </control>
+                                <control type="image">
+                                    <visible>String.IsEmpty(ListItem.Property(is.updating)) + !String.IsEmpty(ListItem.Property(right.boundary))</visible>
+                                    <posx>89.5</posx>
+                                    <posy>{{ vscale(70) }}</posy>
+                                    <width>61</width>
+                                    <height>{{ vscale(100) }}</height>
+                                    <texture colordiffuse="40000000">script.plex/indicators/chevron-white.png</texture>
+                                </control>
+                                <control type="image">
+                                    <visible>String.IsEmpty(ListItem.Property(is.updating)) + !String.IsEmpty(ListItem.Property(left.boundary))</visible>
+                                    <posx>89.5</posx>
+                                    <posy>{{ vscale(70) }}</posy>
+                                    <width>61</width>
+                                    <height>{{ vscale(100) }}</height>
+                                    <texture colordiffuse="40000000">script.plex/indicators/chevron-white-l.png</texture>
+                                </control>
+                                <control type="image">
+                                    <visible>!String.IsEmpty(ListItem.Property(is.updating))</visible>
+                                    <posx>56</posx>
+                                    <posy>{{ vscale(56) }}</posy>
+                                    <width>128</width>
+                                    <height>{{ vscale(128) }}</height>
+                                    <texture>script.plex/home/busy.gif</texture>
+                                </control>
+                            </control>
                         </control>
                         <control type="image">
                             <visible>Control.HasFocus(401)</visible>
-                            <posx>-5</posx>
-                            <posy>{{ vscale(-5) }}</posy>
-                            <width>225</width>
-                            <height>{{ vscale(225) }}</height>
-                            <texture border="10">script.plex/home/selected.png</texture>
-                        </control>
-                        <control type="group">
-                            <visible>!String.IsEmpty(ListItem.Property(is.boundary))</visible>
-                            <control type="image">
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>215</width>
-                                <height>{{ vscale(215) }}</height>
-                                <texture colordiffuse="FF404040">script.plex/white-square.png</texture>
-                            </control>
-                            <control type="image">
-                                <visible>String.IsEmpty(ListItem.Property(is.updating)) + !String.IsEmpty(ListItem.Property(right.boundary))</visible>
-                                <posx>77</posx>
-                                <posy>{{ vscale(57.5) }}</posy>
-                                <width>61</width>
-                                <height>{{ vscale(100) }}</height>
-                                <texture colordiffuse="40000000">script.plex/indicators/chevron-white.png</texture>
-                            </control>
-                            <control type="image">
-                                <visible>String.IsEmpty(ListItem.Property(is.updating)) + !String.IsEmpty(ListItem.Property(left.boundary))</visible>
-                                <posx>77</posx>
-                                <posy>{{ vscale(57.5) }}</posy>
-                                <width>61</width>
-                                <height>{{ vscale(100) }}</height>
-                                <texture colordiffuse="40000000">script.plex/indicators/chevron-white-l.png</texture>
-                            </control>
-                            <control type="image">
-                                <visible>!String.IsEmpty(ListItem.Property(is.updating))</visible>
-                                <posx>43.5</posx>
-                                <posy>{{ vscale(43.5) }}</posy>
-                                <width>128</width>
-                                <height>{{ vscale(128) }}</height>
-                                <texture>script.plex/home/busy.gif</texture>
-                            </control>
+                            <posx>0</posx>
+                            <posy>0</posy>
+                            <width>246</width>
+                            <height>{{ vscale(246) }}</height>
+                            <texture diffuse="script.plex/masks/ring-mask-square.png">script.plex/white-square.png</texture>
+                            <colordiffuse>FFE9A20D</colordiffuse>
                         </control>
                     </control>
                 </control>
             </focusedlayout>
         </control>
+    </control>
     </control>
 </control>
 {% endblock content %}

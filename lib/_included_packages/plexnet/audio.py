@@ -31,19 +31,37 @@ class Audio(media.MediaItem):
 class Artist(Audio, media.RelatedMixin):
     TYPE = 'artist'
 
+    # otherAlbums hub identifiers, kept apart rather than merged into one list (as a single
+    # otherAlbums list used to) so ArtistWindow can render each type as its own row (on request),
+    # not everything dumped into one row sorted by year - a Live Album and a studio album from the
+    # same year used to sit side by side there, indistinguishable. Order matches the album-row
+    # ordering in script-plex-artist.xml.tpl (grouplist 600).
+    OTHER_ALBUM_HUBS = (
+        ("liveAlbums", "artist.albums.live"),
+        ("compilationAlbums", "artist.albums.compilation"),
+        ("singleAlbums", "artist.albums.singles"),
+        ("soundtrackAlbums", "artist.albums.soundtrack"),
+        ("demoAlbums", "artist.albums.demo"),
+        ("remixAlbums", "artist.albums.remix"),
+    )
+
     def _setData(self, data):
         Audio._setData(self, data)
-        self.otherAlbums = []
+        for attr, _hub_id in self.OTHER_ALBUM_HUBS:
+            setattr(self, attr, [])
+        # <PopularLeaves> is a sibling of <Related>, not a hub inside it - relatedHubs() (media.py)
+        # can't reach it. Only present when the request carried includePopularLeaves=1 (see
+        # ArtistWindow.fill(), subitems.py); absent otherwise, so PlexItemList's own data=None
+        # handling (empty list) covers that case for free.
+        self.popularTracks = []
         if self.isFullObject():
             self.countries = plexobjects.PlexItemList(data, media.Country, media.Country.TYPE, server=self.server)
             self.genres = plexobjects.PlexItemList(data, media.Genre, media.Genre.TYPE, server=self.server)
             self.similar = plexobjects.PlexItemList(data, media.Similar, media.Similar.TYPE, server=self.server)
-            self.otherAlbums = self.relatedHubs(data, Album, ("artist.albums.live",
-                                                              "artist.albums.soundtrack",
-                                                              "artist.albums.singles",
-                                                              "artist.albums.demo",
-                                                              "artist.albums.remix",
-                                                              "artist.albums.compilation"))
+            for attr, hub_id in self.OTHER_ALBUM_HUBS:
+                setattr(self, attr, self.relatedHubs(data, Album, hub_id))
+            self.popularTracks = plexobjects.PlexItemList(data.find("PopularLeaves"), Track, "Track",
+                                                          server=self.server)
 
     def albums(self):
         path = '%s/children' % self.key
