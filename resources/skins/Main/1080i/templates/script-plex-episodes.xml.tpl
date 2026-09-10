@@ -16,7 +16,11 @@
 {% endblock header %}
 {% block content %}
 <control type="group" id="50">
-    <animation effect="slide" end="0,{{ vscale(-125) }}" time="200" tween="quadratic" easing="out" condition="!String.IsEmpty(Window.Property(on.extras))">Conditional</animation>
+    <!-- -179, not -125: the base offset for the hub-row ladder, so every hub heading box lands on
+         y=301 like Seasons/Pre-play/Artist. Tuned here rather than in the tier below because that
+         tier's -540 is mirrored in Python (EpisodesWindow.getRoleItemDDPosition(), episodes.py) and
+         changing it would desync the drag-drop target. -->
+    <animation effect="slide" end="0,{{ vscale(-179) }}" time="200" tween="quadratic" easing="out" condition="!String.IsEmpty(Window.Property(on.extras))">Conditional</animation>
     <!-- Slide right while the sidebar rail is expanded (focused), matching Home/Library/Pre-play -->
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
 
@@ -30,7 +34,9 @@
     </animation>
 
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),2) + Control.IsVisible(502)" reversible="true">
-        <effect type="slide" end="0,{{ vscale(-500) }}" time="200" tween="quadratic" easing="out"/>
+        <!-- -410 = Roles' own footprint (405 + grouplist 60's itemgap 5). Gated on group 502 (Roles), so
+             with no cast data it correctly does not fire and Extras still lands on 301. -->
+        <effect type="slide" end="0,{{ vscale(-410) }}" time="200" tween="quadratic" easing="out"/>
     </animation>
 
     <ondown condition="!String.IsEmpty(Window.Property(disable_playback))">400</ondown>
@@ -1105,6 +1111,28 @@
          but it always duplicated Seasons' own Related row exactly - both pulled from the same show object
          via the same code path (see script-plex-seasons.xml.tpl) - so it was removed rather than kept in
          sync by hand on two screens. -->
+    <!-- SHARED HUB-ROW RECIPE - every row in this grouplist is built to the same geometry, and so
+         are the hub rows on the other three screens (Seasons/Episodes/Pre-play/Artist). Change it
+         in all four together, not per row:
+             heading label          1000x80 at posy 0, posx = 113 - group 50's own posx
+                                    (61 here on Seasons/Pre-play/Artist, 53 on Episodes, whose
+                                    group 50 sits 8px further right) -> absolute x=113 everywhere
+             heading -> art         6                           -> art top is always 86
+             art -> caption         9
+             caption block          60 (two 30px font10 lines, the second one optional)
+             caption -> row bottom  10, plus this grouplist's own itemgap 5 = a 15px row gap
+             row height             86 + art_h + 9 + 60 + 10  =  art_h + 165
+             list posy              22  (= 86 - the itemlayout's own 61 - the inner group's own 3)
+             list posx              113 - group 50's own posx - 8 (the item's own 5 + 3 left margin)
+             card                   shadow box = art + 24 at (0,0), art inset (3,3),
+                                    ring = art + 6 at (0,0)
+         The card part is the same recipe the home hubs and every library grid already use
+         (includes/hub_itemlayout_*.xml.tpl): drop-shadow-directional.png at border=24, a real cast
+         shadow with zero alpha along its top and left edge. The circular Roles card is the one that
+         can't use a rounded-rect texture, so it fills the identical box with
+         role-shadow-directional.png (a disc built to the same measured falloff), plain stretch.
+         Rows with no caption slot - Pre-play's Reviews, Artist's Popular Tracks - use
+         86 + content height + 10 for their row height instead. -->
     <control type="grouplist" id="60">
         <visible>!String.IsEmpty(Window.Property(initialized))</visible>
         <posx>0</posx>
@@ -1123,7 +1151,10 @@
             <visible>Integer.IsGreater(Container(402).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
             <defaultcontrol>402</defaultcontrol>
             <width>1920</width>
-            <!-- 420, not 400: the grouplist (id 60) stacks siblings purely by this declared height, and
+            <!-- 405 = 86 + art 240 + 9 + caption 60 + 10 - see the SHARED HUB-ROW RECIPE at grouplist 60 above. The old 420 was
+                 400 + 20 to cancel the -20 posy this row's label and Extras' both used; with every
+                 heading on the shared recipe at posy 0 there is nothing left to cancel.
+                 Superseded, kept for the history: the grouplist (id 60) stacks siblings purely by this declared height, and
                  Extras' own label (group 503 below) picked up the same -20 posy this group's label
                  already used, so that it lands at the same height as this one when Roles is hidden and
                  Extras ends up first in the stack. That shift also pulled Extras' group start 20px closer
@@ -1132,7 +1163,7 @@
                  same 20 pushes Extras back down to its original spacing there without moving anything
                  about Roles' own layout (a plain group's declared height is informational for stacking,
                  not a clip). -->
-            <height>{{ vscale(420) }}</height>
+            <height>{{ vscale(405) }}</height>
             <control type="label">
                 <!-- posx=53, not 60: lands at absolute x=113 (group 50's own posx=60 + this 53), matching
                      the episode row/header block's shared baseline above rather than Seasons' own raw
@@ -1141,7 +1172,7 @@
                      still matches Seasons: font12/FFE9E6E7/no shadow/no uppercase, not the old
                      FFFFFFFF+shadow+uppercase treatment. -->
                 <posx>53</posx>
-                <posy>{{ vscale(-20) }}</posy>
+                <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
                 <font>font12</font>
@@ -1151,15 +1182,13 @@
                 <label>[B]$ADDON[script.plexmod 33609][/B]</label>
             </control>
             <control type="list" id="402">
-                <!-- posx=43, not 0 (width grown to match, keeping the right edge fixed): clip edge lands
-                     at absolute x=103 (group 50's own posx=60 + this 43), 2px inside Seasons' own clip
-                     line (x=105) so that art (itemlayout's own unchanged 5+5 margin) lands at x=113 -
-                     matching the episode row/header block's shared baseline above, not Seasons' own raw
-                     x=115. -->
-                <posx>43</posx>
-                <posy>0</posy>
-                <width>1877</width>
-                <height>{{ vscale(400) }}</height>
+                <!-- 45 = 113 - group 50's own posx=60 - the itemlayout's own 5+3 left margin. This
+                     screen's group 50 sits 8px right of Seasons', so its lists sit 8px left of Seasons'
+                     53 and both land on the same absolute x=113 - see the SHARED HUB-ROW RECIPE at grouplist 60 above. -->
+                <posx>45</posx>
+                <posy>{{ vscale(22) }}</posy>
+                <width>1875</width>
+                <height>{{ vscale(380) }}</height>
                 <!-- Same fix as Container(400)'s own copy of this (script-plex-episodes.xml.tpl's own
                      button row comment) - routes straight to the actual button (Resume/Play), not the
                      grouplist id relying on its unreliable defaultcontrol. -->
@@ -1176,37 +1205,47 @@
                 <!-- ITEM LAYOUT ########################################## -->
                 <!-- 244x244 art (was 200x200) and the thinner role-selected-thin.png focus ring below -
                      matches Seasons' own Roles row exactly on request. -->
-                <itemlayout width="274">
+                <itemlayout width="270">
                     <control type="group">
                         <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
+                        <!-- Resting shadow, ungated: matches the poster rows, the home hubs and every library
+                             grid, where an unfocused card still sits on its own shadow. The focusedlayout draws
+                             the same box gated on Control.HasFocus, so the focused card keeps its own. -->
+                        <control type="image">
+                            <posx>0</posx>
+                            <posy>0</posy>
+                            <width>264</width>
+                            <height>{{ vscale(264) }}</height>
+                            <texture>script.plex/buttons/role-shadow-directional.png</texture>
+                        </control>
                         <control type="group">
-                            <posx>5</posx>
-                            <posy>5</posy>
+                            <posx>3</posx>
+                            <posy>3</posy>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(244) }}</height>
+                                <width>240</width>
+                                <height>{{ vscale(240) }}</height>
                                 <texture diffuse="script.plex/masks/role.png">script.plex/thumb_fallbacks/role.png</texture>
                             </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>244</width>
-                                <height>{{ vscale(244) }}</height>
+                                <width>240</width>
+                                <height>{{ vscale(240) }}</height>
                                 <texture background="true" diffuse="script.plex/masks/role.png">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false" aligny="top">scale</aspectratio>
                             </control>
                             <control type="group">
                                 <posx>0</posx>
-                                <posy>{{ vscale(253) }}</posy>
+                                <posy>{{ vscale(249) }}</posy>
                                 <control type="label">
                                     <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(60) }}</height>
+                                    <width>240</width>
+                                    <height>{{ vscale(30) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
                                     <textcolor>FFFFFFFF</textcolor>
@@ -1216,8 +1255,8 @@
                                     <scroll>false</scroll>
                                     <posx>0</posx>
                                     <posy>{{ vscale(30) }}</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(60) }}</height>
+                                    <width>240</width>
+                                    <height>{{ vscale(30) }}</height>
                                     <font>font10</font>
                                     <align>center</align>
                                     <textcolor>AAFFFFFF</textcolor>
@@ -1229,50 +1268,55 @@
                 </itemlayout>
 
                 <!-- FOCUSED LAYOUT ####################################### -->
-                <focusedlayout width="274">
+                <focusedlayout width="270">
                     <control type="group">
                         <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
-                            <animation effect="zoom" start="100" end="104" time="100" center="127,{{ vscale(127) }}" reversible="false">Focus</animation>
-                            <animation effect="zoom" start="104" end="100" time="100" center="127,{{ vscale(127) }}" reversible="false">UnFocus</animation>
+                            <animation effect="zoom" start="100" end="104" time="100" center="123,{{ vscale(123) }}" reversible="false">Focus</animation>
+                            <animation effect="zoom" start="104" end="100" time="100" center="123,{{ vscale(123) }}" reversible="false">UnFocus</animation>
                             <posx>0</posx>
                             <posy>0</posy>
                             <control type="image">
-                                <visible>Control.HasFocus(402)</visible>
-                                <posx>-40</posx>
-                                <posy>{{ vscale(-40) }}</posy>
-                                <width>334</width>
-                                <height>{{ vscale(334) }}</height>
-                                <texture border="42">script.plex/buttons/role-shadow.png</texture>
+                                <!-- Ungated, unlike the focus ring below it: f10d4074 established that
+                                     gating a card's drop shadow on Control.HasFocus makes the selected
+                                     card the only one on screen without a shadow the moment focus leaves
+                                     the list for the button row, sidebar or scrubber - and the shadow
+                                     visibly pops back in as Kodi settles the layout. The itemlayout draws
+                                     this same box unconditionally, so this one matches it. -->
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>264</width>
+                                <height>{{ vscale(264) }}</height>
+                                <texture>script.plex/buttons/role-shadow-directional.png</texture>
                             </control>
                             <control type="group">
-                                <posx>5</posx>
-                                <posy>5</posy>
+                                <posx>3</posx>
+                                <posy>3</posy>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(244) }}</height>
+                                    <width>240</width>
+                                    <height>{{ vscale(240) }}</height>
                                     <texture diffuse="script.plex/masks/role.png">script.plex/thumb_fallbacks/role.png</texture>
                                 </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>244</width>
-                                    <height>{{ vscale(244) }}</height>
+                                    <width>240</width>
+                                    <height>{{ vscale(240) }}</height>
                                     <texture background="true" diffuse="script.plex/masks/role.png">$INFO[ListItem.Thumb]</texture>
                                     <aspectratio scalediffuse="false" aligny="top">scale</aspectratio>
                                 </control>
                                 <control type="group">
                                     <posx>0</posx>
-                                    <posy>{{ vscale(253) }}</posy>
+                                    <posy>{{ vscale(249) }}</posy>
                                     <control type="label">
                                         <scroll>Control.HasFocus(402)</scroll>
                                         <posx>0</posx>
                                         <posy>0</posy>
-                                        <width>244</width>
-                                        <height>{{ vscale(60) }}</height>
+                                        <width>240</width>
+                                        <height>{{ vscale(30) }}</height>
                                         <font>font10</font>
                                         <align>center</align>
                                         <textcolor>FFFFFFFF</textcolor>
@@ -1282,8 +1326,8 @@
                                         <scroll>Control.HasFocus(402)</scroll>
                                         <posx>0</posx>
                                         <posy>{{ vscale(30) }}</posy>
-                                        <width>244</width>
-                                        <height>{{ vscale(60) }}</height>
+                                        <width>240</width>
+                                        <height>{{ vscale(30) }}</height>
                                         <font>font10</font>
                                         <align>center</align>
                                         <textcolor>AAFFFFFF</textcolor>
@@ -1295,8 +1339,8 @@
                                 <visible>Control.HasFocus(402)</visible>
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>254</width>
-                                <height>{{ vscale(254) }}</height>
+                                <width>246</width>
+                                <height>{{ vscale(246) }}</height>
                                 <texture>script.plex/buttons/role-selected-thin.png</texture>
                             </control>
                         </control>
@@ -1311,19 +1355,18 @@
             <visible>Integer.IsGreater(Container(403).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
             <!-- 450, not 360: matches Seasons' own bump (script-plex-seasons.xml.tpl id 502) when its art
                  grew to 512x288 (Pre-play's own recipe). -->
-            <height>{{ vscale(450) }}</height>
+            <height>{{ vscale(453) }}</height>
             <width>1920</width>
             <control type="label">
                 <!-- posx=53, style FFE9E6E7/no uppercase - matches Seasons' own Extras label style, but
                      lands at x=113 not Seasons' own x=115 (see the Roles label's own comment above).
-                     posy=-20, not 0: matches Roles' own label offset (group 502 above) - the grouplist
-                     (id 60) skips a hidden Roles entirely and reflows Extras up to take its place, but
-                     that only levels the two groups' own tops, not each label's own position within its
-                     group. Without matching this offset, Extras' label landed 20px lower than Roles' own
-                     would have sat, whenever Roles is empty and Extras ends up first in the stack. -->
+                     posy=0: the -20 that used to sit here levelled this label against Roles' own -20
+                     for the case where Roles is hidden and Extras reflows up to take its place. Every
+                     heading now sits at posy 0 of its own row, so a hidden row contributes nothing and
+                     the next one's heading lands in exactly the same place with no offset to match. -->
                 <posx>53</posx>
-                <posy>{{ vscale(-20) }}</posy>
-                <width>800</width>
+                <posy>0</posy>
+                <width>1000</width>
                 <height>{{ vscale(80) }}</height>
                 <font>font12</font>
                 <align>left</align>
@@ -1332,11 +1375,10 @@
                 <label>[B]$INFO[Window.Property(extras.header)][/B]</label>
             </control>
             <control type="list" id="403">
-                <!-- posx=43, not 0 (width grown to match) - lands at x=103, 2px inside Seasons' own clip
-                     line so art reaches x=113, see the Roles list's own comment above. -->
-                <posx>43</posx>
-                <posy>{{ vscale(18) }}</posy>
-                <width>1877</width>
+                <!-- 45: same derivation as the Roles list above - see the SHARED HUB-ROW RECIPE at grouplist 60 above. -->
+                <posx>45</posx>
+                <posy>{{ vscale(22) }}</posy>
+                <width>1875</width>
                 <height>{{ vscale(430) }}</height>
                 <onup>402</onup>
                 <!-- Self-loop, not a route to a Related row any more - Extras is the last row now that
@@ -1358,9 +1400,19 @@
                     <control type="group">
                         <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
+                        <!-- Resting shadow, ungated: matches the poster rows, the home hubs and every library
+                             grid, where an unfocused card still sits on its own shadow. The focusedlayout draws
+                             the same box gated on Control.HasFocus, so the focused card keeps its own. -->
+                        <control type="image">
+                            <posx>0</posx>
+                            <posy>0</posy>
+                            <width>536</width>
+                            <height>{{ vscale(312) }}</height>
+                            <texture border="24">script.plex/drop-shadow-directional.png</texture>
+                        </control>
                         <control type="group">
-                            <posx>5</posx>
-                            <posy>5</posy>
+                            <posx>3</posx>
+                            <posy>3</posy>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
@@ -1405,7 +1457,7 @@
                             </control>
                             <control type="textbox">
                                 <posx>0</posx>
-                                <posy>{{ vscale(300) }}</posy>
+                                <posy>{{ vscale(297) }}</posy>
                                 <width>512</width>
                                 <height>{{ vscale(30) }}</height>
                                 <font>font10</font>
@@ -1416,7 +1468,7 @@
                             <control type="label">
                                 <scroll>false</scroll>
                                 <posx>0</posx>
-                                <posy>{{ vscale(330) }}</posy>
+                                <posy>{{ vscale(327) }}</posy>
                                 <width>512</width>
                                 <height>{{ vscale(30) }}</height>
                                 <font>font10</font>
@@ -1434,21 +1486,26 @@
                         <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
-                            <animation effect="zoom" start="100" end="104" time="100" center="261,{{ vscale(149) }}" reversible="false">Focus</animation>
-                            <animation effect="zoom" start="104" end="100" time="100" center="261,{{ vscale(149) }}" reversible="false">UnFocus</animation>
+                            <animation effect="zoom" start="100" end="104" time="100" center="259,{{ vscale(147) }}" reversible="false">Focus</animation>
+                            <animation effect="zoom" start="104" end="100" time="100" center="259,{{ vscale(147) }}" reversible="false">UnFocus</animation>
                             <posx>0</posx>
                             <posy>0</posy>
                             <control type="image">
-                                <visible>Control.HasFocus(403)</visible>
-                                <posx>-40</posx>
-                                <posy>{{ vscale(-40) }}</posy>
-                                <width>602</width>
-                                <height>{{ vscale(378) }}</height>
-                                <texture border="42">script.plex/drop-shadow.png</texture>
+                                <!-- Ungated, unlike the focus ring below it: f10d4074 established that
+                                     gating a card's drop shadow on Control.HasFocus makes the selected
+                                     card the only one on screen without a shadow the moment focus leaves
+                                     the list for the button row, sidebar or scrubber - and the shadow
+                                     visibly pops back in as Kodi settles the layout. The itemlayout draws
+                                     this same box unconditionally, so this one matches it. -->
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>536</width>
+                                <height>{{ vscale(312) }}</height>
+                                <texture border="24">script.plex/drop-shadow-directional.png</texture>
                             </control>
                             <control type="group">
-                                <posx>5</posx>
-                                <posy>5</posy>
+                                <posx>3</posx>
+                                <posy>3</posy>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
@@ -1493,7 +1550,7 @@
                                 </control>
                                 <control type="textbox">
                                     <posx>0</posx>
-                                    <posy>{{ vscale(300) }}</posy>
+                                    <posy>{{ vscale(297) }}</posy>
                                     <width>512</width>
                                     <height>{{ vscale(30) }}</height>
                                     <font>font10</font>
@@ -1504,7 +1561,7 @@
                                 <control type="label">
                                     <scroll>Control.HasFocus(403)</scroll>
                                     <posx>0</posx>
-                                    <posy>{{ vscale(330) }}</posy>
+                                    <posy>{{ vscale(327) }}</posy>
                                     <width>512</width>
                                     <height>{{ vscale(30) }}</height>
                                     <font>font10</font>
@@ -1517,8 +1574,8 @@
                                  matches Seasons'/Pre-play's own Extras row exactly. -->
                             <control type="image">
                                 <visible>Control.HasFocus(403)</visible>
-                                <posx>2</posx>
-                                <posy>{{ vscale(2) }}</posy>
+                                <posx>0</posx>
+                                <posy>0</posy>
                                 <width>518</width>
                                 <height>{{ vscale(294) }}</height>
                                 <texture diffuse="script.plex/masks/ring-mask-ar16x9.png">script.plex/white-square.png</texture>
