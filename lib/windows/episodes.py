@@ -40,6 +40,7 @@ from .mixins.ratings import RatingsMixin
 from .mixins.roles import RolesMixin
 from .mixins.common import CommonMixin
 from .mixins.tasks import TasksMixin
+from .mixins.text_metrics import FONT10_POINT_SIZE, measureTextWidth
 
 VIDEO_RELOAD_KW = dict(includeExtras=1, includeExtrasCount=10, includeChapters=1)
 
@@ -457,6 +458,17 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     SETTINGS_BUTTON_ID = 305
     RESUME_BUTTON_ID = 308
     RESTART_BUTTON_ID = 309
+    # The season card's own Play/Resume focus-pill overlays (script-plex-episodes.xml.tpl) and the
+    # pill/label inside each - the only two overlays on this screen whose text isn't fixed at build
+    # time, since they name the episode the card is about. sizeSeasonCardPlayLabel() resizes all
+    # three ids of whichever one is live. 384-387, not the 390s the other overlays use: those are
+    # full, and 398/399 were the only ids left there.
+    SEASON_CARD_PLAY_LABEL_GROUP_ID = 398
+    SEASON_CARD_PLAY_LABEL_PILL_ID = 384
+    SEASON_CARD_PLAY_LABEL_TEXT_ID = 385
+    SEASON_CARD_RESUME_LABEL_GROUP_ID = 399
+    SEASON_CARD_RESUME_LABEL_PILL_ID = 386
+    SEASON_CARD_RESUME_LABEL_TEXT_ID = 387
     # Click/focus target laid over the summary textbox (script-plex-episodes.xml.tpl) - 350, not
     # something in the 300-309 button cluster (all already taken here, unlike Seasons'/Artist's own
     # copy of this control, which reuses 305 since neither of them has a button at that id any
@@ -470,6 +482,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     SEASONS_CONTROL_ATTR = "seasonsListControl"
     SEASONS_CONTROL_ATTR_ALT = "seasonsListControlAlt"
+
+    # (season ratingKey, episode) - see _cacheSeasonCardPick(). Class-level default so the accessors
+    # below don't depend on reset() having run first.
+    _seasonCardPick = None
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -546,6 +562,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         if self.show_.get('skipChildren').asBool():
             self.season = self.show_
 
+        # Cleared before _defaultEpisode() below, which seeds it (_cacheSeasonCardPick()) - a
+        # navigation that passes an explicit episode skips that call entirely and would otherwise
+        # keep whatever the previous subject left here.
+        self._seasonCardPick = None
+
         if not self.episode:
             # Opened from a season tile (subitems.py) with no specific episode - EpisodesPaginator.
             # initialPage only knows how to center its window on self.episode; with nothing set it
@@ -574,50 +595,208 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.rowDataChangeTimeout = 0
         PlaybackBtnMixin.reset(self)
 
-    def _defaultEpisode(self):
-        # Best-effort only: this just picks a nicer starting point than episode 1, it's not required
-        # for the screen to function, so any failure here should fall back to that default silently
-        # rather than surface an error.
-        #
-        # Not sourced from self.show_.onDeck any more - Plex's own on-deck pick is a whole-show
-        # "continue watching" heuristic, not necessarily this season's own first unwatched/in-
-        # progress episode, and live testing showed it doesn't reliably match what's expected here.
-        # Scans this season's own episodes directly instead. One full-season listing call
-        # (Season.episodes() with no offset/limit fetches everything) - a one-time cost paid only
-        # when no episode was explicitly passed in, not on every navigation.
-        #
-        # An in-progress episode always wins, even one later in the season than the first plain
-        # unwatched one - someone mid-episode is more clearly "where they were" than an earlier
-        # episode they just haven't started yet, so the loop returns on the first in-progress hit
-        # immediately rather than waiting to see if an earlier unwatched one exists. isWatched and
-        # not isFullyWatched means "has real progress but hasn't crossed the watched threshold" -
-        # exactly viewOffset>0 (video.py's own isWatched/isFullyWatched checks viewCount OR
-        # viewOffset vs viewCount AND not viewOffset). Only once the whole season has been scanned
-        # with no in-progress episode found does the first plain-unwatched one (remembered along the
-        # way, not re-searched for) get returned instead.
+    def _seasonPick(self):
+        """This season's own "where were we" episode: (episode, in_progress, first episode).
+
+        Best-effort only - both callers just want a nicer starting point than episode 1, neither is
+        required for the screen to function, so any failure here falls back silently rather than
+        surfacing an error.
+
+        Not sourced from self.show_.onDeck - Plex's own on-deck pick is a whole-show "continue
+        watching" heuristic, not necessarily this season's own first unwatched/in-progress episode,
+        and live testing showed it doesn't reliably match what's expected here. (The Seasons screen
+        does treat on-deck as authoritative - ShowWindow.onDeckPick(), subitems.py - precisely
+        because that screen IS about the whole show. Same distinction, one level up.) Scans this
+        season's own episodes directly instead. One full-season listing call (Season.episodes() with
+        no offset/limit fetches everything), shared between both callers via _cacheSeasonCardPick()
+        below rather than paid twice.
+
+        An in-progress episode always wins, even one later in the season than the first plain
+        unwatched one - someone mid-episode is more clearly "where they were" than an earlier
+        episode they just haven't started yet, so the loop returns on the first in-progress hit
+        immediately rather than waiting to see if an earlier unwatched one exists. isWatched and
+        not isFullyWatched means "has real progress but hasn't crossed the watched threshold" -
+        exactly viewOffset>0 (video.py's own isWatched/isFullyWatched checks viewCount OR
+        viewOffset vs viewCount AND not viewOffset). Only once the whole season has been scanned
+        with no in-progress episode found does the first plain-unwatched one (remembered along the
+        way, not re-searched for) get returned instead.
+
+        `first` is returned alongside for the season card's own Play button, which has to start
+        somewhere even when the scan comes up empty - see seasonCardEpisode().
+        """
         try:
+            first = None
             firstUnwatched = None
             for ep in self.season.episodes():
+                if first is None:
+                    first = ep
                 if ep.isWatched and not ep.isFullyWatched:
-                    return ep
+                    return ep, True, first
                 if firstUnwatched is None and not ep.isWatched:
                     firstUnwatched = ep
 
-            # Nothing in-progress (the loop would've returned above) and nothing fully watched
-            # either (viewedLeafCount==0, the season's own aggregate, not just "the first episode
-            # happens to be unwatched" - firstUnwatched could just as easily be an early episode in
-            # a season with real progress further in) - i.e. a genuinely untouched season, on
-            # request: land on the season card itself (EpisodesPaginator.populate()'s own
-            # self._currentEpisode check, driven by this returning None same as it already does
-            # below) instead of defaulting to episode 1 the way firstUnwatched otherwise would here.
-            if self.season.viewedLeafCount.asInt() == 0:
-                return None
+            return firstUnwatched, False, first
+        except:
+            util.ERROR('EpisodesWindow._seasonPick: failed, falling back to episode 1')
 
-            return firstUnwatched
+        return None, False, None
+
+    def _defaultEpisode(self):
+        pick, in_progress, first = self._seasonPick()
+        # The scan above is the same one the season card's own Play button needs, and this runs on
+        # both paths that land on a new season (reset() and switchSeason()) - so hand it over rather
+        # than making updateSeasonCardPlayState() repeat the listing call on every cold start.
+        self._cacheSeasonCardPick(pick, first)
+
+        # Nothing in-progress and nothing fully watched either (viewedLeafCount==0, the season's own
+        # aggregate, not just "the first episode happens to be unwatched" - pick could just as easily
+        # be an early episode in a season with real progress further in) - i.e. a genuinely untouched
+        # season, on request: land on the season card itself (EpisodesPaginator.populate()'s own
+        # self._currentEpisode check, driven by this returning None) instead of defaulting to
+        # episode 1 the way pick otherwise would here.
+        try:
+            if not in_progress and self.season.viewedLeafCount.asInt() == 0:
+                return None
         except:
             util.ERROR('EpisodesWindow._defaultEpisode: failed, falling back to episode 1')
+            return None
 
-        return None
+        return pick
+
+    def _cacheSeasonCardPick(self, pick, first):
+        """Remember _seasonPick()'s answer for the season card, keyed by the season it's about."""
+        if pick is None and first is None:
+            # The listing failed (or the season is genuinely empty, which no navigable season is) -
+            # deliberately not cached, so a transient failure gets another go the next time the card
+            # is focused rather than leaving its Play button dead for the life of this window.
+            self._seasonCardPick = None
+            return
+
+        # Keyed rather than just stored: switchSeason() reuses this window in place, and the
+        # paginator/card are rebuilt around a different season each time.
+        self._seasonCardPick = ((self.season or self.show_).ratingKey,
+                                pick if pick is not None else first)
+
+    def seasonCardEpisode(self):
+        """The episode the season card's own Play/Resume button starts, or None.
+
+        _seasonPick()'s answer, except where that comes up empty: nothing unwatched and nothing
+        part-way through means a fully watched season, where _defaultEpisode() answers None (land on
+        the card rather than episode 1). Play has to start somewhere, so it rewatches from the top.
+
+        Cached per season - the click path and the button's own label must agree on the episode, and
+        neither should pay for a second listing call to find that out.
+        """
+        key = (self.season or self.show_).ratingKey
+        cached = self._seasonCardPick
+        if cached and cached[0] == key:
+            return cached[1]
+
+        pick, in_progress, first = self._seasonPick()
+        self._cacheSeasonCardPick(pick, first)
+        return pick if pick is not None else first
+
+    def updateSeasonCardPlayState(self, mli):
+        """Point the button row's Play/Resume pair at the season card's own episode.
+
+        Cheap when the pick is already known (the usual case - _defaultEpisode() seeded it on the way
+        in); otherwise the listing call it needs goes to a background thread rather than blocking the
+        focus change that got us here. The button shows a plain "Play" until it lands, same way the
+        Roles/Extras rows fill in behind the screen.
+        """
+        key = (self.season or self.show_).ratingKey
+        cached = self._seasonCardPick
+        if cached and cached[0] == key:
+            self.applySeasonCardPlayState(mli, cached[1])
+        else:
+            self.postpone_simple(self.resolveSeasonCardPlayState, mli)
+
+    def resolveSeasonCardPlayState(self, mli):
+        key = (self.season or self.show_).ratingKey
+        episode = self.seasonCardEpisode()
+        if (self.season or self.show_).ratingKey != key:
+            # the tab row moved to another season while the listing was in flight
+            return
+
+        self.applySeasonCardPlayState(mli, episode)
+
+    def applySeasonCardPlayState(self, mli, episode):
+        """The two ListItem properties the button row keys off, for the season card.
+
+        in.progress/resume.timeleft, exactly as setProgress() sets them for a real episode card -
+        the buttons' own visibility conditions (script-plex-episodes.xml.tpl) read them off
+        Container(400)'s selected item either way, so the card gets Resume+Restart instead of Play
+        for free. setProgress() itself can't be reused: it reads mli.dataSource, which this card
+        deliberately doesn't have (createSeasonCardItem()).
+        """
+        if episode is None:
+            mli.setBoolProperty('in.progress', False)
+            mli.setProperty('resume.timeleft', '')
+            self.setProperty('play.episode', '')
+            # a plain "Play", so the pill shouldn't keep the width of whatever named an episode last
+            self.sizeSeasonCardPlayLabel(False)
+            return
+
+        view_offset = episode.viewOffset.asInt()
+        duration = episode.duration.asInt()
+        in_progress = bool(view_offset and duration)
+        mli.setBoolProperty('in.progress', in_progress)
+        # remainingTimeToShortText's own 90-minute-cutoff, no-space style, matching setProgress()
+        mli.setProperty('resume.timeleft', in_progress and T(33615, "{time} left").format(
+            time=util.remainingTimeToShortText(duration - view_offset)) or '')
+        # "S1E4": the same two localized fragments ShowWindow.applyPlayButtonEpisode() concatenates
+        # (subitems.py), for the same reason - the Resume label already ends in a bullet before its
+        # time-left, and two of them read as a list.
+        self.setProperty('play.episode', u'{0}{1}'.format(
+            T(32310, 'S').format(episode.parentIndex), T(32311, 'E').format(episode.index)))
+        self.sizeSeasonCardPlayLabel(in_progress, mli.getProperty('resume.timeleft'))
+
+        # This can land while the button row already has focus (the background resolve above), and
+        # flipping in.progress swaps which of Play/Resume is the visible control - Kodi drops focus
+        # entirely when the focused one goes invisible. selectPlayButton() can't do this: it bails
+        # out on hadUserInteraction, which getting here by focusing the card implies.
+        # No RESTART_BUTTON_ID: that one is hidden on this card entirely (its own comment in
+        # script-plex-episodes.xml.tpl), so it can't be what has focus here.
+        focused = self.getFocusId()
+        if focused in (self.PLAY_BUTTON_ID, self.PLAY_BUTTON_DISABLED_ID, self.RESUME_BUTTON_ID):
+            target = self.getPlayButtonID(mli)
+            if target != focused:
+                kodigui.waitForVisibility(target, amount=2)
+                if xbmc.getCondVisibility('Control.IsVisible({0})'.format(target)):
+                    self.setCondFocusId(target)
+
+    def sizeSeasonCardPlayLabel(self, in_progress, timeleft=''):
+        """Shrink the season card's own Play/Resume overlay to the label it's actually showing.
+
+        Same formula and the same reason as ShowWindow.sizePlayButtonLabel() (subitems.py): the
+        episode number in these two labels isn't known at build time, so the widths passed in the
+        skin are only the worst case - "S1E1" to "S12E345" is ~45px of difference. label_width is
+        the measured text + 4, the pill is label + 62 and the group label + 18
+        (includes/episode_button_label.xml.tpl documents the formula). The episode cards' own
+        overlays are separate controls with fixed text and aren't touched here.
+        """
+        episode = self.getProperty('play.episode')
+        if in_progress:
+            text = u'{0} {1}'.format(T(32316, 'Resume'), episode).rstrip()
+            if timeleft:
+                text = u'{0} • {1}'.format(text, timeleft)
+            ids = (self.SEASON_CARD_RESUME_LABEL_GROUP_ID, self.SEASON_CARD_RESUME_LABEL_PILL_ID,
+                   self.SEASON_CARD_RESUME_LABEL_TEXT_ID)
+        else:
+            text = u'{0} {1}'.format(T(33020, 'Play'), episode).rstrip()
+            ids = (self.SEASON_CARD_PLAY_LABEL_GROUP_ID, self.SEASON_CARD_PLAY_LABEL_PILL_ID,
+                   self.SEASON_CARD_PLAY_LABEL_TEXT_ID)
+
+        label_width = int(round(measureTextWidth(text, FONT10_POINT_SIZE))) + 4
+        group_id, pill_id, text_id = ids
+        try:
+            self.getControl(text_id).setWidth(label_width)
+            self.getControl(pill_id).setWidth(label_width + 62)
+            self.getControl(group_id).setWidth(label_width + 18)
+        except (SystemError, RuntimeError):
+            # Any state where the row hasn't rendered yet. The build-time widths are the worst case
+            # anyway, so a miss here leaves a slightly roomy pill rather than a broken one.
+            util.DEBUG_LOG('Episodes: no season card Play/Resume label controls to resize')
 
     @busy.dialog(delay_time=1.0)
     def doClose(self, **kw):
@@ -695,6 +874,18 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     @busy.dialog()
     def onReInit(self):
         self.playBtnClicked = False
+
+        # Watch state may have moved while we were away - playback being the obvious case, but also
+        # a Mark Played from any screen opened on top of this one - so the season card's own pick
+        # has to be worked out again. Dropped rather than recomputed here: the next focus onto the
+        # card picks it up (checkForHeaderFocus()), and there's no reason to pay for the listing
+        # call on every return to this window. The exception is the card already being the selected
+        # item, where that focus change isn't coming.
+        self._seasonCardPick = None
+        selected = self.episodeListControl.getSelectedItem()
+        if selected is not None and selected.getProperty("is.season.card"):
+            self.updateSeasonCardPlayState(selected)
+
         self.themeMusicReinit(self.show_)
         if not self.tasks:
             self.tasks = backgroundthread.Tasks()
@@ -1666,10 +1857,23 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         if not force_episode:
             mli = self.episodeListControl.getSelectedItem()
-            if not mli or mli.getProperty("is.boundary"):
+            if not mli:
                 return
 
-            episode = mli.dataSource
+            if mli.getProperty("is.season.card"):
+                # The season card has no dataSource of its own (createSeasonCardItem()), so the
+                # episode comes from the season's own scan instead - the same one the button's own
+                # label is spelling out. Ahead of the is.boundary guard below, which this card also
+                # carries: before this branch existed, Play on the card fell into that guard and
+                # silently did nothing at all.
+                episode = self.seasonCardEpisode()
+                if not episode:
+                    util.DEBUG_LOG("Episodes: season card has no episode to play")
+                    return
+            elif mli.getProperty("is.boundary"):
+                return
+            else:
+                episode = mli.dataSource
         else:
             episode = force_episode
 
@@ -1907,6 +2111,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             if mli != self.lastItem:
                 self.lastItem = mli
                 self.updateExtrasHeader(mli)
+                # Play/Resume for this card, same place a real episode card gets setProgress() -
+                # further down this method, on the branch this one returns ahead of.
+                self.updateSeasonCardPlayState(mli)
                 self.fillSeasonCardExtras()
                 # fillRoles() already blanks itself on any boundary item (including this one) via
                 # its own is.boundary guard - just never got called at all on this branch before,
@@ -2383,6 +2590,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             # fillSeasonCardExtras()/fillRoles() don't have the same gap - _setup()'s own
             # batch_simple() call already fills those independently of this branch.
             self.updateExtrasHeader(cur_mli)
+            # Same gap, same fix, for the button row's Play/Resume state - checkForHeaderFocus()'s
+            # own call to this is behind that same mli != self.lastItem check.
+            self.updateSeasonCardPlayState(cur_mli)
         else:
             util.LOG("Episodes: There's no current item to be loaded, something's wrong.")
 

@@ -324,7 +324,12 @@
                          Both overlays carry pill/label ids because their text isn't fixed at build
                          time: the episode number's digit count varies ("Play S1E1" measures 111px,
                          "Play S12E345" 155px), so the widths below are the worst case and
-                         setPlayButtonState() shrinks the three controls to the real string. -->
+                         setPlayButtonState() shrinks the three controls to the real string.
+                         Resume's own worst case is "Resume S12E345 &#8226; 1h31m left" = 346
+                         measured (InterUI.ttf at font10); it was 290 until 2026-09-11, which is a
+                         typical string ("Resume S5E14 &#8226; 41m left"), not a worst case. Only
+                         ever visible if the resize doesn't land (its own except path), but a
+                         too-small start clips where a too-large one just reads roomy. -->
                     {% include template with name="play" & id=302 &
                         visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(play.in.progress))"
                     %}
@@ -340,7 +345,7 @@
                     {% include ol with id=398 & visible="Control.HasFocus(301)" & name="resume" &
                         label="$ADDON[script.plexmod 32316] $INFO[Window.Property(play.episode)]" &
                         label_suffix_wprop="resume.timeleft" &
-                        label_width=290 & pill_width=352 & group_width=308 &
+                        label_width=346 & pill_width=408 & group_width=364 &
                         pill_id=399 & label_id=307 &
                         onleft=301 & onright=308
                     %}

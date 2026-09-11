@@ -1031,7 +1031,9 @@
                              focused episode's data is loaded and it has no view offset, PlayLoading
                              (306, reused for every state) while that data is still loading, Resume+Restart
                              once loaded with a view offset (in.progress - setProgress(), this file) instead
-                             of a single Play button, on request. -->
+                             of a single Play button, on request. The season card takes the same three
+                             states from its own episode (applySeasonCardPlayState(), episodes.py) but
+                             stops at Resume - see that button's own comment below. -->
                         {% include template with name="play" & id=301 & onleft=304 & onright=305 &
                             enable="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(in.progress))" &
                             visible="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(in.progress))"
@@ -1039,9 +1041,26 @@
                         {% include template with name="play" & id=306 & onleft=304 & onright=305 &
                                             visible="String.IsEmpty(Window.Property(current_item.loaded))"
                         %}
-                        {% include ol with id=390 & visible="Control.HasFocus(301) | Control.HasFocus(306)" & name="play" &
+                        <!-- Two variants of this label, split on is.season.card: a real episode card
+                             names its own episode on screen already, so the button only has to say
+                             "Play"; the season card doesn't name one at all (it's the season's own
+                             card - createSeasonCardItem()), so its Play button spells out which
+                             episode it's about to start, same as ShowWindow's own does on the
+                             Seasons screen (subitems.py). Separate controls rather than one with a
+                             conditional label because the card variant's width isn't known at build
+                             time - see the pill_id/label_id params (includes/episode_button_label.xml.tpl)
+                             and sizeSeasonCardPlayLabel() (episodes.py), which measures the real
+                             string and shrinks these three ids to fit. play.episode is a window
+                             property, not a ListItem one: it's resolved per season, not per row. -->
+                        {% include ol with id=390 & visible="[Control.HasFocus(301) | Control.HasFocus(306)] + String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="play" &
                             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                             label_width=50 & pill_width=112 & group_width=68 &
+                            onleft=301 & onright=305
+                        %}
+                        {% include ol with id=398 & visible="[Control.HasFocus(301) | Control.HasFocus(306)] + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="play" &
+                            label="$ADDON[script.plexmod 33020] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
+                            label_width=160 & pill_width=222 & group_width=178 &
+                            pill_id=384 & label_id=385 &
                             onleft=301 & onright=305
                         %}
                         {% include template with name="resume" & id=308 & onleft=304 & onright=305 &
@@ -1053,18 +1072,38 @@
                              shorter than "XhYm left" on average, so one shared width would either waste
                              a lot of space for the common short case or clip the long one - first-pass
                              estimates below, needs the same precise measurement the other buttons got. -->
-                        {% include ol with id=392 & visible="Control.HasFocus(308) + !String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
+                        {% include ol with id=392 & visible="Control.HasFocus(308) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + !String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
                             label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
                             label_width=207 & pill_width=269 & group_width=225 &
                             onleft=308 & onright=305
                         %}
-                        {% include ol with id=397 & visible="Control.HasFocus(308) + String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
+                        {% include ol with id=397 & visible="Control.HasFocus(308) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
                             label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
                             label_width=236 & pill_width=298 & group_width=254 &
                             onleft=308 & onright=305
                         %}
+                        <!-- One control for the season card, not the short/long pair above: its
+                             width is measured and applied at runtime anyway (sizeSeasonCardPlayLabel(),
+                             episodes.py - the episode number moves the string further than the
+                             time-left text does), so the estimate here only has to be the worst
+                             case rather than a close fit. That worst case is
+                             "Resume S12E345 <bullet> 1h31m left" = 346 measured (InterUI.ttf at
+                             font10) - the same string ShowWindow's own Resume overlay shows
+                             (script-plex-seasons.xml.tpl), where it's now sized to match. -->
+                        {% include ol with id=399 & visible="Control.HasFocus(308) + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="resume" &
+                            label="$ADDON[script.plexmod 32316] $INFO[Window.Property(play.episode)]" & label_suffix_info="resume.timeleft" &
+                            label_width=346 & pill_width=408 & group_width=364 &
+                            pill_id=386 & label_id=387 &
+                            onleft=308 & onright=305
+                        %}
+                        <!-- Episode cards only, unlike its Resume partner: on the season card the
+                             pair would be offering to restart an episode the card doesn't name
+                             (the button row is the only thing that says which one it is), and
+                             "start this season over" isn't what it would do either - on request,
+                             Resume alone there. Playing a season-card episode from the beginning
+                             is still reachable, just from the episode's own card. -->
                         {% include template with name="restart" & id=309 & onleft=308 & onright=305 &
-                            visible="!String.IsEmpty(Window.Property(current_item.loaded)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
+                            visible="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
                         %}
                         {% include ol with id=393 & visible="Control.HasFocus(309)" & name="restart" &
                             label="$ADDON[script.plexmod 35061]" & label_suffix_info="" &
