@@ -26,10 +26,30 @@
          own Visible() so an artist missing a given album type (common - most have no Live/Demo/Remix
          albums) doesn't leave a gap-sized hole in the slide (grouplist 600 skips invisible children
          entirely when auto-stacking, so a row that contributed no real height shouldn't contribute a
-         slide increment either). Row heights: Popular Tracks 596, every album-type/Albums row 400,
-         Related 520, itemgap 5 - see grouplist 600 and includes/artist_album_row.xml.tpl below. -->
+         slide increment either). Row heights: Popular Tracks 196-596 (variable, see below), every
+         album-type/Albums row 400,
+         Related 520, itemgap 5 - see grouplist 600 and includes/artist_album_row.xml.tpl below.
+         Popular Tracks is the one variable-height row: 196 for one track, +100 per track after
+         that up to five, which is why its tier below is built from several stacked increments. -->
+    <!-- Tier 1 (Popular Tracks) is the one row whose height varies with its content - see group
+         501's own height comment and the spacers that follow it. Its increment is built the same
+         way the row itself is: a 201 base (the one-track row + itemgap) plus 100 per extra track,
+         each gated on the same NumItems condition as the matching spacer, relying on the additive
+         stacking this block already documents. Five tracks = 601, the old fixed value. -->
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),1) + Control.IsVisible(501)" reversible="true">
-        <effect type="slide" end="0,{{ vscale(-601) }}" time="200" tween="quadratic" easing="out"/>
+        <effect type="slide" end="0,{{ vscale(-201) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),1) + Control.IsVisible(501) + Integer.IsGreater(Container(402).NumItems,1)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-100) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),1) + Control.IsVisible(501) + Integer.IsGreater(Container(402).NumItems,2)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-100) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),1) + Control.IsVisible(501) + Integer.IsGreater(Container(402).NumItems,3)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-100) }}" time="200" tween="quadratic" easing="out"/>
+    </animation>
+    <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),1) + Control.IsVisible(501) + Integer.IsGreater(Container(402).NumItems,4)" reversible="true">
+        <effect type="slide" end="0,{{ vscale(-100) }}" time="200" tween="quadratic" easing="out"/>
     </animation>
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),2) + Control.IsVisible(502)" reversible="true">
         <effect type="slide" end="0,{{ vscale(-410) }}" time="200" tween="quadratic" easing="out"/>
@@ -286,7 +306,16 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>1920</width>
-            <height>{{ vscale(596) }}</height>
+            <!-- 196 = the ONE-track row height (86 + 100 + 10, the shared recipe's no-caption
+                 variant), not the five-track 596 this used to declare. An artist with one or two
+                 popular tracks is common, and grouplist 600 stacks the rows below by this declared
+                 height, so a fixed 596 left up to 400px of dead space above Albums. The list below
+                 keeps its full 500 height and simply overflows this group - groups don't clip, and
+                 a list only ever draws the items it actually has - while the four conditional
+                 spacers after this group (see below) hand back exactly 100px per track past the
+                 first. Anything that changes this number has to change those spacers and group 50's
+                 own tier-1 slide increments together. -->
+            <height>{{ vscale(196) }}</height>
             <control type="label">
                 <posx>61</posx>
                 <posy>0</posy>
@@ -487,6 +516,57 @@
             </control>
         </control>
         <!-- POPULAR TRACKS -->
+
+        <!-- POPULAR TRACKS ROW SPACERS - one per track past the first, each gated on the row's own
+             item count. Group 501 above declares only the one-track height, so these hand its
+             missing height back a track at a time: 95 + grouplist 600's own itemgap 5 = the 100px
+             an extra track occupies. Four of them, because list 402 is 500 tall and shows at most
+             five tracks before it scrolls - a sixth track needs no extra room. At five tracks the
+             stack totals 196 + 4x100 + 5 = 601, exactly the footprint the old fixed 596 + itemgap
+             had, so nothing below moves for a full row. Separate siblings rather than one
+             variable-height control because a skin can't do arithmetic on NumItems, and duplicating
+             the row itself at different heights isn't possible - control id 402 can only exist once.
+             The same NumItems conditions drive group 50's tier-1 slide increments up top. -->
+        <control type="group">
+            <visible>Integer.IsGreater(Container(402).NumItems,1) + String.IsEmpty(Window.Property(drawing))</visible>
+            <width>1920</width>
+            <height>{{ vscale(95) }}</height>
+            <!-- A real child rather than an empty group, so this is unambiguously a sized,
+                 renderable control for grouplist 600's auto-stacking. No <texture> at all: an
+                 image with none draws nothing, and the '-' no-op the button templates use has no
+                 precedent on a plain image texture here. The three spacers below are identical. -->
+            <control type="image">
+                <width>1920</width>
+                <height>{{ vscale(95) }}</height>
+            </control>
+        </control>
+        <control type="group">
+            <visible>Integer.IsGreater(Container(402).NumItems,2) + String.IsEmpty(Window.Property(drawing))</visible>
+            <width>1920</width>
+            <height>{{ vscale(95) }}</height>
+            <control type="image">
+                <width>1920</width>
+                <height>{{ vscale(95) }}</height>
+            </control>
+        </control>
+        <control type="group">
+            <visible>Integer.IsGreater(Container(402).NumItems,3) + String.IsEmpty(Window.Property(drawing))</visible>
+            <width>1920</width>
+            <height>{{ vscale(95) }}</height>
+            <control type="image">
+                <width>1920</width>
+                <height>{{ vscale(95) }}</height>
+            </control>
+        </control>
+        <control type="group">
+            <visible>Integer.IsGreater(Container(402).NumItems,4) + String.IsEmpty(Window.Property(drawing))</visible>
+            <width>1920</width>
+            <height>{{ vscale(95) }}</height>
+            <control type="image">
+                <width>1920</width>
+                <height>{{ vscale(95) }}</height>
+            </control>
+        </control>
 
         {% with row = "includes/artist_album_row.xml.tpl" %}
             {% include row with id=400 & group_id=502 & onup=402 & ondown=404 & header_prop="albums.header" %}
