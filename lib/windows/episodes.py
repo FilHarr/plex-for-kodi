@@ -436,8 +436,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     # (script-plex-episodes.xml.tpl).
     CLEAR_LOGO_DIM = util.scaleResolution(660, 98)
 
-    LIST_OPTIONS_BUTTON_ID = 111
-
     EPISODE_LIST_ID = 400
     SEASONS_LIST_ID = 205
     # Plain-list twin of the row above, used instead once there are 6 seasons or fewer - see
@@ -570,7 +568,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.currentItemLoaded = False
         self.lastItem = None
         self.lastFocusID = None
-        self.lastNonOptionsFocusID = None
         self.openedWithAutoPlay = False
         self.useBGM = False
         self.debouncing = False
@@ -1090,29 +1087,32 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 self.selectEpisode()
                 return
 
-            if controlID == self.LIST_OPTIONS_BUTTON_ID and self.checkOptionsAction(action):
+            if action == xbmcgui.ACTION_CONTEXT_MENU:
+                # Swallowed on anything without a context menu of its own, rather than shoving focus
+                # into OPTIONS_GROUP_ID (the header, group 200) the way this used to. That jump was
+                # written when the header still carried the home/search buttons; every screen here now
+                # blanks header_topleft in favour of the sidebar, so group 200's own
+                # <defaultcontrol always="true">201</defaultcontrol> (default.xml.tpl) points at a
+                # control that no longer exists. What's left inside it is the audio widget (204, only
+                # focusable while Player.HasAudio) and, on Seasons/Episodes, the season tabs (205/206,
+                # only when they have items) - so with nothing playing and no tabs the group has no
+                # focusable child at all, Kodi drops focus entirely and the screen goes dead to
+                # everything but Back (live-reported on Artist, Pre-play and skipChildren Seasons;
+                # where tabs did exist the same jump landed focus on the tab bar instead).
+                # Nothing is exempt here any more: in-progress items get their own Resume/Restart
+                # buttons instead of a single Play, so the old "menu on Play forces the
+                # resume-or-restart dropdown" shortcut (force_resume_menu, gated on assume_resume)
+                # had nothing left to offer and is gone - Play is inert under menu, on request.
                 return
-            elif action == xbmcgui.ACTION_CONTEXT_MENU:
-                if controlID == self.PLAY_BUTTON_ID and util.getSetting('assume_resume'):
-                    self.playButtonClicked(force_resume_menu=True)
-                    return
-
-                if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
-                    self.lastNonOptionsFocusID = self.lastFocusID
-                    self.setFocusId(self.OPTIONS_GROUP_ID)
-                    return
-                else:
-                    if self.lastNonOptionsFocusID:
-                        self.setCondFocusId(self.lastNonOptionsFocusID)
-                        self.lastNonOptionsFocusID = None
-                        return
 
             elif action == xbmcgui.ACTION_NAV_BACK:
-                if (not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(
-                        self.OPTIONS_GROUP_ID)) or not controlID) and \
-                        not util.addonSettings.fastBack:
-                    if self.getProperty('on.extras'):
-                        self.setCondFocusId(self.OPTIONS_GROUP_ID)
+                # Retract to the button row rather than the header - see retractToButtonRow()
+                # (mixins/common.py) and the ACTION_CONTEXT_MENU branch above for why group 200 can't
+                # be focused here any more. Returns False when the screen is showing with
+                # disable_playback set (the button row is hidden entirely then), in which case Back
+                # falls through and closes the window as it would from anywhere else.
+                if not util.addonSettings.fastBack and self.getProperty('on.extras'):
+                    if self.retractToButtonRow():
                         return
 
             if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
@@ -1154,28 +1154,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     def onBGMStarted(self, **kwargs):
         #self.playBtnClicked = True
         pass
-
-    def checkOptionsAction(self, action):
-        if action == xbmcgui.ACTION_MOVE_UP:
-            mli = self.episodeListControl.getSelectedItem()
-            if not mli or mli.getProperty("is.boundary"):
-                return False
-            pos = mli.pos() - 1
-            if self.episodeListControl.positionIsValid(pos):
-                self.setCondFocusId(self.EPISODE_LIST_ID)
-                self.episodeListControl.selectItem(pos)
-            return True
-        elif action == xbmcgui.ACTION_MOVE_DOWN:
-            mli = self.episodeListControl.getSelectedItem()
-            if not mli or mli.getProperty("is.boundary"):
-                return False
-            pos = mli.pos() + 1
-            if self.episodeListControl.positionIsValid(pos):
-                self.setCondFocusId(self.EPISODE_LIST_ID)
-                self.episodeListControl.selectItem(pos)
-            return True
-
-        return False
 
     def onClick(self, controlID):
         if self.handleSidebarDropdownClick(controlID):
@@ -1568,11 +1546,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.setProperty('server.iconmod', '')
             self.setProperty('server.iconmod2', '')
 
-    def playButtonClicked(self, force_episode=None, from_auto_play=False, force_resume_menu=False,
-                          start_over=False, force_resume=False):
+    def playButtonClicked(self, force_episode=None, from_auto_play=False, start_over=False,
+                          force_resume=False):
         return self.episodeListClicked(force_episode=force_episode, from_auto_play=from_auto_play,
-                                       force_resume_menu=force_resume_menu, start_over=start_over,
-                                       force_resume=force_resume)
+                                       start_over=start_over, force_resume=force_resume)
 
     def shuffleButtonClicked(self):
         # Season-card-only now (button row's own visible condition) - shuffles the whole
@@ -1662,8 +1639,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         showTitle = episode.grandparentTitle or (self.show_.title if self.show_ else '')
         info.showSummary(showTitle, episode.summary, subtitle=episode.title)
 
-    def episodeListClicked(self, force_episode=None, from_auto_play=False, force_resume_menu=False,
-                           start_over=False, force_resume=False):
+    def episodeListClicked(self, force_episode=None, from_auto_play=False, start_over=False,
+                           force_resume=False):
 
         if self.playBtnClicked and not from_auto_play:
             util.DEBUG_LOG("Not honoring play action: currentItemLoaded: {0}, "
@@ -1706,7 +1683,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 # Dedicated Resume button (button row) - skip the dialog/assume_resume check below
                 # entirely, the button itself already made the choice explicit.
                 resume = True
-            elif not util.getSetting('assume_resume') or force_resume_menu:
+            elif not util.getSetting('assume_resume'):
                 choice = dropdown.showDropdown(
                     options=[
                         {'key': 'resume', 'display': T(32429, 'Resume from {0}').format(util.timeDisplay(episode.viewOffset.asInt()).lstrip('0').lstrip(':'))},

@@ -15,6 +15,10 @@
        label_suffix_info - optional ListItem property name; when given, appends
          " <bullet> $INFO[Container(400).ListItem.Property(name)]" after label - used for Resume's
          dynamic time-left text, nothing else needs it
+       label_suffix_wprop - same thing against a window property instead of Container(400)'s own
+         selected item, for screens whose subject isn't a list item at all - Pre-play's Resume
+         button (script-plex-pre_play.xml.tpl), where the video is the window's, not a row's.
+         Mutually exclusive with label_suffix_info in practice; pass one or neither
        label_width, pill_width, group_width - tuned per label's own text length, see call sites;
          passed as literals rather than computed here since
          ibis's inline math doesn't reliably resolve variables as arithmetic operands (confirmed
@@ -32,6 +36,12 @@
          ibis's inline math doesn't reliably resolve variables as arithmetic operands (confirmed
          earlier this session - raised "Malformed 'with' tag" on a dotted-path case, not trusted
          since even for plain ones)
+       pill_id, label_id - optional ids on the pill background and the label, for a caller whose
+         label text isn't fixed at build time and so can't have its widths measured into the call
+         (ShowWindow's own Play/Resume button, subitems.py - the episode number in it isn't known
+         until the show loads). That caller measures the real string at runtime and setWidth()s
+         these three controls; the widths passed here are just the worst case it starts from, and
+         the group's own id is already addressable via the `id` param above.
        onleft, onright - this overlay's own nav, mirroring its button's own neighbours rather than
          left unset - live-confirmed necessary for the original Play overlay (Kodi's
          usecontrolcoords geometric nav can pick this overlay itself as the nearest control once
@@ -46,7 +56,7 @@
     {% if onright %}<onright>{{ onright }}</onright>{% endif %}
     <width>{{ group_width }}</width>
     <height>{{ attr.height|vscale }}</height>
-    <control type="image">
+    <control type="image"{% if pill_id %} id="{{ pill_id }}"{% endif %}>
         <!-- -62, not -58: a 10px gap from the icon glyph's own left edge, on request (was 8px) -
              measured per icon (this session), majority (5 of 7 button-row icons, left edge ~-52.5)
              used as the reference rather than Play specifically, same reasoning as the label's own
@@ -75,7 +85,7 @@
         <height>{{ attr.height|vscale }}</height>
         <texture colordiffuse="{{ theme.buttons.focusColor|default('FFE5A00D') }}">{{ theme.assets.buttons.base }}{{ name }}{{ theme.assets.buttons.focusSuffix }}.png</texture>
     </control>
-    <control type="label">
+    <control type="label"{% if label_id %} id="{{ label_id }}"{% endif %}>
         <!-- -8, not the icon glyph's own right edge: a 10px gap, on request (was 5px). Measured per
              icon (this session) rather than assumed from Play alone - Play/Resume actually sit ~1px
              wider (glyph right edge ~-18.6) than the other 5 button-row icons (~-17.5, the majority,
@@ -96,6 +106,6 @@
              literal bullet into one of these files (see its own comment on why - the template
              writer's byte-length check breaks on a literal multibyte character anywhere in the
              file, comments included). -->
-        <label>{{ label }}{% if label_suffix_info %} &#8226; $INFO[Container(400).ListItem.Property({{ label_suffix_info }})]{% endif %}</label>
+        <label>{{ label }}{% if label_suffix_info %} &#8226; $INFO[Container(400).ListItem.Property({{ label_suffix_info }})]{% endif %}{% if label_suffix_wprop %} &#8226; $INFO[Window.Property({{ label_suffix_wprop }})]{% endif %}</label>
     </control>
 </control>

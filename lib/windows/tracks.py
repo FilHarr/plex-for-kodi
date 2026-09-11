@@ -30,7 +30,6 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
     THUMB_SQUARE_DIM = util.scaleResolution(630, 630)
 
     TRACKS_LIST_ID = 101
-    LIST_OPTIONS_BUTTON_ID = 111
 
     OPTIONS_GROUP_ID = 200
 
@@ -125,42 +124,19 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
 
             if controlID == self.TRACKS_LIST_ID:
                 self.checkForHeaderFocus(action)
-            if controlID == self.LIST_OPTIONS_BUTTON_ID and self.checkOptionsAction(action):
+            if action == xbmcgui.ACTION_CONTEXT_MENU:
+                # Swallowed: this screen has no per-item context menu, and the jump into
+                # OPTIONS_GROUP_ID (the header, group 200) that used to live here is the same one
+                # Episodes/Seasons/Artist/Pre-play just lost - script-plex-album.xml blanks
+                # header_topleft in favour of the sidebar, leaving group 200 with only the audio
+                # widget (204, focusable just while Player.HasAudio), so with nothing playing Kodi
+                # drops focus entirely and the screen goes dead to everything but Back. See
+                # episodes.py's own copy of this branch for the full story.
                 return
-            elif action == xbmcgui.ACTION_CONTEXT_MENU:
-                if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
-                    self.setFocusId(self.OPTIONS_GROUP_ID)
-                    return
-            # elif action in(xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_CONTEXT_MENU):
-            #     if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
-            #         self.setFocusId(self.OPTIONS_GROUP_ID)
-            #         return
         except:
             util.ERROR()
 
         kodigui.ControlledWindow.onAction(self, action)
-
-    def checkOptionsAction(self, action):
-        if action == xbmcgui.ACTION_MOVE_UP:
-            mli = self.trackListControl.getSelectedItem()
-            if not mli:
-                return False
-            pos = mli.pos() - 1
-            if self.trackListControl.positionIsValid(pos):
-                self.setFocusId(self.TRACKS_LIST_ID)
-                self.trackListControl.selectItem(pos)
-            return True
-        elif action == xbmcgui.ACTION_MOVE_DOWN:
-            mli = self.trackListControl.getSelectedItem()
-            if not mli:
-                return False
-            pos = mli.pos() + 1
-            if self.trackListControl.positionIsValid(pos):
-                self.setFocusId(self.TRACKS_LIST_ID)
-                self.trackListControl.selectItem(pos)
-            return True
-
-        return False
 
     def onClick(self, controlID):
         if self.handleSidebarDropdownClick(controlID):
@@ -177,10 +153,6 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             self.shuffleButtonClicked()
         elif controlID == self.OPTIONS_BUTTON_ID:
             self.optionsButtonClicked()
-        elif controlID == self.LIST_OPTIONS_BUTTON_ID:
-            mli = self.trackListControl.getSelectedItem()
-            if mli:
-                self.optionsButtonClicked(mli)
 
     def getAlbums(self):
         if not self.albums:

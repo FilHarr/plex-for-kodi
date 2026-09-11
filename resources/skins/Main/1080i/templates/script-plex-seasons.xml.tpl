@@ -314,13 +314,35 @@
                          onleft/onright (mirroring their own button's id, same defensive pattern
                          Episodes' button row already relies on) - that's the part live-confirmed
                          necessary there. -->
+                    <!-- Play / Resume are the same action here (playButtonClicked(), subitems.py -
+                         the show-level pick resumes by itself when the episode it lands on is
+                         in progress); only the icon and label differ, and a button's own textures
+                         can't be swapped on a condition, so it's two mutually-exclusive buttons.
+                         play.in.progress/play.episode/resume.timeleft come from
+                         ShowWindow.setPlayButtonState() - see there for why the label can be
+                         specific about the episode at all, and when it can't.
+                         Both overlays carry pill/label ids because their text isn't fixed at build
+                         time: the episode number's digit count varies ("Play S1E1" measures 111px,
+                         "Play S12E345" 155px), so the widths below are the worst case and
+                         setPlayButtonState() shrinks the three controls to the real string. -->
                     {% include template with name="play" & id=302 &
-                        visible="String.IsEmpty(Window.Property(disable_playback))"
+                        visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(play.in.progress))"
                     %}
                     {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
-                        label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-                        label_width=50 & pill_width=112 & group_width=68 &
+                        label="$ADDON[script.plexmod 33020] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
+                        label_width=160 & pill_width=222 & group_width=178 &
+                        pill_id=396 & label_id=397 &
                         onleft=302 & onright=308
+                    %}
+                    {% include template with name="resume" & id=301 &
+                        visible="String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(play.in.progress))"
+                    %}
+                    {% include ol with id=398 & visible="Control.HasFocus(301)" & name="resume" &
+                        label="$ADDON[script.plexmod 32316] $INFO[Window.Property(play.episode)]" &
+                        label_suffix_wprop="resume.timeleft" &
+                        label_width=290 & pill_width=352 & group_width=308 &
+                        pill_id=399 & label_id=307 &
+                        onleft=301 & onright=308
                     %}
                     {% include "includes/wl_dynamic_buttons.xml.tpl" %}
                     {% include "includes/wl_add_remove_buttons.xml.tpl" %}

@@ -125,6 +125,12 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     TRAILER_BUTTON_ID = 303
     SETTINGS_BUTTON_ID = 305
     OPTIONS_BUTTON_ID = 306
+    # Play splits into these two once the video has a view offset (in.progress - setInfo() below),
+    # matching Episodes' own button row. 301/307, the only ids left free in this screen's 300-block,
+    # so they don't read in row order the way Episodes' 308/309 do - see the button row's own
+    # comment (script-plex-pre_play.xml.tpl).
+    RESUME_BUTTON_ID = 301
+    RESTART_BUTTON_ID = 307
     # Click/focus target laid over the summary textbox (script-plex-pre_play.xml.tpl) - 350, not
     # something in the 300-306 button cluster (all already taken here) or 310-322
     # (includes/media_info_pills.xml.tpl's own ids, also live in this window - 310 specifically
@@ -134,8 +140,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     # doesn't guarantee which same-id control a getControl() call resolves to). Wired to
     # summaryButtonClicked() below.
     SUMMARY_BUTTON_ID = 350
-
-    POSSIBLE_PLAY_BUTTON_IDS = [302, 2302, 2303, 2304, 2305]
 
     PLAYER_STATUS_BUTTON_ID = 204
 
@@ -170,7 +174,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.exitCommand = None
         self.trailer = None
         self.lastFocusID = None
-        self.lastNonOptionsFocusID = None
         self.initialized = False
         self.relatedPaginator = None
         self.collectionPaginators = [None, None, None]
@@ -261,9 +264,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     def refreshInfo(self, from_reinit=False):
         oldFocusId = self.getFocusId()
 
-        util.setGlobalProperty('hide.resume', '' if self.video.viewOffset.asInt() else '1')
         # skip setting background when coming from reinit (other window) if we've focused something other than main
-        self.setInfo(skip_bg=from_reinit and not (self.PLAY_BUTTON_ID <= oldFocusId <= self.OPTIONS_BUTTON_ID))
+        # 301-307, not the old 302-306: Resume/Restart (301/307) bracket the rest of the button
+        # row's ids, so the range has to widen with them rather than leave those two reading as
+        # "focus is somewhere else entirely".
+        self.setInfo(skip_bg=from_reinit and not (self.RESUME_BUTTON_ID <= oldFocusId <= self.RESTART_BUTTON_ID))
 
         if not from_reinit:
             show_reviews = util.getSetting('show_reviews1')
@@ -274,7 +279,10 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.fillRelated()
         xbmc.sleep(100)
 
-        if oldFocusId == self.PLAY_BUTTON_ID:
+        # Any of the three play states, not just 302: which one was focused before the reload isn't
+        # necessarily the one that should be focused after it (a resumed-then-finished video flips
+        # from Resume/Restart back to Play), so focusPlayButton() re-picks by the current state.
+        if oldFocusId in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID, self.RESTART_BUTTON_ID):
             self.focusPlayButton()
 
     def onAction(self, action):
@@ -288,28 +296,31 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 self.setFocusId(self.lastFocusID)
 
             if action == xbmcgui.ACTION_CONTEXT_MENU:
-                if controlID == self.PLAY_BUTTON_ID:
-                    self.playVideo(force_resume_menu=True)
-                    return
-
-                if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
-                    self.lastNonOptionsFocusID = self.lastFocusID
-                    self.setFocusId(self.OPTIONS_GROUP_ID)
-                    return
-                else:
-                    if self.lastNonOptionsFocusID:
-                        self.setFocusId(self.lastNonOptionsFocusID)
-                        self.lastNonOptionsFocusID = None
-                        return
+                # Swallowed on anything without a context menu of its own, rather than shoving focus
+                # into OPTIONS_GROUP_ID (the header, group 200) the way this used to. That jump was
+                # written when the header still carried the home/search buttons; every screen here now
+                # blanks header_topleft in favour of the sidebar, so group 200's own
+                # <defaultcontrol always="true">201</defaultcontrol> (default.xml.tpl) points at a
+                # control that no longer exists. What's left inside it is the audio widget (204, only
+                # focusable while Player.HasAudio) and, on Seasons/Episodes, the season tabs (205/206,
+                # only when they have items) - so with nothing playing and no tabs the group has no
+                # focusable child at all, Kodi drops focus entirely and the screen goes dead to
+                # everything but Back (live-reported on Artist, Pre-play and skipChildren Seasons;
+                # where tabs did exist the same jump landed focus on the tab bar instead).
+                # Nothing is exempt here any more: in-progress items get their own Resume/Restart
+                # buttons instead of a single Play, so the old "menu on Play forces the
+                # resume-or-restart dropdown" shortcut (force_resume_menu) had nothing left to offer
+                # and is gone - Play is inert under menu, on request.
+                return
 
             elif action == xbmcgui.ACTION_NAV_BACK:
                 if self.dismissSidebarPopupOnBack():
                     return
-                if (not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(
-                        self.OPTIONS_GROUP_ID)) or not controlID) and \
-                        not util.addonSettings.fastBack:
-                    if self.getProperty('on.extras'):
-                        self.setFocusId(self.OPTIONS_GROUP_ID)
+                # Retract to the button row rather than the header - see retractToButtonRow()
+                # (mixins/common.py) and the ACTION_CONTEXT_MENU branch above for why group 200 can't
+                # be focused here any more. on.extras clears as focus lands, so the next Back closes.
+                if not util.addonSettings.fastBack and self.getProperty('on.extras'):
+                    if self.retractToButtonRow():
                         return
 
             elif self.isWatchedAction(action) and xbmc.getCondVisibility('ControlGroup({}).HasFocus(0)'.format(self.MAIN_BUTTON_GROUP_ID)):
@@ -364,6 +375,10 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 return
         elif controlID == self.PLAY_BUTTON_ID:
             self.playVideo()
+        elif controlID == self.RESUME_BUTTON_ID:
+            self.playVideo(force_resume=True)
+        elif controlID == self.RESTART_BUTTON_ID:
+            self.playVideo(start_over=True)
         elif controlID in self.WL_RELEVANT_BTNS and self.fromWatchlist and self.wl_availability:
             self.wl_item_opener(self.video, self.openItem)
         elif controlID in self.WL_BTN_STATE_BTNS:
@@ -607,12 +622,29 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
         # if False:
         #     options.append({'key': 'add_to_playlist', 'display': 'Add To Playlist'})
-        posy = 880
-        if not util.getGlobalProperty('hide.resume'):
-            posy += 106
+        # x (misnamed here for a long time), not y: showDropdown takes (x, y), and with
+        # close_direction='left' this anchor is what keeps the dropdown under the More button as the
+        # row ahead of it grows.
+        # 518, not the old 880: stale since the button row resize, exactly as Seasons' own copy of
+        # this static fallback was - see optionsButtonClicked() (subitems.py) for the derivation,
+        # which applies verbatim here since this row went through the same 22->63 / 152->70 /
+        # itemgap -20->0 change: (880 - 22) * 70/132 + 63 = 518.
+        # 70 per extra button, not the old 106: that never matched a pitch in either layout (the old
+        # one was 132), and the current row is 70-wide boxes at itemgap 0, so one more visible button
+        # is exactly 70px of the row.
+        # in.progress (setInfo()), not the old global hide.resume property: that global was only ever
+        # written by refreshInfo(), which onFirstInit()/setup() don't call, so on a freshly opened
+        # window it still held the *previous* item's state - an unwatched movie opened right after an
+        # in-progress one shifted this anchor as though a resume button were there. in.progress is
+        # set by setInfo() on both paths and is the very property the row's Play/Resume+Restart split
+        # keys off, so it can't disagree with what's on screen. It costs one button, not two: Resume
+        # and Restart replace Play rather than joining it.
+        pos_x = 518
+        if self.getProperty('in.progress'):
+            pos_x += 70
         if self.getProperty('trailer.button'):
-            posy += 106
-        choice = dropdown.showDropdown(options, (posy, 618), close_direction='left')
+            pos_x += 70
+        choice = dropdown.showDropdown(options, (pos_x, 618), close_direction='left')
         if not choice:
             return
 
@@ -751,7 +783,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
         return True
 
-    def playVideo(self, from_auto_play=False, force_resume_menu=False):
+    def playVideo(self, from_auto_play=False, force_resume=False, start_over=False):
         if self.playBtnClicked:
             return
 
@@ -760,8 +792,15 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             return
 
         resume = False
-        if self.video.viewOffset.asInt() and not self.startOver:
-            if not util.getSetting('assume_resume') or force_resume_menu:
+        # start_over is the Restart button's own request, self.startOver the same thing carried in
+        # from whoever opened this window (kwargs) - either one skips the resume question entirely
+        # and leaves resume False, i.e. plays from the beginning.
+        if self.video.viewOffset.asInt() and not self.startOver and not start_over:
+            if force_resume:
+                # Dedicated Resume button - the button itself already made the choice explicit, so
+                # neither the dropdown nor the assume_resume check below applies.
+                resume = True
+            elif not util.getSetting('assume_resume'):
                 choice = dropdown.showDropdown(
                     options=[
                         {'key': 'resume', 'display': T(32429, 'Resume from {0}').format(util.timeDisplay(self.video.viewOffset.asInt()).lstrip('0').lstrip(':'))},
@@ -841,18 +880,22 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         if extended:
             self.setFocusId(self.wl_play_button_id)
             return
+        # Resume, not Play, for a part-watched video: 302 is hidden in that state (in.progress -
+        # setInfo()), and focusing a hidden control would just fall through to whatever Kodi picks
+        # next, exactly what the wait below exists to prevent.
+        button_id = self.RESUME_BUTTON_ID if self.getProperty('in.progress') else self.PLAY_BUTTON_ID
         try:
-            if not self.getFocusId() == self.PLAY_BUTTON_ID:
-                # id 302's own <visible> (unavailable/disable_playback) is keyed off properties
-                # we just set, but the GUI thread hasn't necessarily recalculated visibility yet -
-                # SetFocus on a still-invisible control fails silently and focus falls through
-                # elsewhere (e.g. a hub row, which then triggers its slide-into-view animation).
-                # Wait for it to actually be visible first.
-                self.waitForVisibility(self.PLAY_BUTTON_ID)
-                self.setFocusId(self.PLAY_BUTTON_ID)
+            if not self.getFocusId() == button_id:
+                # the button's own <visible> (unavailable/disable_playback/in.progress) is keyed off
+                # properties we just set, but the GUI thread hasn't necessarily recalculated
+                # visibility yet - SetFocus on a still-invisible control fails silently and focus
+                # falls through elsewhere (e.g. a hub row, which then triggers its slide-into-view
+                # animation). Wait for it to actually be visible first.
+                self.waitForVisibility(button_id)
+                self.setFocusId(button_id)
         except (SystemError, RuntimeError):
             util.ERROR()
-            self.setFocusId(self.PLAY_BUTTON_ID)
+            self.setFocusId(button_id)
 
     @busy.dialog()
     def setup(self):
@@ -900,6 +943,24 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.setProperty('unwatched', not self.video.isWatched and '1' or '')
         self.setBoolProperty('watched', self.video.isFullyWatched)
         self.setBoolProperty('disable_playback', self.fromWatchlist)
+
+        # Drives the button row's Play -> Resume+Restart split (script-plex-pre_play.xml.tpl).
+        # Unconditional, unlike the remainingTime property further down: that one lives in the
+        # non-watchlist branch, but these two have to be actively cleared for a watchlist item too,
+        # or a stale in.progress from a previous video would leave this row showing Resume/Restart
+        # over a play button that disable_playback has already hidden.
+        # Duration is required, not just the offset: the Resume label carries a time-left suffix
+        # computed from it (resume.timeleft), and without one there'd be nothing to put after the
+        # bullet. An item with an offset but no duration falls back to plain Play, which still
+        # offers resume through the usual assume_resume dropdown (playVideo()).
+        view_offset = self.video.viewOffset.asInt()
+        duration = self.video.duration.asInt()
+        in_progress = bool(view_offset and duration) and not self.fromWatchlist
+        self.setBoolProperty('in.progress', in_progress)
+        # remainingTimeToShortText's own no-space, 90-minute-cutoff style ("1h31m left"), matching
+        # Episodes' own Resume button - not remainingTime's spaced "1h 31m left" below.
+        self.setProperty('resume.timeleft', in_progress and T(33615, "{time} left").format(
+            time=util.remainingTimeToShortText(duration - view_offset)) or '')
 
         directors = u' / '.join([d.tag for d in self.video.directors()][:3])
         directorsLabel = len(self.video.directors) > 1 and T(32401, u'DIRECTORS').upper() or T(32383, u'DIRECTOR').upper()

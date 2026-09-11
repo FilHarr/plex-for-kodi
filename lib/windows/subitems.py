@@ -34,6 +34,7 @@ from .mixins.thememusic import ThemeMusicMixin
 from .mixins.roles import RolesMixin
 from .mixins.common import CommonMixin
 from .mixins.tasks import TasksMixin
+from .mixins.text_metrics import FONT10_POINT_SIZE, measureTextWidth
 
 
 class RelatedPaginator(pagination.BaseRelatedPaginator):
@@ -91,8 +92,24 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     PLAYER_STATUS_BUTTON_ID = 204
 
     MAIN_BUTTON_GROUP_ID = 300
-    INFO_BUTTON_ID = 301
+    # Play and Resume are the same action - the show-level pick resumes by itself when it lands on
+    # an in-progress episode (getNextShowEp(), windowutils.py) - but a button can't swap its own
+    # textures on a condition, so the row carries two mutually-exclusive ones and
+    # setPlayButtonState() below decides which is showing. 301 was INFO_BUTTON_ID, a constant left
+    # over from the Info button both this screen and Artist dropped; nothing rendered there and its
+    # only remaining use was as the lower bound of the button row's own range check in onAction().
     PLAY_BUTTON_ID = 302
+    RESUME_BUTTON_ID = 301
+    # The two Play/Resume focus-pill overlays (includes/episode_button_label.xml.tpl). Their label
+    # text isn't fixed at build time - the episode number's digit count moves it by ~45px - so
+    # setPlayButtonState() measures the real string and resizes all three controls of whichever
+    # one is live. Seasons-only ids: Artist inherits this class but has its own button row.
+    PLAY_LABEL_GROUP_ID = 391
+    PLAY_LABEL_PILL_ID = 396
+    PLAY_LABEL_TEXT_ID = 397
+    RESUME_LABEL_GROUP_ID = 398
+    RESUME_LABEL_PILL_ID = 399
+    RESUME_LABEL_TEXT_ID = 307
     SHUFFLE_BUTTON_ID = 303
     OPTIONS_BUTTON_ID = 304
     # Click/focus target laid over this screen's own summary textbox (script-plex-seasons.xml.tpl/
@@ -131,7 +148,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.mediaItems = None
         self.exitCommand = None
         self.lastFocusID = None
-        self.lastNonOptionsFocusID = None
+        # ratingKey the Play button's episode label has already been resolved for, so the one-off
+        # allLeaves request in setPlayButtonState() isn't repeated on every property refresh
+        self.playLabelResolvedFor = None
         self.manuallySelectedSeason = False
         self.initialized = False
         self.relatedPaginator = None
@@ -205,6 +224,156 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                            (self.fillRelated, None, None),
                            (self.fillRoles, None, None)])
 
+
+    def onDeckPick(self):
+        """The show's own OnDeck episode, or None.
+
+        No viewCount filter: an episode can be on deck *and* already carry a viewCount - a rewatch
+        left part-way through is the obvious case (American Dad's own on-deck is 86% through an
+        episode watched twice before). Those are exactly the ones Show.all(unwatched=True) drops,
+        so queueWithOnDeck() below puts it back rather than this quietly ignoring the server.
+        """
+        for v in (self.mediaItem.onDeck or []):
+            return v
+        return None
+
+    def queueWithOnDeck(self, items, pick):
+        """`items` with the on-deck episode guaranteed present, inserted in queue order.
+
+        The play queue is built from unwatched episodes only (Show.all(unwatched=True), video.py),
+        which silently excludes an on-deck episode the user has seen before - and an episode that
+        isn't in the queue can't be started from it (getNextShowEp() has to be able to setCurrent()
+        it). Inserting it keeps the rest of the queue as "what's left to watch" while still starting
+        where the server says.
+
+        Position is by (season, episode), which is the order PMS's own allLeaves uses for the
+        regulars and the order 'interleave' sorts them into as well - only its placement relative to
+        specials differs between the two modes, and an on-deck special is rare enough not to chase.
+        """
+        if pick is None or pick in items:
+            return items
+
+        key = (pick.parentIndex.asInt(), pick.index.asInt())
+        for i, ep in enumerate(items):
+            if (ep.parentIndex.asInt(), ep.index.asInt()) > key:
+                return items[:i] + [pick] + items[i:]
+        return items + [pick]
+
+    def setPlayButtonState(self):
+        """Decide whether the button row shows Play or Resume, and what its label spells out.
+
+        Both come from the show's own OnDeck entry (Show.onDeck, already loaded by setup()'s
+        includeOnDeck=1 reload), because that is what getNextShowEp() (windowutils.py) will pick
+        when the button is actually pressed - an on-deck entry is authoritative there, and
+        playButtonClicked() makes sure it's in the queue to be picked. Deliberately no allLeaves
+        request just to label a button.
+
+        When there's no on-deck entry the episode isn't known yet: the label starts as a plain
+        "Play" and resolvePlayButtonEpisode() fills it in from a background thread.
+        """
+        if self.mediaItem.type != 'show':
+            return
+
+        pick = self.onDeckPick()
+        if pick is None:
+            # No on-deck means the server has no opinion, which in practice means a show with
+            # nothing left unwatched. The answer is then whatever the blind scan in pickShowEp()
+            # lands on, and that needs the actual episode list - one allLeaves request, 65kB on a
+            # 26-episode show and 1MB on a 399-episode one. Backgrounded rather than paid in
+            # setup(): the button shows a plain "Play" until it resolves, the same way the roles/
+            # extras/related rows fill in behind the screen. Only ~15% of a typical library reaches
+            # this at all, and the request is skipped entirely once one has already answered for
+            # this item.
+            self.setProperty('play.episode', '')
+            self.setBoolProperty('play.in.progress', False)
+            self.setProperty('resume.timeleft', '')
+            if self.playLabelResolvedFor != self.mediaItem.ratingKey:
+                self.playLabelResolvedFor = self.mediaItem.ratingKey
+                self.postpone_simple(self.resolvePlayButtonEpisode)
+            self.sizePlayButtonLabel()
+            # onFirstInit() focuses Play before any of this is known, so the button it focused may
+            # be the one that just went invisible.
+            if self.getFocusId() in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
+                self.focusPlayButton()
+        else:
+            self.applyPlayButtonEpisode(pick)
+
+    def resolvePlayButtonEpisode(self):
+        """Fill in the Play button's episode for a show the server has no on-deck entry for.
+
+        Background thread (see setPlayButtonState()). Runs the same pickShowEp() the button itself
+        will run, over the same queue playButtonClicked() would build, so the label can't promise an
+        episode other than the one that then plays - the blind scan's answer depends on both the
+        specials mode and on stray view offsets left behind on an otherwise finished show, neither
+        of which can be inferred without the list.
+        """
+        try:
+            items = self.mediaItem.all(unwatched=True)
+            if not items:
+                return
+            specials_mode = util.getSetting('tv_specials_order', 'default')
+            items = playlist.reorder_with_specials(items, mode=specials_mode)
+            pick = self.pickShowEp(items, specials_mode=specials_mode)
+        except:
+            util.ERROR()
+            return
+
+        if pick is None or self.mediaItem.ratingKey != self.playLabelResolvedFor:
+            # the window moved on to another show while this was in flight
+            return
+
+        self.applyPlayButtonEpisode(pick)
+
+    def applyPlayButtonEpisode(self, pick):
+        """The three properties the button row's Play/Resume pair keys off, for `pick`."""
+        # "S5E14": the screen's own two localized fragments concatenated, not the bulleted
+        # "S5 - E14" form used elsewhere (library.py, playlist.py) - the Resume label already ends
+        # in a bullet before its time-left, and two of them read as a list.
+        self.setProperty('play.episode', u'{0}{1}'.format(
+            T(32310, 'S').format(pick.parentIndex), T(32311, 'E').format(pick.index)))
+        view_offset = pick.viewOffset.asInt()
+        duration = pick.duration.asInt()
+        in_progress = bool(view_offset and duration)
+        self.setBoolProperty('play.in.progress', in_progress)
+        # remainingTimeToShortText's own no-space style, matching Episodes'/Pre-play's own Resume
+        # buttons ("1h31m left", not "1h 31m left")
+        self.setProperty('resume.timeleft', in_progress and T(33615, "{time} left").format(
+            time=util.remainingTimeToShortText(duration - view_offset)) or '')
+        self.sizePlayButtonLabel()
+        if self.getFocusId() in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
+            self.focusPlayButton()
+
+    def sizePlayButtonLabel(self):
+        """Shrink whichever focus-pill overlay is live to fit the label it's actually showing.
+
+        The overlay include can't do this itself - its widths are literals passed at build time
+        (see includes/episode_button_label.xml.tpl), and the episode number moves the string by
+        ~45px between "S1E1" and "S12E345". Same formula that file documents: label_width is the
+        measured text + 4, the pill is label + 62 and the group label + 18.
+        """
+        episode = self.getProperty('play.episode')
+        if self.getProperty('play.in.progress'):
+            text = u'{0} {1}'.format(T(32316, 'Resume'), episode)
+            timeleft = self.getProperty('resume.timeleft')
+            if timeleft:
+                text = u'{0} \u2022 {1}'.format(text, timeleft)
+            ids = (self.RESUME_LABEL_GROUP_ID, self.RESUME_LABEL_PILL_ID, self.RESUME_LABEL_TEXT_ID)
+        else:
+            text = u'{0} {1}'.format(T(33020, 'Play'), episode).rstrip()
+            ids = (self.PLAY_LABEL_GROUP_ID, self.PLAY_LABEL_PILL_ID, self.PLAY_LABEL_TEXT_ID)
+
+        label_width = int(round(measureTextWidth(text, FONT10_POINT_SIZE))) + 4
+        group_id, pill_id, text_id = ids
+        try:
+            self.getControl(text_id).setWidth(label_width)
+            self.getControl(pill_id).setWidth(label_width + 62)
+            self.getControl(group_id).setWidth(label_width + 18)
+        except (SystemError, RuntimeError):
+            # Artist inherits this class and has no controls at these ids; so does any state where
+            # the row hasn't rendered yet. The build-time widths are the worst case either way, so
+            # a miss here just leaves a slightly roomy pill rather than a broken one.
+            util.DEBUG_LOG('ShowWindow: no Play/Resume label controls to resize')
+
     def updateProperties(self):
         self.setProperty('title', self.mediaItem.title)
         logo = util.clearLogoFrom(self.mediaItem, *self.CLEAR_LOGO_DIM)
@@ -222,6 +391,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         words[-1] = words[-1].capitalize()
         self.setProperty('season.count', ' '.join(words))
         self.setBoolProperty('disable_playback', self.fromWatchlist)
+        self.setPlayButtonState()
         if not self.mediaItem.isWatched:
             self.setProperty('unwatched.count', str(self.mediaItem.unViewedLeafCount) or '')
             self.setBoolProperty('unwatched.count.large', self.mediaItem.unViewedLeafCount > 999)
@@ -261,11 +431,18 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         if extended:
             self.setFocusId(self.wl_play_button_id)
             return
+        # Whichever of the pair is actually rendered - the other one's <visible> is false, and
+        # focusing a hidden control drops focus somewhere unrelated. onFirstInit() calls this before
+        # setup() has decided, so it lands on Play and setPlayButtonState() moves it if need be.
+        if self.getProperty('play.in.progress'):
+            button_id = self.RESUME_BUTTON_ID
+        else:
+            button_id = self.PLAY_BUTTON_ID
         try:
-            if not self.getFocusId() == self.PLAY_BUTTON_ID:
-                self.setFocusId(self.PLAY_BUTTON_ID)
+            if not self.getFocusId() == button_id:
+                self.setFocusId(button_id)
         except (SystemError, RuntimeError):
-            self.setFocusId(self.PLAY_BUTTON_ID)
+            self.setFocusId(button_id)
 
     def onAction(self, action):
         try:
@@ -281,18 +458,20 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 self.manuallySelectedSeason = True
 
             elif action == xbmcgui.ACTION_CONTEXT_MENU:
+                # Swallowed on anything without a context menu of its own, rather than shoving focus
+                # into OPTIONS_GROUP_ID (the header, group 200) the way this used to. That jump was
+                # written when the header still carried the home/search buttons; every screen here now
+                # blanks header_topleft in favour of the sidebar, so group 200's own
+                # <defaultcontrol always="true">201</defaultcontrol> (default.xml.tpl) points at a
+                # control that no longer exists. What's left inside it is the audio widget (204, only
+                # focusable while Player.HasAudio) and, on Seasons/Episodes, the season tabs (205/206,
+                # only when they have items) - so with nothing playing and no tabs the group has no
+                # focusable child at all, Kodi drops focus entirely and the screen goes dead to
+                # everything but Back (live-reported on Artist, Pre-play and skipChildren Seasons;
+                # where tabs did exist the same jump landed focus on the tab bar instead).
                 if controlID == self.SUB_ITEM_LIST_ID and not self.isExternal:
                     self.optionsButtonClicked(from_item=True)
-                    return
-                elif not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
-                    self.lastNonOptionsFocusID = self.lastFocusID
-                    self.setFocusId(self.OPTIONS_GROUP_ID)
-                    return
-                else:
-                    if self.lastNonOptionsFocusID:
-                        self.setFocusId(self.lastNonOptionsFocusID)
-                        self.lastNonOptionsFocusID = None
-                        return
+                return
 
             elif controlID == self.SUB_ITEM_LIST_ID and self.isWatchedAction(action):
                 item = self.subItemListControl.getSelectedItem()
@@ -324,11 +503,15 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                             rowControl.selectItem(0)
                             return
 
-                if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(
-                        self.OPTIONS_GROUP_ID)) and \
-                        (not util.addonSettings.fastBack or action == xbmcgui.ACTION_CONTEXT_MENU):
-                    if self.getProperty('on.extras'):
-                        self.setFocusId(self.OPTIONS_GROUP_ID)
+                # First Back out of the extras rows retracts to the button row instead of leaving
+                # the screen; on.extras clears as focus lands there, so a second Back falls straight
+                # through to the close below. Was a jump to OPTIONS_GROUP_ID (the header) until that
+                # group turned out to have nothing focusable on these screens - see
+                # retractToButtonRow() (mixins/common.py) and the ACTION_CONTEXT_MENU branch above.
+                # The old `or action == ACTION_CONTEXT_MENU` fastBack exemption went with it: menu
+                # now returns from that branch and never reaches here.
+                if not util.addonSettings.fastBack and self.getProperty('on.extras'):
+                    if self.retractToButtonRow():
                         return
 
             if action == xbmcgui.ACTION_LAST_PAGE and xbmc.getCondVisibility('ControlGroup(300).HasFocus(0)'):
@@ -346,7 +529,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 return
 
             if action == xbmcgui.ACTION_MOVE_UP and (controlID == self.SUB_ITEM_LIST_ID or
-                    self.INFO_BUTTON_ID <= controlID <= self.OPTIONS_BUTTON_ID):
+                    self.RESUME_BUTTON_ID <= controlID <= self.OPTIONS_BUTTON_ID):
                 self.updateBackgroundFrom(self.mediaItem)
 
             if controlID == self.RELATED_LIST_ID:
@@ -399,7 +582,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 return
         elif controlID == self.SUMMARY_BUTTON_ID:
             self.summaryButtonClicked()
-        elif controlID == self.PLAY_BUTTON_ID:
+        elif controlID in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
             self.playButtonClicked()
         elif controlID in self.WL_RELEVANT_BTNS and self.fromWatchlist and self.wl_availability:
             self.wl_item_opener(self.mediaItem, self.openItem)
@@ -782,14 +965,31 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             return
 
         items = self.mediaItem.all(unwatched=True)
+        # Read once and handed to both reorder_with_specials() and getNextShowEp() below: the two
+        # have to agree about specials or the queue ends up ordered by air date while the starting
+        # episode is still chosen as though they were all bunched at the front.
+        specials_mode = util.getSetting('tv_specials_order', 'default')
+        on_deck_pick = None
         if not shuffle and self.mediaItem.type == 'show':
-            items = playlist.reorder_with_specials(
-                items, mode=util.getSetting('tv_specials_order', 'default')
-            )
+            items = playlist.reorder_with_specials(items, mode=specials_mode)
+            # Before the playlist is built, not after: an episode that isn't in it can't be started
+            # from it, and the on-deck one is missing whenever the user has seen it before.
+            on_deck_pick = self.onDeckPick()
+            items = self.queueWithOnDeck(items, on_deck_pick)
         pl = playlist.LocalPlaylist(items, self.mediaItem.getServer())
         resume = False
         if not shuffle and self.mediaItem.type == 'show':
-            resume = self.getNextShowEp(pl, items, self.mediaItem.title)
+            # on_deck: setup() already reloads this show with includeOnDeck=1 (for the season
+            # posters' own progress bars, SeasonsMixin.getSeasonProgress()), so handing the list to
+            # getNextShowEp() costs nothing and lets the server's own whole-show "continue watching"
+            # pick choose the starting episode instead of the local scan. This screen is about the
+            # whole show, which is exactly the question that heuristic answers, and its answer is
+            # taken as authoritative when there is one - see that method's own docstring, and
+            # EpisodesWindow._defaultEpisode() (episodes.py) for why the season-level screen
+            # deliberately does the opposite.
+            resume = self.getNextShowEp(pl, items, self.mediaItem.title,
+                                        on_deck=[on_deck_pick] if on_deck_pick else None,
+                                        specials_mode=specials_mode)
             if resume is None:
                 return
 
@@ -1226,7 +1426,8 @@ class ArtistWindow(ShowWindow):
     def fillPopularTracks(self):
         items = []
         idx = 0
-        # A real track row (number/title/duration, script-plex-album.xml.tpl's own recipe), not
+        # A real track row (title over its album, duration to the right - loosely
+        # script-plex-album.xml.tpl's own recipe, minus the number column that one carries), not
         # another square-art carousel like Albums/Related above it - this is a list of tracks you
         # click to play (popularTrackClicked() below), not another set of things you open (on
         # request, after the first pass wrongly copied the card-carousel treatment).
@@ -1235,14 +1436,13 @@ class ArtistWindow(ShowWindow):
         for track in self.mediaItem.popularTracks:
             mli = kodigui.ManagedListItem(track.title or '', data_source=track)
             mli.setProperty('index', str(idx))
-            mli.setProperty('track.number', str(idx + 1))
             mli.setProperty('track.ID', track.ratingKey)
+            # parentTitle = the track's own album (playlist.py's own track rows use the same
+            # field for their album line) - the row's second, dimmed caption line.
+            mli.setProperty('track.album', track.parentTitle or '')
             mli.setProperty('track.duration', util.simplifiedTimeDisplay(track.duration.asInt()))
             items.append(mli)
             idx += 1
-
-        if items:
-            items[-1].setProperty('is.footer', '1')
 
         self.popularTracksListControl.reset()
         self.popularTracksListControl.addItems(items)

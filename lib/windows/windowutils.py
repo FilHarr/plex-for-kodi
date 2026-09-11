@@ -506,53 +506,132 @@ class UtilMixin(GoHomeMixin):
         from . import musicplayer
         self.processCommand(opener.handleOpen(musicplayer.MusicPlayerWindow, **kwargs))
 
-    def getNextShowEp(self, pl, items, title):
-        revitems = list(reversed(items))
-        in_progress = [i for i in revitems if i.get('viewOffset').asInt()]
-        if in_progress:
-            n = in_progress[0]
-            pl.setCurrent(n)
+    def getNextShowEp(self, pl, items, title, on_deck=None, specials_mode='default'):
+        """Pick which episode `pl` should start on, and return whether to resume it.
 
-            if not util.getSetting('assume_resume'):
-                choice = dropdown.showDropdown(
-                    options=[
-                        {'key': 'resume', 'display': T(32429, 'Resume from {0}').format(
-                            util.timeDisplay(n.viewOffset.asInt()).lstrip('0').lstrip(':'))},
-                        {'key': 'play', 'display': T(32317, 'Play from beginning')}
-                    ],
-                    pos=(660, 441),
-                    set_dropdown_prop=False,
-                    header=u'{0} - {1} \u2022 {2}'.format(title,
-                                                          T(32310, 'S').format(n.parentIndex),
-                                                          T(32311, 'E').format(n.index))
-                )
+        True/False = start on the item just set as current, resuming or not; None = the user backed
+        out of the resume prompt and nothing should play at all.
 
-                if not choice:
-                    return None
+        `on_deck` is the show's own OnDeck list (Show.onDeck, populated by the includeOnDeck=1
+        reload its window already does). Plex's on-deck pick is a whole-show "continue watching"
+        heuristic, which is exactly the question a show-level Play button asks - unlike
+        EpisodesWindow._defaultEpisode() (episodes.py), which needs one specific season's own next
+        episode and deliberately doesn't use it. An entry in it is authoritative, specials included;
+        the only pick that gets ignored is one that isn't in `items` at all. Optional - without it,
+        this falls back to the local scan it always did.
 
-                if choice['key'] == 'resume':
-                    return True
-            else:
-                return True
+        `specials_mode` must be the tv_specials_order value `items` was built with
+        (reorder_with_specials(), plexnet/playlist.py) - passed in rather than read here so the queue
+        order and this pick can't disagree about it. Under 'interleave' that ordering has already
+        decided where each special belongs by air date, so the scan below stops skipping them.
+
+        The pick itself is pickShowEp() below - this only adds the playlist and the prompt.
+        """
+        n = self.pickShowEp(items, on_deck=on_deck, specials_mode=specials_mode)
+        if n is None:
             return False
 
-        watched = False
-        for (k, i) in enumerate(revitems):
-            if watched:
-                try:
-                    pl.setCurrent(revitems[k-2])
-                    return False
-                except IndexError:
-                    break
-            if i.get('viewCount').asInt() > 0:
-                watched = True
+        pl.setCurrent(n)
 
-        non_special = [i for i in revitems if i.get('parentIndex').asInt() and i.get('viewCount').asInt() == 0]
-        use = items[0]
-        if non_special:
-            use = non_special[-1]
-        pl.setCurrent(use)
+        # Nothing to resume - an on-deck pick is usually just the next unwatched episode, and
+        # there's no question to ask about starting one of those from the beginning.
+        if not n.get('viewOffset').asInt():
+            return False
+
+        if not util.getSetting('assume_resume'):
+            choice = dropdown.showDropdown(
+                options=[
+                    {'key': 'resume', 'display': T(32429, 'Resume from {0}').format(
+                        util.timeDisplay(n.viewOffset.asInt()).lstrip('0').lstrip(':'))},
+                    {'key': 'play', 'display': T(32317, 'Play from beginning')}
+                ],
+                pos=(660, 441),
+                set_dropdown_prop=False,
+                header=u'{0} - {1} \u2022 {2}'.format(title,
+                                                      T(32310, 'S').format(n.parentIndex),
+                                                      T(32311, 'E').format(n.index))
+            )
+
+            if not choice:
+                return None
+
+            if choice['key'] == 'resume':
+                return True
+        else:
+            return True
         return False
+
+    def pickShowEp(self, items, on_deck=None, specials_mode='default'):
+        """Which episode a show-level Play would start on, or None for an empty queue.
+
+        Split out of getNextShowEp() above so the same answer can be had without touching a
+        playlist or putting a dialog on screen - the Seasons screen's own Play button labels
+        itself with it (setPlayButtonState(), subitems.py), off a background thread. Keep it free
+        of side effects for that reason.
+        """
+        if not items:
+            return None
+
+        revitems = list(reversed(items))
+
+        n = None
+        for v in (on_deck or []):
+            # __eq__ on these is ratingKey-based (media.MediaItem), so this both tests membership
+            # and lets setCurrent() below find the position. Membership matters: the playlist is
+            # built from unwatched episodes only, so an on-deck pick the server considers watched
+            # (or one from a season that got filtered out) has no slot to start from.
+            if v in items:
+                n = v
+                break
+
+        # Specials included, deliberately: an on-deck entry is taken as authoritative, whatever
+        # season it's in. This branch briefly refused an unstarted season-0 pick, on the theory that
+        # the local scan's own skip-past-specials rule (further down, and the one
+        # reorder_with_specials() documents for 'default' mode) shouldn't be quietly overruled by
+        # the server. Live data killed that: Battlestar's on-deck is the miniseries, which really is
+        # its first episode, and refusing it started the show on S01E01 instead. The skip below is
+        # for choosing blind - it's a heuristic about where specials usually sit, not a rule the
+        # server's own answer should lose to.
+        if n is None:
+            in_progress = [i for i in revitems if i.get('viewOffset').asInt()]
+            n = in_progress[0] if in_progress else None
+        if n is not None:
+            return n
+
+        # Nothing on deck and nothing in progress, so pick blind. Note `items` is normally the
+        # unwatched-only queue (Show.all(unwatched=True), video.py), which means the watched-episode
+        # walk just below is only ever reachable for a show with nothing left unwatched at all -
+        # i.e. a rewatch, where all() fell back to handing over every episode.
+
+        # Where they left off: revitems is newest-first, so the first watched episode walking it is
+        # the latest watched one in queue order, and the next episode after it is where to resume
+        # the show. Was `revitems[k-2]` inside the loop, which expressed the same idea by accident
+        # of negative indexing and wrapped around to items[0] when every episode was watched -
+        # live-caught on a fully-watched Battlestar, which started on a making-of special because
+        # that happened to be first in the queue. It also never fired at all when only the very
+        # first episode was watched, having run out of loop iterations to notice.
+        latest_watched = None
+        for (k, i) in enumerate(revitems):
+            if i.get('viewCount').asInt() > 0:
+                latest_watched = len(items) - 1 - k
+                break
+
+        if latest_watched is not None and latest_watched + 1 < len(items):
+            return items[latest_watched + 1]
+
+        # Otherwise the first unwatched episode in queue order. Specials are skipped for this -
+        # they sit at the front of PMS's own order regardless of when they aired, so starting on one
+        # is almost never what's wanted - unless the queue was built by air date, where that
+        # reasoning doesn't hold and skipping them would contradict the ordering the user asked for.
+        # Falling back to the first candidate covers a rewatch, where nothing is unwatched at all.
+        if specials_mode == 'interleave':
+            pool = items
+        else:
+            pool = [i for i in items if i.get('parentIndex').asInt()]
+        use = next((i for i in pool if i.get('viewCount').asInt() == 0), None)
+        if use is None:
+            use = pool[0] if pool else items[0]
+        return use
 
 
 

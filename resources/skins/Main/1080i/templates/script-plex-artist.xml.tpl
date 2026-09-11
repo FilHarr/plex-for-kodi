@@ -26,10 +26,10 @@
          own Visible() so an artist missing a given album type (common - most have no Live/Demo/Remix
          albums) doesn't leave a gap-sized hole in the slide (grouplist 600 skips invisible children
          entirely when auto-stacking, so a row that contributed no real height shouldn't contribute a
-         slide increment either). Row heights: Popular Tracks 460, every album-type/Albums row 400,
+         slide increment either). Row heights: Popular Tracks 596, every album-type/Albums row 400,
          Related 520, itemgap 5 - see grouplist 600 and includes/artist_album_row.xml.tpl below. -->
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),1) + Control.IsVisible(501)" reversible="true">
-        <effect type="slide" end="0,{{ vscale(-481) }}" time="200" tween="quadratic" easing="out"/>
+        <effect type="slide" end="0,{{ vscale(-601) }}" time="200" tween="quadratic" easing="out"/>
     </animation>
     <animation type="Conditional" condition="Integer.IsGreater(Window.Property(hub.focus),2) + Control.IsVisible(502)" reversible="true">
         <effect type="slide" end="0,{{ vscale(-410) }}" time="200" tween="quadratic" easing="out"/>
@@ -270,12 +270,13 @@
              group 100 and was never re-derived. -->
         <posy>{{ vscale(466) }}</posy>
         <width>1920</width>
-        <height>{{ vscale(3820) }}</height>
+        <height>{{ vscale(3940) }}</height>
         <onup>300</onup>
         <itemgap>5</itemgap>
 
         <!-- POPULAR TRACKS -->
-        <!-- A real track row (number/title/duration, script-plex-album.xml.tpl's own list recipe),
+        <!-- A real track row (title/duration on a pill, loosely script-plex-album.xml.tpl's own
+             list recipe - the number column that recipe carries was dropped here on request),
              not another square-art carousel like the rows below it - these are tracks you click to
              play (popularTrackClicked(), subitems.py), not things you open. PopularLeaves entries
              arrive pre-sorted by ratingCount (server-side) - no client sort/pagination needed. -->
@@ -285,7 +286,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>1920</width>
-            <height>{{ vscale(476) }}</height>
+            <height>{{ vscale(596) }}</height>
             <control type="label">
                 <posx>61</posx>
                 <posy>0</posy>
@@ -301,7 +302,7 @@
                 <posx>53</posx>
                 <posy>{{ vscale(86) }}</posy>
                 <width>1867</width>
-                <height>{{ vscale(380) }}</height>
+                <height>{{ vscale(500) }}</height>
                 <onup>300</onup>
                 <ondown>400</ondown>
                 <onleft>9000</onleft>
@@ -310,120 +311,176 @@
                 <orientation>vertical</orientation>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
-                <itemlayout height="{{ vscale(76) }}">
+                <itemlayout height="{{ vscale(100) }}">
                     <control type="group">
                         <posx>8</posx>
                         <posy>0</posy>
+                        <!-- Unfocused pill - geometry identical to the focused one below (same posy 4,
+                             1694x92, same border="10" rounded texture), so focusing a row swaps the
+                             pill's colour and nothing moves or resizes. 60000000 is the pre-play
+                             review card's own unfocused panel tint (script-plex-pre_play.xml.tpl),
+                             on request - a dark translucent bed rather than the lighter fill the
+                             focus pill uses. -->
+                        <control type="image">
+                            <posx>0</posx>
+                            <posy>{{ vscale(4) }}</posy>
+                            <width>1694</width>
+                            <height>{{ vscale(92) }}</height>
+                            <texture border="10" colordiffuse="60000000">script.plex/white-square-rounded.png</texture>
+                        </control>
+                        <!-- Text stack: title on top, the track's own album under it, duration to the
+                             right - two 30px line boxes styled like the album cards' own captions
+                             (includes/artist_album_row.xml.tpl): FFFFFFFF first line, AAFFFFFF second,
+                             neither bolded. font8 on the album line, not the cards' own font10 (on
+                             request), so the two lines are 27.8px and 21.8px of actual line height
+                             (InterUI at size 23 and 18; (1984+494)/2048 em per line).
+                             Boxes at 23 and 50 inside the 100px row: that lands the title's line box at
+                             24.1 and the album's bottom at 75.9, i.e. 20px clear of the pill's own
+                             4..96 at both ends - the same breathing room the title had back when it was
+                             a single font10 line centred on the old 76px row, and 2.2px of leading
+                             between the two lines, unchanged from the font10/font10 pair. Row height
+                             follows from that: 20 + 27.8 + 2.2 + 21.8 + 20 = 92 of pill, + 4px top and
+                             bottom = 100.
+                             The title is written twice, gated on whether this row is the track currently
+                             playing - Kodi can't switch a single label's textcolor on a condition. The
+                             playing row is tinted FFE5A00D (the theme's own accent, what the button focus
+                             textures use) rather than carrying a now-playing glyph in a left gutter: with
+                             the track number gone there's no column for one to live in, and reserving one
+                             would indent every title for a marker that shows on at most one row. -->
                         <control type="label">
                             <visible>!String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>60</width>
-                            <height>{{ vscale(76) }}</height>
-                            <font>font10</font>
-                            <align>center</align>
-                            <aligny>center</aligny>
-                            <textcolor>D8FFFFFF</textcolor>
-                            <label>[B]$INFO[ListItem.Property(track.number)][/B]</label>
-                        </control>
-                        <control type="image">
-                            <visible>String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
-                            <posx>12</posx>
-                            <posy>{{ vscale(21) }}</posy>
-                            <width>35</width>
-                            <height>{{ vscale(35) }}</height>
-                            <texture>script.plex/indicators/playing-circle.png</texture>
-                            <colordiffuse>FFE5A00D</colordiffuse>
-                        </control>
-                        <control type="label">
-                            <posx>90</posx>
-                            <posy>0</posy>
-                            <width>1600</width>
-                            <height>{{ vscale(76) }}</height>
+                            <scroll>false</scroll>
+                            <posx>18</posx>
+                            <posy>{{ vscale(23) }}</posy>
+                            <width>1501</width>
+                            <height>{{ vscale(30) }}</height>
                             <font>font10</font>
                             <align>left</align>
                             <aligny>center</aligny>
                             <textcolor>FFFFFFFF</textcolor>
-                            <label>[B]$INFO[ListItem.Label][/B]</label>
+                            <label>$INFO[ListItem.Label]</label>
                         </control>
                         <control type="label">
-                            <posx>1697</posx>
+                            <visible>String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+                            <scroll>false</scroll>
+                            <posx>18</posx>
+                            <posy>{{ vscale(23) }}</posy>
+                            <width>1501</width>
+                            <height>{{ vscale(30) }}</height>
+                            <font>font10</font>
+                            <align>left</align>
+                            <aligny>center</aligny>
+                            <textcolor>FFE5A00D</textcolor>
+                            <label>$INFO[ListItem.Label]</label>
+                        </control>
+                        <control type="label">
+                            <scroll>false</scroll>
+                            <posx>18</posx>
+                            <posy>{{ vscale(50) }}</posy>
+                            <width>1501</width>
+                            <height>{{ vscale(30) }}</height>
+                            <font>font8</font>
+                            <align>left</align>
+                            <aligny>center</aligny>
+                            <textcolor>AAFFFFFF</textcolor>
+                            <label>$INFO[ListItem.Property(track.album)]</label>
+                        </control>
+                        <control type="label">
+                            <!-- 1526, not 1694-150: right edge lands 18px short of the pill's own
+                                 right edge, mirroring the title's own 18px inset on the left. Kept
+                                 centred on the full 76px row rather than sat on the title's line, so
+                                 it reads against the two-line block as a whole. -->
+                            <posx>1526</posx>
                             <posy>0</posy>
                             <width>150</width>
-                            <height>{{ vscale(76) }}</height>
+                            <height>{{ vscale(100) }}</height>
                             <font>font10</font>
                             <align>right</align>
                             <aligny>center</aligny>
                             <textcolor>D8FFFFFF</textcolor>
-                            <label>[B]$INFO[ListItem.Property(track.duration)][/B]</label>
-                        </control>
-                        <control type="image">
-                            <visible>String.IsEmpty(ListItem.Property(is.footer))</visible>
-                            <posx>0</posx>
-                            <posy>{{ vscale(73) }}</posy>
-                            <width>1847</width>
-                            <height>{{ vscale(2) }}</height>
-                            <texture>script.plex/white-square.png</texture>
-                            <colordiffuse>40000000</colordiffuse>
+                            <label>$INFO[ListItem.Property(track.duration)]</label>
                         </control>
                     </control>
                 </itemlayout>
 
                 <!-- FOCUSED LAYOUT ####################################### -->
-                <focusedlayout height="{{ vscale(76) }}">
+                <focusedlayout height="{{ vscale(100) }}">
                     <control type="group">
-                        <posx>10</posx>
+                        <!-- 8, matching the itemlayout's own group posx exactly - anything else
+                             slides every label sideways the moment a row takes focus. -->
+                        <posx>8</posx>
                         <posy>0</posy>
+                        <!-- Focus highlight, built the same way as the button row's own focus pill
+                             (episode_button_label.xml.tpl): white-square-rounded.png at border="10"
+                             and 33FFFFFF - the same tint the sidebar's focused item and the library
+                             filter/sort dropdowns use. The earlier version of this drew the same
+                             texture with no border attribute at all, so Kodi stretched the 100x100
+                             source's rounded corners into ~165px horizontal ramps across a box
+                             this wide, and at 22FFFFFF there was barely anything left to see - reported
+                             live as no visible focus at all. border="10" keeps the corners at their
+                             native radius and stretches only the middle.
+                             Inset 4px top/bottom (92 of the row's 100) so the rounded ends actually
+                             read as a pill instead of butting against the rows above and below.
+                             1694 wide, not the earlier 1647: this pill's left edge sits at absolute
+                             x=113 (group 50's 52 + list 402's 53 + the item group's own 8 - the same
+                             113 every heading on this screen aligns to), so 1920 - 113 - 113 = 1694
+                             puts its right edge exactly as far from the screen edge as its left. -->
                         <control type="image">
                             <posx>0</posx>
-                            <posy>0</posy>
-                            <width>1847</width>
-                            <height>{{ vscale(76) }}</height>
-                            <texture>script.plex/white-square-rounded.png</texture>
-                            <colordiffuse>22FFFFFF</colordiffuse>
+                            <posy>{{ vscale(4) }}</posy>
+                            <width>1694</width>
+                            <height>{{ vscale(92) }}</height>
+                            <texture border="10" colordiffuse="33FFFFFF">script.plex/white-square-rounded.png</texture>
                         </control>
+                        <!-- Text stack - see the itemlayout's own copy above. -->
                         <control type="label">
                             <visible>!String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>60</width>
-                            <height>{{ vscale(76) }}</height>
-                            <font>font10</font>
-                            <align>center</align>
-                            <aligny>center</aligny>
-                            <textcolor>FFFFFFFF</textcolor>
-                            <label>[B]$INFO[ListItem.Property(track.number)][/B]</label>
-                        </control>
-                        <control type="image">
-                            <visible>String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
-                            <posx>12</posx>
-                            <posy>{{ vscale(21) }}</posy>
-                            <width>35</width>
-                            <height>{{ vscale(35) }}</height>
-                            <texture>script.plex/indicators/playing-circle.png</texture>
-                            <colordiffuse>FFE5A00D</colordiffuse>
-                        </control>
-                        <control type="label">
-                            <posx>90</posx>
-                            <posy>0</posy>
-                            <width>1600</width>
-                            <height>{{ vscale(76) }}</height>
+                            <scroll>Control.HasFocus(402)</scroll>
+                            <posx>18</posx>
+                            <posy>{{ vscale(23) }}</posy>
+                            <width>1501</width>
+                            <height>{{ vscale(30) }}</height>
                             <font>font10</font>
                             <align>left</align>
                             <aligny>center</aligny>
                             <textcolor>FFFFFFFF</textcolor>
-                            <label>[B]$INFO[ListItem.Label][/B]</label>
+                            <label>$INFO[ListItem.Label]</label>
                         </control>
                         <control type="label">
-                            <posx>1697</posx>
+                            <visible>String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+                            <scroll>Control.HasFocus(402)</scroll>
+                            <posx>18</posx>
+                            <posy>{{ vscale(23) }}</posy>
+                            <width>1501</width>
+                            <height>{{ vscale(30) }}</height>
+                            <font>font10</font>
+                            <align>left</align>
+                            <aligny>center</aligny>
+                            <textcolor>FFE5A00D</textcolor>
+                            <label>$INFO[ListItem.Label]</label>
+                        </control>
+                        <control type="label">
+                            <scroll>false</scroll>
+                            <posx>18</posx>
+                            <posy>{{ vscale(50) }}</posy>
+                            <width>1501</width>
+                            <height>{{ vscale(30) }}</height>
+                            <font>font8</font>
+                            <align>left</align>
+                            <aligny>center</aligny>
+                            <textcolor>AAFFFFFF</textcolor>
+                            <label>$INFO[ListItem.Property(track.album)]</label>
+                        </control>
+                        <control type="label">
+                            <posx>1526</posx>
                             <posy>0</posy>
                             <width>150</width>
-                            <height>{{ vscale(76) }}</height>
+                            <height>{{ vscale(100) }}</height>
                             <font>font10</font>
                             <align>right</align>
                             <aligny>center</aligny>
-                            <textcolor>FFFFFFFF</textcolor>
-                            <label>[B]$INFO[ListItem.Property(track.duration)][/B]</label>
+                            <textcolor>D8FFFFFF</textcolor>
+                            <label>$INFO[ListItem.Property(track.duration)]</label>
                         </control>
                     </control>
                 </focusedlayout>
