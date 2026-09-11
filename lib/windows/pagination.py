@@ -268,8 +268,17 @@ class BaseRelatedPaginator(MCLPaginator):
     pageSize = initialPageSize
     orphans = initialPageSize // 2
 
+    # Music types map to music.png, not the 'movie' catch-all: ArtistWindow's Similar Artists row
+    # (subitems.py) is the one related row that carries non-video items, and an artless artist tile
+    # was showing a movie fallback next to album tiles whose own fallback fill() sets to music.png.
+    # Inert for every other caller (preplay/subitems ShowWindow related rows never see these types).
+    THUMB_FALLBACKS = {
+        'show': 'show', 'season': 'show', 'episode': 'show',
+        'artist': 'music', 'album': 'music', 'track': 'music',
+    }
+
     thumbFallback = lambda self, rel: 'script.plex/thumb_fallbacks/{0}.png'.format(
-        rel.type in ('show', 'season', 'episode') and 'show' or 'movie')
+        self.THUMB_FALLBACKS.get(rel.type, 'movie'))
 
     @property
     def nextPage(self):

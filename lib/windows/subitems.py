@@ -1239,6 +1239,12 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 class ArtistWindow(ShowWindow):
     xmlFile = 'script-plex-artist.xml'
 
+    # Square, not the base class's 268x402 poster dims: this screen's Similar Artists row draws
+    # square 240x240 tiles (script-plex-artist.xml.tpl's list 401, same recipe as the album rows'
+    # includes/artist_album_row.xml.tpl), so a 2:3 poster fetch was pulling art taller than the
+    # tile could ever use. 240 matches the drawn size exactly.
+    RELATED_DIM = util.scaleResolution(240, 240)
+
     SUB_ITEM_LIST_ID = 400
     EXTRA_LIST_ID = None
     ROLES_LIST_ID = None

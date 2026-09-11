@@ -6,6 +6,11 @@
      hub-row card recipe: shadow box = art + 24 at (0,0) with the art inset 3px inside it
      (drop-shadow-directional.png, border=24), ring = art + 6 at (0,0). See grouplist 600's own
      comment in script-plex-artist.xml.tpl for the full recipe and why it's shared.
+     Cell width 282 for 240 art: the card's own 8px left inset (group posx=5 + art group posx=3)
+     plus a 34px remainder on the right, so adjacent tiles sit 42px apart. The whole of the 22px
+     added over the original 260 falls on the right-hand side - splitting it would have shifted
+     the row's first tile off the clip line described below. Kept in step with the Similar Artists
+     row (script-plex-artist.xml.tpl's list 401), which carries its own copy of this geometry.
      posx=51 on the list (not 53): the clip line follows from the recipe, not the other way round -
      it sits at 113 minus the itemlayout's own 10px left margin, so absolute x=103 (group 50's own
      posx=52 + this 51). Rows with a smaller item margin clip at 105 by the same rule. Both are far
@@ -44,7 +49,7 @@
         <orientation>horizontal</orientation>
         <preloaditems>4</preloaditems>
         <!-- ITEM LAYOUT ########################################## -->
-        <itemlayout width="260">
+        <itemlayout width="282">
             <control type="group">
                 <posx>5</posx>
                 <posy>{{ vscale(61) }}</posy>
@@ -103,7 +108,7 @@
         </itemlayout>
 
         <!-- FOCUSED LAYOUT ####################################### -->
-        <focusedlayout width="260">
+        <focusedlayout width="282">
             <control type="group">
                 <posx>5</posx>
                 <posy>{{ vscale(61) }}</posy>

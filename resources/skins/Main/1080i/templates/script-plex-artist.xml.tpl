@@ -533,7 +533,7 @@
             <orientation>horizontal</orientation>
             <preloaditems>4</preloaditems>
             <!-- ITEM LAYOUT ########################################## -->
-            <itemlayout width="260">
+            <itemlayout width="282">
                 <control type="group">
                     <posx>5</posx>
                     <posy>{{ vscale(61) }}</posy>
@@ -565,31 +565,21 @@
                             <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
                             <aspectratio scalediffuse="false">scale</aspectratio>
                         </control>
-                        <control type="group">
+                        <!-- Single caption line, flat (no wrapper group): the second line this row
+                             used to carry was bound to ListItem.Property(year), which only the album
+                             rows ever set (fill()/fillAlbumTypeRows(), subitems.py) - RelatedPaginator
+                             never sets it, so it rendered blank on every tile. Same posy=249 first
+                             line the album rows use (includes/artist_album_row.xml.tpl). -->
+                        <control type="label">
+                            <scroll>false</scroll>
                             <posx>0</posx>
                             <posy>{{ vscale(249) }}</posy>
-                            <control type="label">
-                                <scroll>false</scroll>
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>240</width>
-                                <height>{{ vscale(30) }}</height>
-                                <font>font10</font>
-                                <align>center</align>
-                                <textcolor>FFFFFFFF</textcolor>
-                                <label>$INFO[ListItem.Label]</label>
-                            </control>
-                            <control type="label">
-                                <scroll>false</scroll>
-                                <posx>0</posx>
-                                <posy>{{ vscale(30) }}</posy>
-                                <width>240</width>
-                                <height>{{ vscale(30) }}</height>
-                                <font>font10</font>
-                                <align>center</align>
-                                <textcolor>FFFFFFFF</textcolor>
-                                <label>$INFO[ListItem.Property(year)]</label>
-                            </control>
+                            <width>240</width>
+                            <height>{{ vscale(30) }}</height>
+                            <font>font10</font>
+                            <align>center</align>
+                            <textcolor>FFFFFFFF</textcolor>
+                            <label>$INFO[ListItem.Label]</label>
                         </control>
                         <!-- Boundary/updating overlays, re-centred for 240 art: chevron (240-61)/2 = 89.5,
                              (240-100)/2 = 70; busy (240-128)/2 = 56. -->
@@ -632,7 +622,7 @@
             </itemlayout>
 
             <!-- FOCUSED LAYOUT ####################################### -->
-            <focusedlayout width="260">
+            <focusedlayout width="282">
                 <control type="group">
                     <posx>5</posx>
                     <posy>{{ vscale(61) }}</posy>
@@ -672,31 +662,17 @@
                                 <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false">scale</aspectratio>
                             </control>
-                            <control type="group">
+                            <!-- See the itemlayout's own copy above for why there's only one line. -->
+                            <control type="label">
+                                <scroll>Control.HasFocus(401)</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(249) }}</posy>
-                                <control type="label">
-                                    <scroll>Control.HasFocus(401)</scroll>
-                                    <posx>0</posx>
-                                    <posy>0</posy>
-                                    <width>240</width>
-                                    <height>{{ vscale(30) }}</height>
-                                    <font>font10</font>
-                                    <align>center</align>
-                                    <textcolor>FFFFFFFF</textcolor>
-                                    <label>$INFO[ListItem.Label]</label>
-                                </control>
-                                <control type="label">
-                                    <scroll>false</scroll>
-                                    <posx>0</posx>
-                                    <posy>{{ vscale(30) }}</posy>
-                                    <width>240</width>
-                                    <height>{{ vscale(30) }}</height>
-                                    <font>font10</font>
-                                    <align>center</align>
-                                    <textcolor>FFFFFFFF</textcolor>
-                                    <label>$INFO[ListItem.Property(year)]</label>
-                                </control>
+                                <width>240</width>
+                                <height>{{ vscale(30) }}</height>
+                                <font>font10</font>
+                                <align>center</align>
+                                <textcolor>FFFFFFFF</textcolor>
+                                <label>$INFO[ListItem.Label]</label>
                             </control>
                             <!-- Boundary/updating overlays, re-centred for 240 art: chevron (240-61)/2 = 89.5,
                                  (240-100)/2 = 70; busy (240-128)/2 = 56. -->

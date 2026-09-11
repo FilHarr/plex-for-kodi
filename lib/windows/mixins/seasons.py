@@ -18,7 +18,9 @@ class SeasonsMixin(object):
         },
         'artist': {
             'main.thumb': util.scaleResolution(519, 519),
-            'item.thumb': util.scaleResolution(215, 215)
+            # 240x240 = the artist screen's own drawn album-tile size exactly
+            # (includes/artist_album_row.xml.tpl) - was 215, which the skin then upscaled.
+            'item.thumb': util.scaleResolution(240, 240)
         }
     }
 
