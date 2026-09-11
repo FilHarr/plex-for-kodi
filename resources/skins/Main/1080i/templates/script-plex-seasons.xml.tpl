@@ -470,27 +470,17 @@
                                 <aspectratio scalediffuse="false">scale</aspectratio>
                             </control>
                             {% include "includes/watched_indicator.xml.tpl" with xoff=240 & wbg_w=22.3 & wbg_h=22.3 & count_zoom=28.7 & with_count=True & scale="small" %}
-                            <control type="group">
-                                <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
-                                <posx>8</posx>
-                                <posy>{{ vscale(344) }}</posy>
-                                <control type="image">
-                                    <posx>0</posx>
-                                    <posy>0</posy>
-                                    <width>224</width>
-                                    <height>{{ vscale(8) }}</height>
-                                    <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
-                                    <colordiffuse>E60A0F1A</colordiffuse>
-                                </control>
-                                <control type="image">
-                                    <posx>0</posx>
-                                    <posy>0</posy>
-                                    <width>224</width>
-                                    <height>{{ vscale(8) }}</height>
-                                    <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
-                                    <colordiffuse>FFE5A00D</colordiffuse>
-                                </control>
-                            </control>
+                            <!-- No progress bar on a season poster (removed 2026-09-11, on request).
+                                 It only ever appeared on one poster per show - fillSeasons()
+                                 (mixins/seasons.py) latched the first non-Specials season that
+                                 wasn't fully watched and gave that one alone a bar - which is
+                                 "where the earliest gap is", not "where you left off": on a show
+                                 with an earlier part-watched season it contradicted both the row's
+                                 own on-deck-driven Play button and the user's actual position, and
+                                 on the common cases (nothing started, or the next season not begun)
+                                 it computed 0% and rendered nothing at all. The per-episode bars on
+                                 the Episodes screen (script-plex-episodes.xml.tpl) and the Related
+                                 row's own below are unaffected - those are about one video each. -->
                             <control type="label">
                                 <scroll>false</scroll>
                                 <posx>0</posx>
@@ -548,27 +538,7 @@
                                     <aspectratio scalediffuse="false">scale</aspectratio>
                                 </control>
                                 {% include "includes/watched_indicator.xml.tpl" with xoff=240 & wbg_w=22.3 & wbg_h=22.3 & count_zoom=28.7 & with_count=True & scale="small" %}
-                                <control type="group">
-                                    <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
-                                    <posx>8</posx>
-                                    <posy>{{ vscale(344) }}</posy>
-                                    <control type="image">
-                                        <posx>0</posx>
-                                        <posy>0</posy>
-                                        <width>224</width>
-                                        <height>{{ vscale(8) }}</height>
-                                        <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
-                                        <colordiffuse>E60A0F1A</colordiffuse>
-                                    </control>
-                                    <control type="image">
-                                        <posx>0</posx>
-                                        <posy>0</posy>
-                                        <width>224</width>
-                                        <height>{{ vscale(8) }}</height>
-                                        <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
-                                        <colordiffuse>FFE5A00D</colordiffuse>
-                                    </control>
-                                </control>
+                                <!-- No progress bar here either - see the itemlayout's own comment. -->
                                 <control type="label">
                                     <scroll>Control.HasFocus(400)</scroll>
                                     <posx>0</posx>

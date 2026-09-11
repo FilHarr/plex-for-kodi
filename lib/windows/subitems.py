@@ -979,8 +979,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         pl = playlist.LocalPlaylist(items, self.mediaItem.getServer())
         resume = False
         if not shuffle and self.mediaItem.type == 'show':
-            # on_deck: setup() already reloads this show with includeOnDeck=1 (for the season
-            # posters' own progress bars, SeasonsMixin.getSeasonProgress()), so handing the list to
+            # on_deck: setup() already reloads this show with includeOnDeck=1 (originally for the
+            # season posters' own progress bars, since removed - it's this button and the
+            # rewatch-detection in fillSeasons() that need it now), so handing the list to
             # getNextShowEp() costs nothing and lets the server's own whole-show "continue watching"
             # pick choose the starting episode instead of the local scan. This screen is about the
             # whole show, which is exactly the question that heuristic answers, and its answer is

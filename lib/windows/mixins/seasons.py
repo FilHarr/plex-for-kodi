@@ -1,6 +1,4 @@
 # coding=utf-8
-import math
-
 from lib import util
 from lib.i18n import T
 from lib.windows import kodigui
@@ -34,26 +32,6 @@ class SeasonsMixin(object):
         episode_str = T(35057, '{} episode') if episode_count == 1 else T(35056, '{} episodes')
         mli.setProperty('episode.count', episode_str.format(episode_count))
         return mli
-
-    def getSeasonProgress(self, show, season):
-        """
-        calculates the season progress based on how many episodes are watched and, optionally, if there's an episode
-        in progress, take that into account as well
-        """
-        viewed = season.viewedLeafCount.asInt()
-        has_ondeck_progress = False
-        for v in show.onDeck:
-            if v.parentRatingKey == season.ratingKey and v.viewOffset.asInt():
-                has_ondeck_progress = True
-                break
-        if has_ondeck_progress and viewed == season.leafCount.asInt():
-            viewed -= 1
-        watchedPerc = viewed / season.leafCount.asInt() * 100
-        for v in show.onDeck:
-            if v.parentRatingKey == season.ratingKey and v.viewOffset:
-                vPerc = int((v.viewOffset.asInt() / v.duration.asFloat()) * 100)
-                watchedPerc += vPerc / season.leafCount.asFloat()
-        return watchedPerc > 0 and math.ceil(watchedPerc) or 0
 
     def fillSeasons(self, show, update=False, seasonsFilter=None, selectSeason=None, do_focus=True,
                      extraFirstItem=None, altControlAttr=None, altThreshold=6):
@@ -96,9 +74,12 @@ class SeasonsMixin(object):
                 mli.setProperty('unwatched.count', not seasonWatched and str(season.unViewedLeafCount) or '')
                 mli.setBoolProperty('unwatched.count.large', not seasonWatched and season.unViewedLeafCount > 999)
                 mli.setBoolProperty('watched', seasonWatched)
+                # Which season the row lands on when the caller didn't name one: the first
+                # non-Specials season that isn't fully watched. `focus is None` latches it, so only
+                # the first match counts. This used to give that same season a progress bar on its
+                # poster as well - dropped on request, see script-plex-seasons.xml.tpl for why.
                 if not selectSeason and not seasonWatched and focus is None and season.index.asInt() > 0:
                     focus = idx
-                    mli.setProperty('progress', util.getProgressImage(None, self.getSeasonProgress(show, season)))
                 items.append(mli)
                 idx += 1
 
