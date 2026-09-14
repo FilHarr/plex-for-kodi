@@ -453,13 +453,34 @@
                              1694 wide, not the earlier 1647: this pill's left edge sits at absolute
                              x=113 (group 50's 52 + list 402's 53 + the item group's own 8 - the same
                              113 every heading on this screen aligns to), so 1920 - 113 - 113 = 1694
-                             puts its right edge exactly as far from the screen edge as its left. -->
+                             puts its right edge exactly as far from the screen edge as its left.
+                             Gated on Control.HasFocus(402), with the itemlayout's own 60000000 pill
+                             drawn instead when the row list doesn't have focus: Kodi renders a
+                             list's focusedlayout for its SELECTED item regardless of whether the
+                             control itself is focused, so an ungated focus pill here left one
+                             popular track permanently lit while the user was somewhere else
+                             entirely on the screen (whichever row the selection happened to rest
+                             on - the first, or the last if the list had been entered from below).
+                             Live-reported. This is the same reason the album and Similar Artists
+                             rows gate their own focus rings on Control.HasFocus. Two controls
+                             rather than one, because a texture's colordiffuse can't be switched on
+                             a condition; identical geometry, so nothing moves or resizes as focus
+                             arrives and the swap reads as a pure colour change. -->
                         <control type="image">
+                            <visible>Control.HasFocus(402)</visible>
                             <posx>0</posx>
                             <posy>{{ vscale(4) }}</posy>
                             <width>1694</width>
                             <height>{{ vscale(92) }}</height>
                             <texture border="10" colordiffuse="33FFFFFF">script.plex/white-square-rounded.png</texture>
+                        </control>
+                        <control type="image">
+                            <visible>!Control.HasFocus(402)</visible>
+                            <posx>0</posx>
+                            <posy>{{ vscale(4) }}</posy>
+                            <width>1694</width>
+                            <height>{{ vscale(92) }}</height>
+                            <texture border="10" colordiffuse="60000000">script.plex/white-square-rounded.png</texture>
                         </control>
                         <!-- Text stack - see the itemlayout's own copy above. -->
                         <control type="label">
