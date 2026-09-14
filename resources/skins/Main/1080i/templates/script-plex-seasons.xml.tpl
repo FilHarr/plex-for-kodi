@@ -214,6 +214,11 @@
              highlight itself is the separate image below instead, not this control's own texture, so
              it can be sized bigger than the actual hit area. -->
         <control type="button" id="305">
+            <!-- No target when there's no summary to open: an enabled button over empty space
+                 is a focus stop in the middle of the header that opens a blank popup. Every nav tag
+                 routing through it carries the same condition, so the chain closes up instead of
+                 dead-ending on a control that isn't there. -->
+            <visible>!String.IsEmpty(Window.Property(summary))</visible>
             <posx>61</posx>
             <posy>{{ vscale(277) }}</posy>
             <width>813</width>
@@ -291,7 +296,12 @@
                      same reasoning as Artist's own copy. The season-tab row fallback (205/206/200)
                      this used to carry directly has moved up onto 305's own onup instead, one level
                      further up the chain. -->
-                <onup>305</onup>
+                <onup condition="!String.IsEmpty(Window.Property(summary))">305</onup>
+                <!-- Fallback replicates 305's own onup chain, so the row behaves as if the target
+                     simply weren't there. -->
+                <onup condition="Control.IsVisible(205)">205</onup>
+                <onup condition="Control.IsVisible(206)">206</onup>
+                <onup>200</onup>
                 <ondown>400</ondown>
                 <onleft>9000</onleft>
                 <itemgap>{{ theme.seasons.buttongroup.itemgap }}</itemgap>
@@ -1377,7 +1387,9 @@
     <onright>noop</onright>
     <!-- 305 (the summary click-target), not straight to 300: visits it in top-to-bottom order on
          the way down, matching 305's own onup back up to here/206. -->
-    <ondown>305</ondown>
+    <ondown condition="!String.IsEmpty(Window.Property(summary))">305</ondown>
+    <!-- Fallback is 305's own ondown, skipping the stop when there's no summary. -->
+    <ondown>300</ondown>
     <orientation>horizontal</orientation>
     <!-- ITEM LAYOUT ########################################## -->
     <!-- 200, not 170: cell widened again on request (7 tabs visible instead of ~8.4). Label 170 (200-30,
@@ -1479,7 +1491,9 @@
     <onright>noop</onright>
     <!-- 305 (the summary click-target), not straight to 300: visits it in top-to-bottom order on
          the way down, matching 305's own onup back up to here/206. -->
-    <ondown>305</ondown>
+    <ondown condition="!String.IsEmpty(Window.Property(summary))">305</ondown>
+    <!-- Fallback is 305's own ondown, skipping the stop when there's no summary. -->
+    <ondown>300</ondown>
     <orientation>horizontal</orientation>
     <itemlayout width="200" height="{{ vscale(135) }}">
         <control type="label">

@@ -112,7 +112,12 @@
                 <height>{{ vscale(145) }}</height>
                 <!-- 305 (the summary click-target), not straight to 200: keeps that new focus stop
                      reachable from the button row via remote/keyboard, not just mouse/touch. -->
-                <onup>305</onup>
+                <onup condition="!String.IsEmpty(Window.Property(summary))">305</onup>
+                <!-- Fallback is exactly where 305's own onup goes, so the row behaves as if the
+                     target simply weren't there. 200 is the header group, which has no focusable
+                     children on this screen (header_topleft is blanked in favour of the sidebar),
+                     so in practice this consumes the press. -->
+                <onup>200</onup>
                 <!-- 402 (Popular Tracks), not 400 - see group 50's own defaultcontrol comment above. -->
                 <ondown>402</ondown>
                 <onleft>9000</onleft>
@@ -228,6 +233,11 @@
              the focus highlight itself is the separate image below instead, not this control's own
              texture, so it can be sized bigger than the actual hit area. -->
         <control type="button" id="305">
+            <!-- No target when there's no summary to open: an enabled button over empty space
+                 is a focus stop in the middle of the header that opens a blank popup. Every nav tag
+                 routing through it carries the same condition, so the chain closes up instead of
+                 dead-ending on a control that isn't there. -->
+            <visible>!String.IsEmpty(Window.Property(summary))</visible>
             <posx>61</posx>
             <posy>{{ vscale(277) }}</posy>
             <width>813</width>

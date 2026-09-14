@@ -120,7 +120,9 @@
             <!-- 350 (the summary click-target), not straight to 200: keeps that focus stop reachable
                  from the button row via remote/keyboard, not just mouse/touch - same fix Artist's/
                  Seasons'/Episodes' own button rows already got. -->
-            <onup>350</onup>
+            <onup condition="!String.IsEmpty(Window.Property(summary))">350</onup>
+            <!-- Fallback is 350's own onup, skipping the stop when there's no summary. -->
+            <onup>200</onup>
             <ondown>400</ondown>
             <onleft>9000</onleft>
             <itemgap>{{ theme.pre_play.buttongroup.itemgap }}</itemgap>
@@ -369,6 +371,10 @@
                      Control.setWidth() calls meant for that pill
                      (MediaInfoPillsMixin.resizeMediaInfoPills()) were hitting this button instead. -->
                 <control type="button" id="350">
+                    <!-- No target when there's no summary: an enabled button over empty space is a
+                         focus stop that opens a blank popup. The nav tag routing through it carries
+                         the same condition, so the chain closes up. -->
+                    <visible>!String.IsEmpty(Window.Property(summary))</visible>
                     <posx>61</posx>
                     <posy>{{ vscale(277) }}</posy>
                     <width>813</width>

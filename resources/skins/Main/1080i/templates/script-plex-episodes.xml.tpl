@@ -300,6 +300,12 @@
              of the label", since Control.setWidth() calls meant for that pill
              (MediaInfoPillsMixin.resizeMediaInfoPills()) were hitting this button instead. -->
         <control type="button" id="350">
+            <!-- No target when the focused episode has no summary: an enabled button over empty
+                 space is a focus stop that opens a blank popup. Every nav tag routing through it
+                 carries the same condition, so the chain closes up instead of dead-ending on a
+                 control that isn't there. Keyed off the episode row's own item, not a window
+                 property - this summary changes with the focused episode. -->
+            <visible>!String.IsEmpty(Container(400).ListItem.Property(summary))</visible>
             <posx>53</posx>
             <posy>{{ vscale(257) }}</posy>
             <width>813</width>
@@ -407,7 +413,12 @@
             <itemgap>0</itemgap>
             <!-- 350 (the summary click-target), not straight to 205/206/200 - see the inner
                  fixedlist's own identical copy of this fix, just below, for the full reasoning. -->
-            <onup>350</onup>
+            <onup condition="!String.IsEmpty(Container(400).ListItem.Property(summary))">350</onup>
+            <!-- Fallback replicates 350's own onup chain, so the row behaves as if the target
+                 simply weren't there. -->
+            <onup condition="Control.IsVisible(205)">205</onup>
+            <onup condition="Control.IsVisible(206)">206</onup>
+            <onup>200</onup>
             <!-- Two conditioned tags routing straight to the actual target button, not
                  condition="Control.IsVisible(300)">300 (the grouplist's own id) relying on its
                  <defaultcontrol> to pick between Resume/Play - live-confirmed that doesn't work:
@@ -444,7 +455,11 @@
                      matching Seasons' own identical fix to its button row. The season-tab row
                      fallback (205/206/200) this used to carry directly has moved up onto 350's own
                      onup instead, one level further up the chain. -->
-                <onup>350</onup>
+                <onup condition="!String.IsEmpty(Container(400).ListItem.Property(summary))">350</onup>
+                <!-- Same fallback as this row's own copy above. -->
+                <onup condition="Control.IsVisible(205)">205</onup>
+                <onup condition="Control.IsVisible(206)">206</onup>
+                <onup>200</onup>
                 <!-- Same fix as this row's own copy above - see its comment. -->
                 <ondown condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">308</ondown>
                 <ondown condition="Control.IsVisible(300)">301</ondown>
@@ -1685,7 +1700,9 @@
     <onright>noop</onright>
     <!-- 350 (the summary click-target), not straight to 400: visits it in top-to-bottom order on
          the way down, matching 350's own onup back up to here/206. -->
-    <ondown>350</ondown>
+    <ondown condition="!String.IsEmpty(Container(400).ListItem.Property(summary))">350</ondown>
+    <!-- Fallback is 350's own ondown, skipping the stop when there's no summary. -->
+    <ondown>400</ondown>
     <orientation>horizontal</orientation>
     <!-- ITEM LAYOUT ########################################## -->
     <!-- 200, not 170 - matches the same widened cell on script-plex-seasons.xml.tpl's own copy of
@@ -1790,7 +1807,9 @@
     <onright>noop</onright>
     <!-- 350 (the summary click-target), not straight to 400: visits it in top-to-bottom order on
          the way down, matching 350's own onup back up to here/205. -->
-    <ondown>350</ondown>
+    <ondown condition="!String.IsEmpty(Container(400).ListItem.Property(summary))">350</ondown>
+    <!-- Fallback is 350's own ondown, skipping the stop when there's no summary. -->
+    <ondown>400</ondown>
     <orientation>horizontal</orientation>
     <itemlayout width="200" height="{{ vscale(135) }}">
         <control type="label">
