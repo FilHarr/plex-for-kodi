@@ -970,6 +970,68 @@ class SwitchToCollectionsTest(KodiTestCase):
         self.assertEqual([('library', 'collection')], host.switchTabCalls)
 
 
+class LibrarySettingsPersistenceTest(KodiTestCase):
+    """LibrarySettings writes, which all share ONE blob per server (library.settings.<uuid>,
+    every section in it).
+
+    Live-confirmed bug these pin: each instance held a whole-blob snapshot taken at construction
+    and rewrote all of it on any change, so a write from an instance built before someone else's
+    write silently reverted it. Symptom was the music section reopening on Tracks after the user
+    had switched to Albums - ITEM_TYPE persisted, then reverted by an unrelated later write - and
+    it was only visible at all once the view type started following ITEM_TYPE (forcedViewWindow()).
+    """
+
+    class FakeSection(object):
+        def __init__(self, key, type_, uuid='the-server'):
+            self.key = key
+            self.TYPE = type_
+            self._uuid = uuid
+
+        def getServer(self):
+            return self
+
+        @property
+        def uuid(self):
+            return self._uuid
+
+    def music(self):
+        return library.LibrarySettings(self.FakeSection('10', 'artist'))
+
+    def test_a_stale_instance_does_not_revert_another_instances_item_type(self):
+        stale = self.music()          # snapshot taken before the change below
+        self.music().setItemType('track')
+
+        current = self.music()
+        self.assertEqual('track', current.getItemType())
+
+        current.setItemType('album')
+        # The stale instance writes something entirely unrelated afterwards - as a cancelled
+        # background task or an outgoing window's sort/filter save does.
+        stale.setSetting('sort', 'titleSort')
+
+        self.assertEqual('album', self.music().getItemType())
+
+    def test_a_sectionless_instance_never_wipes_the_blob(self):
+        """HomeSection's key is None, so _loadSettings() leaves it an empty snapshot - writing
+        that out replaced every real section's settings with a single "null" entry."""
+        self.music().setItemType('album')
+
+        home = library.LibrarySettings(self.FakeSection(None, 'mixed'))
+        home.setItemType('mixed')
+        home.setContentMode('recommended')
+
+        self.assertEqual('album', self.music().getItemType())
+
+    def test_writes_from_different_sections_do_not_evict_each_other(self):
+        self.music().setItemType('album')
+        movies = library.LibrarySettings(self.FakeSection('22', 'movie'))
+        movies.setItemType('movie')
+        movies.setContentMode('library')
+
+        self.assertEqual('album', self.music().getItemType())
+        self.assertEqual('movie', movies.getItemType())
+
+
 class DeferOpenSectionTest(KodiTestCase):
     """hashed-orbiting-pizza.md's live-confirmed reentrancy hazard: kodi.log showed 7 concurrent
     openSection() calls, on 7 different threads, racing to mutate the same LibraryWindow's state

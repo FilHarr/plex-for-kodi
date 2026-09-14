@@ -438,14 +438,7 @@ class LibrarySettings(object):
             self._settings = {}
             return
 
-        jsonString = util.getSetting('library.settings.{0}'.format(self.serverID), '')
-        self._settings = {}
-        try:
-            self._settings = json.loads(jsonString)
-        except ValueError:
-            pass
-        except:
-            util.ERROR()
+        self._settings = self._readSettings()
 
         # Live-confirmed bug without the sectionType fallback: a section that's never had its
         # own ITEM_TYPE saved (getItemType() returns None) fell all the way through to the bare
@@ -466,13 +459,7 @@ class LibrarySettings(object):
 
     def setItemType(self, item_type):
         setItemType(item_type)
-
-        if self.sectionID not in self._settings:
-            self._settings[self.sectionID] = {}
-
-        self._settings[self.sectionID]['ITEM_TYPE'] = item_type
-
-        self._saveSettings()
+        self._mutate(lambda entry: entry.update({'ITEM_TYPE': item_type}))
 
     def getContentMode(self):
         """Persisted per-section tab choice ('library'/'recommended', quiet-orbiting-heron.md plan
@@ -486,16 +473,46 @@ class LibrarySettings(object):
         return self._settings[self.sectionID].get('CONTENT_MODE')
 
     def setContentMode(self, content_mode):
-        if self.sectionID not in self._settings:
-            self._settings[self.sectionID] = {}
+        self._mutate(lambda entry: entry.update({'CONTENT_MODE': content_mode}))
 
-        self._settings[self.sectionID]['CONTENT_MODE'] = content_mode
+    def _readSettings(self):
+        """The whole server's persisted settings blob, every section in it, as it stands NOW."""
+        jsonString = util.getSetting('library.settings.{0}'.format(self.serverID), '')
+        settings = {}
+        try:
+            settings = json.loads(jsonString)
+        except ValueError:
+            pass
+        except:
+            util.ERROR()
 
-        self._saveSettings()
+        return settings if isinstance(settings, dict) else {}
 
-    def _saveSettings(self):
-        jsonString = json.dumps(self._settings)
-        util.setSetting('library.settings.{0}'.format(self.serverID), jsonString)
+    def _mutate(self, apply_):
+        """Apply one change to this section's own entry, against the blob as it stands right now.
+
+        Read-modify-write, deliberately, rather than serialising self._settings: one blob holds
+        EVERY section's settings for the server, and every LibrarySettings instance used to hold
+        its own whole-blob snapshot from construction time and rewrite all of it on any change.
+        Whichever instance wrote last therefore silently reverted everything any other instance
+        had written since - a live-confirmed lost update: choosing Albums in the music section
+        (setItemType) was reverted to the previously persisted 'track' by a later write from an
+        instance constructed before that choice, so the section reopened on Tracks. Re-reading
+        here means a stale instance can only overwrite the one field it actually touched.
+
+        Sectionless instances (HomeSection, whose key is None, and the bare-serverID
+        construction) write nothing at all: _loadSettings() above leaves them an empty snapshot,
+        so serialising it wiped every real section's settings from the blob, and nothing ever
+        reads what they store anyway (getItemType() and friends can't match a None sectionID
+        against the "null" key json.dumps() writes it as).
+        """
+        if not self.sectionID:
+            return
+
+        settings = self._readSettings()
+        apply_(settings.setdefault(self.sectionID, {}))
+        self._settings = settings
+        util.setSetting('library.settings.{0}'.format(self.serverID), json.dumps(settings))
 
     def setSection(self, section_id):
         self.sectionID = section_id
@@ -510,15 +527,10 @@ class LibrarySettings(object):
         return self._settings[self.sectionID][ITEM_TYPE].get(setting, default)
 
     def setSetting(self, setting, value):
-        if self.sectionID not in self._settings:
-            self._settings[self.sectionID] = {}
+        def apply_(entry):
+            entry.setdefault(ITEM_TYPE, {})[setting] = value
 
-        if ITEM_TYPE not in self._settings[self.sectionID]:
-            self._settings[self.sectionID][ITEM_TYPE] = {}
-
-        self._settings[self.sectionID][ITEM_TYPE][setting] = value
-
-        self._saveSettings()
+        self._mutate(apply_)
 
 
 class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin, windowutils.SidebarMixin, CommonMixin):
