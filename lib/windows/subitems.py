@@ -1398,10 +1398,18 @@ class ArtistWindow(ShowWindow):
         self.setProperty('artist.genre', genres)
         # Primary/studio row only now - the otherAlbums hub types (Live/Compilation/Singles &
         # EPs/Soundtracks/Demos/Remixes) get their own separate rows below (fillAlbumTypeRows()),
-        # rather than being merged in here sorted by year alongside these (on request).
+        # rather than being merged in here alongside these (on request).
+        #
+        # Server order, no local sort: PMS has a per-library preference for exactly this decision -
+        # albumSort, "How to sort the albums for artists", offering Newest first / Oldest first / By
+        # name - and /children already comes back honouring it (verified against a live server:
+        # newest-first at the default setting, and the endpoint re-orders when the preference or an
+        # explicit sort= says otherwise). Sorting here by year overrode that choice unconditionally,
+        # and reversing it would only have overridden it in the other direction. Same reasoning
+        # fillPopularTracks() below already documents for its own server-ranked row.
         items = []
         idx = 0
-        for album in sorted(self.mediaItem.albums(), key=lambda x: x.year):
+        for album in self.mediaItem.albums():
             mli = self.createListItem(album)
             if mli:
                 mli.setProperty('index', str(idx))
@@ -1418,7 +1426,11 @@ class ArtistWindow(ShowWindow):
             listControl = self.albumTypeListControls[cid]
             items = []
             idx = 0
-            for album in sorted(getattr(self.mediaItem, attr), key=lambda x: x.year):
+            # Server order here too - and these hubs arrive embedded in the artist's own metadata
+            # (Artist._setData(), plexnet/audio.py), so there's no sort parameter to send even if we
+            # wanted one: whatever order PMS puts them in is the only order available. See fill()
+            # above for the albumSort preference this defers to.
+            for album in getattr(self.mediaItem, attr):
                 mli = self.createListItem(album)
                 if mli:
                     mli.setProperty('index', str(idx))
