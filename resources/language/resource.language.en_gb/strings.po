@@ -3448,3 +3448,15 @@ msgstr ""
 msgctxt "#35072"
 msgid "Albums"
 msgstr ""
+
+msgctxt "#35073"
+msgid "{} tracks"
+msgstr ""
+
+msgctxt "#35074"
+msgid "{} track"
+msgstr ""
+
+msgctxt "#35075"
+msgid "Disc {0}, {1}"
+msgstr ""

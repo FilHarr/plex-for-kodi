@@ -11,6 +11,7 @@ from lib import player
 from . import busy
 from . import dropdown
 from . import home
+from . import info
 from . import kodigui
 from . import musicplayer
 from . import opener
@@ -38,6 +39,13 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
     PLAY_BUTTON_ID = 301
     SHUFFLE_BUTTON_ID = 302
     OPTIONS_BUTTON_ID = 303
+
+    # Invisible click targets laid over the header's summary textbox and artist line - textboxes
+    # and labels have no click or focus of their own in Kodi, so each needs a real button control
+    # sized to match it (script-plex-album.xml.tpl). Same 305 the Seasons/Artist screens use for
+    # their own summary (subitems.py).
+    SUMMARY_BUTTON_ID = 305
+    ARTIST_BUTTON_ID = 306
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -92,6 +100,15 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         self.lastPlayingRK = util.getGlobalProperty("track.ID")
 
     def setup(self):
+        # The album arrives as a partial object from whatever list was clicked, and Album._setData()
+        # (plexnet/audio.py) only populates genres when isFullObject() - so without this reload the
+        # header's meta line would have a date and nothing else. Guarded: a failed reload should
+        # cost the genres, not the screen.
+        try:
+            self.album.reload()
+        except:
+            util.ERROR('AlbumWindow: album reload failed, meta line may be incomplete')
+
         self.updateProperties()
         self.fillTracks()
 
@@ -153,6 +170,10 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             self.shuffleButtonClicked()
         elif controlID == self.OPTIONS_BUTTON_ID:
             self.optionsButtonClicked()
+        elif controlID == self.SUMMARY_BUTTON_ID:
+            self.summaryButtonClicked()
+        elif controlID == self.ARTIST_BUTTON_ID:
+            self.artistButtonClicked()
 
     def getAlbums(self):
         if not self.albums:
@@ -389,9 +410,20 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             self.updateItems(item)
             util.MONITOR.watchStatusChanged()
         elif choice['key'] == 'to_artist':
-            self.processCommand(opener.open(self.album.parentRatingKey, context=self, entry_section_id=self.entrySectionId))
+            self.artistButtonClicked()
         elif choice['key'] == 'to_section':
             self.goHome(self.album.getLibrarySectionId())
+
+    def summaryButtonClicked(self):
+        # The same popup the Seasons/Artist screens' own summary targets open
+        # (summaryButtonClicked(), subitems.py), rather than the old InfoWindow.
+        info.showSummary(self.album.title, self.album.get('summary'))
+
+    def artistButtonClicked(self):
+        # Exactly what the More menu's own "Go to artist" entry does (optionsButtonClicked() above,
+        # which now calls through here) - the header's artist line is just a more direct way to it.
+        self.processCommand(opener.open(self.album.parentRatingKey, context=self,
+                                        entry_section_id=self.entrySectionId))
 
     def checkForHeaderFocus(self, action):
         if action in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_PAGE_UP):
@@ -421,13 +453,53 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         self.openWindow(musicplayer.MusicPlayerWindow, track=mli.dataSource, album=self.album)
 
     def updateProperties(self):
-        self.setProperty(
-            'background',
-            util.backgroundFromArt(self.album.art, width=self.width, height=self.height)
-        )
+        # The shared background path (kodigui.BaseWindow), same as Movies/Shows/Seasons/Artist:
+        # it drives the 4-corner tinted panel from the item's own ultraBlurColors - which Audio
+        # items do carry (Audio._setData(), plexnet/audio.py) - crossfades between items, and sets
+        # the hero art at opacity=100. Was a bare setProperty('background', ...) here, which got the
+        # art but never the colour panel, so this screen sat on the flat default tint while every
+        # other detail screen picked up the item's own.
+        #
+        # Art resolution differs slightly as a result: this path falls back art -> parentArt ->
+        # grandparentArt, so an album with no art of its own now shows the artist's rather than
+        # nothing. Honours the dynamic-backgrounds setting too, again like those screens - with it
+        # off, the background stays whatever the default is instead of being set from the album.
+        self.updateBackgroundFrom(self.album)
         self.setProperty('album.thumb', self.album.thumb.asTranscodedImageURL(*self.THUMB_SQUARE_DIM))
         self.setProperty('artist.title', self.album.parentTitle or '')
         self.setProperty('album.title', self.album.title)
+        self.setProperty('album.meta', self.albumMetaLine())
+        self.setProperty('summary', util.widenParagraphBreaks(self.album.get('summary') or ''))
+
+    def albumMetaLine(self):
+        """The header's second meta line: release date, then genres, bullet-separated.
+
+        Date and separator both follow the TV episode meta row (setItemInfo(), episodes.py): the
+        date reads "1 Sep, 2026" - day, abbreviated month, year, with no leading zero on the day -
+        and the fields are joined with " • " rather than a slash, the same bullet that row and
+        the photo meta lines use. asDatetime() with no format string returns a real datetime, so
+        dt.day drops the leading zero on its own (util.cleanLeadingZeros can't: its regex needs a
+        preceding space, having been built for a zero appearing mid-string).
+
+        Falls back to the bare year where the server has no full date, and each part is optional -
+        an album with neither renders an empty line rather than a stray separator.
+        """
+        date = ''
+        try:
+            dt = self.album.originallyAvailableAt.asDatetime()
+            if dt:
+                date = u'{0} {1}'.format(dt.day, dt.strftime('%b, %Y'))
+        except:
+            pass
+        if not date:
+            date = self.album.year or ''
+
+        try:
+            genres = [g.tag for g in util.removeDups(self.album.genres())][:6]
+        except:
+            genres = []
+
+        return u' • '.join([part for part in [date] + genres if part])
 
     def createListItem(self, obj):
         mli = kodigui.ManagedListItem(obj.title, data_source=obj)
@@ -437,33 +509,50 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
 
     #@busy.dialog()
     def fillTracks(self):
-        items = []
-        idx = 0
-        multiDisc = 0
+        """Fill the track list, one header row per disc.
 
+        Every album gets at least one header (is.header, rendered by
+        includes/album_track_row.xml.tpl as a bare heading with no pill): a single-disc album's
+        reads "12 tracks", and each disc of a multi-disc one reads "Disc 2, 7 tracks", so the count
+        always sits with the rows it counts rather than in a heading above the whole list.
+
+        Tracks are grouped up front rather than headers being back-filled as a new disc number
+        appears, which is what the previous version did - it had to insert "Disc 1" retroactively at
+        position 0 the moment it first saw a disc 2, and couldn't know any disc's length until it
+        had passed it, which a per-disc count needs.
+
+        checkForHeaderFocus() (above) is what keeps these rows from being landable: it re-issues the
+        move that arrived on one. That already ran for multi-disc albums; single-disc albums now
+        have a header too, and the first one sits at the top of the list, where onFirstInit()'s own
+        MOVE_DOWN call steps off it.
+        """
+        discs = []
         for track in self.album.tracks():
             disc = track.parentIndex.asInt()
-            if disc > 1:
-                if not multiDisc:
-                    items.insert(0, kodigui.ManagedListItem(u'{0} 1'.format(T(32420, 'Disc').upper()), properties={'is.header': '1'}))
+            if not discs or discs[-1][0] != disc:
+                discs.append((disc, []))
+            discs[-1][1].append(track)
 
-                if disc != multiDisc:
-                    items[-1].setProperty('is.footer', '1')
-                    multiDisc = disc
-                    items.append(kodigui.ManagedListItem('{0} {1}'.format(T(32420, 'Disc').upper(), disc), properties={'is.header': '1'}))
+        multiDisc = len(discs) > 1
+        items = []
+        idx = 0
 
-            mli = self.createListItem(track)
-            if mli:
-                mli.setProperty('track.ID', track.ratingKey)
-                mli.setProperty('index', str(idx))
-                mli.setProperty('artist', self.album.parentTitle)
-                mli.setProperty('disc', str(disc))
-                mli.setProperty('album', self.album.title)
-                mli.setProperty('number', '{0:0>2}'.format(track.index))
-                items.append(mli)
-                idx += 1
+        for disc, discTracks in discs:
+            count = len(discTracks)
+            countText = (T(35073, '{} tracks') if count != 1 else T(35074, '{} track')).format(count)
+            header = T(35075, 'Disc {0}, {1}').format(disc, countText) if multiDisc else countText
+            items.append(kodigui.ManagedListItem(header, properties={'is.header': '1'}))
 
-        if items:
-            items[-1].setProperty('is.footer', '1')
+            for track in discTracks:
+                mli = self.createListItem(track)
+                if mli:
+                    mli.setProperty('track.ID', track.ratingKey)
+                    mli.setProperty('index', str(idx))
+                    mli.setProperty('artist', self.album.parentTitle)
+                    mli.setProperty('disc', str(disc))
+                    mli.setProperty('album', self.album.title)
+                    mli.setProperty('number', '{0:0>2}'.format(track.index))
+                    items.append(mli)
+                    idx += 1
 
         self.trackListControl.replaceItems(items)
