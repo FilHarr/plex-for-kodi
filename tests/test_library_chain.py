@@ -936,8 +936,12 @@ class SwitchToCollectionsTest(KodiTestCase):
             self.appliedItemTypeChoices = []
             self.switchTabCalls = []
 
-        def _applyItemTypeChoice(self, choice):
-            self.appliedItemTypeChoices.append(choice)
+        def _applyItemTypeChoice(self, choice, keep_focus=True):
+            # keep_focus is recorded, not just accepted: switchToCollections() passes False
+            # deliberately (see its own docstring - a tab click should land focus on the grid, the
+            # opposite of what _applyItemTypeChoice()'s dropdown-result caller wants), and this
+            # fake silently not taking the kwarg at all is what let that call go untested.
+            self.appliedItemTypeChoices.append((choice, keep_focus))
 
         def switchTab(self, mode, item_type=None):
             self.switchTabCalls.append((mode, item_type))
@@ -947,7 +951,7 @@ class SwitchToCollectionsTest(KodiTestCase):
 
         switchToCollections(host)
 
-        self.assertEqual(['collection'], host.appliedItemTypeChoices)
+        self.assertEqual([('collection', False)], host.appliedItemTypeChoices)
         self.assertEqual([], host.switchTabCalls)
 
     def test_real_switch_from_recommended(self):

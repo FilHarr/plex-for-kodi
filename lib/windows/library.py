@@ -260,6 +260,20 @@ FILTER_LABELS = {
 }
 
 
+# Music sections pin their view type to the item type rather than honouring the per-section
+# viewtype.<uuid>.<key> setting every other section type toggles: Artists, Albums and the
+# Collections tab are always the grid, Tracks is always the list (a track is a row, not a card).
+# Keyed by ITEM_TYPE; a type absent from here - or any section that isn't music - keeps the
+# ordinary stored-setting behaviour. Values are VIEWS_SQUARE keys, not window classes, because
+# those classes are defined far below this point in the module.
+MUSIC_VIEWTYPE_BY_ITEM_TYPE = {
+    'artist': 'panel',
+    'album': 'panel',
+    'collection': 'panel',
+    'track': 'list',
+}
+
+
 def setItemType(type_=None):
     assert type_ is not None, "Invalid type: None"
     global ITEM_TYPE
@@ -832,6 +846,24 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """
         windowutils.HOME = self
 
+    def squareViews(self):
+        """The view map for a square-tiled section: the music one, or the shared default."""
+        return VIEWS_SQUARE_MUSIC if self.section.TYPE == 'artist' else VIEWS_SQUARE
+
+    def forcedViewWindow(self):
+        """The window class this section/item-type combination is pinned to, or None to honour
+        the stored viewtype setting.
+
+        Only music sections pin anything (MUSIC_VIEWTYPE_BY_ITEM_TYPE) - Photos and Playlists
+        keep their grid/list toggle. ITEM_TYPE can still be unset the first time a section is
+        opened, hence the section-type fallback, which resolves to 'artist' (the grid) for music.
+        """
+        if self.section.TYPE != 'artist':
+            return None
+
+        viewtype = MUSIC_VIEWTYPE_BY_ITEM_TYPE.get(ITEM_TYPE or self.section.TYPE)
+        return self.squareViews().get(viewtype) if viewtype else None
+
     def reset(self):
         PlaybackBtnMixin.reset(self)
         util.setGlobalProperty('sort', '')
@@ -872,8 +904,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.setWindows(VIEWS_RECOMMENDED.get('all'))
             self.setDefault(VIEWS_RECOMMENDED.get('panel'))
         elif self.section.TYPE in ('artist', 'photo', 'photodirectory', 'playlists'):
-            self.setWindows(VIEWS_SQUARE.get('all'))
-            self.setDefault(VIEWS_SQUARE.get(viewtype))
+            # Both classes stay available either way - the pin only decides which one starts,
+            # and _applyItemTypeChoice() below still has to be able to swap between them when
+            # the item type changes.
+            views = self.squareViews()
+            self.setWindows(views.get('all'))
+            self.setDefault(self.forcedViewWindow() or views.get(viewtype))
         else:
             self.setWindows(VIEWS_POSTER.get('all'))
             self.setDefault(VIEWS_POSTER.get(viewtype))
@@ -4008,7 +4044,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.updateFilterDisplay()
         util.setGlobalProperty('sort', self.sort)
 
-        if not self.nextWindow(False):
+        # The pinned window, not nextWindow(False): False resolves to whichever class is already
+        # showing (kodigui.py), so it can never return anything but None here - fine while every
+        # item type shared one view, but a music section now changes view class with the item type
+        # (Tracks is the list, Artists/Albums the grid), and that needs a real reconstruction.
+        # Passing a class still short-circuits to None when it's the one already showing, so the
+        # ordinary in-place refill below is unaffected for every other section type.
+        if not self.nextWindow(self.forcedViewWindow() or False):
             self.setProperty('media.type', TYPE_PLURAL.get(ITEM_TYPE or self.section.TYPE, self.section.TYPE))
             try:
                 self.setProperty('sort.display', SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
@@ -4129,6 +4171,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.sortShowPanel(choice, True, keep_focus=True)
 
     def viewTypeButtonClicked(self):
+        # Button 304 is hidden for music sections (script-plex-squares.xml.tpl/
+        # script-plex-listview-square.xml.tpl), so this is unreachable there by click - the guard
+        # is for any other route in, and to make sure nothing writes a viewtype setting that
+        # reset() would then ignore.
+        if self.forcedViewWindow():
+            return
+
         for task in self.tasks:
             if task.isValid():
                 task.cancel()
@@ -5066,6 +5115,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
                         if obj.TYPE == 'track':
                             mli.setLabel("{} - {}: {}".format(obj.grandparentTitle, obj.parentTitle, obj.title))
+                            # The music section's list view renders a track as three separate
+                            # fields rather than that one composite label (which stays as it is,
+                            # for every other consumer of a track row) - see
+                            # includes/track_row_text.xml.tpl. Label/Label2 are deliberately left
+                            # alone: Label2 below is set to the duration for every type, in
+                            # durationToText()'s "2m 23s" form, where a track wants "2:23".
+                            mli.setProperty('track.title', obj.title or '')
+                            mli.setProperty('track.artist', obj.grandparentTitle or '')
+                            mli.setProperty('track.duration',
+                                            util.simplifiedTimeDisplay(obj.duration.asInt()))
+                            # Keyed off the same window property ArtistWindow's Popular Tracks row
+                            # uses for its now-playing tint (subitems.py).
+                            mli.setProperty('track.ID', obj.ratingKey)
                         else:
                             mli.setLabel(obj.defaultTitle or '')
 
@@ -6249,6 +6311,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         return mli
 
     def createTrackListItem(self, obj, wide=False):
+        # Hub tiles only (CREATE_LI_MAP/createListItem()) - the library grid and list views build
+        # their own items in _chunkCallback() instead, which is where the track-row properties
+        # script-plex-listview-tracks.xml.tpl reads are set.
         mli = self.createGrandparentedListItem(obj, *self.THUMB_SQUARE_DIM)
         mli.setLabel2(obj.title)
         mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/music.png')
@@ -7883,10 +7948,26 @@ VIEWS_POSTER = {
     'all': (PostersWindow, PostersSmallWindow, ListView16x9Window)
 }
 
+class TrackListWindow(ListViewSquareWindow):
+    # The music section's own list view. Only ever shows Tracks (MUSIC_VIEWTYPE_BY_ITEM_TYPE pins
+    # every other music item type to the grid), so its template drops the parent's left-hand detail
+    # pane entirely and styles each row as a track: title, artist, duration, on the Artist screen's
+    # own Popular Tracks pill. Photos and Playlists keep the parent window/template unchanged.
+    xmlFile = 'script-plex-listview-tracks.xml'
+
+
 VIEWS_SQUARE = {
     'panel': SquaresWindow,
     'list': ListViewSquareWindow,
     'all': (SquaresWindow, ListViewSquareWindow)
+}
+
+# Music sections swap the list half for TrackListWindow - same keys, so everything that reads a
+# view map (reset(), forcedViewWindow()) works against either without caring which it got.
+VIEWS_SQUARE_MUSIC = {
+    'panel': SquaresWindow,
+    'list': TrackListWindow,
+    'all': (SquaresWindow, TrackListWindow)
 }
 
 

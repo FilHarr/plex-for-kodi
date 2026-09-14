@@ -192,6 +192,14 @@
 {% endblock filteropts_grouplist %}
 
 {% block content %}
+    {# The left-hand detail pane (big art, its labels, the rule and the metadata textbox) and the
+       list itself are the two parts that differ between this view's users, so each is a block:
+       script-plex-listview-tracks.xml.tpl (the music section's track list) drops the pane outright
+       and re-declares the list at its own geometry, while inheriting the filter row, the button
+       row, the scrubber and the scrollbar from here unchanged. Everything a child overrides has to
+       be re-declared whole - Kodi can't vary a control's width or position on a condition, which is
+       why the track list needs its own template at all rather than a <visible> switch in this one. #}
+    {% block listview_detail %}
     <control type="group">
         <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
         <posx>115</posx>
@@ -285,6 +293,9 @@
         </control>
     </control>
 
+    {% endblock listview_detail %}
+
+    {% block listview_list %}
     <control type="group" id="50">
         <posx>0</posx>
         <posy>{{ vscale(135) }}</posy>
@@ -481,32 +492,68 @@
         </control>
     </control>
 
+    {% endblock listview_list %}
+
     {% block buttons %}
     <!-- Swapped with the filter row (600): this row now sits where 600 used to (right, next
          to the scrubber), so it's right-anchored like 600 was and no longer needs its own
          expand-slide (600 has it now). -->
     <control type="grouplist" id="300">
         <defaultcontrol>301</defaultcontrol>
-        <right>120</right>
-        <posy>{{ vscale(110) }}</posy>
+        <!-- 132 and 132.5, matching the grid view's own row exactly (script-plex-squares.xml.tpl -
+             see its comments for both derivations): 132 puts the focus pill's right edge on the
+             content's right edge at 1770, which is where the track list's rows end too, and 132.5
+             keeps the glyph on the same absolute line now the box is 70x70 rather than 126x100. -->
+        <right>132</right>
+        <posy>{{ vscale(132.5) }}</posy>
         <width>1000</width>
         <height>{{ vscale(145) }}</height>
         <align>right</align>
+        <!-- Audio widget when something is playing, tab row otherwise - see the grid's own copy
+             (script-plex-squares.xml.tpl). The 320 fallback is new here: this row only ever had
+             the widget route, so up did nothing at all when nothing was playing. -->
         <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
+        <onup condition="Control.IsVisible(320)">320</onup>
         <ondown>101</ondown>
         <onleft>210</onleft>
         <onright>151</onright>
-        <itemgap>-20</itemgap>
+        <itemgap>{{ theme.library.buttongroup.itemgap }}</itemgap>
         <orientation>horizontal</orientation>
         <scrolltime tween="quadratic" easing="out">200</scrolltime>
         <usecontrolcoords>true</usecontrolcoords>
         <visible>!String.IsEmpty(Window.Property(initialized))</visible>
 
-        {% with attr = {"width": 126, "height": 100} & template = "includes/themed_button.xml.tpl" & hitrect = {"x": 20, "y": 20, "w": 86, "h": 60} %}
+        {# theme.library.buttons (70x70) and its hitrect, not the hardcoded 126x100 this used to
+           carry, plus the label-on-focus pills on Play and Shuffle - the same treatment the grid
+           view got, so the two match as you switch between them. #}
+        {% with attr = theme.library.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.library.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
             {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+            {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
+                label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
+                label_width=50 & pill_width=112 & group_width=68 &
+                onleft=301 & onright=302
+            %}
             {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-            {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio]" %}
-            {% include template with name="view" & id=304 & visible="String.IsEmpty(Window.Property(hide.filteroptions))" %}
+            {# Falls back to the scrubber when More isn't on screen - in a music section neither
+               More nor View shows, leaving Shuffle as the row's last button. #}
+            {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
+                label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
+                label_width=84 & pill_width=146 & group_width=102 &
+                onleft=302 & onright=303 & onright_cond="Control.IsVisible(303)" & onright_else=151
+            %}
+            {# No More button for music sections. Its menu only ever holds two entries
+               (optionsButtonClicked(), library.py): "Play Next", itself gated on Player.HasAudio +
+               MusicPlayer.HasNext, and "Go to <section>", which is photodirectory-only. So in a music
+               library it showed whenever audio was playing and opened an empty dropdown unless a next
+               track happened to be queued. Photos (where the button carries its Go-to entry) and
+               Playlists keep it. #}
+            {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio] + !String.IsEqual(Window.Property(media),artist)" %}
+            {# Hidden for music sections: Artists/Albums/Collections are pinned to the grid and
+               Tracks to the list (MUSIC_VIEWTYPE_BY_ITEM_TYPE / forcedViewWindow(), library.py), so
+               there is nothing here to toggle. Window.Property(media) is the section type, not the
+               item type - the pin covers every item type in the section, so the section-level test is
+               the right one. Photos and Playlists keep the button. #}
+            {% include template with name="view" & id=304 & visible="String.IsEmpty(Window.Property(hide.filteroptions)) + !String.IsEqual(Window.Property(media),artist)" %}
         {% endwith %}
 
     </control>
@@ -519,7 +566,10 @@
              posy matches the other 6 views' resting position for a consistent starting height.
              No animation here: this view never hides its header on scroll, so there's no freed
              space to grow into. -->
-        <posx>1875</posx>
+        <!-- 1836: leaves a 15px gap to the scrollbar (152's left=1885), which now shows alongside
+             this rather than instead of it, as on the grid. The scrubber's own list is a flat 34px
+             wide, so 1885 - (posx + 34) = 15 gives 1836. -->
+        <posx>1836</posx>
         <posy>{{ vscale(150) }}</posy>
         <width>20</width>
         <height>920</height>
@@ -528,22 +578,38 @@
             <posy>0</posy>
             <width>34</width>
             <height>1050</height>
+            <!-- Left goes back into the rows from any real letter, and only reaches the button row
+                 from the leading '#' - matching the grid (script-plex-squares.xml.tpl). Going the
+                 whole way to the buttons from every letter meant losing your place in the list each
+                 time you came back from the scrubber.
+                 Simpler than the grid's own pair, which additionally sends '#' into the content
+                 once the grid has scrolled past index 5: that exists because its button row slides
+                 away with the header, and this view never hides its header at all, so the buttons
+                 are always there to land on. -->
+            <onleft condition="!Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
             <onleft>300</onleft>
+            <onright>152</onright>
             <scrolltime>200</scrolltime>
             <orientation>vertical</orientation>
             {% include "includes/key_scrubber_items.xml.tpl" %}
         </control>
     </control>
 
-    <!-- Shown instead of the scrubber above for sorts that don't produce alphabetical
-         ordering (script.plex.sort.alpha unset) - a plain proportional position indicator. -->
+    <!-- The proportional position indicator - shown alongside the scrubber above now, not instead
+         of it (script.plex.sort.alpha only gates the scrubber itself), matching the grid. No slide
+         animation on either: this view never hides its header on scroll, so there's no freed space
+         to move into. -->
     <control type="scrollbar" id="152">
-        <visible>String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
+        <visible>Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
         <hitrect x="1845" y="150" w="100" h="910" />
         <left>1885</left>
-        <top>{{ vscale(15) }}</top>
+        <!-- 150, not 15: rests level with the scrubber beside it, and with the hitrect above,
+             which already assumed 150 back when the two were never on screen together. -->
+        <top>{{ vscale(150) }}</top>
         <width>12</width>
         <height>910</height>
+        <!-- Back to the scrubber when it's showing too (alpha orderings), else the button row. -->
+        <onleft condition="!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">151</onleft>
         <onleft>300</onleft>
         {% include "includes/scrollbar_style.xml.tpl" %}
     </control>

@@ -42,6 +42,10 @@
          until the show loads). That caller measures the real string at runtime and setWidth()s
          these three controls; the widths passed here are just the worst case it starts from, and
          the group's own id is already addressable via the `id` param above.
+       onright_cond, onright_else - optional: gate the onright above on a condition and give it an
+         unconditional fallback, for a row whose neighbour to the right isn't always on screen.
+         The music grid needs it - both More and View are hidden there, so the Shuffle overlay's
+         own onright would otherwise point at a control that isn't showing and strand the row
        onleft, onright - this overlay's own nav, mirroring its button's own neighbours rather than
          left unset - live-confirmed necessary for the original Play overlay (Kodi's
          usecontrolcoords geometric nav can pick this overlay itself as the nearest control once
@@ -53,7 +57,8 @@
 <control type="group" id="{{ id }}">
     <visible>{{ visible }}</visible>
     <onleft>{{ onleft }}</onleft>
-    {% if onright %}<onright>{{ onright }}</onright>{% endif %}
+    {% if onright %}<onright{% if onright_cond %} condition="{{ onright_cond }}"{% endif %}>{{ onright }}</onright>{% endif %}
+    {% if onright_else %}<onright>{{ onright_else }}</onright>{% endif %}
     <width>{{ group_width }}</width>
     <height>{{ attr.height|vscale }}</height>
     <control type="image"{% if pill_id %} id="{{ pill_id }}"{% endif %}>
