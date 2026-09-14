@@ -318,8 +318,15 @@
          audio-widget case (live-confirmed: pressing up did nothing) - library_posters.xml.tpl's
          filteropts_grouplist (600) already has exactly this same pair for the same reason, since
          these two rows swapped positions (see this row's own comment above). -->
-    <onup condition="Control.IsVisible(320)">320</onup>
+    <!-- Audio widget first, tab row second - Kodi takes the first onup whose condition holds, so
+         the old order sent up to the tabs whenever they were on screen, which is always, and the
+         widget was only ever reachable from here on a screen without them. The condition is the
+         widget group's own <visible> verbatim (library.xml.tpl), so this route exists exactly when
+         there's something there to land on; its own <ondown>50</ondown> comes back into the
+         content. Tabs stay the fallback. Deliberately NOT applied to the filter/sort row (600),
+         whose up should always land on the tabs. -->
     <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
+    <onup condition="Control.IsVisible(320)">320</onup>
     <ondown>101</ondown>
     <onleft>210</onleft>
     <onright>151</onright>

@@ -459,7 +459,11 @@
     <width>1000</width>
     <height>{{ vscale(145) }}</height>
     <align>right</align>
+    <!-- Audio widget when something is playing, tab row otherwise - see the poster grid's own
+         copy (script-plex-posters.xml.tpl). The 320 fallback is new here: this row only ever had
+         the widget route, so up did nothing at all when nothing was playing. -->
     <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>
+    <onup condition="Control.IsVisible(320)">320</onup>
     <ondown>101</ondown>
     <onleft>210</onleft>
     <onright>151</onright>
