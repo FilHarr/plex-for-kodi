@@ -4,7 +4,6 @@ import json
 import threading
 
 import plexnet
-from kodi_six import xbmc
 from kodi_six import xbmcgui
 from six.moves import range
 
@@ -72,7 +71,6 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     PLAY_BUTTON_ID = 301
     SHUFFLE_BUTTON_ID = 302
-    OPTIONS_BUTTON_ID = 303
 
     LI_AR16X9_THUMB_DIM = util.scaleResolution(178, 100)
     LI_SQUARE_THUMB_DIM = util.scaleResolution(100, 100)
@@ -173,8 +171,6 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.playlistListClicked(no_item=True, shuffle=False, play=True)
         elif controlID == self.SHUFFLE_BUTTON_ID:
             self.playlistListClicked(no_item=True, shuffle=True, play=True)
-        elif controlID == self.OPTIONS_BUTTON_ID:
-            self.optionsButtonClicked()
 
     def doClose(self, **kw):
         player.PLAYER.off('new.video', self.onNewVideo)
@@ -405,21 +401,6 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.tasks.add(ChunkRequestTask().setup(start, PLAYLIST_PAGE_SIZE))
 
         backgroundthread.BGThreader.addTasksToFront(self.tasks)
-
-    def optionsButtonClicked(self):
-        options = []
-        if xbmc.getCondVisibility('Player.HasAudio + MusicPlayer.HasNext'):
-            options.append({'key': 'play_next', 'display': T(32325, 'Play Next')})
-
-        if not options:
-            return
-
-        choice = dropdown.showDropdown(options, (440, 1020), close_direction='down', pos_is_bottom=True, close_on_playback_ended=True)
-        if not choice:
-            return
-
-        if choice['key'] == 'play_next':
-            xbmc.executebuiltin('PlayerControl(Next)')
 
     def setProperties(self):
         self.setProperty(

@@ -366,7 +366,11 @@
             label_width=84 & pill_width=146 & group_width=102 &
             onleft=302 & onright=303
         %}
-        {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio]" %}
+        {# More only where its menu has something in it: "Go to <section>", photodirectory-only
+           (optionsButtonClicked(), library.py - no.options is set for every other section type).
+           It used to also show on any section while music played, for a "Play Next" entry that
+           skipped the track; dropped, the header's now-playing popout covers that now. #}
+        {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(no.options))" %}
         {% include template with name="view" & id=304 %}
         <!-- No onright: 393 is the last item in this row once visible (nothing follows it to
              route around), same as 304's own bare include above. -->

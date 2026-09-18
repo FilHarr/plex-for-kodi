@@ -648,9 +648,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         if not choice:
             return
 
-        if choice['key'] == 'play_next':
-            xbmc.executebuiltin('PlayerControl(Next)')
-        elif choice['key'] == 'mark_watched':
+        if choice['key'] == 'mark_watched':
             self.toggleWatched(self.video, state=True, **VIDEO_RELOAD_KW)
         elif choice['key'] == 'mark_unwatched':
             self.toggleWatched(self.video, state=False, **VIDEO_RELOAD_KW)

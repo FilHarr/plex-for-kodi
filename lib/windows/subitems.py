@@ -1003,8 +1003,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
     def optionsButtonClicked(self, from_item=None):
         options = []
-        if xbmc.getCondVisibility('Player.HasAudio + MusicPlayer.HasNext'):
-            options.append({'key': 'play_next', 'display': 'Play Next'})
 
         item = self.mediaItem
         if from_item:
@@ -1076,9 +1074,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         if not choice:
             return
 
-        if choice['key'] == 'play_next':
-            xbmc.executebuiltin('PlayerControl(Next)')
-        elif choice['key'] == 'mark_watched':
+        if choice['key'] == 'mark_watched':
             self.toggleWatched(item, state=True)
         elif choice['key'] == 'mark_unwatched':
             self.toggleWatched(item, state=False)

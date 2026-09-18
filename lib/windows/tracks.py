@@ -369,14 +369,8 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             # if False:
             #     options.append({'key': 'add_to_playlist', 'display': '[COLOR FF808080]Add To Playlist[/COLOR]'})
         else:
-            if xbmc.getCondVisibility('Player.HasAudio + MusicPlayer.HasNext'):
-                options.append({'key': 'play_next', 'display': T(32325, 'Play Next')})
-
             # if xbmc.getCondVisibility('Player.HasAudio') and self.section.TYPE == 'artist':
             #     options.append({'key': 'add_to_queue', 'display': 'Add To Queue'})
-
-            if options:
-                options.append(dropdown.SEPARATOR)
 
             options.append({'key': 'to_artist', 'display': T(32301, 'Go to Artist')})
             options.append({'key': 'to_section', 'display': T(32302, u'Go to {0}').format(self.album.getLibrarySectionTitle())})
@@ -397,9 +391,7 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         if not choice:
             return
 
-        if choice['key'] == 'play_next':
-            xbmc.executebuiltin('PlayerControl(Next)')
-        elif choice['key'] == 'mark_watched':
+        if choice['key'] == 'mark_watched':
             media = item and item.dataSource or self.album
             media.markWatched()
             self.updateItems(item)

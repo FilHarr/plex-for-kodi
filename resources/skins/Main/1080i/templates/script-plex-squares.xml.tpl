@@ -585,13 +585,11 @@
             label_width=84 & pill_width=146 & group_width=102 &
             onleft=302 & onright=303 & onright_cond="Control.IsVisible(303)" & onright_else=151
         %}
-        {# No More button for music sections. Its menu only ever holds two entries
-           (optionsButtonClicked(), library.py): "Play Next", itself gated on Player.HasAudio +
-           MusicPlayer.HasNext, and "Go to <section>", which is photodirectory-only. So in a music
-           library it showed whenever audio was playing and opened an empty dropdown unless a next
-           track happened to be queued. Photos (where the button carries its Go-to entry) and
-           Playlists keep it. #}
-        {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + [String.IsEmpty(Window.Property(no.options)) | Player.HasAudio] + !String.IsEqual(Window.Property(media),artist)" %}
+        {# More only where its menu has something in it: "Go to <section>", photodirectory-only
+           (optionsButtonClicked(), library.py - no.options is set for every other section type).
+           It used to also show on any section while music played, for a "Play Next" entry that
+           skipped the track; dropped, the header's now-playing popout covers that now. #}
+        {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(no.options))" %}
         {# id 304 doubles as VIEWTYPE_BUTTON_ID (library.py) regardless of what this template
            labels it - a genuine view-type switch (poster/list layout) makes sense for a grid of
            playlists same as any other section, but "chapters" as a label/icon here never did

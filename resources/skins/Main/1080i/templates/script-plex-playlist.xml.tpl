@@ -73,7 +73,9 @@
             {% with attr = {"width": 174, "height": 139} & template = "includes/themed_button.xml.tpl" & hitrect = {"w": 94, "h": 59} %}
                 {% include template with name="play" & id=301 %}
                 {% include template with name="shuffle" & id=302 %}
-                {% include template with name="more" & id=303 & visible="!String.IsEmpty(Window.Property(show.options)) | Player.HasAudio" %}
+                {# No More button: its only ever entry was "Play Next" (skip the playing music
+                   track), shown while audio played - dropped along with the same entry on every
+                   other screen's More menu; the header's now-playing popout covers it. #}
             {% endwith %}
 
         </control>

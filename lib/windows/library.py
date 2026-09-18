@@ -3917,22 +3917,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.processCommand(videoplayer.play(play_queue=pl))
 
     def optionsButtonClicked(self):
+        # Only ever "Go to <section>" now, and the button (303) is only shown for photodirectory
+        # sections, where no.options is empty. It used to also offer "Play Next" whenever music
+        # was playing, which is what made it appear on Movies/TV grids; dropped.
         options = []
-        if xbmc.getCondVisibility('Player.HasAudio + MusicPlayer.HasNext'):
-            options.append({'key': 'play_next', 'display': T(32325, 'Play Next')})
-
         if self.section.TYPE == 'photodirectory':
-            if options:
-                options.append(dropdown.SEPARATOR)
             options.append({'key': 'to_section', 'display': T(32324, u'Go to {0}').format(self.section.getLibrarySectionTitle())})
 
         choice = dropdown.showDropdown(options, (255, 205))
         if not choice:
             return
 
-        if choice['key'] == 'play_next':
-            xbmc.executebuiltin('PlayerControl(Next)')
-        elif choice['key'] == 'to_section':
+        if choice['key'] == 'to_section':
             self.goHome(self.section.getLibrarySectionId())
 
     def itemTypeButtonClicked(self):

@@ -1961,9 +1961,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             # if True:
             #     options.append({'key': 'add_to_playlist', 'display': '[COLOR FF808080]Add To Playlist[/COLOR]'})
 
-        if xbmc.getCondVisibility('Player.HasAudio + MusicPlayer.HasNext'):
-            options.append({'key': 'play_next', 'display': T(32325, 'Play Next')})
-
         # Season-card-only now, not shown on every episode card's own menu (its watched state is a
         # season-level action, not something that made sense mixed in with a specific episode's own
         # Mark Played/Unplayed above - on request).
@@ -2017,9 +2014,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         if not choice:
             return
 
-        if choice['key'] == 'play_next':
-            xbmc.executebuiltin('PlayerControl(Next)')
-        elif choice['key'] == 'mark_watched':
+        if choice['key'] == 'mark_watched':
             self.toggleWatched(mli, state=True)
         elif choice['key'] == 'mark_unwatched':
             self.toggleWatched(mli, state=False)
