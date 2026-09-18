@@ -1466,6 +1466,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             elif mli.getProperty('is.active'):
                 mli.setProperty('is.active', '')
 
+    def sectionByKey(self, key):
+        """The sidebar's section object for a library section key, or None. For callers that only
+        hold a key (getLibrarySectionId()) - GoHomeMixin._goHomeDirect() (windowutils.py) resolves
+        those through here, the way HomeWindow's old 'HOME:<key>' handler matched the same list."""
+        if not self.sectionList:
+            return None
+        key = str(key)
+        for i in range(self.sectionList.size()):
+            mli = self.sectionList[i]
+            if mli and mli.dataSource is not None and mli.dataSource.key is not None                     and str(mli.dataSource.key) == key:
+                return mli.dataSource
+        return None
+
     def setWatchlistDirty(self, *args, **kwargs):
         if self.section.TYPE == 'movies_shows':
             util.DEBUG_LOG("Library: Watchlist item state changed, setting dirty")

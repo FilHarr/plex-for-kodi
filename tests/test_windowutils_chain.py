@@ -42,6 +42,11 @@ from lib.windows import windowutils  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
+# A section OBJECT stand-in. Not a bare string: goHome() treats a str (plexobjects.PlexValue is
+# one) as a section key to be resolved through HOME.sectionByKey() - see the resolution test
+# below - so a string here would exercise that path, not the pass-through this file is about.
+SECTION = type("FakeSection", (), {"key": "42"})()
+
 
 class FakeChainHost(object):
     def __init__(self, all_closed=False):
@@ -82,9 +87,9 @@ class ChainAwareGoHomeTest(KodiTestCase):
         host = FakeChainHost()
         shell = FakeChainedShell(host)
 
-        shell.goHome(section="the-section", with_root=True)
+        shell.goHome(section=SECTION, with_root=True)
 
-        self.assertEqual([("the-section", True, False)], host.goHomeCalls)
+        self.assertEqual([(SECTION, True, False)], host.goHomeCalls)
         # Not the shell's own dismiss/close - operating on self here would only ever close the
         # shell, leaving the host's poll loop to reconstruct and reopen it.
         self.assertFalse(shell.forceDismissCalled)
@@ -107,10 +112,29 @@ class ChainAwareGoHomeTest(KodiTestCase):
         windowutils.HOME = fakeHome
         try:
             shell = FakeChainedShell(chain_host=None)
-            shell.goHome(section="the-section")
+            shell.goHome(section=SECTION)
             self.assertTrue(shell.forceDismissCalled)
             self.assertTrue(shell.doCloseCalled)
-            self.assertEqual("the-section", fakeHome._pendingSection)
+            self.assertEqual(SECTION, fakeHome._pendingSection)
+        finally:
+            windowutils.HOME = None
+
+    def test_a_bare_section_key_is_resolved_through_home(self):
+        """getLibrarySectionId() callers (the music player's / Album screen's / photo directory's
+        "Go to <section>") hand goHome() a key, not a section - a str (PlexValue). It has to reach
+        openSection() as the sidebar's section object, via HOME.sectionByKey(); passing the key
+        through raw blew up there on `section.server` (live, 2026-09-18)."""
+        looked_up = []
+        fakeHome = type("FakeHome", (), {
+            "go_root": None, "_pendingSection": None, "show": lambda self: None,
+            "sectionByKey": lambda self, key: looked_up.append(key) or SECTION,
+        })()
+        windowutils.HOME = fakeHome
+        try:
+            shell = FakeChainedShell(chain_host=None)
+            shell.goHome(section="42")
+            self.assertEqual(["42"], looked_up)
+            self.assertIs(SECTION, fakeHome._pendingSection)
         finally:
             windowutils.HOME = None
 
@@ -180,7 +204,7 @@ class ChainAwareStaleHostTest(KodiTestCase):
         windowutils.HOME = fakeHome
         try:
             shell = FakeChainedShell(host)
-            shell.goHome(section="the-section")
+            shell.goHome(section=SECTION)
 
             # Not delegated to the dead host - that's the crash this guards against.
             self.assertEqual([], host.goHomeCalls)
@@ -218,9 +242,9 @@ class ChainAwareStaleHostTest(KodiTestCase):
         host = FakeChainHost(all_closed=False)
         shell = FakeChainedShell(host)
 
-        shell.goHome(section="the-section")
+        shell.goHome(section=SECTION)
 
-        self.assertEqual([("the-section", False, False)], host.goHomeCalls)
+        self.assertEqual([(SECTION, False, False)], host.goHomeCalls)
         self.assertFalse(shell.forceDismissCalled)
 
 
@@ -275,11 +299,11 @@ class ChainAwareSelfHostingTest(KodiTestCase):
         windowutils.HOME = fakeHome
         try:
             window = FakeSelfHostingWindow()
-            window.goHome(section="the-section")
+            window.goHome(section=SECTION)
 
             self.assertTrue(window.forceDismissCalled)
             self.assertTrue(window.doCloseCalled)
-            self.assertEqual("the-section", fakeHome._pendingSection)
+            self.assertEqual(SECTION, fakeHome._pendingSection)
         finally:
             windowutils.HOME = None
 
@@ -309,7 +333,7 @@ class ChainAwareSelfHostingTest(KodiTestCase):
         window = FakeSelfHostingWindow()
         window.isRoot = True
 
-        window.goHome(section="the-section")
+        window.goHome(section=SECTION)
         window.processCommand("HOME")
 
         self.assertFalse(window.forceDismissCalled)

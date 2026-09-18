@@ -3,6 +3,8 @@ from __future__ import absolute_import
 import threading
 import time
 
+import six
+
 from lib import util
 from lib.util import T
 from . import dropdown
@@ -88,6 +90,16 @@ class GoHomeMixin():
         clicking the sidebar's already-active section from inside a hosted shell actually reopens
         it, instead of silently no-opping just because `pending == self.section` there."""
         HOME.go_root = with_root
+        # A bare section key (a str, or plexobjects.PlexValue - a str subclass - straight from
+        # getLibrarySectionId(): the music player's / Album screen's / photo directory's "Go to
+        # <section>") is resolved to the sidebar's own section object here. Before the pending-
+        # section stash below replaced the old 'HOME:<key>' exit command, that string carried a
+        # key by design and HomeWindow looked it up on arrival; those callers were never moved
+        # over, and openSection() on a bare key blew up on `section.server` (live, 2026-09-18).
+        if isinstance(section, six.string_types):
+            key, section = section, HOME.sectionByKey(section)
+            if section is None:
+                util.DEBUG_LOG('goHome: no sidebar section for key {0}, going to root', key)
         # Stashed on the HOME singleton directly, not embedded in the exitCommand string below -
         # HOME never gets discarded/recreated mid-session, so a live object reference survives the
         # bubble just fine and needs no round-trip through a section-key lookup. processCommand()
