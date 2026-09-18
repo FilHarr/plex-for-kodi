@@ -466,6 +466,10 @@ class Settings(object):
                 BoolSetting(
                     'theme_music_loop', T(33737, 'Loop theme music'), False
                 ),
+                BoolSetting('player_stop_on_exit', T(35085, 'Stop playback when exiting Plex'), True)
+                .description(T(35086, "Stop whatever is playing, and clear Kodi's playlists, whenever the addon "
+                                      "exits - including signing out or switching users. Off: playback carries on "
+                                      "under Kodi's own player after Plex has closed.")),
                 PlayedThresholdSetting('played_threshold', T(33501, 'Video played threshold'), 1,
                                        show_cb=lambda: plexnet.plexapp.SERVERMANAGER.selectedServer.prefs.get("LibraryVideoPlayedThreshold", None) is None
                                        ).description(
@@ -894,10 +898,6 @@ class Settings(object):
                 BoolSetting(
                     'player_stop_on_screensaver', T(32947, 'Stop video playback on screensaver'), False
                 ),
-                BoolSetting('player_stop_on_exit', T(35085, 'Stop playback when exiting Plex'), True)
-                .description(T(35086, "Stop whatever is playing, and clear Kodi's playlists, whenever the addon "
-                                      "exits - including signing out or switching users. Off: playback carries on "
-                                      "under Kodi's own player after Plex has closed.")),
             )
         ),
         'player_user': (
