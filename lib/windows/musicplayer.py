@@ -39,9 +39,12 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
     SKIP_NEXT_BUTTON_ID = 409
     STOP_BUTTON_ID = 407
 
-    SEEK_IMAGE_WIDTH = 1920
+    # The seekbar is 80% of the screen width, centred - see the SEEKBAR comment in
+    # script-plex-music_player.xml.tpl, whose 192/1536 these must match.
+    SEEK_IMAGE_WIDTH = 1536
 
-    BAR_RIGHT = 1920
+    BAR_X = 192
+    BAR_RIGHT = 1728
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -149,6 +152,12 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
 
         self.onAudioStarting()
         xbmc.executebuiltin('PlayerControl(Next)')
+
+    def setSeekbarProgress(self, w):
+        # The scrubber here is a <reveal> progress control (see the SEEKBAR comment in the
+        # template) so the pill mask clips rather than stretches with it: set its percentage,
+        # not its width. Info-less, so the value sticks.
+        self.seekbarControl.setPercent(w * 100.0 / self.SEEK_IMAGE_WIDTH)
 
     def showPlaylist(self):
         self.processCommand(opener.handleOpen(currentplaylist.CurrentPlaylistWindow, winID=self._winID))

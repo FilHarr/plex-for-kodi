@@ -377,18 +377,19 @@
     </control>
 </control>
 
+<!-- Transport row: shares the music player's restyled include (theme.music_player's 70x70
+     boxes, label pills on focus) - 100r keeps the boxes on the old glyphs' centre line. -->
 <control type="grouplist" id="400">
     <defaultcontrol>406</defaultcontrol>
-    <hitrect x="460" y="998" w="1000" h="55" />
+    <hitrect x="0" y="980" w="819" h="70" />
     <posx>0</posx>
-    <posy>{{ vscale(116) }}r</posy>
+    <posy>{{ vscale(100) }}r</posy>
     <width>819</width>
-
-    <height>{{ vscale(124) }}</height>
+    <height>{{ vscale(70) }}</height>
     <align>center</align>
     <onup>500</onup>
     <onright>100</onright>
-    <itemgap>-40</itemgap>
+    <itemgap>{{ theme.music_player.buttongroup.itemgap }}</itemgap>
     <orientation>horizontal</orientation>
     <scrolltime tween="quadratic" easing="out">200</scrolltime>
     <usecontrolcoords>false</usecontrolcoords>

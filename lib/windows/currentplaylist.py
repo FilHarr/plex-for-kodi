@@ -366,6 +366,11 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.selectedOffset = int((x - self.BAR_X) / float(self.SEEK_IMAGE_WIDTH) * self.duration)
         self.updateSelectedProgress()
 
+    def setSeekbarProgress(self, w):
+        # This window's scrubber (SEEK_IMAGE_ID) is an image, so its played portion is its width.
+        # MusicPlayerWindow's is a progress control and overrides this to set a percentage.
+        self.seekbarControl.setWidth(w or 1)
+
     @require_duration
     def updateSelectedProgress(self):
         if not self.duration:
@@ -373,7 +378,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
 
         ratio = self.selectedOffset / float(self.duration)
         w = int(ratio * self.SEEK_IMAGE_WIDTH)
-        self.seekbarControl.setWidth(w or 1)
+        self.setSeekbarProgress(w)
 
         self.selectionIndicator.setPosition(w, self.SELECTION_INDICATOR_Y)
         if w < self.selectionBoxHalf - 3:

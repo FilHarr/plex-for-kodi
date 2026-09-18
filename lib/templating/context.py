@@ -112,6 +112,23 @@ TEMPLATE_CONTEXTS = {
                     "width": None,
                     "height": None,
                 }
+            },
+            # The music player / current-playlist transport row (includes/music_player_buttons.xml.tpl)
+            # - the row's own long-standing geometry, kept here so the base theme renders as before.
+            "music_player": {
+                "buttongroup": {
+                    "itemgap": -40
+                },
+                "buttons": {
+                    "width": 125,
+                    "height": 101,
+                },
+                "buttons_hitrect": {
+                    "x": 28,
+                    "y": 28,
+                    "w": 69,
+                    "h": 45,
+                }
             }
         },
         "modern": {
@@ -206,6 +223,22 @@ TEMPLATE_CONTEXTS = {
                 }
             },
             "library": {
+                "buttongroup": {
+                    "itemgap": 0
+                },
+                "buttons": {
+                    "width": 70,
+                    "height": 70,
+                },
+                "buttons_hitrect": {
+                    "x": 5,
+                    "y": 5,
+                    "w": 60,
+                    "h": 60,
+                }
+            },
+            # music player / current-playlist transport row - same treatment as the rows above.
+            "music_player": {
                 "buttongroup": {
                     "itemgap": 0
                 },

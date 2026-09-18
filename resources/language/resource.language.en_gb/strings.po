@@ -3460,3 +3460,39 @@ msgstr ""
 msgctxt "#35075"
 msgid "Disc {0}, {1}"
 msgstr ""
+
+msgctxt "#35076"
+msgid "Pause"
+msgstr ""
+
+msgctxt "#35077"
+msgid "Stop"
+msgstr ""
+
+msgctxt "#35078"
+msgid "Next"
+msgstr ""
+
+msgctxt "#35079"
+msgid "Play queue"
+msgstr ""
+
+msgctxt "#35080"
+msgid "Shuffle on"
+msgstr ""
+
+msgctxt "#35081"
+msgid "Shuffle off"
+msgstr ""
+
+msgctxt "#35082"
+msgid "Repeat all"
+msgstr ""
+
+msgctxt "#35083"
+msgid "Repeat one"
+msgstr ""
+
+msgctxt "#35084"
+msgid "Repeat off"
+msgstr ""

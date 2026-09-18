@@ -2977,7 +2977,9 @@ class PlexPlayer(xbmc.Player, signalsmixin.SignalsMixin):
         li.setArt({
             'fanart': art.asTranscodedImageURL(1920, 1080),
             'landscape': util.backgroundFromArt(art),
-            'thumb': track.defaultThumb.asTranscodedImageURL(800, 800),
+            # 640: the largest consumer is the music player's 640x640 cover; the current-playlist
+            # window's 639px cover and the header popout's 63px thumb both fit inside that.
+            'thumb': track.defaultThumb.asTranscodedImageURL(640, 640),
         })
         if fanart:
             li.setArt({'fanart': fanart})
