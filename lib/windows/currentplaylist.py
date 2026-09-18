@@ -51,13 +51,16 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
     OPTIONS_BUTTON_ID = 411
     STOP_BUTTON_ID = 407
 
-    SEEK_IMAGE_WIDTH = 819
+    # The seekbar is 80% of this window's 1440-wide now-playing column, centred in it - see the
+    # SEEKBAR comment in script-plex-music_current_playlist.xml.tpl, whose 144/1152 these must
+    # match. MusicPlayerWindow overrides the three widths for its full-screen column.
+    SEEK_IMAGE_WIDTH = 1152
     SELECTION_BOX_WIDTH = 101
     SELECTION_INDICATOR_Y = 896
 
-    BAR_X = 0
+    BAR_X = 144
     BAR_Y = 921
-    BAR_RIGHT = 819
+    BAR_RIGHT = 1296
     BAR_BOTTOM = 969
 
     def __init__(self, *args, **kwargs):
@@ -302,7 +305,9 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.selectionIndicator = self.getControl(self.SELECTION_INDICATOR)
         self.selectionBox = self.getControl(self.SELECTION_BOX)
         self.selectionBoxHalf = self.SELECTION_BOX_WIDTH // 2
-        self.selectionBoxMax = self.SEEK_IMAGE_WIDTH
+        # Where the seek-time bubble stops tracking the scrub point and clamps to the bar's right
+        # end instead (updateSelectedProgress()), so it never overhangs the bar.
+        self.selectionBoxMax = self.SEEK_IMAGE_WIDTH - (self.selectionBoxHalf - 3)
         player.PLAYER.on('av.started', self.onPlayBackStarted)
 
     def checkSeekActions(self, action, controlID):
@@ -367,9 +372,10 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.updateSelectedProgress()
 
     def setSeekbarProgress(self, w):
-        # This window's scrubber (SEEK_IMAGE_ID) is an image, so its played portion is its width.
-        # MusicPlayerWindow's is a progress control and overrides this to set a percentage.
-        self.seekbarControl.setWidth(w or 1)
+        # The scrubber (SEEK_IMAGE_ID) is a <reveal> progress control in both windows' templates
+        # (see the SEEKBAR comment in either) so the pill mask clips rather than stretches with
+        # it: set its percentage, not its width. Info-less, so the value sticks.
+        self.seekbarControl.setPercent(w * 100.0 / self.SEEK_IMAGE_WIDTH)
 
     @require_duration
     def updateSelectedProgress(self):

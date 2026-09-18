@@ -65,7 +65,6 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
         if self.playlist and self.playlist.isRemote:
             self.playlist.on('change', self.updateProperties)
         self.setupSeekbar()
-        self.selectionBoxMax = self.SEEK_IMAGE_WIDTH - (self.selectionBoxHalf - 3)
 
         self.commonInit()
         self.updateProperties()
@@ -152,12 +151,6 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
 
         self.onAudioStarting()
         xbmc.executebuiltin('PlayerControl(Next)')
-
-    def setSeekbarProgress(self, w):
-        # The scrubber here is a <reveal> progress control (see the SEEKBAR comment in the
-        # template) so the pill mask clips rather than stretches with it: set its percentage,
-        # not its width. Info-less, so the value sticks.
-        self.seekbarControl.setPercent(w * 100.0 / self.SEEK_IMAGE_WIDTH)
 
     def showPlaylist(self):
         self.processCommand(opener.handleOpen(currentplaylist.CurrentPlaylistWindow, winID=self._winID))

@@ -158,11 +158,12 @@
      FFE5A00D in one identical box, both rounded by a diffuse mask - so it works over any
      background. The track is 40FFFFFF rather than that recipe's E60A0F1A: that near-black
      reads over poster art but all but vanished against this screen's black, and translucent
-     white stays a visible, neutral track whatever ends up behind it. The mask is masks/seekbar-mask.png rather than that recipe's progress-bar-mask
+     white stays a visible, neutral track whatever ends up behind it. The mask is masks/seekbar-mask-1536.png rather than that recipe's progress-bar-mask
      .png: a diffuse mask scales to its control, and that 408x16 one is only the right shape
      squeezed onto a ~224px bar - stretched across 1536px its semicircle caps became 30px tapers.
-     seekbar-mask is the bar's own native 1536x8, with its caps lifted from that mask as it renders
-     on a 224x8 poster bar, so the curve is that one exactly.
+     seekbar-mask-1536 is the bar's own native 1536x8, with its caps lifted from that mask as it
+     renders on a 224x8 poster bar, so the curve is that one exactly (the current-playlist window's
+     narrower bar has its own 1152 twin, same recipe).
      The fill and the scrubber are progress controls, not that recipe's fixed-percentage strip:
      the fill has to follow Player.Progress live, and the scrubber's position is set from Python
      (updateSelectedProgress(), currentplaylist.py). <reveal> is what makes the mask work on
@@ -186,7 +187,7 @@
         <posy>0</posy>
         <width>1536</width>
         <height>{{ vscale(8) }}</height>
-        <texture diffuse="script.plex/masks/seekbar-mask.png">script.plex/white-square.png</texture>
+        <texture diffuse="script.plex/masks/seekbar-mask-1536.png">script.plex/white-square.png</texture>
         <colordiffuse>40FFFFFF</colordiffuse>
     </control>
     <control type="button" id="500">
@@ -211,7 +212,7 @@
         <reveal>true</reveal>
         <texturebg>script.plex/transparent-6px.png</texturebg>
         <lefttexture>-</lefttexture>
-        <midtexture diffuse="script.plex/masks/seekbar-mask.png">script.plex/white-square-6px.png</midtexture>
+        <midtexture diffuse="script.plex/masks/seekbar-mask-1536.png">script.plex/white-square-6px.png</midtexture>
         <righttexture>-</righttexture>
         <overlaytexture>-</overlaytexture>
         <colordiffuse>FFE5A00D</colordiffuse>
@@ -227,7 +228,7 @@
         <reveal>true</reveal>
         <texturebg>script.plex/transparent-6px.png</texturebg>
         <lefttexture>-</lefttexture>
-        <midtexture diffuse="script.plex/masks/seekbar-mask.png">script.plex/white-square-6px.png</midtexture>
+        <midtexture diffuse="script.plex/masks/seekbar-mask-1536.png">script.plex/white-square-6px.png</midtexture>
         <righttexture>-</righttexture>
         <overlaytexture>-</overlaytexture>
         <colordiffuse>FFAC5B00</colordiffuse>
@@ -246,7 +247,7 @@
         <reveal>true</reveal>
         <texturebg>script.plex/transparent-6px.png</texturebg>
         <lefttexture>-</lefttexture>
-        <midtexture diffuse="script.plex/masks/seekbar-mask.png">script.plex/white-square-6px.png</midtexture>
+        <midtexture diffuse="script.plex/masks/seekbar-mask-1536.png">script.plex/white-square-6px.png</midtexture>
         <righttexture>-</righttexture>
         <overlaytexture>-</overlaytexture>
         <colordiffuse>FFE5A00D</colordiffuse>
