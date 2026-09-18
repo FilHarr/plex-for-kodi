@@ -113,7 +113,9 @@ class TemplateEngine(object):
             return False
 
         leeway = 50
-        expected_len = len(data)
+        # bytes, not characters: ensure_file_exists() compares against st_size, and a template
+        # with any non-ASCII text (a literal bullet, say) is longer on disk than len(data).
+        expected_len = len(data.encode('utf-8'))
         # write final file
         count = 0
         fn = os.path.join(self.target_dir, "script-plex-{}.xml".format(template))
