@@ -432,17 +432,27 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         else:
             self.fillTracks()
 
+    # handleOpen(), not openWindow(): the music player is a chrome-only player window, never a
+    # library screen, so it must open ON TOP of this one - the way opener.py, ArtistWindow
+    # (subitems.py) and the header popout all open it. openWindow() is chain-aware: with this
+    # screen hosted in the library's window chain it swapped the player in as a hosted shell,
+    # and the player's own Stop button (stopButtonClicked(), musicplayer.py - a plain doClose(),
+    # no chain pop) then left the host's _next still pointing at the player, so its _open() loop
+    # built a fresh one with the same kwargs, whose play() restarted the playlist from the start.
+    # Only Back popped the chain properly - hence Stop working from an un-hosted Album screen and
+    # not from a hosted one (live, 2026-09-18). Both calls date from before openWindow() became
+    # chain-aware (3c4ee834), when the two were the same thing.
     def playButtonClicked(self, shuffle=False):
         pl = playlist.LocalPlaylist(self.album.all(), self.album.getServer())
         pl.startShuffled = shuffle
-        self.openWindow(musicplayer.MusicPlayerWindow, track=pl.current(), playlist=pl)
+        self.processCommand(opener.handleOpen(musicplayer.MusicPlayerWindow, track=pl.current(), playlist=pl))
 
     def trackPanelClicked(self):
         mli = self.trackListControl.getSelectedItem()
         if not mli:
             return
 
-        self.openWindow(musicplayer.MusicPlayerWindow, track=mli.dataSource, album=self.album)
+        self.processCommand(opener.handleOpen(musicplayer.MusicPlayerWindow, track=mli.dataSource, album=self.album))
 
     def updateProperties(self):
         # The shared background path (kodigui.BaseWindow), same as Movies/Shows/Seasons/Artist:
