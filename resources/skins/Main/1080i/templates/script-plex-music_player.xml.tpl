@@ -5,6 +5,21 @@
 {% block backgroundcolor %}<backgroundcolor>0xff000000</backgroundcolor>{% endblock %}
 {% block controls %}
 
+<!-- Clock: the header's own (default.xml.tpl / library.xml.tpl / settings, user_select),
+     verbatim - these two windows have no header, so it's declared here to keep it where every
+     other screen has it. -->
+<control type="label">
+    <right>60</right>
+    <posy>{{ vscale(35) }}</posy>
+    <width>200</width>
+    <height>{{ vscale(65) }}</height>
+    <font>font12</font>
+    <align>right</align>
+    <aligny>center</aligny>
+    <textcolor>FFFFFFFF</textcolor>
+    <label>$INFO[System.Time]</label>
+</control>
+
 <!-- COVER: 640x640, centred horizontally, top edge 10px above the header's bottom edge (group
      200 in default.xml.tpl is 135 tall). Rounded by the same masks/square-mask.png the Album screen's
      cover and the grid tiles use; fallback layer underneath for tracks with no art. -->
