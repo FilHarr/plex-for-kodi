@@ -31,7 +31,12 @@
      Params:
        list_id - the enclosing list's control id, for the scroll condition
        scroll_focused - True in a focusedlayout (title marquees while the list has focus), False in
-         an itemlayout (nothing scrolls; every unfocused row would otherwise marquee at once) -->
+         an itemlayout (nothing scrolls; every unfocused row would otherwise marquee at once)
+       text_width - optional, the two text lines' box width; defaults to this recipe's own 1371.
+         The play queue window (script-plex-music_current_playlist.xml.tpl) passes its own for
+         its 420-wide pill
+       no_duration - optional, True drops the duration label (the play queue again). Undefined
+         is falsy, so the tracks list itself passes neither. -->
 
 <!-- Album art. Two layers, the same pairing the grid tiles use: the fallback underneath (set on
      every item in this fill path by CreateDefaultItemsTask, library.py - music.png for a music
@@ -63,7 +68,7 @@
     <scroll>{% if scroll_focused %}Control.HasFocus({{ list_id }}){% else %}false{% endif %}</scroll>
     <posx>104</posx>
     <posy>{{ vscale(23) }}</posy>
-    <width>1371</width>
+    <width>{{ text_width|default(1371) }}</width>
     <height>{{ vscale(30) }}</height>
     <font>font10</font>
     <align>left</align>
@@ -76,7 +81,7 @@
     <scroll>{% if scroll_focused %}Control.HasFocus({{ list_id }}){% else %}false{% endif %}</scroll>
     <posx>104</posx>
     <posy>{{ vscale(23) }}</posy>
-    <width>1371</width>
+    <width>{{ text_width|default(1371) }}</width>
     <height>{{ vscale(30) }}</height>
     <font>font10</font>
     <align>left</align>
@@ -88,7 +93,7 @@
     <scroll>false</scroll>
     <posx>104</posx>
     <posy>{{ vscale(50) }}</posy>
-    <width>1371</width>
+    <width>{{ text_width|default(1371) }}</width>
     <height>{{ vscale(30) }}</height>
     <font>font8</font>
     <align>left</align>
@@ -96,6 +101,7 @@
     <textcolor>AAFFFFFF</textcolor>
     <label>$INFO[ListItem.Property(track.artist)]</label>
 </control>
+{% if not no_duration %}
 <control type="label">
     <posx>1482</posx>
     <posy>0</posy>
@@ -107,3 +113,4 @@
     <textcolor>D8FFFFFF</textcolor>
     <label>$INFO[ListItem.Property(track.duration)]</label>
 </control>
+{% endif %}

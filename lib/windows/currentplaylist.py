@@ -269,9 +269,16 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         player.PLAYER.playselected(mli.pos())
 
     def createListItem(self, pi, idx):
-        label2 = '{0} / {1}'.format(pi['artist'][0], pi['album'])
+        label2 = u'{0} • {1}'.format(pi['artist'][0], pi['album'])
         plexInfo = pi['comment']
         mli = kodigui.ManagedListItem(pi['title'], label2, thumbnailImage=pi['thumbnail'], data_source=pi)
+        # The row is includes/track_row.xml.tpl (the music section's list view), which reads these
+        # three rather than Label/Label2 - see its own comment on why. The second line here is
+        # "Artist <bullet> Album", the same pairing and separator as the now-playing meta line
+        # beside it, where that view's is the artist alone.
+        mli.setProperty('track.title', pi['title'])
+        mli.setProperty('track.artist', label2)
+        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/music.png')
         mli.setProperty('track.duration', util.simplifiedTimeDisplay(pi['duration'] * 1000))
         if plexInfo.startswith('PLEX-'):
             mli.setProperty('track.ID', plexInfo.split('-', 1)[-1].split(':', 1)[0])
