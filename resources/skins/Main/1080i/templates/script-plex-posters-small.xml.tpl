@@ -354,13 +354,13 @@
              verbatim. More doesn't get one (not asked for). Bare includes for the real buttons;
              only the overlays get explicit nav, so Kodi's usecontrolcoords nav doesn't pick the
              overlay itself once it reflows into the list - see episode_button_label.xml.tpl. -->
-        {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+        {% include template with name="play" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
         {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
             label_width=50 & pill_width=112 & group_width=68 &
             onleft=301 & onright=302
         %}
-        {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+        {% include template with name="shuffle" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
         {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
             label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
             label_width=84 & pill_width=146 & group_width=102 &
@@ -371,7 +371,7 @@
            It used to also show on any section while music played, for a "Play Next" entry that
            skipped the track; dropped, the header's now-playing popout covers that now. #}
         {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(no.options))" %}
-        {% include template with name="view" & id=304 %}
+        {% include template with name="view" & id=304 & overlay=True %}
         <!-- No onright: 393 is the last item in this row once visible (nothing follows it to
              route around), same as 304's own bare include above. -->
         {% include ol with id=393 & visible="Control.HasFocus(304)" & name="view" &

@@ -1036,7 +1036,7 @@
                              to fall through to that control's own nav (here: the grouplist's normal
                              computed neighbour), same as any other hidden-item skip elsewhere in this row -
                              not live-confirmed for this specific case though, worth an explicit check. -->
-                        {% include template with name="info" & id=304 & visible="!Container(400).ListItem.Property(is.season.card)" %}
+                        {% include template with name="info" & id=304 & overlay=True & visible="!Container(400).ListItem.Property(is.season.card)" %}
                         {% include ol with id=391 & visible="Control.HasFocus(304)" & name="info" &
                             label="$ADDON[script.plexmod 35059]" & label_suffix_info="" &
                             label_width=88 & pill_width=150 & group_width=106 &
@@ -1049,11 +1049,11 @@
                              of a single Play button, on request. The season card takes the same three
                              states from its own episode (applySeasonCardPlayState(), episodes.py) but
                              stops at Resume - see that button's own comment below. -->
-                        {% include template with name="play" & id=301 & onleft=304 & onright=305 &
+                        {% include template with name="play" & id=301 & overlay=True & onleft=304 & onright=305 &
                             enable="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(in.progress))" &
                             visible="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(in.progress))"
                         %}
-                        {% include template with name="play" & id=306 & onleft=304 & onright=305 &
+                        {% include template with name="play" & id=306 & overlay=True & onleft=304 & onright=305 &
                                             visible="String.IsEmpty(Window.Property(current_item.loaded))"
                         %}
                         <!-- Two variants of this label, split on is.season.card: a real episode card
@@ -1078,7 +1078,7 @@
                             pill_id=384 & label_id=385 &
                             onleft=301 & onright=305
                         %}
-                        {% include template with name="resume" & id=308 & onleft=304 & onright=305 &
+                        {% include template with name="resume" & id=308 & overlay=True & onleft=304 & onright=305 &
                             visible="!String.IsEmpty(Window.Property(current_item.loaded)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
                         %}
                         <!-- Two variants, not one width covering both: remainingTimeToShortText() (util.py)
@@ -1117,7 +1117,7 @@
                              "start this season over" isn't what it would do either - on request,
                              Resume alone there. Playing a season-card episode from the beginning
                              is still reachable, just from the episode's own card. -->
-                        {% include template with name="restart" & id=309 & onleft=308 & onright=305 &
+                        {% include template with name="restart" & id=309 & overlay=True & onleft=308 & onright=305 &
                             visible="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
                         %}
                         {% include ol with id=393 & visible="Control.HasFocus(309)" & name="restart" &
@@ -1125,13 +1125,13 @@
                             label_width=81 & pill_width=143 & group_width=99 &
                             onleft=309 & onright=305
                         %}
-                        {% include template with name="settings" & id=305 & visible="!Container(400).ListItem.Property(is.season.card)" %}
+                        {% include template with name="settings" & id=305 & overlay=True & visible="!Container(400).ListItem.Property(is.season.card)" %}
                         {% include ol with id=394 & visible="Control.HasFocus(305)" & name="settings" &
                             label="$ADDON[script.plexmod 35060]" & label_suffix_info="" &
                             label_width=162 & pill_width=224 & group_width=180 &
                             onleft=305 & onright=303
                         %}
-                        {% include template with name="more" & id=303 %}
+                        {% include template with name="more" & id=303 & overlay=True %}
                         {% include ol with id=395 & visible="Control.HasFocus(303)" & name="more" &
                             label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
                             label_width=60 & pill_width=122 & group_width=78 &
@@ -1140,7 +1140,7 @@
                         <!-- Season-card-only, not every episode card (on request) - shuffles the whole
                              season/show (shuffleButtonClicked() - episodes.py), which only makes sense
                              from the season-level card, not a single episode's own. -->
-                        {% include template with name="shuffle" & id=302 & onleft=303 &
+                        {% include template with name="shuffle" & id=302 & overlay=True & onleft=303 &
                             visible="Container(400).ListItem.Property(is.season.card)"
                         %}
                         {% include ol with id=396 & visible="Control.HasFocus(302)" & name="shuffle" &

@@ -131,19 +131,19 @@
                      reuse Pre-play's/Seasons' own $ADDON strings and measured widths, since it's the
                      same label text; Shuffle reuses Seasons' own. -->
                 {% with attr = theme.artist.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.artist.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
-                    {% include template with name="play" & id=302 %}
+                    {% include template with name="play" & id=302 & overlay=True %}
                     {% include ol with id=392 & visible="Control.HasFocus(302)" & name="play" &
                         label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                         label_width=50 & pill_width=112 & group_width=68 &
                         onleft=302 & onright=303
                     %}
-                    {% include template with name="shuffle" & id=303 %}
+                    {% include template with name="shuffle" & id=303 & overlay=True %}
                     {% include ol with id=393 & visible="Control.HasFocus(303)" & name="shuffle" &
                         label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
                         label_width=84 & pill_width=146 & group_width=102 &
                         onleft=303 & onright=304
                     %}
-                    {% include template with name="more" & id=304 %}
+                    {% include template with name="more" & id=304 & overlay=True %}
                     {% include ol with id=394 & visible="Control.HasFocus(304)" & name="more" &
                         label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
                         label_width=60 & pill_width=122 & group_width=78 &

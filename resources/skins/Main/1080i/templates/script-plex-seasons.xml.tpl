@@ -340,7 +340,7 @@
                          typical string ("Resume S5E14 &#8226; 41m left"), not a worst case. Only
                          ever visible if the resize doesn't land (its own except path), but a
                          too-small start clips where a too-large one just reads roomy. -->
-                    {% include template with name="play" & id=302 &
+                    {% include template with name="play" & id=302 & overlay=True &
                         visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(play.in.progress))"
                     %}
                     {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
@@ -349,7 +349,7 @@
                         pill_id=396 & label_id=397 &
                         onleft=302 & onright=308
                     %}
-                    {% include template with name="resume" & id=301 &
+                    {% include template with name="resume" & id=301 & overlay=True &
                         visible="String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(play.in.progress))"
                     %}
                     {% include ol with id=398 & visible="Control.HasFocus(301)" & name="resume" &
@@ -371,7 +371,7 @@
                         label_width=251 & pill_width=313 & group_width=269 &
                         onleft=309 & onright=303
                     %}
-                    {% include template with name="shuffle" & id=303 &
+                    {% include template with name="shuffle" & id=303 & overlay=True &
                         visible="String.IsEmpty(Window.Property(disable_playback))"
                     %}
                     {% include ol with id=394 & visible="Control.HasFocus(303)" & name="shuffle" &
@@ -379,7 +379,7 @@
                         label_width=84 & pill_width=146 & group_width=102 &
                         onleft=303 & onright=304
                     %}
-                    {% include template with name="more" & id=304 &
+                    {% include template with name="more" & id=304 & overlay=True &
                         visible="String.IsEmpty(Window.Property(disable_playback))"
                     %}
                     {% include ol with id=395 & visible="Control.HasFocus(304)" & name="more" &

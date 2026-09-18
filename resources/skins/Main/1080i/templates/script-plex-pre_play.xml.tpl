@@ -142,7 +142,7 @@
                  usecontrolcoords geometric nav would already resolve to, since none of the real
                  buttons below pass explicit onleft/onright of their own to literally copy. -->
             {% with attr = theme.pre_play.buttons & hitrect = theme.pre_play.buttons_hitrect & template = "includes/themed_button.xml.tpl" & ol = "includes/episode_button_label.xml.tpl" %}
-                {% include template with name="info" & id=304 %}
+                {% include template with name="info" & id=304 & overlay=True %}
                 {% include ol with id=390 & visible="Control.HasFocus(304)" & name="info" &
                     label="$ADDON[script.plexmod 35059]" & label_suffix_info="" &
                     label_width=88 & pill_width=150 & group_width=106 &
@@ -157,13 +157,13 @@
                      Ids 301/307, the only two left free in this screen's 300-block (302-306 are
                      Play/Trailer/Info/Settings/More, 308/309 the watchlist pair, 310-322 the media
                      info pills) - so they don't read in row order, unlike Episodes' own 308/309. -->
-                {% include template with name="play" & id=302 & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(in.progress))" %}
+                {% include template with name="play" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(in.progress))" %}
                 {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
                     label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                     label_width=50 & pill_width=112 & group_width=68 &
                     onleft=302 & onright=303
                 %}
-                {% include template with name="resume" & id=301 & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(in.progress))" %}
+                {% include template with name="resume" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(in.progress))" %}
                 <!-- Two width variants, not one covering both - straight copy of Episodes' own pair,
                      same label text, same font, same suffix: remainingTimeToShortText() (util.py) only
                      ever emits "Xm" (<=90 min) or "XhYm", and String.Contains(...,h) tells them apart
@@ -179,14 +179,14 @@
                     label_width=236 & pill_width=298 & group_width=254 &
                     onleft=301 & onright=307
                 %}
-                {% include template with name="restart" & id=307 & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(in.progress))" %}
+                {% include template with name="restart" & id=307 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(in.progress))" %}
                 {% include ol with id=398 & visible="Control.HasFocus(307)" & name="restart" &
                     label="$ADDON[script.plexmod 35061]" & label_suffix_info="" &
                     label_width=81 & pill_width=143 & group_width=99 &
                     onleft=307 & onright=303
                 %}
                 {% include "includes/wl_dynamic_buttons.xml.tpl" %}
-                {% include template with name="trailer" & id=303 & visible="!String.IsEmpty(Window.Property(trailer.button))" %}
+                {% include template with name="trailer" & id=303 & overlay=True & visible="!String.IsEmpty(Window.Property(trailer.button))" %}
                 {% include ol with id=392 & visible="Control.HasFocus(303)" & name="trailer" &
                     label="$ADDON[script.plexmod 35064]" & label_suffix_info="" &
                     label_width=144 & pill_width=206 & group_width=162 &
@@ -203,13 +203,13 @@
                     label_width=251 & pill_width=313 & group_width=269 &
                     onleft=309 & onright=305
                 %}
-                {% include template with name="settings" & id=305 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
+                {% include template with name="settings" & id=305 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback))" %}
                 {% include ol with id=395 & visible="Control.HasFocus(305)" & name="settings" &
                     label="$ADDON[script.plexmod 35060]" & label_suffix_info="" &
                     label_width=162 & pill_width=224 & group_width=180 &
                     onleft=305 & onright=306
                 %}
-                {% include template with name="more" & id=306 & visible="String.IsEmpty(Window.Property(disable_playback))" %}
+                {% include template with name="more" & id=306 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback))" %}
                 {% include ol with id=396 & visible="Control.HasFocus(306)" & name="more" &
                     label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
                     label_width=60 & pill_width=122 & group_width=78 &

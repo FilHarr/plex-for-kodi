@@ -570,13 +570,13 @@
         {# No section-level play/shuffle for playlists - each playlist item plays/shuffles
            itself (its own context menu), there's no single "the section" to play here the way
            a movie/show library has. #}
-        {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + !String.IsEqual(Window.Property(media),playlists) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+        {% include template with name="play" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + !String.IsEqual(Window.Property(media),playlists) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
         {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
             label_width=50 & pill_width=112 & group_width=68 &
             onleft=301 & onright=302
         %}
-        {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + !String.IsEqual(Window.Property(media),playlists) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+        {% include template with name="shuffle" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + !String.IsEqual(Window.Property(media),playlists) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
         {# onright falls back to the scrubber (151, this row's own boundary target) when More
            isn't on screen: in a music section neither More nor View shows any more, so Shuffle is
            the last button in the row and a bare onright=303 would point at a hidden control. #}

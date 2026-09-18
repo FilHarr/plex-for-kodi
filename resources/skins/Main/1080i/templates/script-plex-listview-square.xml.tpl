@@ -527,13 +527,13 @@
            carry, plus the label-on-focus pills on Play and Shuffle - the same treatment the grid
            view got, so the two match as you switch between them. #}
         {% with attr = theme.library.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.library.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
-            {% include template with name="play" & id=301 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+            {% include template with name="play" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
             {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
                 label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                 label_width=50 & pill_width=112 & group_width=68 &
                 onleft=301 & onright=302
             %}
-            {% include template with name="shuffle" & id=302 & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
+            {% include template with name="shuffle" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
             {# Falls back to the scrubber when More isn't on screen - in a music section neither
                More nor View shows, leaving Shuffle as the row's last button. #}
             {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &

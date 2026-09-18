@@ -21,7 +21,14 @@
     <width>{{ attr.width }}</width>
     <height>{{ attr.height|vscale }}</height>
     <font>{{ font|default("font12") }}</font>
-    <texturefocus{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}{{ name }}{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>
+    {# overlay=True: this button has an episode_button_label.xml.tpl pill overlay, which redraws
+       the focused icon itself (on top of its pill). Drawing it here as well composites the same
+       anti-aliased glyph over itself - every edge pixel's coverage goes 1-(1-a)^2, measured as
+       ~14% more ink on shuffle.png - and the focused icon reads visibly bolder than its unfocused
+       neighbours. So with an overlay the button draws no focus texture of its own; the overlay's
+       single redraw is the focused icon. Undefined is falsy: callers without an overlay are
+       unchanged. #}
+    {% if overlay %}<texturefocus>-</texturefocus>{% else %}<texturefocus{% if theme.buttons.useFocusColor %} colordiffuse="{{ theme.buttons.focusColor|default("FFE5A00D") }}"{% endif %}>{{ theme.assets.buttons.base }}{{ name }}{{ theme.assets.buttons.focusSuffix }}.png</texturefocus>{% endif %}
     <texturenofocus{% if theme.buttons.useNoFocusColor %} colordiffuse="{{ theme.buttons.noFocusColor|default('99FFFFFF') }}"{% endif %}>{{ theme.assets.buttons.base }}{{ name }}.png</texturenofocus>
     <label> </label>
     {% if xml %}{% spaceless %} {# complex elements #}
