@@ -3496,3 +3496,11 @@ msgstr ""
 msgctxt "#35084"
 msgid "Repeat off"
 msgstr ""
+
+msgctxt "#35085"
+msgid "Stop playback when exiting Plex"
+msgstr ""
+
+msgctxt "#35086"
+msgid "Stop whatever is playing, and clear Kodi's playlists, whenever the addon exits - including signing out or switching users. Off: playback carries on under Kodi's own player after Plex has closed."
+msgstr ""

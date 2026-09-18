@@ -894,6 +894,10 @@ class Settings(object):
                 BoolSetting(
                     'player_stop_on_screensaver', T(32947, 'Stop video playback on screensaver'), False
                 ),
+                BoolSetting('player_stop_on_exit', T(35085, 'Stop playback when exiting Plex'), True)
+                .description(T(35086, "Stop whatever is playing, and clear Kodi's playlists, whenever the addon "
+                                      "exits - including signing out or switching users. Off: playback carries on "
+                                      "under Kodi's own player after Plex has closed.")),
             )
         ),
         'player_user': (

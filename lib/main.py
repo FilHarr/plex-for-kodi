@@ -138,6 +138,25 @@ exit_timer = threading.Timer(util.addonSettings.maxShutdownWait, hardExit)
 exit_timer.name = 'HARDEXIT-TIMER'
 
 
+def stopPlaybackOnExit():
+    """Stop whatever PLAYER is playing and empty Kodi's playlists, so nothing outlives the addon
+    (the player_stop_on_exit setting, default on). Through PLAYER, not a bare xbmc.Player(): its
+    handler then sees the stop too, and the Plex timeline gets a proper "stopped" instead of the
+    server timing the session out. Before player.shutdown(), which detaches that handler. Kodi
+    would otherwise keep playing - and keep the Plex play queue in its music playlist for a later
+    plain Play to resume - after the UI is gone, which is what the inherited-session adoption in
+    PlexPlayer.init() (player.py) exists to cope with; with this on, that's only ever reached
+    after a hard kill."""
+    try:
+        if player.PLAYER.isPlaying():
+            util.DEBUG_LOG('Main: stopping playback on exit')
+            player.PLAYER.stopAndWait()
+        xbmc.PlayList(xbmc.PLAYLIST_MUSIC).clear()
+        xbmc.PlayList(xbmc.PLAYLIST_VIDEO).clear()
+    except:
+        util.ERROR()
+
+
 def main(force_render=False):
     global BACKGROUND
 
@@ -405,6 +424,8 @@ def _main():
             dcm.deinit()
             plexapp.util.INTERFACE.shutdownCache()
             plexapp.util.INTERFACE.playbackManager.deinit()
+            if util.getSetting('player_stop_on_exit', True):
+                stopPlaybackOnExit()
             player.shutdown()
             plexapp.util.APP.preShutdown()
             util.CRON.stop()
