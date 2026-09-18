@@ -51,16 +51,17 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
     OPTIONS_BUTTON_ID = 411
     STOP_BUTTON_ID = 407
 
-    # The seekbar is 80% of this window's 1440-wide now-playing column, centred in it - see the
-    # SEEKBAR comment in script-plex-music_current_playlist.xml.tpl, whose 144/1152 these must
-    # match. MusicPlayerWindow overrides the three widths for its full-screen column.
+    # The seekbar is the player screen's bar at 80% of a 1440-wide now-playing column, shifted
+    # 20px left with the rest of that column - see the SEEKBAR comment in
+    # script-plex-music_current_playlist.xml.tpl, whose 124/1152 these must match.
+    # MusicPlayerWindow overrides the three widths for its full-screen column.
     SEEK_IMAGE_WIDTH = 1152
     SELECTION_BOX_WIDTH = 101
     SELECTION_INDICATOR_Y = 896
 
-    BAR_X = 144
+    BAR_X = 124
     BAR_Y = 921
-    BAR_RIGHT = 1296
+    BAR_RIGHT = 1276
     BAR_BOTTOM = 969
 
     def __init__(self, *args, **kwargs):

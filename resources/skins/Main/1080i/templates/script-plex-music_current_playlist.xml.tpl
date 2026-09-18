@@ -1,10 +1,11 @@
 {% extends "base.xml.tpl" %}
-{# Two columns: the music player's own screen (script-plex-music_player.xml.tpl), re-centred in
-   a 1440-wide now-playing column on the left, and the play queue in the 480 on the right - a
-   75/25 split. Everything in the left column is that screen's markup with x recalculated for
-   the narrower centre (720, not 960): cover 640 wide at 400, text block 1250 wide at 95,
-   transport row 1200 wide at 120. The seekbar keeps that screen's 80%-of-column rule, so it is
-   1152 wide at 144 with the times in the 144px margins, on its own native-size mask. #}
+{# Two columns: the music player's own screen (script-plex-music_player.xml.tpl) in a now-playing
+   column on the left, and the play queue in the 520 on the right (1400..1920). The left column
+   is that screen's markup at the sizes it has there, laid out as if for a 1440-wide column
+   (centre 720: cover 640 wide at 400, text block 1250 wide at 95, transport row 1200 wide at
+   120, seekbar at 80% of 1440 = 1152 at 144 with the times in the margins) and then shifted 20px
+   left as a whole - so it reads as centred on 700 with 20px trimmed from each side, and the
+   queue gets that 40. Every x below is the 1440 figure minus 20. #}
 {% block backgroundcolor %}<backgroundcolor>0xff000000</backgroundcolor>{% endblock %}
 {% block controls %}
 
@@ -13,17 +14,17 @@
      only the x values differ here.
      ================================================================================ -->
 
-<!-- COVER: 640x640, centred in the column (400 = (1440 - 640) / 2), top edge 10px above the
-     header's bottom edge - as on the player screen. -->
+<!-- COVER: 640x640 - 380 = (1440 - 640) / 2 - 20 - top edge 10px above the header's bottom edge,
+     as on the player screen. -->
 <control type="image">
-    <posx>400</posx>
+    <posx>380</posx>
     <posy>{{ vscale(125) }}</posy>
     <width>640</width>
     <height>{{ vscale(640) }}</height>
     <texture diffuse="script.plex/masks/square-mask.png">script.plex/thumb_fallbacks/music.png</texture>
 </control>
 <control type="image">
-    <posx>400</posx>
+    <posx>380</posx>
     <posy>{{ vscale(125) }}</posy>
     <width>640</width>
     <height>{{ vscale(640) }}</height>
@@ -31,9 +32,9 @@
     <aspectratio scalediffuse="false">scale</aspectratio>
 </control>
 
-<!-- TRACK TEXT: the player screen's block, 1250 wide centred in the column (95 = (1440 - 1250) / 2). -->
+<!-- TRACK TEXT: the player screen's block, 1250 wide (75 = (1440 - 1250) / 2 - 20). -->
 <control type="group">
-    <posx>95</posx>
+    <posx>75</posx>
     <posy>{{ vscale(785) }}</posy>
     <control type="label">
         <posx>0</posx>
@@ -61,14 +62,15 @@
     </control>
 </control>
 
-<!-- TIMES: the player screen's four labels in this column's 144px margins - 124 wide, 20px clear
-     of the bar's ends. The elapsed labels' posx is their RIGHT edge (Kodi subtracts the width
-     from posx for a right-aligned label control - see the player template). -->
+<!-- TIMES: the player screen's four labels either side of the bar, 104 wide, 20px clear of its
+     ends - the elapsed ones ending at 104 (their posx is their RIGHT edge: Kodi subtracts the
+     width from posx for a right-aligned label control - see the player template), the remaining
+     ones starting at 1276 + 20 = 1296 and ending on the queue column's edge at 1400. -->
 <control type="label">
     <visible>Player.HasAudio + String.IsEqual(Player.Duration(hh),00)</visible>
-    <posx>124</posx>
+    <posx>104</posx>
     <posy>{{ vscale(153) }}r</posy>
-    <width>124</width>
+    <width>104</width>
     <height>{{ vscale(30) }}</height>
     <font>font10</font>
     <align>right</align>
@@ -78,9 +80,9 @@
 </control>
 <control type="label">
     <visible>Player.HasAudio + !String.IsEqual(Player.Duration(hh),00)</visible>
-    <posx>124</posx>
+    <posx>104</posx>
     <posy>{{ vscale(153) }}r</posy>
-    <width>124</width>
+    <width>104</width>
     <height>{{ vscale(30) }}</height>
     <font>font10</font>
     <align>right</align>
@@ -90,9 +92,9 @@
 </control>
 <control type="label">
     <visible>Player.HasAudio + String.IsEqual(Player.Duration(hh),00)</visible>
-    <posx>1316</posx>
+    <posx>1296</posx>
     <posy>{{ vscale(153) }}r</posy>
-    <width>124</width>
+    <width>104</width>
     <height>{{ vscale(30) }}</height>
     <font>font10</font>
     <align>left</align>
@@ -102,9 +104,9 @@
 </control>
 <control type="label">
     <visible>Player.HasAudio + !String.IsEqual(Player.Duration(hh),00)</visible>
-    <posx>1316</posx>
+    <posx>1296</posx>
     <posy>{{ vscale(153) }}r</posy>
-    <width>124</width>
+    <width>104</width>
     <height>{{ vscale(30) }}</height>
     <font>font10</font>
     <align>left</align>
@@ -113,12 +115,12 @@
     <label>$INFO[Player.TimeRemaining(h:mm:ss),-]</label>
 </control>
 
-<!-- TRANSPORT ROW: the shared include, 1200 wide centred in the column (120 = (1440 - 1200) / 2).
-     Left end is a dead stop (401's own noop); right end goes on into the queue list. -->
+<!-- TRANSPORT ROW: the shared include, 1200 wide (100 = (1440 - 1200) / 2 - 20). Left end is a
+     dead stop (401's own noop); right end goes on into the queue list. -->
 <control type="grouplist" id="400">
     <defaultcontrol>406</defaultcontrol>
-    <hitrect x="120" y="980" w="1200" h="70" />
-    <posx>120</posx>
+    <hitrect x="100" y="980" w="1200" h="70" />
+    <posx>100</posx>
     <posy>{{ vscale(100) }}r</posy>
     <width>1200</width>
     <height>{{ vscale(70) }}</height>
@@ -135,15 +137,15 @@
 
 </control>
 
-<!-- SEEKBAR: the player screen's bar at 80% of this column (1152, at 144..1296), on
+<!-- SEEKBAR: the player screen's bar at 80% of 1440 (1152, at 124..1276), on
      masks/seekbar-mask-1152.png - the 1536 one's twin at this width, same recipe (a diffuse mask
      scales to its control, so the wider one would squash its caps here). Same layers: masked
      track, invisible focus button, two <reveal> progress controls for the played portion
      (unfocused / focused), and the scrubber (510, SEEK_IMAGE_ID - a <reveal> progress control
      driven by setSeekbarProgress(), currentplaylist.py). Python's BAR_X / BAR_RIGHT /
-     SEEK_IMAGE_WIDTH there have to match the 144/1152 here. -->
+     SEEK_IMAGE_WIDTH there have to match the 124/1152 here. -->
 <control type="group">
-    <posx>144</posx>
+    <posx>124</posx>
     <posy>{{ vscale(140) }}r</posy>
     <control type="image">
         <posx>0</posx>
@@ -219,7 +221,7 @@
 <!-- Seek-time bubble, wrapped at the bar's x so updateSelectedProgress()'s setPosition() on 202
      is relative to the bar's left edge - as on the player screen. -->
 <control type="group">
-    <posx>144</posx>
+    <posx>124</posx>
     <posy>0</posy>
     <control type="group" id="202">
         <visible>Control.HasFocus(500) + !String.IsEmpty(Window.Property(time.selection))</visible>
@@ -262,28 +264,28 @@
 </control>
 
 <!-- ================================================================================
-     PLAY QUEUE (1440..1920) - the Kodi music playlist (fillPlaylist(), currentplaylist.py), one
+     PLAY QUEUE (1400..1920) - the Kodi music playlist (fillPlaylist(), currentplaylist.py), one
      row per track in the music section's list-view recipe (script-plex-listview-tracks.xml.tpl,
      whose row is the shared includes/track_row.xml.tpl): a 100px row carrying a 92-tall rounded
      pill, 60000000 unfocused / 33FFFFFF focused, 80px art at its left, title over a dimmed
      second line, the playing track's title in the accent colour. Two differences, both asked
-     for: no duration, and the pill is 420 wide (20px inset each side of the column, the
-     scrollbar in the right inset), so the text boxes are 298 - ending 18px short of the pill's
+     for: no duration, and the pill is 460 wide (20px inset each side of the 520 column, the
+     scrollbar in the right inset), so the text boxes are 338 - ending 18px short of the pill's
      right edge, as that recipe's do. No backing plate behind the rows: each carries its own
      pill. Rows run from the cover's top line (125) for 9 whole rows, ending above the
      transport row. ================================================================================ -->
 <control type="group" id="100">
     <visible>Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
     <defaultcontrol>101</defaultcontrol>
-    <posx>1440</posx>
+    <posx>1400</posx>
     <posy>0</posy>
-    <width>480</width>
+    <width>520</width>
     <height>1080</height>
     <control type="list" id="101">
-        <hitrect x="1460" y="125" w="420" h="900" />
+        <hitrect x="1420" y="125" w="460" h="900" />
         <posx>20</posx>
         <posy>{{ vscale(125) }}</posy>
-        <width>420</width>
+        <width>460</width>
         <height>{{ vscale(900) }}</height>
         <onright>152</onright>
         <onleft>411</onleft>
@@ -305,11 +307,11 @@
                 <control type="image">
                     <posx>0</posx>
                     <posy>{{ vscale(4) }}</posy>
-                    <width>420</width>
+                    <width>460</width>
                     <height>{{ vscale(92) }}</height>
                     <texture border="10" colordiffuse="60000000">script.plex/white-square-rounded.png</texture>
                 </control>
-                {% include "includes/track_row.xml.tpl" with list_id=101 & scroll_focused=False & text_width=298 & no_duration=True %}
+                {% include "includes/track_row.xml.tpl" with list_id=101 & scroll_focused=False & text_width=338 & no_duration=True %}
             </control>
         </itemlayout>
 
@@ -324,7 +326,7 @@
                     <visible>Control.HasFocus(101)</visible>
                     <posx>0</posx>
                     <posy>{{ vscale(4) }}</posy>
-                    <width>420</width>
+                    <width>460</width>
                     <height>{{ vscale(92) }}</height>
                     <texture border="10" colordiffuse="33FFFFFF">script.plex/white-square-rounded.png</texture>
                 </control>
@@ -332,18 +334,18 @@
                     <visible>!Control.HasFocus(101)</visible>
                     <posx>0</posx>
                     <posy>{{ vscale(4) }}</posy>
-                    <width>420</width>
+                    <width>460</width>
                     <height>{{ vscale(92) }}</height>
                     <texture border="10" colordiffuse="60000000">script.plex/white-square-rounded.png</texture>
                 </control>
-                {% include "includes/track_row.xml.tpl" with list_id=101 & scroll_focused=True & text_width=298 & no_duration=True %}
+                {% include "includes/track_row.xml.tpl" with list_id=101 & scroll_focused=True & text_width=338 & no_duration=True %}
             </control>
         </focusedlayout>
     </control>
 
     <control type="scrollbar" id="152">
-        <hitrect x="428" y="129" w="52" h="892" />
-        <left>448</left>
+        <hitrect x="468" y="129" w="52" h="892" />
+        <left>488</left>
         <top>129</top>
         <width>12</width>
         <height>892</height>
