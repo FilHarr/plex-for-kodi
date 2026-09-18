@@ -2374,10 +2374,35 @@ class PlexPlayer(xbmc.Player, signalsmixin.SignalsMixin):
         self._originalAlternateSeek = False
         if xbmc.getCondVisibility('Player.HasMedia') and self.isPlayingAudio() and not self.bgmPlaying:
             self.started = True
+            # Kodi keeps playing across a restart of the addon, but a fresh PLAYER has no
+            # sessionID, and without one every player callback returns early (onPlayBackStarted()
+            # etc. below) and _monitor() never enters _audioMonitor() - so for music inherited
+            # this way nothing followed the track any more: track.ID (the queue's / lists' now-
+            # playing accent), the play-queue track, the timeline. Live in kodi.log, 2026-09-18:
+            # natural track advances logging only the Monitor's Player.OnPlay, no handler
+            # callbacks, until playback was next started from the addon. Adopt the session from
+            # the playing track's own PLEX- tag instead, the way playAudio() would have named it.
+            sessionID = self._inheritedAudioSessionID()
+            if sessionID:
+                util.DEBUG_LOG('Player: adopting audio playing before this run: {0}', sessionID)
+                self.sessionID = sessionID
+                self.handler = AudioPlayerHandler(self, session_id=sessionID)
         self.resume = False
         self.open()
 
         return self
+
+    def _inheritedAudioSessionID(self):
+        """The session id for a Plex track Kodi was already playing when this PLAYER was
+        created, or None. Only tracks carry the PLEX-<ratingKey>:... comment
+        (createTrackListItem()); BGM and non-Plex audio never match."""
+        try:
+            comment = kodijsonrpc.rpc.Player.GetItem(playerid=0, properties=['comment'])['item']['comment']
+        except:
+            return None
+        if not comment or not comment.startswith('PLEX-'):
+            return None
+        return "AUD%s" % comment[5:].split(':', 1)[0]
 
     def open(self):
         self._closed = False
