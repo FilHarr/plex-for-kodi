@@ -340,26 +340,53 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         except Exception as e:
             util.DEBUG_LOG('Could not set Kodi repeat to {}: {}', mode, e)
 
-    def repeatButtonClicked(self):
+    # off -> all -> one -> off, as the REPEAT comment in includes/music_player_buttons.xml.tpl
+    # describes it and as the focused button's own caption promises.
+    REPEAT_CYCLE = {'off': 'all', 'all': 'one', 'one': 'off'}
+
+    def currentRepeatMode(self):
+        """Which repeat mode the button is currently showing - 'one', 'all' or 'off'.
+
+        Read from exactly the places the button's own visibility conditions read
+        (includes/music_player_buttons.xml.tpl): Kodi's Playlist.IsRepeatOne first, then Kodi's
+        Playlist.IsRepeat *or* the queue's own flag. Deciding this any other way is how the
+        button came to lie about itself.
+
+        Repeat lives in two places, and they can disagree. Kodi's belongs to its music playlist
+        and outlives a playback session; the queue's flag is created False with every new play
+        queue. Start an album, turn repeat-all on, then click a track somewhere else: Kodi still
+        repeats, so the button still reads as repeat-all and its caption offers "Repeat one" -
+        but the new queue's isRepeat is False. This used to branch on that flag alone, so the
+        first click landed in the "turn repeat-all on" arm and set the state the screen was
+        already showing. The click did nothing, visibly or audibly, and only the second one moved
+        (live, 2026-09-21).
+        """
+        if xbmc.getCondVisibility('Playlist.IsRepeatOne'):
+            return 'one'
         pq = self.playQueue
-        if pq and pq.isRemote:
-            if xbmc.getCondVisibility('Playlist.IsRepeatOne'):
-                self.setKodiRepeat('off')
-            elif pq.isRepeat:
-                pq.setRepeat(False)
-                pq.refresh(force=True)
-                self.setKodiRepeat('one')
-            else:
-                pq.setRepeat(True)
-                pq.refresh(force=True)
-                # Kodi has to be told as well. setRepeat() only sets flags on the queue object
-                # (the value rides along on the next request), and PMS's own repeat governs what
-                # it hands back when windowing - neither makes Kodi loop the playlist it is
-                # actually playing, so repeat-all did nothing audible and playback just stopped at
-                # the end (live, 2026-09-19).
-                self.setKodiRepeat('all')
-        else:
-            self.setKodiRepeat('cycle')
+        if xbmc.getCondVisibility('Playlist.IsRepeat') or (pq is not None and pq.isRepeat):
+            return 'all'
+        return 'off'
+
+    def repeatButtonClicked(self):
+        mode = self.REPEAT_CYCLE[self.currentRepeatMode()]
+
+        pq = self.playQueue
+        if pq is not None and pq.isRemote:
+            # Only repeat-all maps onto the queue's flag. Repeat-one stays Kodi's alone, because
+            # PlayQueue.hasNext() short-circuits to True on isRepeatOne, and playerSkip() lifts
+            # repeat-one for a deliberate skip precisely so it does not pin the queue.
+            pq.setRepeat(mode == 'all')
+            pq.refresh(force=True)
+
+        # Kodi is told in every case, including the local one this used to hand a bare 'cycle'.
+        # setRepeat() above only sets flags on the queue object (the value rides along on the
+        # next request), and PMS's own repeat governs what it hands back when windowing - neither
+        # makes Kodi loop the playlist it is actually playing, so repeat-all did nothing audible
+        # and playback just stopped at the end (live, 2026-09-19). Naming the mode rather than
+        # cycling also keeps Kodi on the mode the caption just promised, whatever it was on
+        # before.
+        self.setKodiRepeat(mode)
 
         # Next/previous depend on the repeat mode now (hasNext/hasPrev wrap when it is
         # repeat-all), and nothing else recomputes them until the next track change or queue
