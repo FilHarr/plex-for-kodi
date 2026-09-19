@@ -188,6 +188,9 @@ class PlayQueue(signalsmixin.SignalsMixin):
         self.totalSize = 0
         self.windowSize = 0
         self.forcedWindow = False
+        # Whether the post-creation re-read below has already been done, so it happens once and
+        # a genuinely windowed queue cannot send us round in circles.
+        self.windowReread = False
         self.container = None
 
         # Forced limitations
@@ -475,11 +478,45 @@ class PlayQueue(signalsmixin.SignalsMixin):
             # Create usage limitations
             self.usage = UsageFactory.createUsage(self)
 
+            if self.needsWindowReread(context):
+                self.windowReread = True
+                util.DEBUG_LOG('playQueue: created with {0} of {1} items - re-reading, PMS '
+                               'ignores window= on the create', self.windowSize, self.totalSize)
+                # responded back to False so waitForInitialization() keeps its timeout: that loop
+                # only honours the timeout while responded is False, and spins indefinitely once
+                # it is True, so leaving it set would hang the caller if the re-read never lands.
+                self.responded = False
+                # Deliberately without initialized/change/items.changed: the caller is still
+                # inside waitForInitialization(), and letting it through here is the whole
+                # problem - playAudioPlaylist() would build Kodi's playlist from the short window
+                # and the re-read would then have to patch it in place, which is the swap-and-
+                # remove dance that has caused trouble before. Waiting means it is built once,
+                # complete. The re-read's own response runs this method again and finishes the
+                # job.
+                self.refresh(force=True)
+                return
+
             self.initialized = True
             self.trigger("change")
 
             if itemsChanged:
                 self.trigger("items.changed", just_added=justAdded)
+
+    def needsWindowReread(self, context):
+        """Whether this response is a creation that came back shorter than we asked for.
+
+        PMS applies its own small window to the POST that creates a play queue and ignores the
+        window= we send: asking for 250 either side returned 21 items of an 88-track queue, and
+        the identical window on the GET that followed returned all 88 (live, 2026-09-19, and the
+        same 21 for a 100 and a 234-track queue). The play queue screen therefore opened on 21
+        rows, and the rest only arrived once something else refreshed the queue - which scrolling
+        to the end eventually did, so the rows appeared to load as you went.
+
+        Audio only, because addRequestOptions() only sends window= for audio; for anything else
+        the short window is PMS's default and re-reading would fetch the same thing again.
+        """
+        return (context.requestType == "create" and not self.windowReread
+                and self.type == "audio" and self.totalSize > self.windowSize)
 
     def isWindowed(self):
         return (not self.isLocal() and (self.totalSize > self.windowSize or self.forcedWindow))
