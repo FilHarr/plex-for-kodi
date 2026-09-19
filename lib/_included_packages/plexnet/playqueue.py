@@ -686,9 +686,19 @@ def createRemotePlayQueue(item, contentType, options, args, use_async=True, meth
         uri = item.get("ratingKey")
         options.isPlaylist = True
     elif item.type == "track":
-        # TODO(rob): Is there ever a time the container address is wrong? If we
-        # expect to play a single track,: use options.CONTEXT_SELF.
-        path = item.container.address or "/library/metadata/" + item.get("parentRatingKey", "")
+        # The track's own album, unless the caller names a container. Clicking a track queues its
+        # album wherever it was clicked from - the album screen, the library's Tracks list view, a
+        # hub, search - so the album comes first and container.address is only a last resort.
+        #
+        # That order matters, it isn't just a preference: for a track drawn from a paginated
+        # listing, container.address carries the X-Plex-Container-Start/Size that
+        # LibrarySection.items() (plexlibrary.py) baked into the path, so it describes one page of
+        # results rather than a queue. containerPath is for the callers that do have a real
+        # listable directory to queue - ArtistWindow.popularTrackClicked() passes the artist's
+        # <PopularLeaves> key (subitems.py).
+        parentRatingKey = item.get("parentRatingKey", "")
+        path = (options.containerPath or (parentRatingKey and "/library/metadata/" + parentRatingKey) or
+                (item.container and item.container.address))
         itemType = "directory"
     elif item.isPhotoOrDirectoryItem():
         if item.type != "photoalbum" and not item.parentKey and not item.isDirectory() and not item.isFullObject():

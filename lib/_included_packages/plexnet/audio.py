@@ -54,14 +54,24 @@ class Artist(Audio, media.RelatedMixin):
         # ArtistWindow.fill(), subitems.py); absent otherwise, so PlexItemList's own data=None
         # handling (empty list) covers that case for free.
         self.popularTracks = []
+        # <PopularLeaves> carries its own key - a real listable query, e.g.
+        # /library/sections/10/all?artist.id=30412&...&sort=ratingCount:desc&type=10 - so the row
+        # is a window onto something bigger than the handful of entries returned inline (5 shown,
+        # 24 behind the key, confirmed live). Kept so popularTrackClicked() (subitems.py) can build
+        # its play queue from the query rather than from the visible rows, which is what a real
+        # Plex client plays.
+        self.popularTracksKey = None
         if self.isFullObject():
             self.countries = plexobjects.PlexItemList(data, media.Country, media.Country.TYPE, server=self.server)
             self.genres = plexobjects.PlexItemList(data, media.Genre, media.Genre.TYPE, server=self.server)
             self.similar = plexobjects.PlexItemList(data, media.Similar, media.Similar.TYPE, server=self.server)
             for attr, hub_id in self.OTHER_ALBUM_HUBS:
                 setattr(self, attr, self.relatedHubs(data, Album, hub_id))
-            self.popularTracks = plexobjects.PlexItemList(data.find("PopularLeaves"), Track, "Track",
+            popularLeaves = data.find("PopularLeaves")
+            self.popularTracks = plexobjects.PlexItemList(popularLeaves, Track, "Track",
                                                           server=self.server)
+            if popularLeaves is not None:
+                self.popularTracksKey = popularLeaves.get("key") or None
 
     def albums(self):
         path = '%s/children' % self.key
