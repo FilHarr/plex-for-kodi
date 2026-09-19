@@ -191,6 +191,13 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
             if not player.PLAYER.handler.playQueue.refresh(force=True, wait=True):
                 return
 
+        # Sets script.plex.ignore_spinner, which is what stops Kodi's own DialogBusy fading in
+        # over the file swap that PlayerControl() is about to start (skin.plextuary/xml/
+        # DialogBusy.xml gates every one of its animations on that property being empty).
+        # playlistListClicked() already does this before playselected(), and MusicPlayerWindow's
+        # own copies of these two methods always have - without it the spinner blinked over the
+        # middle of this window on every next/previous click, and nowhere else (live, 2026-09-19).
+        self.onAudioStarting()
         xbmc.executebuiltin('PlayerControl(Previous)')
 
     def skipNextButtonClicked(self):
@@ -199,6 +206,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
             if not player.PLAYER.handler.playQueue.refresh(force=True, wait=True):
                 return
 
+        self.onAudioStarting()
         xbmc.executebuiltin('PlayerControl(Next)')
 
     def optionsButtonClicked(self, pos=(670, 1060)):
