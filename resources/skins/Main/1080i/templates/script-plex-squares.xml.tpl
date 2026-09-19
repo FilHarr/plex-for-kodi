@@ -312,14 +312,7 @@
                             <posy>0</posy>
                             <width>240</width>
                             <height>{{ vscale(240) }}</height>
-                            <texture diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-                        </control>
-                        <control type="image">
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>240</width>
-                            <height>{{ vscale(240) }}</height>
-                            <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
+                            <texture background="true" diffuse="script.plex/masks/square-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                             <!-- scalediffuse="false": without it, Kodi scales the diffuse mask
                                  texture along with the aspectratio-adjusted art instead of
                                  keeping it fixed to the control's own bounds - the mask's rounded
@@ -411,14 +404,7 @@
                                 <posy>0</posy>
                                 <width>240</width>
                                 <height>{{ vscale(240) }}</height>
-                                <texture diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-                            </control>
-                            <control type="image">
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>240</width>
-                                <height>{{ vscale(240) }}</height>
-                                <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
+                                <texture background="true" diffuse="script.plex/masks/square-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio>scale</aspectratio>
                             </control>
                             <!-- Photo subfolder only (see the note up top): the label band that makes

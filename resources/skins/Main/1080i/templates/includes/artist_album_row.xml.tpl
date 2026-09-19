@@ -71,14 +71,7 @@
                         <posy>0</posy>
                         <width>240</width>
                         <height>{{ vscale(240) }}</height>
-                        <texture diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-                    </control>
-                    <control type="image">
-                        <posx>0</posx>
-                        <posy>0</posy>
-                        <width>240</width>
-                        <height>{{ vscale(240) }}</height>
-                        <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
+                        <texture background="true" diffuse="script.plex/masks/square-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                         <aspectratio scalediffuse="false">scale</aspectratio>
                     </control>
                     <control type="label">
@@ -138,14 +131,7 @@
                             <posy>0</posy>
                             <width>240</width>
                             <height>{{ vscale(240) }}</height>
-                            <texture diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-                        </control>
-                        <control type="image">
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>240</width>
-                            <height>{{ vscale(240) }}</height>
-                            <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
+                            <texture background="true" diffuse="script.plex/masks/square-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                             <aspectratio scalediffuse="false">scale</aspectratio>
                         </control>
                         <control type="label">

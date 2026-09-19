@@ -38,25 +38,21 @@
        no_duration - optional, True drops the duration label (the play queue again). Undefined
          is falsy, so the tracks list itself passes neither. -->
 
-<!-- Album art. Two layers, the same pairing the grid tiles use: the fallback underneath (set on
-     every item in this fill path by CreateDefaultItemsTask, library.py - music.png for a music
-     section) and the real thumb over it, which simply doesn't paint while it loads or when the
-     album has no art. scalediffuse="false" keeps the rounded mask pinned to the control's own
-     bounds instead of being scaled along with art whose aspect ratio isn't square - without it the
-     corners drift and square off, live-confirmed elsewhere in this skin. -->
+<!-- Album art. One masked control with Kodi's native fallback= (set on every item in this fill
+     path by CreateDefaultItemsTask, library.py - music.png for a music section), shown while the
+     real thumb loads or when the album has no art. Not a separate masked fallback layer under the
+     thumb: along the corner arc the mask's alpha is fractional, so a plate underneath bled through
+     as a thin bright line at the top corners (the plates are a light-to-dark diagonal gradient).
+     Same reasoning as hub_itemlayout_square.xml.tpl. scalediffuse="false" keeps the rounded mask
+     pinned to the control's own bounds instead of being scaled along with art whose aspect ratio
+     isn't square - without it the corners drift and square off, live-confirmed elsewhere in this
+     skin. -->
 <control type="image">
     <posx>6</posx>
     <posy>{{ vscale(10) }}</posy>
     <width>80</width>
     <height>{{ vscale(80) }}</height>
-    <texture diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-</control>
-<control type="image">
-    <posx>6</posx>
-    <posy>{{ vscale(10) }}</posy>
-    <width>80</width>
-    <height>{{ vscale(80) }}</height>
-    <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
+    <texture background="true" diffuse="script.plex/masks/square-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
     <aspectratio scalediffuse="false">scale</aspectratio>
 </control>
 

@@ -666,14 +666,7 @@
                             <posy>0</posy>
                             <width>240</width>
                             <height>{{ vscale(240) }}</height>
-                            <texture diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-                        </control>
-                        <control type="image">
-                            <posx>0</posx>
-                            <posy>0</posy>
-                            <width>240</width>
-                            <height>{{ vscale(240) }}</height>
-                            <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
+                            <texture background="true" diffuse="script.plex/masks/square-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                             <aspectratio scalediffuse="false">scale</aspectratio>
                         </control>
                         <!-- Single caption line, flat (no wrapper group): the second line this row
@@ -763,14 +756,7 @@
                                 <posy>0</posy>
                                 <width>240</width>
                                 <height>{{ vscale(240) }}</height>
-                                <texture diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-                            </control>
-                            <control type="image">
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>240</width>
-                                <height>{{ vscale(240) }}</height>
-                                <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[ListItem.Thumb]</texture>
+                                <texture background="true" diffuse="script.plex/masks/square-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false">scale</aspectratio>
                             </control>
                             <!-- See the itemlayout's own copy above for why there's only one line. -->

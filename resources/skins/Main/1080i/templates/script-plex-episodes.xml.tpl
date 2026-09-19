@@ -1472,15 +1472,7 @@
                                 <posy>0</posy>
                                 <width>512</width>
                                 <height>{{ vscale(288) }}</height>
-                                <texture diffuse="script.plex/masks/ar16x9-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-                                <aspectratio scalediffuse="false">scale</aspectratio>
-                            </control>
-                            <control type="image">
-                                <posx>0</posx>
-                                <posy>0</posy>
-                                <width>512</width>
-                                <height>{{ vscale(288) }}</height>
-                                <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png">$INFO[ListItem.Thumb]</texture>
+                                <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false">scale</aspectratio>
                             </control>
                             <control type="group">
@@ -1565,15 +1557,7 @@
                                     <posy>0</posy>
                                     <width>512</width>
                                     <height>{{ vscale(288) }}</height>
-                                    <texture diffuse="script.plex/masks/ar16x9-mask.png">$INFO[ListItem.Property(thumb.fallback)]</texture>
-                                    <aspectratio scalediffuse="false">scale</aspectratio>
-                                </control>
-                                <control type="image">
-                                    <posx>0</posx>
-                                    <posy>0</posy>
-                                    <width>512</width>
-                                    <height>{{ vscale(288) }}</height>
-                                    <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png">$INFO[ListItem.Thumb]</texture>
+                                    <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                     <aspectratio scalediffuse="false">scale</aspectratio>
                                 </control>
                                 <control type="group">

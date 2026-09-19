@@ -26,8 +26,9 @@
 
     <!-- COVER ############################################################################## -->
     <!-- Card recipe shared with the grid tiles and the Artist screen's album rows: shadow box =
-         art + 24 at (-3,-3), art rounded by masks/square-mask.png, fallback layer underneath for
-         albums with no art of their own. -->
+         art + 24 at (-3,-3), art rounded by masks/square-mask.png, music.png via native fallback=
+         for albums with no art of their own (not a second masked layer underneath - that bleeds
+         through the corner anti-aliasing as a bright edge; see track_row.xml.tpl). -->
     <control type="image">
         <posx>58</posx>
         <posy>{{ vscale(-3) }}</posy>
@@ -40,14 +41,7 @@
         <posy>0</posy>
         <width>370</width>
         <height>{{ vscale(370) }}</height>
-        <texture diffuse="script.plex/masks/square-mask.png">script.plex/thumb_fallbacks/music.png</texture>
-    </control>
-    <control type="image">
-        <posx>61</posx>
-        <posy>0</posy>
-        <width>370</width>
-        <height>{{ vscale(370) }}</height>
-        <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[Window.Property(album.thumb)]</texture>
+        <texture background="true" diffuse="script.plex/masks/square-mask.png" fallback="script.plex/thumb_fallbacks/music.png">$INFO[Window.Property(album.thumb)]</texture>
         <aspectratio scalediffuse="false">scale</aspectratio>
     </control>
 
