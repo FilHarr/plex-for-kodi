@@ -747,7 +747,12 @@ def createRemotePlayQueue(item, contentType, options, args, use_async=True, meth
 
             for key in convert:
                 regex = re.compile(r"(?i)([?&])" + key + "=")
-                path = regex.sub("\1" + convert[key] + "=", path)
+                # r"\1", not "\1": the latter is chr(1), so this used to swallow the ? or & it
+                # matched and splice a control character into the path instead of keeping the
+                # separator. It never fired before - the one caller that got here already passed
+                # sourceType, and "sourceType=" doesn't match "([?&])type=" - but the artist's
+                # <PopularLeaves> key ends in "&type=10", so now it does.
+                path = regex.sub(r"\1" + convert[key] + "=", path)
 
         util.DEBUG_LOG("playQueue path: " + str(path))
         uri = uri + itemType + "/" + six.moves.urllib.parse.quote_plus(path)
