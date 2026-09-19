@@ -178,7 +178,7 @@
         <width>1152</width>
         <height>{{ vscale(8) }}</height>
         <ondown>400</ondown>
-        <onright>100</onright>
+        <onup>100</onup>
         <texturefocus>-</texturefocus>
         <texturenofocus>-</texturenofocus>
         <label> </label>
