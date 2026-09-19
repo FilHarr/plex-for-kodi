@@ -494,10 +494,16 @@ class PlayQueue(signalsmixin.SignalsMixin):
             # an empty/failed-to-window queue has nothing to skip to
             return False
 
-        if not self.allowSkipNext and -1 < items.index(current) < (len(items) - 1):  # TODO: Was 'or' - did change cause issues?
-            return self.isRepeat and not self.isWindowed()
+        if items.index(current) < len(items) - 1:
+            return True
 
-        return True
+        # Sitting on the last item we hold. Only two things can follow it: more of the queue that
+        # PMS hasn't sent yet, or a wrap back to the top when repeat-all is on.
+        #
+        # This used to key off allowSkipNext and fell through to `return True` on the last item
+        # whatever its value, so Next stayed live at the end of a queue and clicking it got Kodi's
+        # "cannot find a next item to play" banner (live, 2026-09-19).
+        return self.isWindowed() or self.isRepeat
 
     def hasPrev(self):
         # return self.allowSkipPrev or self.items().index(self.current()) > 0

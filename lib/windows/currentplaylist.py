@@ -179,6 +179,12 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.duration = None
         self.setDuration()
         self.updateFromTrack()
+        # Next/previous depend on where the playing track sits, so they have to be worked out
+        # again here. Waiting for the queue's own 'change' signal would leave them a refresh
+        # behind (updatePlayQueue delays that by 5s), showing Next as live on the last track for
+        # several seconds. The queue's selectedId is already current by now -
+        # AudioPlayerHandler.extractTrackInfo() sets it as soon as it identifies the track.
+        self.updateProperties()
 
     def onAudioChanged(self, *args, **kwargs):
         util.setGlobalProperty('ignore_spinner', '')
@@ -272,6 +278,12 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
             else:
                 player.PLAYER.handler.playQueue.setRepeat(True)
                 player.PLAYER.handler.playQueue.refresh(force=True)
+                # Kodi has to be told as well. setRepeat() only sets flags on the queue object
+                # (the value rides along on the next request), and PMS's own repeat governs what
+                # it hands back when windowing - neither makes Kodi loop the playlist it is
+                # actually playing, so repeat-all did nothing audible and playback just stopped at
+                # the end (live, 2026-09-19).
+                xbmc.executebuiltin('PlayerControl(RepeatAll)')
         else:
             xbmc.executebuiltin('PlayerControl(Repeat)')
 
@@ -538,8 +550,12 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         if pq:
             if pq.isRemote:
                 self.setProperty('pq.isRemote', '1')
-                self.setProperty('pq.hasnext', pq.allowSkipNext and '1' or '')
-                self.setProperty('pq.hasprev', pq.allowSkipPrev and '1' or '')
+                # hasNext()/hasPrev(), not allowSkipNext/allowSkipPrev: those two are
+                # position-independent (totalSize > 1 and a container flag), so the buttons stayed
+                # lit at both ends of the queue. These two ask where the playing track actually
+                # sits. Same pair the video OSD uses (seekdialog.py).
+                self.setProperty('pq.hasnext', pq.hasNext() and '1' or '')
+                self.setProperty('pq.hasprev', pq.hasPrev() and '1' or '')
                 self.setProperty('pq.repeat', pq.isRepeat and '1' or '')
                 self.setProperty('pq.shuffled', pq.isShuffled and '1' or '')
             else:
