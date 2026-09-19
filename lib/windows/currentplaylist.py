@@ -75,6 +75,8 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         # (parentRatingKey, Album) of the last album fetched for the background panel - see
         # _albumForPanel().
         self._panelAlbum = None
+        # What fillPlaylist() last put in the rows - see playlistSignature().
+        self._playlistSig = None
 
     def doClose(self, **kwargs):
         player.PLAYER.off('av.started', self.onPlayBackStarted)
@@ -327,12 +329,29 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
 
     def playQueueCallback(self, **kwargs):
         self.setProperty('pq.isshuffled', player.PLAYER.handler.playQueue.isShuffled and '1' or '')
+
+        items = self.playlistItems()
+        if self.playlistSignature(items) == self._playlistSig:
+            # Same tracks in the same order - only which one is playing has moved, so re-select and
+            # leave the rows alone. Worth the check because this fires a lot: the handler rebuilds
+            # Kodi's playlist whenever a windowed play queue slides
+            # (AudioPlayerHandler.playQueueCallback, player.py), and a full reset()/addItems() here
+            # blinks every row out and back.
+            self.selectPlayingItem()
+            return
+
         mli = self.playlistListControl.getSelectedItem()
-        pi = mli.dataSource
-        plexID = pi['comment'].split(':', 1)[0]
+        # No selection to preserve (an empty list, or focus never landed on it) - just refill and
+        # let selectPlayingItem() put the highlight back.
+        if not mli:
+            self.fillPlaylist(items)
+            self.selectPlayingItem()
+            return
+
+        plexID = mli.dataSource['comment'].split(':', 1)[0]
         viewPos = self.playlistListControl.getViewPosition()
 
-        self.fillPlaylist()
+        self.fillPlaylist(items)
 
         # due to Kodi playlist limitations and necessary swappery, we might've got the current item twice in the list;
         # select the latest one
@@ -381,13 +400,27 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         mli.setProperty('file', pi['file'])
         return mli
 
+    @staticmethod
+    def playlistItems():
+        """Kodi's music playlist, as the JSON-RPC hands it over."""
+        return kodijsonrpc.rpc.PlayList.GetItems(
+            playlistid=xbmc.PLAYLIST_MUSIC,
+            properties=['title', 'artist', 'album', 'track', 'thumbnail', 'duration', 'playcount', 'comment', 'file']
+        )['items']
+
+    @staticmethod
+    def playlistSignature(items):
+        """What the rows are showing, for telling a real queue change from a track change. The
+        PLEX-<ratingKey> half of each comment, in order - the rest of that tag is the serialised
+        track, which is bulky and doesn't identify anything the ratingKey doesn't."""
+        return tuple(pi['comment'].split(':', 1)[0] for pi in items)
+
     @busy.dialog()
-    def fillPlaylist(self):
+    def fillPlaylist(self, pl_items=None):
+        pl_items = self.playlistItems() if pl_items is None else pl_items
         items = []
         idx = 1
-        for pi in kodijsonrpc.rpc.PlayList.GetItems(
-            playlistid=xbmc.PLAYLIST_MUSIC, properties=['title', 'artist', 'album', 'track', 'thumbnail', 'duration', 'playcount', 'comment', 'file']
-        )['items']:
+        for pi in pl_items:
             mli = self.createListItem(pi, idx)
             if mli:
                 mli.setProperty('index', str(idx))
@@ -396,6 +429,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
 
         self.playlistListControl.reset()
         self.playlistListControl.addItems(items)
+        self._playlistSig = self.playlistSignature(pl_items)
 
     def setupSeekbar(self):
         self.seekbarControl = self.getControl(self.SEEK_IMAGE_ID)
