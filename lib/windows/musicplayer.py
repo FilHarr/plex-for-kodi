@@ -143,7 +143,7 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
                 return
 
         self.onAudioStarting()
-        xbmc.executebuiltin('PlayerControl(Previous)')
+        self.playerSkip('Previous')
 
     def skipNextButtonClicked(self):
         if not xbmc.getCondVisibility('MusicPlayer.HasNext') and self.playlist and self.playlist.isRemote:
@@ -152,7 +152,7 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
                 return
 
         self.onAudioStarting()
-        xbmc.executebuiltin('PlayerControl(Next)')
+        self.playerSkip('Next')
 
     def showPlaylist(self):
         self.processCommand(opener.handleOpen(currentplaylist.CurrentPlaylistWindow, winID=self._winID))

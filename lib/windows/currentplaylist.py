@@ -287,6 +287,28 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         else:
             xbmc.executebuiltin('PlayerControl(Repeat)')
 
+    def playerSkip(self, command):
+        """PlayerControl(Next) / PlayerControl(Previous), stepping over repeat-one if it is on.
+
+        Repeat-one is meant to loop a track that reaches its own end, not to pin the queue - but
+        Kodi applies it to deliberate skips too. CPlayListPlayer::GetNextItemIdx() returns the
+        current index unchanged in both directions while it is set (PlayListPlayer.cpp), so next
+        and previous just restarted the playing track. Dropping the mode for the duration of the
+        skip and restoring it straight after gets the queue movement people expect while leaving
+        the loop-at-the-end behaviour alone.
+
+        No wait flags: builtins are queued and run in the order they are posted, so the skip
+        lands between the two repeat changes.
+        """
+        repeatOne = xbmc.getCondVisibility('Playlist.IsRepeatOne')
+        if repeatOne:
+            xbmc.executebuiltin('PlayerControl(RepeatOff)')
+
+        xbmc.executebuiltin('PlayerControl({0})'.format(command))
+
+        if repeatOne:
+            xbmc.executebuiltin('PlayerControl(RepeatOne)')
+
     def skipPrevButtonClicked(self):
         if not xbmc.getCondVisibility('MusicPlayer.HasPrevious') and player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:
             util.DEBUG_LOG('MusicPlayer: No previous in Kodi playlist - refreshing remote PQ')
@@ -300,7 +322,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         # own copies of these two methods always have - without it the spinner blinked over the
         # middle of this window on every next/previous click, and nowhere else (live, 2026-09-19).
         self.onAudioStarting()
-        xbmc.executebuiltin('PlayerControl(Previous)')
+        self.playerSkip('Previous')
 
     def skipNextButtonClicked(self):
         if not xbmc.getCondVisibility('MusicPlayer.HasNext') and player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:
@@ -309,7 +331,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
                 return
 
         self.onAudioStarting()
-        xbmc.executebuiltin('PlayerControl(Next)')
+        self.playerSkip('Next')
 
     def optionsButtonClicked(self, pos=(670, 1060)):
         track = player.PLAYER.currentTrack()
