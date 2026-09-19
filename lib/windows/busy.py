@@ -51,15 +51,26 @@ def dialog(msg='LOADING', condition=None, delay=True, delay_time=1.5):
             try:
                 return func(*args, **kwargs)
             finally:
+                # Stop the timer before closing, not after. The other way round, a timer that
+                # came due in the moment between the two called show() on a window that had
+                # already been closed - and the show/close pair that close together leaves
+                # XMLBase.onInit() looking for control 666 in a window whose controls are being
+                # torn down underneath it, which it reads as a broken XML file and answers with a
+                # full template recompilation (live, 2026-09-19, on a 234-row play queue refill
+                # that took longer than delay_time).
+                #
+                # cancel() only stops a timer that has not started; join() then waits for one
+                # that has, so by the time doClose() runs, show() has either never been called or
+                # has finished.
+                if timer:
+                    timer.cancel()
+                    timer.join()
+                del timer
                 w.doClose()
                 try:
                     del w
                 except:
                     pass
-                if timer and timer.is_alive():
-                    timer.cancel()
-                    timer.join()
-                del timer
 
         if condition is not None:
             return condition() and inner or func

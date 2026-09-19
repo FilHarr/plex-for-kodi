@@ -144,6 +144,15 @@ class XMLBase(object):
                 self.getControl(666)
             except RuntimeError as e:
                 if e.args and "Non-Existent Control" in e.args[0]:
+                    if getattr(self, '_closing', False):
+                        # Closed while we were waiting for it to finish loading, so its controls
+                        # are going away rather than missing. Retrying costs 2s of xbmc.sleep on
+                        # a dead window and ends in a template recompilation that nothing was
+                        # wrong with - see the comment in busy.dialog(), whose delayed spinner is
+                        # how this gets hit.
+                        util.DEBUG_LOG('Kodigui: {} closed while initialising, not waiting for '
+                                       'its controls', self.xmlFile)
+                        return
                     if count < 8:
                         # retry
                         xbmc.sleep(250)
