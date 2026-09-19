@@ -444,7 +444,9 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.doClose()
 
     def selectPlayingItem(self):
-        if not self.playlistListControl:
+        # "is None", not a truth test: ManagedControlList defines __len__ and no __bool__, so an
+        # empty one is falsy. What we are asking is whether this window built a list at all.
+        if self.playlistListControl is None:
             return
 
         for mli in reversed(self.playlistListControl):
@@ -543,8 +545,10 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
     @busy.dialog()
     def fillPlaylist(self, pl_items=None):
         # Nothing to fill on the player screen, which shares onClick's shuffle branch but has no
-        # row list - the same guard selectPlayingItem() carries, for the same reason.
-        if not self.playlistListControl:
+        # row list - the same guard selectPlayingItem() carries, for the same reason. "is None"
+        # matters here: ManagedControlList is falsy while it is empty, which is precisely the
+        # state the first fill starts from, so a truth test emptied the queue screen instead.
+        if self.playlistListControl is None:
             return
         pl_items = self.playlistItems() if pl_items is None else pl_items
         items = []
