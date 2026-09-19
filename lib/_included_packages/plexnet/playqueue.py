@@ -197,8 +197,11 @@ class PlayQueue(signalsmixin.SignalsMixin):
         # The window last asked for, so a short answer can be told apart from a queue that is
         # simply longer than we asked for - see rereadShortWindow().
         self.requestedWindow = 0
-        # Consecutive short reads of a queue the window should have covered.
+        # Consecutive short reads of a queue the window should have covered, the size the last
+        # of them came back at, and the size we stopped asking at - see rereadShortWindow().
         self.windowRetries = 0
+        self.lastShortWindow = 0
+        self.settledShortAt = 0
         self.container = None
 
         # Forced limitations
@@ -546,21 +549,36 @@ class PlayQueue(signalsmixin.SignalsMixin):
            shortly, a few times, as long as the window could have covered the whole queue.
 
         That last condition is what keeps this finite. A queue genuinely longer than 2N+1 is
-        short on every read no matter how often we ask, so it settles for what it can have; the
-        retry limit is a second stop for a server that never finishes filling.
+        short on every read no matter how often we ask, so it settles for what it can have.
+
+        Two more stops for a queue PMS never completes. Two reads in a row at the same size
+        means the server has finished filling, whatever playQueueTotalCount says - seen live
+        after an unshuffle, where PMS reported 234, returned 233, and had a hole in its own
+        playQueueItemID sequence: the four re-reads all came back 233 and only the limit ended
+        it. The retry limit stays as the backstop behind that. Either way the queue publishes
+        what it has, and says so once rather than on every refresh for as long as it lives.
         """
         if self.type != "audio" or self.totalSize <= self.windowSize:
-            self.windowRetries = 0
+            self.windowRetries = self.lastShortWindow = self.settledShortAt = 0
             return False
 
         if context.requestType != "refresh":
+            # A fresh cycle: whatever an earlier one settled on no longer applies, since the
+            # queue has just been changed under it. Without this the counter stayed at the
+            # limit after one exhausted cycle and every later shuffle got no re-reads at all.
+            self.windowRetries = self.lastShortWindow = self.settledShortAt = 0
             delay = 0
         elif self.totalSize > self.windowHolds():
             # Longer than the window can return - this really is all of it we can have.
             return False
-        elif self.windowRetries >= self.WINDOW_RETRY_LIMIT:
-            util.DEBUG_LOG('playQueue: still {0} of {1} items after {2} re-reads - going with it',
-                           self.windowSize, self.totalSize, self.windowRetries)
+        elif self.settledShortAt == self.windowSize:
+            # Already gave up at this size and said so; the periodic refresh keeps asking for
+            # as long as a windowed queue plays, and does not need a log line every time.
+            return False
+        elif self.windowSize == self.lastShortWindow or self.windowRetries >= self.WINDOW_RETRY_LIMIT:
+            util.DEBUG_LOG('playQueue: settled at {0} of {1} items after {2} re-read(s) - going '
+                           'with it', self.windowSize, self.totalSize, self.windowRetries)
+            self.settledShortAt = self.windowSize
             return False
         elif self.refreshTimer:
             # Something else is already going to refresh us; stacking a second timer on top of
@@ -582,6 +600,7 @@ class PlayQueue(signalsmixin.SignalsMixin):
 
         if delay:
             self.windowRetries += 1
+            self.lastShortWindow = self.windowSize
             self.refreshTimer = plexapp.createTimer(delay, self.onRefreshTimer)
             util.APP.addTimer(self.refreshTimer)
         else:
