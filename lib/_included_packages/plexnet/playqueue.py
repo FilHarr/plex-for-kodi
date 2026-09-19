@@ -171,6 +171,12 @@ def createPlayQueueForItem(item, children=None, options=None, args=None, use_asy
 
 
 class PlayQueue(signalsmixin.SignalsMixin):
+    # A queue PMS is still filling is read again after this many ms, up to this many times -
+    # see rereadShortWindow(). Sized to finish well inside util.TIMEOUT (5s), which is what
+    # waitForInitialization() gives the whole thing.
+    WINDOW_RETRY_DELAY = 300
+    WINDOW_RETRY_LIMIT = 4
+
     TYPE = 'playqueue'
 
     isRemote = True
@@ -188,6 +194,11 @@ class PlayQueue(signalsmixin.SignalsMixin):
         self.totalSize = 0
         self.windowSize = 0
         self.forcedWindow = False
+        # The window last asked for, so a short answer can be told apart from a queue that is
+        # simply longer than we asked for - see rereadShortWindow().
+        self.requestedWindow = 0
+        # Consecutive short reads of a queue the window should have covered.
+        self.windowRetries = 0
         self.container = None
 
         # Forced limitations
@@ -393,29 +404,20 @@ class PlayQueue(signalsmixin.SignalsMixin):
             self.windowSize = len(response.items)
             self.version = response.container.playQueueVersion.asInt()
 
-            if self.needsWindowReread(context):
-                util.DEBUG_LOG('playQueue: {0} returned {1} of {2} items - re-reading, PMS '
-                               'ignores window= on anything but a plain read',
-                               context.requestType, self.windowSize, self.totalSize)
-                # responded back to False so waitForInitialization() keeps its timeout: that loop
-                # only honours the timeout while responded is False, and spins indefinitely once
-                # it is True, so leaving it set would hang the caller if the re-read never lands.
-                self.responded = False
-                # Before self._items is touched, so the window we are throwing away leaves
-                # no trace. Letting it land first made the re-read look like an addition rather
-                # than a replacement: the short window is a subset of the full one, so the
-                # justAdded calculation below handed items.changed everything the short window
-                # lacked, and AudioPlayerHandler.playQueueCallback appends what it is given
-                # instead of rebuilding - shuffling tacked a second copy of the queue onto the
-                # end of the first (live, 2026-09-19).
-                #
-                # Nor does it announce anything: no initialized, change or items.changed. The
-                # caller may still be inside waitForInitialization(), and letting it through
-                # would have playAudioPlaylist() build Kodi's playlist from the short window,
-                # leaving the re-read to patch it in place - the swap-and-remove dance that has
-                # caused trouble before. Waiting means it is built once, complete. The re-read's
-                # own response runs this method again and finishes the job.
-                self.refresh(force=True)
+            # Placed before anything reads or writes self._items, so a window we are about to
+            # throw away leaves no trace. Letting it land first made the next read look like an
+            # addition rather than a replacement: the short window is a subset of the full one,
+            # so the justAdded calculation below handed items.changed everything the short
+            # window lacked, and AudioPlayerHandler.playQueueCallback appends what it is given
+            # instead of rebuilding - shuffling tacked a second copy of the queue onto the end of
+            # the first (live, 2026-09-19).
+            #
+            # Nothing is announced either: no initialized, change or items.changed. The caller
+            # may still be inside waitForInitialization(), and letting a short queue through
+            # would have playAudioPlaylist() build Kodi's playlist from it, leaving the next read
+            # to patch it in place - the swap-and-remove dance that has caused trouble before.
+            # Waiting means it is built once, complete.
+            if self.rereadShortWindow(context):
                 return
 
             itemsChanged = False
@@ -519,26 +521,72 @@ class PlayQueue(signalsmixin.SignalsMixin):
             if itemsChanged:
                 self.trigger("items.changed", just_added=justAdded)
 
-    def needsWindowReread(self, context):
-        """Whether this response came back shorter than the window we asked for.
+    def windowHolds(self):
+        """How many items the window we last asked for can return: 2N+1, measured exactly."""
+        return self.requestedWindow and (2 * self.requestedWindow + 1) or 0
 
-        PMS honours window= on a plain read of a play queue and ignores it on every request that
-        creates or changes one, applying its own small window instead: window=250 on the POST
-        that created an 88-track queue returned 21 items, and the identical window=250 on the
-        very next GET returned all 88 (live, 2026-09-19, and the same 21 for a 100 and a
-        234-track queue). Shuffling behaved the same way - the rows collapsed back to 21 on a
-        toggle and only grew again when scrolling to the end provoked a read.
+    def rereadShortWindow(self, context):
+        """Read the queue again when PMS hands back less of it than the window allows for.
 
-        So every request type here except "refresh" needs reading back: create, own, shuffle,
-        move, delete and add. Excluding "refresh" is also what stops this recursing, since the
-        re-read is itself a refresh - a queue genuinely larger than the window we asked for takes
-        one extra read and then settles for the best window available.
+        Returns True when another read is on its way, and the caller then drops this response
+        without announcing it.
 
-        Audio only, because addRequestOptions() only sends window= for audio; for anything else
-        the short window is PMS's default and re-reading would fetch the same thing again.
+        There are two separate reasons a response comes up short, and they need different
+        answers. Both were measured against PMS 1.43.4 on 2026-09-19, by creating one queue over
+        a 234-track artist and watching it.
+
+        1. PMS ignores window= on anything that creates or changes a queue - create, own,
+           shuffle, move, delete, add - and applies its own default of 10 instead, so the answer
+           holds 21 items whatever we asked for. A plain read honours window= exactly. So any
+           response but a "refresh" is read back straight away.
+
+        2. A queue is not fully populated when PMS answers the create. The read at t+0.28s
+           returned 200 of 234, and the read at t+0.50s returned all 234 and stayed there: the
+           200 is a fill batch, not a ceiling. So a *read* that is still short gets asked again
+           shortly, a few times, as long as the window could have covered the whole queue.
+
+        That last condition is what keeps this finite. A queue genuinely longer than 2N+1 is
+        short on every read no matter how often we ask, so it settles for what it can have; the
+        retry limit is a second stop for a server that never finishes filling.
         """
-        return (context.requestType != "refresh"
-                and self.type == "audio" and self.totalSize > self.windowSize)
+        if self.type != "audio" or self.totalSize <= self.windowSize:
+            self.windowRetries = 0
+            return False
+
+        if context.requestType != "refresh":
+            delay = 0
+        elif self.totalSize > self.windowHolds():
+            # Longer than the window can return - this really is all of it we can have.
+            return False
+        elif self.windowRetries >= self.WINDOW_RETRY_LIMIT:
+            util.DEBUG_LOG('playQueue: still {0} of {1} items after {2} re-reads - going with it',
+                           self.windowSize, self.totalSize, self.windowRetries)
+            return False
+        elif self.refreshTimer:
+            # Something else is already going to refresh us; stacking a second timer on top of
+            # it would leave whichever loses the race holding a stale response.
+            return False
+        else:
+            delay = self.WINDOW_RETRY_DELAY
+
+        util.DEBUG_LOG('playQueue: {0} returned {1} of {2} items - reading it again{3}',
+                       context.requestType, self.windowSize, self.totalSize,
+                       delay and ' in {0}ms'.format(delay) or '')
+
+        # responded back to False so waitForInitialization() keeps its timeout: that loop only
+        # honours the timeout while responded is False, and spins indefinitely once it is True,
+        # so leaving it set would hang the caller if the read never lands. Every wait here has to
+        # finish well inside util.TIMEOUT (5s), which WINDOW_RETRY_LIMIT x WINDOW_RETRY_DELAY is
+        # sized for.
+        self.responded = False
+
+        if delay:
+            self.windowRetries += 1
+            self.refreshTimer = plexapp.createTimer(delay, self.onRefreshTimer)
+            util.APP.addTimer(self.refreshTimer)
+        else:
+            self.refresh(force=True)
+        return True
 
     def isWindowed(self):
         return (not self.isLocal() and (self.totalSize > self.windowSize or self.forcedWindow))
@@ -671,6 +719,7 @@ class PlayQueue(signalsmixin.SignalsMixin):
             # many items it will put in Kodi's playlist, and the window is what goes there, so
             # 2N+1 lands on the setting rather than double it.
             window = int(util.INTERFACE.getPreference("playlist_max_size", 500)) // 2
+            self.requestedWindow = window
             if window > 0:
                 request.addParam("window", str(window))
 
