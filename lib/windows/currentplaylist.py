@@ -75,6 +75,9 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
     _panelAlbum = None
     # What fillPlaylist() last put in the rows - see playlistSignature().
     _playlistSig = None
+    # Only this window builds the queue rows; MusicPlayerWindow shares the playback callbacks
+    # below but has no list of its own.
+    playlistListControl = None
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -179,6 +182,12 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.duration = None
         self.setDuration()
         self.updateFromTrack()
+        # Move the rows onto the track that just started. Doing this only from onClick (where it
+        # still is, for the shuffle rebuild) ran it before the skip had happened - PlayerControl
+        # is queued, not immediate - so the rows stayed on the outgoing track and only caught up
+        # on the click after. Nothing followed a track that changed on its own at all, so
+        # wrapping from the last track to the first left the list sitting at the far end.
+        self.selectPlayingItem()
         # Next/previous depend on where the playing track sits, so they have to be worked out
         # again here. Waiting for the queue's own 'change' signal would leave them a refresh
         # behind (updatePlayQueue delays that by 5s), showing Next as live on the last track for
@@ -191,6 +200,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.ignoreStopCommands = False
         self.setDuration()
         self.updateFromTrack()
+        self.selectPlayingItem()
 
     COVER_FALLBACK = 'script.plex/thumb_fallbacks/music.png'
 
@@ -399,6 +409,9 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.doClose()
 
     def selectPlayingItem(self):
+        if not self.playlistListControl:
+            return
+
         for mli in reversed(self.playlistListControl):
             if xbmc.getCondVisibility('String.StartsWith(MusicPlayer.Comment,{0})'.format(mli.dataSource['comment'].split(':', 1)[0])):
                 self.playlistListControl.selectItem(mli.pos())
