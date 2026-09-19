@@ -68,8 +68,14 @@ class Artist(Audio, media.RelatedMixin):
             for attr, hub_id in self.OTHER_ALBUM_HUBS:
                 setattr(self, attr, self.relatedHubs(data, Album, hub_id))
             popularLeaves = data.find("PopularLeaves")
+            # container=self.container: these tracks are built straight off the <PopularLeaves>
+            # element rather than fetched from a listing of their own, so without this they are
+            # the one kind of item in the app with container None. Anything reaching for the
+            # container then falls over - getLibrarySectionUuid() (plexobjects.py) did, the moment
+            # clicking one started building a play queue. The artist's own container is the right
+            # one: it carries the librarySectionUUID these tracks belong to.
             self.popularTracks = plexobjects.PlexItemList(popularLeaves, Track, "Track",
-                                                          server=self.server)
+                                                          server=self.server, container=self.container)
             if popularLeaves is not None:
                 self.popularTracksKey = popularLeaves.get("key") or None
 

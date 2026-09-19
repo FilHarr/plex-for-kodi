@@ -367,7 +367,7 @@ class PlexObject(Checks):
     def getLibrarySectionId(self):
         ID = self.get('librarySectionID')
 
-        if not ID:
+        if not ID and self.container is not None:
             ID = self.container.get("librarySectionID", '')
 
         return ID
@@ -375,7 +375,7 @@ class PlexObject(Checks):
     def getLibrarySectionTitle(self):
         title = self.get('librarySectionTitle')
 
-        if not title:
+        if not title and self.container is not None:
             title = self.container.get("librarySectionTitle", '')
 
         if not title:
@@ -390,7 +390,7 @@ class PlexObject(Checks):
     def getLibrarySectionType(self):
         type_ = self.get('librarySectionType')
 
-        if not type_:
+        if not type_ and self.container is not None:
             type_ = self.container.get("librarySectionType", '')
 
         if not type_:
@@ -405,7 +405,10 @@ class PlexObject(Checks):
     def getLibrarySectionUuid(self):
         uuid = self.get("uuid") or self.get("librarySectionUUID")
 
-        if not uuid:
+        # An item built straight off an element rather than fetched from a listing has no
+        # container at all, and this used to raise AttributeError on it rather than return
+        # nothing - live, clicking a track in the artist's popular-tracks row.
+        if not uuid and self.container is not None:
             uuid = self.container.get("librarySectionUUID", "")
 
         return uuid
