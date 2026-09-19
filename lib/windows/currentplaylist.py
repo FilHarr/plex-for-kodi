@@ -287,6 +287,11 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         else:
             xbmc.executebuiltin('PlayerControl(Repeat)')
 
+        # Next/previous depend on the repeat mode now (hasNext/hasPrev wrap when it is
+        # repeat-all), and nothing else recomputes them until the next track change or queue
+        # refresh - so the buttons sat on their old state after a toggle.
+        self.updateProperties()
+
     def playerSkip(self, command):
         """PlayerControl(Next) / PlayerControl(Previous), stepping over repeat-one if it is on.
 
@@ -300,6 +305,16 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         No wait flags: builtins are queued and run in the order they are posted, so the skip
         lands between the two repeat changes.
         """
+        pq = player.PLAYER.handler.playQueue
+        pl = xbmc.PlayList(xbmc.PLAYLIST_MUSIC)
+        util.DEBUG_LOG('playerSkip({}): kodi size={} pos={} repeat: one={} all={} | pq repeat={} '
+                       'windowed={} hasNext={} hasPrev={}',
+                       command, pl.size(), pl.getposition(),
+                       xbmc.getCondVisibility('Playlist.IsRepeatOne'),
+                       xbmc.getCondVisibility('Playlist.IsRepeat'),
+                       pq and pq.isRepeat, pq and pq.isWindowed(),
+                       pq and pq.hasNext(), pq and pq.hasPrev())
+
         repeatOne = xbmc.getCondVisibility('Playlist.IsRepeatOne')
         if repeatOne:
             xbmc.executebuiltin('PlayerControl(RepeatOff)')

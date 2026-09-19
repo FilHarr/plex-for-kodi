@@ -136,6 +136,11 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
         else:
             xbmc.executebuiltin('PlayerControl(Repeat)')
 
+        # Next/previous depend on the repeat mode now (hasNext/hasPrev wrap when it is
+        # repeat-all), and nothing else recomputes them until the next track change or queue
+        # refresh - so the buttons sat on their old state after a toggle.
+        self.updateProperties()
+
     def skipPrevButtonClicked(self):
         if not xbmc.getCondVisibility('MusicPlayer.HasPrevious') and self.playlist and self.playlist.isRemote:
             util.DEBUG_LOG('MusicPlayer: No previous in Kodi playlist - refreshing remote PQ')

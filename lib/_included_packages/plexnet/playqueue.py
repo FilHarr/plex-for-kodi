@@ -506,13 +506,18 @@ class PlayQueue(signalsmixin.SignalsMixin):
         return self.isWindowed() or self.isRepeat
 
     def hasPrev(self):
-        # return self.allowSkipPrev or self.items().index(self.current()) > 0
         items = list(self.items())
         current = self.current()
         if current not in items:
             return False
 
-        return items.index(current) > 0
+        if items.index(current) > 0:
+            return True
+
+        # Mirror of hasNext(): on the first item we hold, repeat-all wraps backwards to the last
+        # one (CPlayListPlayer::PlayPrevious - "if (iSong < 0 && Repeated(...)) iSong =
+        # playlist.size() - 1"), and a windowed queue has more sitting before it on the server.
+        return self.isWindowed() or self.isRepeat
 
     def next(self):
         if self.isRepeatOne:
