@@ -90,13 +90,16 @@
         {# declared after the time label so the popout below paints over it instead of the other way round #}
         <control type="group">
             <visible>Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))</visible>
-            {# 360r keeps a ~32px gap between the collapsed thumbnail and the time label to its right #}
+            {# 360r puts the collapsed thumbnail's left edge at 1560, which other rows' navigation comments
+               depend on (see script-plex-seasons.xml.tpl); its 63px art ends 37px short of the time
+               label's box #}
             <posx>360r</posx>
             <posy>0</posy>
-            {# collapsed to just the art thumbnail (63x63, +50% over the original 42x42); the rest pops out only while it's focused #}
+            {# Collapsed to just the art thumbnail: 63x63, rounded through square-mask.png with the mask pinned
+               to the control's own bounds - the corner treatment the music library's track rows use
+               (includes/track_row.xml.tpl), at a smaller size. Centred in the 135px header (36 above and
+               below). No zoom on focus - the ring below is the whole focus treatment. #}
             <control type="group">
-                <animation effect="zoom" start="100" end="110" time="100" center="31.5,{{ vscale(67.5) }}" reversible="false">Focus</animation>
-                <animation effect="zoom" start="110" end="100" time="100" center="31.5,{{ vscale(67.5) }}" reversible="false">UnFocus</animation>
                 <control type="button" id="204">
                     <posx>0</posx>
                     <posy>{{ vscale(36) }}</posy>
@@ -114,54 +117,34 @@
                     <posy>{{ vscale(36) }}</posy>
                     <width>63</width>
                     <height>{{ vscale(63) }}</height>
-                    <texture>$INFO[Player.Art(thumb)]</texture>
+                    <texture diffuse="script.plex/masks/square-mask.png">$INFO[Player.Art(thumb)]</texture>
+                    <aspectratio scalediffuse="false">scale</aspectratio>
                 </control>
-                {# selected.png (the hub thumbnails' focus-ring asset) turned out to be the wrong tool here: its
-                   border attribute only resizes how much of the image's corner gets 9-sliced, not the actual
-                   stroke width along the straight edges - that width is baked into the source pixels, so
-                   border="2" looked identical to border="5". Four thin rectangles - the same technique the
-                   current-season underline just below uses - give exact, direct control over thickness instead #}
-                <control type="group">
+                {# Focus ring: the music grid's recipe (script-plex-squares.xml.tpl) - a flat white square diffused
+                   through an RGBA ring mask, tinted FFE9A20D, in a box 6px larger than the art at -3 on both axes.
+                   Its own mask rather than the shared ring-mask-square.png, though: that one is a 3px ring at its
+                   488px authored size, which scales to ~0.4px in a 69px box and all but disappears. This mask is
+                   authored at 69px native with a 2px ring, its corner radius square-mask.png's own (~2px at 63px)
+                   plus the 3px offset. selected.png's 9-slice border was rejected here long ago for the mirror-image
+                   reason - its stroke width is baked into the source pixels and can't be scaled down. #}
+                <control type="image">
                     <visible>Control.HasFocus(204)</visible>
-                    <control type="image">
-                        <posx>-5</posx>
-                        <posy>{{ vscale(31) }}</posy>
-                        <width>73</width>
-                        <height>2</height>
-                        <texture>script.plex/white-square.png</texture>
-                        <colordiffuse>FFE5A00D</colordiffuse>
-                    </control>
-                    <control type="image">
-                        <posx>-5</posx>
-                        <posy>{{ vscale(102) }}</posy>
-                        <width>73</width>
-                        <height>2</height>
-                        <texture>script.plex/white-square.png</texture>
-                        <colordiffuse>FFE5A00D</colordiffuse>
-                    </control>
-                    <control type="image">
-                        <posx>-5</posx>
-                        <posy>{{ vscale(31) }}</posy>
-                        <width>2</width>
-                        <height>{{ vscale(73) }}</height>
-                        <texture>script.plex/white-square.png</texture>
-                        <colordiffuse>FFE5A00D</colordiffuse>
-                    </control>
-                    <control type="image">
-                        <posx>66</posx>
-                        <posy>{{ vscale(31) }}</posy>
-                        <width>2</width>
-                        <height>{{ vscale(73) }}</height>
-                        <texture>script.plex/white-square.png</texture>
-                        <colordiffuse>FFE5A00D</colordiffuse>
-                    </control>
+                    <posx>-3</posx>
+                    <posy>{{ vscale(33) }}</posy>
+                    <width>69</width>
+                    <height>{{ vscale(69) }}</height>
+                    <texture diffuse="script.plex/masks/ring-mask-square-69.png">script.plex/white-square.png</texture>
+                    <colordiffuse>FFE9A20D</colordiffuse>
                 </control>
             </control>
 
             <control type="group">
                 <visible>Control.HasFocus(204)</visible>
                 <animation effect="fade" start="0" end="100" time="120" reversible="true">Visible</animation>
-                {# extends over the time label by design - this group is declared after it, so it draws on top rather than shifting it #}
+                {# Extends over the time label by design - this group is declared after it, so it draws on top rather
+                   than shifting it. Card is 75 tall around the 63px art (6px beyond it top and bottom), starting
+                   12px past the art's right edge; text/progress sit 15px inside it. Title over artist, both font8,
+                   in the track rows' colours (includes/track_row.xml.tpl): white title, AAFFFFFF artist. #}
                 <control type="image">
                     <posx>75</posx>
                     <posy>{{ vscale(30) }}</posy>
@@ -174,22 +157,22 @@
                     <posy>{{ vscale(40) }}</posy>
                     <width>230</width>
                     <height>{{ vscale(20) }}</height>
-                    <font>font10</font>
+                    <font>font8</font>
                     <align>left</align>
                     <aligny>center</aligny>
                     <textcolor>FFFFFFFF</textcolor>
-                    <info>MusicPlayer.Artist</info>
+                    <info>MusicPlayer.Title</info>
                 </control>
                 <control type="label">
                     <posx>90</posx>
                     <posy>{{ vscale(64) }}</posy>
                     <width>230</width>
                     <height>{{ vscale(20) }}</height>
-                    <font>font10</font>
+                    <font>font8</font>
                     <align>left</align>
                     <aligny>center</aligny>
-                    <textcolor>FFFFFFFF</textcolor>
-                    <info>MusicPlayer.Title</info>
+                    <textcolor>AAFFFFFF</textcolor>
+                    <info>MusicPlayer.Artist</info>
                 </control>
                 <control type="progress">
                     <description>Progressbar</description>
