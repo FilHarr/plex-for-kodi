@@ -267,14 +267,35 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self._panelAlbum = (key, album)
         return album
 
+    @staticmethod
+    def setKodiRepeat(mode):
+        """Kodi's own repeat mode - 'off', 'one' or 'all'.
+
+        Player.SetRepeat rather than PlayerControl(Repeat*): the builtin applies the change to
+        PlaylistPlayer::GetCurrentPlaylist(), and Kodi sets that to TYPE_NONE whenever a skip runs
+        off the end of a playlist (CPlayListPlayer::PlayNext's failure path calls Reset()). A
+        repeat change made while it sits there is dropped without a word, so the queue could
+        record repeat-all while Kodi had none - the button lit up and hasNext() promised a wrap,
+        but nothing wrapped. Live, that showed as repeat-all working on the first album and not
+        on later ones, with kodi all=False against pq repeat=True in the same log line.
+
+        The JSON-RPC call resolves the playlist from the player id instead
+        (PlayerOperations.cpp: GetPlaylist(GetPlayer(playerid))), so it always lands on the music
+        playlist whatever Kodi currently considers current.
+        """
+        try:
+            kodijsonrpc.rpc.Player.SetRepeat(playerid=0, repeat=mode)
+        except Exception as e:
+            util.DEBUG_LOG('Could not set Kodi repeat to {}: {}', mode, e)
+
     def repeatButtonClicked(self):
         if player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:
             if xbmc.getCondVisibility('Playlist.IsRepeatOne'):
-                xbmc.executebuiltin('PlayerControl(RepeatOff)')
+                self.setKodiRepeat('off')
             elif player.PLAYER.handler.playQueue.isRepeat:
                 player.PLAYER.handler.playQueue.setRepeat(False)
                 player.PLAYER.handler.playQueue.refresh(force=True)
-                xbmc.executebuiltin('PlayerControl(RepeatOne)')
+                self.setKodiRepeat('one')
             else:
                 player.PLAYER.handler.playQueue.setRepeat(True)
                 player.PLAYER.handler.playQueue.refresh(force=True)
@@ -283,9 +304,9 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
                 # it hands back when windowing - neither makes Kodi loop the playlist it is
                 # actually playing, so repeat-all did nothing audible and playback just stopped at
                 # the end (live, 2026-09-19).
-                xbmc.executebuiltin('PlayerControl(RepeatAll)')
+                self.setKodiRepeat('all')
         else:
-            xbmc.executebuiltin('PlayerControl(Repeat)')
+            self.setKodiRepeat('cycle')
 
         # Next/previous depend on the repeat mode now (hasNext/hasPrev wrap when it is
         # repeat-all), and nothing else recomputes them until the next track change or queue
@@ -317,12 +338,12 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
 
         repeatOne = xbmc.getCondVisibility('Playlist.IsRepeatOne')
         if repeatOne:
-            xbmc.executebuiltin('PlayerControl(RepeatOff)')
+            self.setKodiRepeat('off')
 
         xbmc.executebuiltin('PlayerControl({0})'.format(command))
 
         if repeatOne:
-            xbmc.executebuiltin('PlayerControl(RepeatOne)')
+            self.setKodiRepeat('one')
 
     def skipPrevButtonClicked(self):
         if not xbmc.getCondVisibility('MusicPlayer.HasPrevious') and player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:

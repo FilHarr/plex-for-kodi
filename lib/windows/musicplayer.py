@@ -125,16 +125,22 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
     def repeatButtonClicked(self):
         if self.playlist and self.playlist.isRemote:
             if xbmc.getCondVisibility('Playlist.IsRepeatOne'):
-                xbmc.executebuiltin('PlayerControl(RepeatOff)')
+                self.setKodiRepeat('off')
             elif self.playlist.isRepeat:
                 self.playlist.setRepeat(False)
                 self.playlist.refresh(force=True)
-                xbmc.executebuiltin('PlayerControl(RepeatOne)')
+                self.setKodiRepeat('one')
             else:
                 self.playlist.setRepeat(True)
                 self.playlist.refresh(force=True)
+                # Kodi is what actually loops the playlist - setRepeat() only sets a flag on the
+                # queue object, and PMS's repeat governs what it hands back when windowing. This
+                # branch is a near-copy of CurrentPlaylistWindow's, and this line was added there
+                # and missed here, so repeat-all on the player screen set the flag, lit the
+                # button and told hasNext() a wrap was coming, while Kodi looped nothing.
+                self.setKodiRepeat('all')
         else:
-            xbmc.executebuiltin('PlayerControl(Repeat)')
+            self.setKodiRepeat('cycle')
 
         # Next/previous depend on the repeat mode now (hasNext/hasPrev wrap when it is
         # repeat-all), and nothing else recomputes them until the next track change or queue
