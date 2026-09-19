@@ -64,6 +64,18 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
     BAR_RIGHT = 1276
     BAR_BOTTOM = 969
 
+    # Class level, not just assigned in __init__: MusicPlayerWindow subclasses this but calls
+    # kodigui.ControlledWindow.__init__ directly, so this class's __init__ never runs for it and
+    # anything set only there is missing on the player. Found the hard way - updateFromTrack()
+    # died on _panelAlbum every time the player opened, which left it with no background panel
+    # (the cover survived, since that is set earlier in the same method).
+    #
+    # (parentRatingKey, Album) of the last album fetched for the background panel - see
+    # _albumForPanel().
+    _panelAlbum = None
+    # What fillPlaylist() last put in the rows - see playlistSignature().
+    _playlistSig = None
+
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
         self.selectedOffset = 0
@@ -72,11 +84,6 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.setDuration()
         self.exitCommand = None
         self.musicPlayerWinID = kwargs.get('winID')
-        # (parentRatingKey, Album) of the last album fetched for the background panel - see
-        # _albumForPanel().
-        self._panelAlbum = None
-        # What fillPlaylist() last put in the rows - see playlistSignature().
-        self._playlistSig = None
 
     def doClose(self, **kwargs):
         player.PLAYER.off('av.started', self.onPlayBackStarted)
