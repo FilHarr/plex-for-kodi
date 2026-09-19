@@ -1992,10 +1992,35 @@ class AudioPlayerHandler(BasePlayerHandler):
             # Now swap the track to the correct position. This seems to be the only way to update the kodi playlist position to the current track's new position
             if swap is not None:
                 kodijsonrpc.rpc.Playlist.Swap(playlistid=xbmc.PLAYLIST_MUSIC, position1=0, position2=swap + 1)
-                try:
-                    kodijsonrpc.rpc.Playlist.Remove(playlistid=xbmc.PLAYLIST_MUSIC, position=0)
-                except:
-                    pass
+
+                # The playing track is in the list twice at this point - the one kept back while
+                # everything else was rebuilt, plus its copy in the rebuilt run - and this drops
+                # the spare. It has to wait for the swap first.
+                #
+                # Playlist.Swap and Playlist.Remove both only queue the work
+                # (PostMsg, PlaylistOperations.cpp) and return straight away, but Remove's "you
+                # can't remove the item that's playing" test (GetCurrentItemIdx() == position)
+                # runs there and then, when the call is made. Asked for immediately after the
+                # swap, it was still judging the positions as they were before it - where index 0
+                # is the playing track - so it failed InvalidParams every single time and the
+                # duplicate stayed (live: shuffling an album left the playing track in the queue
+                # twice). CPlayListPlayer::Swap carries m_iCurrentSong across with the item, and
+                # getposition() reads that same index, so waiting for it to land makes the
+                # removal legal.
+                for _ in range(20):
+                    if plist.getposition() == swap + 1:
+                        break
+                    util.MONITOR.waitForAbort(0.05)
+                else:
+                    util.DEBUG_LOG('AudioPlayerHandler: playlist swap did not land, skipping the '
+                                   'duplicate removal (position {}, wanted {})',
+                                   plist.getposition(), swap + 1)
+
+                if plist.getposition() == swap + 1:
+                    try:
+                        kodijsonrpc.rpc.Playlist.Remove(playlistid=xbmc.PLAYLIST_MUSIC, position=0)
+                    except Exception as e:
+                        util.DEBUG_LOG('AudioPlayerHandler: could not drop the duplicate track: {}', e)
         else:
             # add added items
             idx = plist.size() + 1
