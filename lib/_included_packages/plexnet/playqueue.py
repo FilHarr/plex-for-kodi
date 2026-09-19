@@ -490,8 +490,9 @@ class PlayQueue(signalsmixin.SignalsMixin):
 
         items = list(self.items())
         current = self.current()
-        if current not in items:
-            # an empty/failed-to-window queue has nothing to skip to
+        # current() is None between a track starting and the queue catching up with it, and an
+        # empty or failed-to-window queue has nothing to skip to either way.
+        if current is None or current not in items:
             return False
 
         if items.index(current) < len(items) - 1:
@@ -508,7 +509,7 @@ class PlayQueue(signalsmixin.SignalsMixin):
     def hasPrev(self):
         items = list(self.items())
         current = self.current()
-        if current not in items:
+        if current is None or current not in items:
             return False
 
         if items.index(current) > 0:

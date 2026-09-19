@@ -20,7 +20,13 @@ METADATA_RELATED_OTHER = 12
 
 class MediaItem(plexobjects.PlexObject):
     def __eq__(self, other):
-        return self.ratingKey == other.ratingKey
+        # Anything without a ratingKey simply isn't this item - None most of all. Comparing
+        # against one used to raise AttributeError, and `x in list_of_items` runs this for every
+        # entry, so a `if something not in items` guard blew up on exactly the case it was
+        # written to catch (live: PlayQueue.hasNext(), with no current item yet).
+        if other is None:
+            return False
+        return self.ratingKey == getattr(other, 'ratingKey', None)
 
     def __ne__(self, other):
         return not self.__eq__(other)
