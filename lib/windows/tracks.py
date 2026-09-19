@@ -119,7 +119,12 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         if not ratingKey:
             return
         for mli in self.trackListControl:
-            if mli.dataSource.ratingKey == ratingKey:
+            # Not every row is a track: fillTracks() puts a disc header in front of each disc's
+            # tracks, and those are ManagedListItems with no data source at all. Every album has
+            # at least one, at position 0, so this walked straight into it and raised on the very
+            # first row - meaning the playing track never got reselected on the way back to this
+            # screen (live, returning from the player).
+            if mli.dataSource and mli.dataSource.ratingKey == ratingKey:
                 self.trackListControl.setSelectedItem(mli)
 
     def onAction(self, action):
