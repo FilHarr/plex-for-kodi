@@ -336,16 +336,6 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         No wait flags: builtins are queued and run in the order they are posted, so the skip
         lands between the two repeat changes.
         """
-        pq = player.PLAYER.handler.playQueue
-        pl = xbmc.PlayList(xbmc.PLAYLIST_MUSIC)
-        util.DEBUG_LOG('playerSkip({}): kodi size={} pos={} repeat: one={} all={} | pq repeat={} '
-                       'windowed={} hasNext={} hasPrev={}',
-                       command, pl.size(), pl.getposition(),
-                       xbmc.getCondVisibility('Playlist.IsRepeatOne'),
-                       xbmc.getCondVisibility('Playlist.IsRepeat'),
-                       pq and pq.isRepeat, pq and pq.isWindowed(),
-                       self.skipAvailability(pq)[1], self.skipAvailability(pq)[0])
-
         repeatOne = xbmc.getCondVisibility('Playlist.IsRepeatOne')
         if repeatOne:
             self.setKodiRepeat('off')
