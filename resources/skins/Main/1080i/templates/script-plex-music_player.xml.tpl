@@ -1,9 +1,70 @@
 {% extends "base.xml.tpl" %}
 {% block headers %}<defaultcontrol>406</defaultcontrol>{% endblock %}
-{# Solid black, not the shared default_background include with Player.Art(landscape) as its hero
-   layer: this screen shows the cover itself, so the art-derived backdrop only competed with it. #}
-{% block backgroundcolor %}<backgroundcolor>0xff000000</backgroundcolor>{% endblock %}
 {% block controls %}
+{% block backgroundcolor %}<backgroundcolor>0xff000000</backgroundcolor>{% endblock %}
+{# BACKGROUND: the 4-corner tinted panel - the same corner-anchored falloff shape, mask and
+   flips as the shared background (includes/default_background.xml.tpl), over the same flat base
+   fill - but with each corner's colour set on the control itself from Python
+   (CurrentPlaylistWindow.updateFromTrack, currentplaylist.py) rather than read out of a window
+   property through $INFO[] on every frame.
+
+   Why these two screens don't use the shared include's panel: here the panel IS the whole
+   background - no hero art box, nothing covering the corners - and the property-driven version
+   flashed the flat base on every single track change, including changes within one album, where
+   the colours don't change and nothing is written at all (live, 2026-09-19; confirmed by
+   temporarily colouring the base fill red). Kodi re-resolves both an $INFO[] <colordiffuse> and a
+   String.IsEmpty() <visible> condition every frame, and a track change resets the info cache
+   (Info.OnChanged), so for a frame those corners read empty and stopped drawing. Kodi's
+   setColorDiffuse stores a constant CGUIInfoColor with no info label attached (Control.cpp), so
+   there is nothing left to re-resolve, and the controls carry no visible condition or fade to
+   flap either. The window's own backgroundcolor stays declared below for the same reason it used
+   to be black here: this window is otherwise transparent, and what sits behind it is
+   BackgroundWindow's own 0xff111111 - which is the base colour, and would be indistinguishable
+   from this panel failing. #}
+<control type="image">
+    <posx>0</posx>
+    <posy>0</posy>
+    <width>1920</width>
+    <height>1080</height>
+    <texture>script.plex/white-square.png</texture>
+    <colordiffuse>FF111111</colordiffuse>
+</control>
+<!-- topLeft -->
+<control type="image" id="301">
+    <posx>0</posx>
+    <posy>0</posy>
+    <width>1920</width>
+    <height>1080</height>
+    <texture diffuse="script.plex/masks/background-corner.png">script.plex/white-square.png</texture>
+    <colordiffuse>00000000</colordiffuse>
+</control>
+<!-- topRight -->
+<control type="image" id="302">
+    <posx>0</posx>
+    <posy>0</posy>
+    <width>1920</width>
+    <height>1080</height>
+    <texture diffuse="script.plex/masks/background-corner.png" flipx="true">script.plex/white-square.png</texture>
+    <colordiffuse>00000000</colordiffuse>
+</control>
+<!-- bottomLeft -->
+<control type="image" id="303">
+    <posx>0</posx>
+    <posy>0</posy>
+    <width>1920</width>
+    <height>1080</height>
+    <texture diffuse="script.plex/masks/background-corner.png" flipy="true">script.plex/white-square.png</texture>
+    <colordiffuse>00000000</colordiffuse>
+</control>
+<!-- bottomRight -->
+<control type="image" id="304">
+    <posx>0</posx>
+    <posy>0</posy>
+    <width>1920</width>
+    <height>1080</height>
+    <texture diffuse="script.plex/masks/background-corner.png" flipx="true" flipy="true">script.plex/white-square.png</texture>
+    <colordiffuse>00000000</colordiffuse>
+</control>
 
 <!-- Clock: the header's own (default.xml.tpl / library.xml.tpl / settings, user_select),
      verbatim - these two windows have no header, so it's declared here to keep it where every
@@ -22,20 +83,18 @@
 
 <!-- COVER: 640x640, centred horizontally, top edge 10px above the header's bottom edge (group
      200 in default.xml.tpl is 135 tall). Rounded by the same masks/square-mask.png the Album screen's
-     cover and the grid tiles use; fallback layer underneath for tracks with no art. -->
+     cover and the grid tiles use. cover.url is set by CurrentPlaylistWindow.updateFromTrack()
+     (currentplaylist.py) - the track's thumb, or the music fallback plate - rather than
+     Player.Art(thumb), which blanks for the stop/start gap of a prev/next and flashed the
+     fallback; see that method. The fadetime holds the old cover until the new one has loaded,
+     then crossfades. -->
 <control type="image">
     <posx>640</posx>
     <posy>{{ vscale(125) }}</posy>
     <width>640</width>
     <height>{{ vscale(640) }}</height>
-    <texture diffuse="script.plex/masks/square-mask.png">script.plex/thumb_fallbacks/music.png</texture>
-</control>
-<control type="image">
-    <posx>640</posx>
-    <posy>{{ vscale(125) }}</posy>
-    <width>640</width>
-    <height>{{ vscale(640) }}</height>
-    <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[Player.Art(thumb)]</texture>
+    <fadetime>250</fadetime>
+    <texture background="true" diffuse="script.plex/masks/square-mask.png">$INFO[Window.Property(cover.url)]</texture>
     <aspectratio scalediffuse="false">scale</aspectratio>
 </control>
 

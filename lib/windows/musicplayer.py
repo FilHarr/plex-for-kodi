@@ -55,6 +55,8 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
         self.exitCommand = None
         self.duration = None
         self.ignoreStopCommands = False
+        # see CurrentPlaylistWindow._albumForPanel()
+        self._panelAlbum = self.album and (self.album.ratingKey, self.album) or None
 
         if self.track:
             self.duration = self.track.duration.asInt()
@@ -69,6 +71,9 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
         self.commonInit()
         self.updateProperties()
         self.play()
+        # self.track, not whatever is current: play() has only just started it, and
+        # currentTrack() is still the one before until the handler catches up.
+        self.updateFromTrack(self.track)
         self.setFocusId(406)
 
     def doClose(self, **kwargs):

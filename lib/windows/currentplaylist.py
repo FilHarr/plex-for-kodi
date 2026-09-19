@@ -72,6 +72,9 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.setDuration()
         self.exitCommand = None
         self.musicPlayerWinID = kwargs.get('winID')
+        # (parentRatingKey, Album) of the last album fetched for the background panel - see
+        # _albumForPanel().
+        self._panelAlbum = None
 
     def doClose(self, **kwargs):
         player.PLAYER.off('av.started', self.onPlayBackStarted)
@@ -100,6 +103,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.setFocusId(self.PLAYLIST_LIST_ID)
         self.commonInit()
         self.updateProperties()
+        self.updateFromTrack()
         if player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:
             player.PLAYER.handler.playQueue.on('change', self.updateProperties)
         player.PLAYER.on('playlist.changed', self.playQueueCallback)
@@ -165,11 +169,88 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.selectedOffset = 0
         self.duration = None
         self.setDuration()
+        self.updateFromTrack()
 
     def onAudioChanged(self, *args, **kwargs):
         util.setGlobalProperty('ignore_spinner', '')
         self.ignoreStopCommands = False
         self.setDuration()
+        self.updateFromTrack()
+
+    COVER_FALLBACK = 'script.plex/thumb_fallbacks/music.png'
+
+    # The 4 background corner tints, ids as declared in both windows' templates - see the
+    # BACKGROUND comment in either for why these are driven from here rather than from window
+    # properties like every other screen's panel.
+    PANEL_CORNER_CONTROLS = ((301, 'topLeft'), (302, 'topRight'), (303, 'bottomLeft'), (304, 'bottomRight'))
+
+    def updateFromTrack(self, track=None):
+        """The cover and the background panel, from the track. Called with the track about to
+        play from MusicPlayerWindow.onFirstInit(); otherwise with the one the handler extracted
+        from the playing item (player.PLAYER.currentTrack()), which
+        AudioPlayerHandler.onPlayBackStarted() has refreshed by the time started.audio fires.
+
+        Cover: a window property rather than $INFO[Player.Art(thumb)] in the template. Prev/next
+        (unlike a track ending) stop the player for the ~10ms before the next item starts
+        (kodi.log: "Player - STOPPED" then "STARTED"), and for that gap plus the reload
+        Player.Art(thumb) is empty, so the image control dropped its texture and the light-grey
+        fallback plate under it flashed through. This property is only ever set on a track
+        start, never cleared, so the control keeps the old texture until the new one is ready
+        and crossfades (its <fadetime> - CGUIImage::Process holds the last texture while the
+        next is loading). Same URL as the player's list item (player.py, 640x640), so the two
+        share Kodi's texture cache, and consecutive tracks of one album don't even reload. The
+        fallback for a track with no art is chosen here for the same reason - a fallback layer
+        in the template would flash on during the gap.
+
+        Panel: the 4-corner panel (includes/default_background.xml.tpl) from the track's album -
+        its ultraBlurColors, the same source the Album screen's panel uses, so the two agree -
+        falling back to the track's own when it has no album (or the album carries none), and
+        then to the seeded stand-in every other screen ends up with (util.backgroundPanelCorners),
+        seeded on the album so a whole album shares it. updateBackgroundFrom() (kodigui.py) isn't
+        used because these windows show the cover itself and never want the hero-art box that
+        also drives; crossfade=False because on these two screens the panel is the whole
+        background and its crossfade flickered - see _setPanelCorners()."""
+        track = track or player.PLAYER.currentTrack()
+        if not track:
+            return
+        thumb = track.defaultThumb
+        self.setProperty('cover.url', (thumb and thumb.asTranscodedImageURL(640, 640)) or self.COVER_FALLBACK)
+
+        if not util.addonSettings.dynamicBackgrounds:
+            return
+        album = self._albumForPanel(track)
+        colors = album is not None and getattr(album, 'ultraBlurColors', None) or None
+        if not colors:
+            colors = getattr(track, 'ultraBlurColors', None)
+        seed = track.get('parentRatingKey') or track.get('ratingKey') or track.get('title')
+        self.setPanelCorners(util.backgroundPanelCorners(colors, seed=seed))
+
+    def setPanelCorners(self, corners):
+        """The 4 corner tints, straight onto the controls. A corner with no color is set fully
+        transparent rather than hidden - a <visible> condition is one more thing that can flap."""
+        for cid, corner in self.PANEL_CORNER_CONTROLS:
+            try:
+                self.getControl(cid).setColorDiffuse(corners.get(corner) or '00000000')
+            except (RuntimeError, AttributeError):
+                util.DEBUG_LOG('{}: no background corner control {}', self.__class__.__name__, cid)
+
+    def _albumForPanel(self, track):
+        """The track's album, fetched once and reused for the tracks that follow on it - a
+        failed or empty fetch is remembered too, so a track that has none isn't retried on
+        every callback. MusicPlayerWindow pre-seeds this with the album it was opened from."""
+        key = track.get('parentRatingKey')
+        if not key:
+            return None
+        if self._panelAlbum and self._panelAlbum[0] == key:
+            return self._panelAlbum[1]
+        album = None
+        if track.get('parentKey'):
+            try:
+                album = track.album()
+            except Exception:
+                util.ERROR()
+        self._panelAlbum = (key, album)
+        return album
 
     def repeatButtonClicked(self):
         if player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:
