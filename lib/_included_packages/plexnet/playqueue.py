@@ -216,10 +216,11 @@ class PlayQueue(signalsmixin.SignalsMixin):
         self.composite = plexobjects.PlexValue('', parent=self)
 
         # Add a few default options for specific PQ types
-        if self.type == "audio":
-            self.options.includeRelated = True
-        elif self.type == "photo":
+        if self.type == "photo":
             self.setRepeat(True)
+        # Deliberately no includeRelated for audio: with it, PMS appends tracks it considers
+        # similar, so playback carries on past the end of the album (or list) you asked for. An
+        # audio queue here ends with its last track. On request, 2026-09-19.
 
     def get(self, name):
         return getattr(self, name, plexobjects.PlexValue('', parent=self))
