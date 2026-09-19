@@ -393,6 +393,31 @@ class PlayQueue(signalsmixin.SignalsMixin):
             self.windowSize = len(response.items)
             self.version = response.container.playQueueVersion.asInt()
 
+            if self.needsWindowReread(context):
+                util.DEBUG_LOG('playQueue: {0} returned {1} of {2} items - re-reading, PMS '
+                               'ignores window= on anything but a plain read',
+                               context.requestType, self.windowSize, self.totalSize)
+                # responded back to False so waitForInitialization() keeps its timeout: that loop
+                # only honours the timeout while responded is False, and spins indefinitely once
+                # it is True, so leaving it set would hang the caller if the re-read never lands.
+                self.responded = False
+                # Before self._items is touched, so the window we are throwing away leaves
+                # no trace. Letting it land first made the re-read look like an addition rather
+                # than a replacement: the short window is a subset of the full one, so the
+                # justAdded calculation below handed items.changed everything the short window
+                # lacked, and AudioPlayerHandler.playQueueCallback appends what it is given
+                # instead of rebuilding - shuffling tacked a second copy of the queue onto the
+                # end of the first (live, 2026-09-19).
+                #
+                # Nor does it announce anything: no initialized, change or items.changed. The
+                # caller may still be inside waitForInitialization(), and letting it through
+                # would have playAudioPlaylist() build Kodi's playlist from the short window,
+                # leaving the re-read to patch it in place - the swap-and-remove dance that has
+                # caused trouble before. Waiting means it is built once, complete. The re-read's
+                # own response runs this method again and finishes the job.
+                self.refresh(force=True)
+                return
+
             itemsChanged = False
             justAdded = False
 
@@ -474,24 +499,6 @@ class PlayQueue(signalsmixin.SignalsMixin):
 
             # Create usage limitations
             self.usage = UsageFactory.createUsage(self)
-
-            if self.needsWindowReread(context):
-                util.DEBUG_LOG('playQueue: {0} returned {1} of {2} items - re-reading, PMS '
-                               'ignores window= on anything but a plain read',
-                               context.requestType, self.windowSize, self.totalSize)
-                # responded back to False so waitForInitialization() keeps its timeout: that loop
-                # only honours the timeout while responded is False, and spins indefinitely once
-                # it is True, so leaving it set would hang the caller if the re-read never lands.
-                self.responded = False
-                # Deliberately without initialized/change/items.changed: the caller is still
-                # inside waitForInitialization(), and letting it through here is the whole
-                # problem - playAudioPlaylist() would build Kodi's playlist from the short window
-                # and the re-read would then have to patch it in place, which is the swap-and-
-                # remove dance that has caused trouble before. Waiting means it is built once,
-                # complete. The re-read's own response runs this method again and finishes the
-                # job.
-                self.refresh(force=True)
-                return
 
             self.initialized = True
             self.trigger("change")
