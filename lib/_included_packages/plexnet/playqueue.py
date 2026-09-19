@@ -656,9 +656,13 @@ class PlayQueue(signalsmixin.SignalsMixin):
 
         if self.type == "audio":
             # How much of the queue PMS hands back. window=N means N either side of the selected
-            # item, so up to 2N+1 items - verified against a live server: no param at all returns
-            # 41 (PMS defaults to 20), window=5 returns 11, window=100 returned all 100 of a
-            # 100-item queue.
+            # item, so 2N+1 items, clamped to the queue's length. Measured exactly, against a
+            # 234-track queue on PMS 1.43.4 (2026-09-19): window=10 gave 11, window=100 gave 101,
+            # window=1000 gave all 234, and no window at all gave 21 - so PMS's own default is 10.
+            #
+            # X-Plex-Container-Size does not get round this: asking for 1000 with no window still
+            # returned 21, so container paging works inside the window rather than instead of it.
+            # Anything that wants more of the queue has to raise the window, not page past it.
             #
             # Audio only, because audio is the one type with a queue the user sits and scrolls
             # (the play queue screen). Without this it showed 41 rows of a 100-track queue, and
