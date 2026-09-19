@@ -583,6 +583,22 @@ class PlayQueue(signalsmixin.SignalsMixin):
             if self.options.get(opt):
                 request.addParam(opt, "1")
 
+        if self.type == "audio":
+            # How much of the queue PMS hands back. window=N means N either side of the selected
+            # item, so up to 2N+1 items - verified against a live server: no param at all returns
+            # 41 (PMS defaults to 20), window=5 returns 11, window=100 returned all 100 of a
+            # 100-item queue.
+            #
+            # Audio only, because audio is the one type with a queue the user sits and scrolls
+            # (the play queue screen). Without this it showed 41 rows of a 100-track queue, and
+            # the rest only arrived as playback approached them, dropping tracks off the top as it
+            # went. playlist_max_size halved: that setting is already this addon's limit on how
+            # many items it will put in Kodi's playlist, and the window is what goes there, so
+            # 2N+1 lands on the setting rather than double it.
+            window = int(util.INTERFACE.getPreference("playlist_max_size", 500)) // 2
+            if window > 0:
+                request.addParam("window", str(window))
+
         intOpts = ["extrasPrefixCount"]
         for opt in intOpts:
             if self.options.get(opt):
