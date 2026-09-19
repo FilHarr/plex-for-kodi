@@ -334,7 +334,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
                        xbmc.getCondVisibility('Playlist.IsRepeatOne'),
                        xbmc.getCondVisibility('Playlist.IsRepeat'),
                        pq and pq.isRepeat, pq and pq.isWindowed(),
-                       pq and pq.hasNext(), pq and pq.hasPrev())
+                       self.skipAvailability(pq)[1], self.skipAvailability(pq)[0])
 
         repeatOne = xbmc.getCondVisibility('Playlist.IsRepeatOne')
         if repeatOne:
@@ -603,17 +603,38 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
             self.selectionBox.setPosition(-self.selectionBoxHalf, 0)
         self.setProperty('time.selection', util.simplifiedTimeDisplay(int(self.selectedOffset)))
 
+    @staticmethod
+    def skipAvailability(pq):
+        """(previous, next) - whether each skip button has anywhere to go.
+
+        Worked out from Kodi's playlist, not the play queue's own view of itself. Kodi is what
+        performs the skip, on the playlist it holds, so it is the only thing that can say whether
+        one is possible. PlayQueue.hasNext()/hasPrev() answer from selectedId against a windowed
+        item list, and the two drift: logged live against a 20-track album, they reported
+        False/False at position 1 and True/True at position 0, neither matching the playlist
+        underneath. False/False is their tell for a selectedId matching nothing in the window, at
+        which point both buttons go dark wherever the track actually sits.
+
+        A windowed queue is the one thing Kodi cannot know about - its playlist holds only the
+        window, and PMS has more on either side - so the queue is still asked about that.
+        """
+        pl = xbmc.PlayList(xbmc.PLAYLIST_MUSIC)
+        size = pl.size()
+        pos = pl.getposition()
+        if size <= 0 or pos < 0:
+            return False, False
+
+        wraps = xbmc.getCondVisibility('Playlist.IsRepeat') or bool(pq and pq.isWindowed())
+        return (pos > 0 or wraps), (pos < size - 1 or wraps)
+
     def updateProperties(self, **kwargs):
         pq = player.PLAYER.handler.playQueue
         if pq:
             if pq.isRemote:
                 self.setProperty('pq.isRemote', '1')
-                # hasNext()/hasPrev(), not allowSkipNext/allowSkipPrev: those two are
-                # position-independent (totalSize > 1 and a container flag), so the buttons stayed
-                # lit at both ends of the queue. These two ask where the playing track actually
-                # sits. Same pair the video OSD uses (seekdialog.py).
-                self.setProperty('pq.hasnext', pq.hasNext() and '1' or '')
-                self.setProperty('pq.hasprev', pq.hasPrev() and '1' or '')
+                hasPrev, hasNext = self.skipAvailability(pq)
+                self.setProperty('pq.hasnext', hasNext and '1' or '')
+                self.setProperty('pq.hasprev', hasPrev and '1' or '')
                 self.setProperty('pq.repeat', pq.isRepeat and '1' or '')
                 self.setProperty('pq.shuffled', pq.isShuffled and '1' or '')
             else:
