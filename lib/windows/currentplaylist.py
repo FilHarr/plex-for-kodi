@@ -64,20 +64,28 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
     BAR_RIGHT = 1276
     BAR_BOTTOM = 969
 
-    # Class level, not just assigned in __init__: MusicPlayerWindow subclasses this but calls
-    # kodigui.ControlledWindow.__init__ directly, so this class's __init__ never runs for it and
-    # anything set only there is missing on the player. Found the hard way - updateFromTrack()
-    # died on _panelAlbum every time the player opened, which left it with no background panel
-    # (the cover survived, since that is set earlier in the same method).
-    #
+    # Defaults for everything the shared playback callbacks touch. MusicPlayerWindow subclasses
+    # this and runs those callbacks too, so each of these has to mean something on both screens.
+    # They are class level rather than __init__ assignments as a belt and braces measure: the
+    # player used to skip this class's __init__ outright - it called
+    # kodigui.ControlledWindow.__init__ directly - and every attribute set only there was missing
+    # on it, which is how updateFromTrack() came to die on _panelAlbum and leave the player with
+    # no background panel. That __init__ chains properly now, but a callback can still arrive
+    # before onFirstInit() has built anything, which is what these cover.
+
     # (parentRatingKey, Album) of the last album fetched for the background panel - see
     # _albumForPanel().
     _panelAlbum = None
     # What fillPlaylist() last put in the rows - see playlistSignature().
     _playlistSig = None
-    # Only this window builds the queue rows; MusicPlayerWindow shares the playback callbacks
-    # below but has no list of its own.
+    # Only this window builds the queue rows; the player screen has no list to select in.
     playlistListControl = None
+    # The remote play queue we hooked 'change' on, remembered so doClose() unhooks the queue it
+    # actually hooked rather than whatever happens to be playing by then.
+    _boundPlayQueue = None
+    # Raised around a track change by onAudioStarting/onAudioStarted. MusicPlayerWindow.onAction
+    # reads it to tell a stop the user asked for from one the file swap caused.
+    ignoreStopCommands = False
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -88,11 +96,46 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.exitCommand = None
         self.musicPlayerWinID = kwargs.get('winID')
 
+    @property
+    def playQueue(self):
+        """The queue the transport acts on - whatever is playing right now.
+
+        One accessor for both screens. MusicPlayerWindow used to read its own self.playlist (the
+        queue it was handed when it opened) in its own copies of repeatButtonClicked, both skip
+        handlers and updateProperties, while this class read the handler's: four near-identical
+        pairs that had to be kept in step by hand, and were not - repeat-all shipped working on
+        the queue screen and broken on the player because the fix landed on one copy only.
+
+        The handler's is the better of the two anyway. playAudioPlaylist() installs the very
+        object self.playlist holds, so the two agree once playback has started, and this one is
+        still right when the player is reopened with no arguments at all
+        (windowutils.showAudioPlayer), where self.playlist is None and the remote half of the
+        transport row went dark.
+        """
+        return getattr(player.PLAYER.handler, 'playQueue', None)
+
+    def bindPlayQueue(self):
+        """Follow the queue's own change notifications, to keep the transport row current.
+
+        Called once playback has started, never before: playAudioPlaylist() is what puts the queue
+        on the handler, so binding any earlier hooks the previous session's queue instead.
+        """
+        pq = self.playQueue
+        if pq is not None and pq.isRemote:
+            pq.on('change', self.updateProperties)
+            self._boundPlayQueue = pq
+
+    def unbindPlayQueue(self):
+        if self._boundPlayQueue is not None:
+            self._boundPlayQueue.off('change', self.updateProperties)
+            self._boundPlayQueue = None
+
     def doClose(self, **kwargs):
         player.PLAYER.off('av.started', self.onPlayBackStarted)
+        # A no-op on the player screen, which never hooks this - SignalsMixin.off() checks the
+        # callback is connected before disconnecting it.
         player.PLAYER.off('playlist.changed', self.playQueueCallback)
-        if player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:
-            player.PLAYER.handler.playQueue.off('change', self.updateProperties)
+        self.unbindPlayQueue()
         self.commonDeinit()
         kodigui.ControlledWindow.doClose(self)
 
@@ -116,8 +159,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.commonInit()
         self.updateProperties()
         self.updateFromTrack()
-        if player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:
-            player.PLAYER.handler.playQueue.on('change', self.updateProperties)
+        self.bindPlayQueue()
         player.PLAYER.on('playlist.changed', self.playQueueCallback)
 
     def onAction(self, action):
@@ -142,7 +184,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
             self.fillPlaylist()
             self.selectPlayingItem()
         elif controlID == self.SHUFFLE_REMOTE_BUTTON_ID:
-            player.PLAYER.handler.playQueue.setShuffle()
+            self.playQueue.setShuffle()
         elif controlID == self.REPEAT_BUTTON_ID:
             self.repeatButtonClicked()
         elif controlID == self.SKIP_PREV_BUTTON_ID:
@@ -299,16 +341,17 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
             util.DEBUG_LOG('Could not set Kodi repeat to {}: {}', mode, e)
 
     def repeatButtonClicked(self):
-        if player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:
+        pq = self.playQueue
+        if pq and pq.isRemote:
             if xbmc.getCondVisibility('Playlist.IsRepeatOne'):
                 self.setKodiRepeat('off')
-            elif player.PLAYER.handler.playQueue.isRepeat:
-                player.PLAYER.handler.playQueue.setRepeat(False)
-                player.PLAYER.handler.playQueue.refresh(force=True)
+            elif pq.isRepeat:
+                pq.setRepeat(False)
+                pq.refresh(force=True)
                 self.setKodiRepeat('one')
             else:
-                player.PLAYER.handler.playQueue.setRepeat(True)
-                player.PLAYER.handler.playQueue.refresh(force=True)
+                pq.setRepeat(True)
+                pq.refresh(force=True)
                 # Kodi has to be told as well. setRepeat() only sets flags on the queue object
                 # (the value rides along on the next request), and PMS's own repeat governs what
                 # it hands back when windowing - neither makes Kodi loop the playlist it is
@@ -346,9 +389,10 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
             self.setKodiRepeat('one')
 
     def skipPrevButtonClicked(self):
-        if not xbmc.getCondVisibility('MusicPlayer.HasPrevious') and player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:
+        pq = self.playQueue
+        if not xbmc.getCondVisibility('MusicPlayer.HasPrevious') and pq and pq.isRemote:
             util.DEBUG_LOG('MusicPlayer: No previous in Kodi playlist - refreshing remote PQ')
-            if not player.PLAYER.handler.playQueue.refresh(force=True, wait=True):
+            if not pq.refresh(force=True, wait=True):
                 return
 
         # Sets script.plex.ignore_spinner, which is what stops Kodi's own DialogBusy fading in
@@ -361,9 +405,10 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.playerSkip('Previous')
 
     def skipNextButtonClicked(self):
-        if not xbmc.getCondVisibility('MusicPlayer.HasNext') and player.PLAYER.handler.playQueue and player.PLAYER.handler.playQueue.isRemote:
+        pq = self.playQueue
+        if not xbmc.getCondVisibility('MusicPlayer.HasNext') and pq and pq.isRemote:
             util.DEBUG_LOG('MusicPlayer: No next in Kodi playlist - refreshing remote PQ')
-            if not player.PLAYER.handler.playQueue.refresh(force=True, wait=True):
+            if not pq.refresh(force=True, wait=True):
                 return
 
         self.onAudioStarting()
@@ -408,7 +453,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
                 break
 
     def playQueueCallback(self, **kwargs):
-        self.setProperty('pq.isshuffled', player.PLAYER.handler.playQueue.isShuffled and '1' or '')
+        self.setProperty('pq.isshuffled', self.playQueue.isShuffled and '1' or '')
 
         items = self.playlistItems()
         if self.playlistSignature(items) == self._playlistSig:
@@ -497,6 +542,10 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
 
     @busy.dialog()
     def fillPlaylist(self, pl_items=None):
+        # Nothing to fill on the player screen, which shares onClick's shuffle branch but has no
+        # row list - the same guard selectPlayingItem() carries, for the same reason.
+        if not self.playlistListControl:
+            return
         pl_items = self.playlistItems() if pl_items is None else pl_items
         items = []
         idx = 1
@@ -631,7 +680,7 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         return (pos > 0 or wraps), (pos < size - 1 or wraps)
 
     def updateProperties(self, **kwargs):
-        pq = player.PLAYER.handler.playQueue
+        pq = self.playQueue
         if pq:
             if pq.isRemote:
                 self.setProperty('pq.isRemote', '1')
