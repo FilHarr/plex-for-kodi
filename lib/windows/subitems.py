@@ -5,7 +5,7 @@ import json
 
 from kodi_six import xbmc
 from kodi_six import xbmcgui
-from plexnet import playlist, util as pnUtil, plexapp, plexlibrary
+from plexnet import playlist, playqueue, util as pnUtil, plexapp, plexlibrary
 
 from lib import metadata
 from lib import util
@@ -17,7 +17,6 @@ from . import episodes
 from . import home
 from . import info
 from . import kodigui
-from . import musicplayer
 from . import opener
 from . import pagination
 from . import playbacksettings
@@ -1346,21 +1345,30 @@ class ArtistWindow(ShowWindow):
         self.fillAlbumTypeRows()
 
     def playButtonClicked(self, shuffle=False):
-        pl = playlist.LocalPlaylist(self.mediaItem.all(), self.mediaItem.getServer(), self.mediaItem)
-        pl.startShuffled = shuffle
-        self.processCommand(opener.handleOpen(musicplayer.MusicPlayerWindow, track=pl.current(), playlist=pl))
+        # The artist itself - a server play queue of their material, the way a Plex client plays an
+        # artist. Was a LocalPlaylist of self.mediaItem.all() pushed straight into Kodi's playlist,
+        # which the server never heard about. Artist is the one type plexnet insists on a remote
+        # queue for (PlayQueueFactory.itemRequiresRemotePlayQueue).
+        pq = playqueue.createPlayQueueForItem(self.mediaItem, options={'shuffle': shuffle})
+        if not pq:
+            util.DEBUG_LOG('ArtistWindow: no play queue for {}', self.mediaItem)
+            return
+        self.processCommand(opener.open(pq))
 
     def popularTrackClicked(self):
         mli = self.popularTracksListControl.getSelectedItem()
         if not mli:
             return
-        # A playlist of just the popular-tracks row itself, not the artist's full discography
-        # (unlike playButtonClicked() above) - so Next/Previous during playback walks this same
-        # popularity-ranked row rather than jumping out to album-order playback.
-        tracks = [item.dataSource for item in self.popularTracksListControl]
-        pl = playlist.LocalPlaylist(tracks, self.mediaItem.getServer())
-        pl.setCurrent(mli.pos())
-        self.processCommand(opener.handleOpen(musicplayer.MusicPlayerWindow, track=pl.current(), playlist=pl))
+        # Queue the popular-tracks *query*, not the handful of rows on screen. <PopularLeaves>
+        # carries its own key (Artist._setData, plexnet/audio.py) - a real listable
+        # /library/sections/<id>/all?artist.id=...&sort=ratingCount:desc&type=10 - and it returns
+        # considerably more than the row shows (5 visible, 24 behind the key for The Beautiful
+        # South, checked against the live server). That larger popularity-ranked list is what a
+        # real client plays, and Next/Previous still walks it in rank order rather than dropping
+        # into album-order playback. Without the key we fall back to the track's album, same as
+        # any other track click.
+        self.processCommand(opener.trackClicked(mli.dataSource,
+                                                container_path=self.mediaItem.popularTracksKey))
 
     def albumListClicked(self, listControl):
         # The 'artist' branch of subItemListClicked() above, generalized to any of the 6 otherAlbums

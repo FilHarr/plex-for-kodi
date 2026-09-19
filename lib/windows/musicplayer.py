@@ -50,13 +50,10 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
         self.track = kwargs.get('track')
         self.playlist = kwargs.get('playlist')
-        self.album = kwargs.get('album')
         self.selectedOffset = 0
         self.exitCommand = None
         self.duration = None
         self.ignoreStopCommands = False
-        # see CurrentPlaylistWindow._albumForPanel()
-        self._panelAlbum = self.album and (self.album.ratingKey, self.album) or None
 
         if self.track:
             self.duration = self.track.duration.asInt()
@@ -187,14 +184,12 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
         fanart = None
         if self.playlist:
             fanart = self.playlist.get('composite') or self.playlist.defaultArt
-        # player.PLAYER.playAudio(self.track, fanart=self.getProperty('background'))
-        if self.album:
-            index = 0
-            for i, track in enumerate(self.album.tracks()):
-                if track == self.track:
-                    index = i
-            player.PLAYER.playAlbum(self.album, startpos=index, fanart=fanart)
-        elif self.playlist:
+        # There used to be an album= branch here (player.playAlbum()) for a track clicked on the
+        # Album screen or in the library. Every one of those callers now arrives with a server play
+        # queue as self.playlist, so the album is just another queue and this is the only path
+        # left. The bare playAudio() below still covers a track with no queue at all - see
+        # opener.trackClicked()'s fallback when the server won't give us one.
+        if self.playlist:
             player.PLAYER.playAudioPlaylist(self.playlist, startpos=list(self.playlist.items()).index(self.track), fanart=fanart)
         else:
             player.PLAYER.playAudio(self.track)

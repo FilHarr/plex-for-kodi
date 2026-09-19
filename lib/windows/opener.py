@@ -22,10 +22,17 @@ def open(obj, context=None, **kwargs):
     player/viewer windows, not library screens, out of this plan's scope (see
     hashed-orbiting-pizza.md's "Current state")."""
     if isinstance(obj, playqueue.PlayQueue):
-        if busy.widthDialog(obj.waitForInitialization, None):
+        # delay=True: the spinner only appears if the server is actually slow to hand back the
+        # queue. Without it BusyWindow is shown the instant this is called, which put a spinner on
+        # screen for every track click once music started going through play queues.
+        if busy.widthDialog(obj.waitForInitialization, None, delay=True):
             if obj.type == 'audio':
                 from . import musicplayer
-                return handleOpen(musicplayer.MusicPlayerWindow, track=obj.current(), playlist=obj)
+                # **kwargs, as the photo branch below already does: track clicks route through
+                # here now (trackClicked), and they carry the same dialog_props/window_props
+                # carry-over every other opener branch passes on. handleOpen() pops the auto_play
+                # pair, so library.py's Play All still works the same way.
+                return handleOpen(musicplayer.MusicPlayerWindow, track=obj.current(), playlist=obj, **kwargs)
             elif obj.type == 'photo':
                 from . import photos
                 return handleOpen(photos.PhotoWindow, play_queue=obj, **kwargs)
@@ -57,9 +64,9 @@ def open(obj, context=None, **kwargs):
     elif obj.TYPE in ('photodirectory'):
         return photoDirectoryClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('track'):
-        album = obj.album()
-        if album:
-            return trackClicked(obj, album=album, **kwargs)
+        # No obj.album() lookup any more: createPlayQueueForItem() derives the album from the
+        # track's own parentRatingKey (playqueue.py's track branch), so that round trip bought
+        # nothing.
         return trackClicked(obj, **kwargs)
     elif obj.TYPE in ('playlist'):
         return playlistClicked(obj, context=context, **kwargs)
@@ -223,7 +230,24 @@ def photoClicked(photo, **kwargs):
     return handleOpen(photos.PhotoWindow, photo=photo, **kwargs)
 
 
-def trackClicked(track, **kwargs):
+def trackClicked(track, container_path=None, **kwargs):
+    """Play a track, as a Plex client does: a server play queue of the container it belongs to,
+    starting at the track.
+
+    Every track click lands here - the album screen's track list, the music library's Tracks list
+    view, a home hub, a search result - and they all queue the track's own album, so they all read
+    the same way whichever screen you came from. container_path overrides that for callers with a
+    different listable container in hand (ArtistWindow's popular-tracks row, subitems.py).
+
+    Falls back to playing the single track on its own if the server won't give us a queue (a
+    secondary server, or an item that isn't a library item - see
+    PlayQueueFactory.canCreateRemotePlayQueue).
+    """
+    pq = playqueue.createPlayQueueForItem(track, options={'containerPath': container_path})
+    if pq:
+        return open(pq, **kwargs)
+
+    util.DEBUG_LOG('trackClicked: no play queue for {}, playing the track alone', track)
     from . import musicplayer
     return handleOpen(musicplayer.MusicPlayerWindow, track=track, **kwargs)
 

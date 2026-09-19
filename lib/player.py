@@ -2927,28 +2927,6 @@ class PlexPlayer(xbmc.Player, signalsmixin.SignalsMixin):
         self.trigger('starting.audio')
         self.play(url, li, **kwargs)
 
-    def playAlbum(self, album, startpos=-1, fanart=None, **kwargs):
-        if self.bgmPlaying:
-            self.stopAndWait()
-
-        self.ignoreStopEvents = True
-        self.sessionID = "ALB%s" % album.ratingKey
-        self.handler = AudioPlayerHandler(self, session_id=self.sessionID)
-        self.handler.setup()
-        self.playerObject = plexplayer.PlexAudioPlayer(session_id=self.sessionID)
-        plist = xbmc.PlayList(xbmc.PLAYLIST_MUSIC)
-        plist.clear()
-        index = 1
-        for track in album.tracks():
-            url, li = self.createTrackListItem(track, fanart, index=index)
-            plist.add(url, li)
-            index += 1
-        xbmc.executebuiltin('PlayerControl(RandomOff)')
-        self.stopAndWait()
-        self.ignoreStopEvents = False
-        self.trigger('starting.audio')
-        self.play(plist, startpos=startpos, **kwargs)
-
     def playAudioPlaylist(self, playlist, startpos=-1, fanart=None, **kwargs):
         if self.bgmPlaying:
             self.stopAndWait()
