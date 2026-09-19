@@ -429,8 +429,21 @@ class PlayQueue(signalsmixin.SignalsMixin):
             else:
                 itemsChanged = True
 
-                if set(self._items).issubset(response.items):
-                    justAdded = set(response.items) - set(self._items)
+                # What grew onto the end, in queue order - a list, never a set. The listener for
+                # this is AudioPlayerHandler.playQueueCallback, which appends the items one by
+                # one in the order it is handed them, and a set has no order to hand over: a
+                # 234-track artist queue that arrived as 200 and then filled out appended its
+                # last 34 tracks in hash order, so the queue read correctly by album to track 200
+                # and was scrambled from there to the end.
+                #
+                # The test is also stricter than the old issubset(): those items have to be the
+                # *head* of what came back, not merely present somewhere in it. Appending is only
+                # the right move when the rest genuinely follows what we already hold - a window
+                # that slid, or a shuffle, satisfies "is a subset" while needing every row
+                # rebuilt, and that is what the empty justAdded below asks for.
+                head = response.items[:len(self._items)]
+                if head == self._items:
+                    justAdded = response.items[len(self._items):]
 
             if itemsChanged:
                 self._items = response.items
