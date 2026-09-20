@@ -4,7 +4,7 @@
     <animation effect="slide" time="200" end="0,{{ vscale(-115, negpos=True) }}" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
     <posx>60</posx>
-    <posy>{{ vscale(135) }}</posy>
+    <posy>{{ vscale(125) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
     <control type="group" id="100">

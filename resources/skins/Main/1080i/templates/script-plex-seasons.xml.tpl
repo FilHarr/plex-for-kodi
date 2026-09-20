@@ -85,7 +85,7 @@
          y as Pre-play. Everything below this group that used to be positioned against the 155 baseline
          (the season-row-+-buttons group, grouplist 60) has had its own posy bumped by the same 20px so
          their absolute positions stay exactly where they were - only the header content itself moved. -->
-    <posy>{{ vscale(135) }}</posy>
+    <posy>{{ vscale(125) }}</posy>
     <!-- 302 (the play button), not the stale 101 or the old 400 (season row) - matches Python's own
          onFirstInit(), which now stays on the play button rather than moving focus to the season row
          once it's populated - see ShowWindow.onFirstInit(). -->
@@ -1351,7 +1351,7 @@
     <posx>115</posx>
     <posy>0</posy>
     <width>1425</width>
-    <height>{{ vscale(135) }}</height>
+    <height>{{ vscale(125) }}</height>
     <focusposition>3</focusposition>
     <!-- Without this, Kodi pins the focused item at the focusposition slot from the very first item
          (per Kodi's own documented fixedlist behavior - "if not specified, the list will scroll
@@ -1379,12 +1379,12 @@
     <!-- 200, not 170: cell widened again on request (7 tabs visible instead of ~8.4). Label 170 (200-30,
          same 30px total side margin as before) and underline 120 (25px margin each side of the label,
          unchanged) - both scaled to match, same as the earlier 170/160 tightenings. -->
-    <itemlayout width="200" height="{{ vscale(135) }}">
+    <itemlayout width="200" height="{{ vscale(125) }}">
         <control type="label">
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1394,7 +1394,7 @@
         <control type="image">
             <visible>!String.IsEmpty(ListItem.Property(current))</visible>
             <posx>25</posx>
-            <posy>{{ vscale(94) }}</posy>
+            <posy>{{ vscale(89) }}</posy>
             <width>120</width>
             <height>2</height>
             <texture>script.plex/white-square.png</texture>
@@ -1406,7 +1406,7 @@
     <!-- Split into two Control.HasFocus(205)-gated labels, same reasoning as Episodes' own tab row:
          without it, whichever item holds the list's internal cursor renders "focused" white even when
          real window focus sits elsewhere (e.g. the play button). -->
-    <focusedlayout width="200" height="{{ vscale(135) }}">
+    <focusedlayout width="200" height="{{ vscale(125) }}">
         <!-- Focus background, gated the same as the white-text label below (real window focus, not
              just cursor position) - same 33FFFFFF rounded pill used elsewhere for a focus highlight
              (e.g. the summary click-target, button-row label overlays). Drawn first so the label/
@@ -1414,7 +1414,7 @@
         <control type="image">
             <visible>Control.HasFocus(205)</visible>
             <posx>0</posx>
-            <posy>{{ vscale(42) }}</posy>
+            <posy>{{ vscale(37) }}</posy>
             <width>170</width>
             <height>{{ vscale(50) }}</height>
             <colordiffuse>33FFFFFF</colordiffuse>
@@ -1425,7 +1425,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1439,7 +1439,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1449,7 +1449,7 @@
         <control type="image">
             <visible>!String.IsEmpty(ListItem.Property(current))</visible>
             <posx>25</posx>
-            <posy>{{ vscale(94) }}</posy>
+            <posy>{{ vscale(89) }}</posy>
             <width>120</width>
             <height>2</height>
             <texture>script.plex/white-square.png</texture>
@@ -1468,7 +1468,7 @@
     <posx>115</posx>
     <posy>0</posy>
     <width>1425</width>
-    <height>{{ vscale(135) }}</height>
+    <height>{{ vscale(125) }}</height>
     <onup>200</onup>
     <onleft>9000</onleft>
     <onright condition="Control.IsVisible(204)">204</onright>
@@ -1479,12 +1479,12 @@
     <!-- Fallback is 305's own ondown, skipping the stop when there's no summary. -->
     <ondown>300</ondown>
     <orientation>horizontal</orientation>
-    <itemlayout width="200" height="{{ vscale(135) }}">
+    <itemlayout width="200" height="{{ vscale(125) }}">
         <control type="label">
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1494,19 +1494,19 @@
         <control type="image">
             <visible>!String.IsEmpty(ListItem.Property(current))</visible>
             <posx>25</posx>
-            <posy>{{ vscale(94) }}</posy>
+            <posy>{{ vscale(89) }}</posy>
             <width>120</width>
             <height>2</height>
             <texture>script.plex/white-square.png</texture>
             <colordiffuse>FFE5A00D</colordiffuse>
         </control>
     </itemlayout>
-    <focusedlayout width="200" height="{{ vscale(135) }}">
+    <focusedlayout width="200" height="{{ vscale(125) }}">
         <!-- Focus background - see 205's own copy of this control above for the full reasoning. -->
         <control type="image">
             <visible>Control.HasFocus(206)</visible>
             <posx>0</posx>
-            <posy>{{ vscale(42) }}</posy>
+            <posy>{{ vscale(37) }}</posy>
             <width>170</width>
             <height>{{ vscale(50) }}</height>
             <colordiffuse>33FFFFFF</colordiffuse>
@@ -1517,7 +1517,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1531,7 +1531,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1541,7 +1541,7 @@
         <control type="image">
             <visible>!String.IsEmpty(ListItem.Property(current))</visible>
             <posx>25</posx>
-            <posy>{{ vscale(94) }}</posy>
+            <posy>{{ vscale(89) }}</posy>
             <width>120</width>
             <height>2</height>
             <texture>script.plex/white-square.png</texture>

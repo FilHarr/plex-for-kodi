@@ -1,5 +1,5 @@
 {% extends "library_posters.xml.tpl" %}
-{% block header_animation %}<animation effect="slide" end="0,{{ vscale(-135) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),9) + !ControlGroup(200).HasFocus(0) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>{% endblock %}
+{% block header_animation %}<animation effect="slide" end="0,{{ vscale(-125) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),9) + !ControlGroup(200).HasFocus(0) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>{% endblock %}
 {% block hide_filter_from_index %}9{% endblock %}
 {% block header_bg %}
 <control type="image">
@@ -8,7 +8,7 @@
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
-    <height>{{ vscale(135) }}</height>
+    <height>{{ vscale(125) }}</height>
     <texture>script.plex/white-square.png</texture>
     <colordiffuse>C0000000</colordiffuse>
 </control>
@@ -18,7 +18,7 @@
     <animation effect="slide" time="200" end="0,-224" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),9) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
     <posx>60</posx>
-    <posy>{{ vscale(135) }}</posy>
+    <posy>{{ vscale(125) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
 

@@ -937,7 +937,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         logo = util.clearLogoFrom(self.video, *self.CLEAR_LOGO_DIM)
         self.setProperty('clear.logo', logo)
         self.setProperty('duration', self.video.duration and util.durationToShortText(self.video.duration.asInt(), noSpaces=True))
-        self.setProperty('summary', util.widenParagraphBreaks(self.video.summary.strip().replace('\t', ' ')))
+        self.setProperty('summary', util.summaryForBox(self.video.summary))
         self.setProperty('unwatched', not self.video.isWatched and '1' or '')
         self.setBoolProperty('watched', self.video.isFullyWatched)
         self.setBoolProperty('disable_playback', self.fromWatchlist)

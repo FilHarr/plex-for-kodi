@@ -15,7 +15,7 @@
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
     <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column - see includes/sidebar.xml.tpl. -->
     <posx>60</posx>
-    <posy>{{ vscale(135) }}</posy>
+    <posy>{{ vscale(125) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
     <control type="group">

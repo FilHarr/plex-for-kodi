@@ -790,12 +790,12 @@
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
-    <height>{{ vscale(135) }}</height>
+    <height>{{ vscale(125) }}</height>
     <control type="image">
         <posx>0</posx>
         <posy>0</posy>
         <width>1920</width>
-        <height>{{ vscale(135) }}</height>
+        <height>{{ vscale(125) }}</height>
         <texture>script.plex/white-square.png</texture>
         <colordiffuse>19000000</colordiffuse>
     </control>
@@ -894,7 +894,7 @@
 
     <control type="label">
         <right>60</right>
-        <posy>{{ vscale(35) }}</posy>
+        <posy>{{ vscale(30) }}</posy>
         <width>200</width>
         <height>{{ vscale(65) }}</height>
         <font>font12</font>

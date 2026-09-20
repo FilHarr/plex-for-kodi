@@ -168,11 +168,16 @@
              would sit on top of the color panel above and hide it for however long the art takes
              to fetch. The plain black base fallback control at the top of this file already
              covers that spot regardless. -->
-        <!-- no_hero_art (HomeWindow.updateHeroFrom, home.py): hides this box for items with no
-             real background art (Photos, many Music artists/albums), rather than showing the
-             previous item's art or a placeholder - empty/unset for every other window, so this
-             only ever actively hides anything on the home screen. -->
-        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
+        <!-- no_hero_art (LibraryWindow._setNoHeroArt, library.py): hides this box on the
+             Recommended tab while nothing is bound yet (fresh entry before the hubs land, or a
+             section with no hubs), rather than showing the previous section's art. Not a
+             per-item-type gate any more - once a hub item is focused the box shows for every
+             type. Empty/unset for every other window, so this only ever actively hides anything
+             on the Recommended tab.
+             hero.no_art (LibraryWindow.setHeroInfo, HERO_NO_ART_TYPES): the one per-type
+             exception - item types (playlists) that keep the info overlay on the left but not
+             this art box. Same condition on both art layers below. -->
+        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art)) + String.IsEmpty(Window.Property(hero.no_art))</visible>
         <posx>{{ 691 - hero_zoom_pad }}</posx>
         <posy>0</posy>
         <width>{{ 1229 + hero_zoom_pad }}</width>
@@ -204,7 +209,7 @@
         <aspectratio align="center" aligny="top" scalediffuse="false">scale</aspectratio>
     </control>
     <control type="image">
-        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
+        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art)) + String.IsEmpty(Window.Property(hero.no_art))</visible>
         <posx>{{ 691 - hero_zoom_pad }}</posx>
         <posy>0</posy>
         <width>{{ 1229 + hero_zoom_pad }}</width>

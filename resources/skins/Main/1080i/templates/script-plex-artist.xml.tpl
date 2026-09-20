@@ -81,7 +81,7 @@
          screens - see includes/sidebar.xml.tpl for why some offset is still needed at all (clears
          the collapsed sidebar rail's icon column). -->
     <posx>52</posx>
-    <posy>{{ vscale(135) }}</posy>
+    <posy>{{ vscale(125) }}</posy>
     <!-- 402 (Popular Tracks), not 400 (Albums): Popular Tracks is now the first row in grouplist 600's
          stack - see HUB_FOCUS_TIERS' own comment (subitems.py) for why. -->
     <defaultcontrol>402</defaultcontrol>

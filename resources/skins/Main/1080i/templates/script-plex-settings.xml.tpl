@@ -18,9 +18,9 @@
             <animation effect="slide" end="-297,0" time="200" tween="quadratic" easing="out" condition="Control.HasFocus(125)">Conditional</animation>
             <control type="image">
                 <posx>843</posx>
-                <posy>135</posy>
+                <posy>125</posy>
                 <width>1077</width>
-                <height>945</height>
+                <height>955</height>
                 <texture>script.plex/white-square.png</texture>
                 <colordiffuse>32111111</colordiffuse>
             </control>
@@ -45,9 +45,9 @@
         <control type="image">
             <animation effect="slide" end="-297,0" time="200" tween="quadratic" easing="out" condition="Control.HasFocus(125)">Conditional</animation>
             <posx>1920</posx>
-            <posy>135</posy>
+            <posy>125</posy>
             <width>879</width>
-            <height>945</height>
+            <height>955</height>
             <texture>script.plex/white-square.png</texture>
             <colordiffuse>66111111</colordiffuse>
         </control>
@@ -506,18 +506,18 @@
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
-    <height>135</height>
+    <height>125</height>
     <control type="image">
         <posx>0</posx>
         <posy>0</posy>
         <width>1920</width>
-        <height>135</height>
+        <height>125</height>
         <texture>script.plex/white-square.png</texture>
         <colordiffuse>C0000000</colordiffuse>
     </control>
     <control type="grouplist">
         <posx>60</posx>
-        <posy>{{ vscale(47.5) }}</posy>
+        <posy>{{ vscale(42.5) }}</posy>
         <width>1000</width>
         <height>{{ vscale(40) }}</height>
         <align>left</align>
@@ -552,7 +552,7 @@
     </control>
     <control type="label">
         <right>60</right>
-        <posy>{{ vscale(35) }}</posy>
+        <posy>{{ vscale(30) }}</posy>
         <width>200</width>
         <height>{{ vscale(65) }}</height>
         <font>font12</font>

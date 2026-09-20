@@ -21,7 +21,7 @@
 {% block headers %}<defaultcontrol>50</defaultcontrol>{% endblock %}
 {% block content %}
 <!-- Fixed-position hub row stack: whichever hub is logically focused always renders at the anchor's
-     fixed position (HomeWindow.ANCHOR_ABS_Y, 516) - home.py rotates which of 5 physical row
+     fixed position (LibraryWindow.ANCHOR_ABS_Y, 486) - library.py rotates which of 5 physical row
      controls (403/401/400/402/404, permanently ordered offsets -2 to +2 from focus -
      HomeWindow.HUB_ROTATION_RING) currently plays that role, and every other role, as focus moves,
      rather than there being one physical control per hub actually scrolled, or content being
@@ -36,60 +36,29 @@
      already holds correct, previously-loaded content. id="50" is kept on the outer control because
      default.xml.tpl's header controls target it directly via <ondown>50</ondown>. -->
 <!-- Outer clip: a grouplist (grouplist clips its children, a plain group doesn't - see
-     script-plex-episodes.xml.tpl:271's own comment). Base position is y=135 (not y=516, the
-     anchor's own resting position - see group 51's own posy below for how that's preserved) -
-     permanently wide enough to show peek-above (folded in as a child of group 51 below, at its own
-     fixed relative offset) - peek-above has no <visible> condition of its own any more; whether
-     it's shown falls out entirely from where this clip's own boundary currently sits (see its own
-     comment). Only the has-hero-art case still needs the clip to narrow *down* from this base (see
-     the animation below) - a control's clip rect reliably follows its own current position
-     (confirmed by this control's own behavior, and by the original pre-redesign row-0 mechanism),
-     which is why the clip and the row content deliberately live on separate controls (this one
-     clips, never moves on its own initiative beyond the one animation below; inner group 51 is what
-     Python actually slides - see HomeWindow._startHubSlide()/_settleHubSlide()).
+     script-plex-episodes.xml.tpl:271's own comment). Fixed at y=518 (not y=486, the anchor's own
+     resting position - see group 51's own posy below for how that's preserved): the top edge of
+     this clip is what stops the sliding rows' titles/images rendering up over the hero summary
+     text above (they'd otherwise sweep through that band on their way past 486). 518 = 456 (the
+     original target, chosen as the hero summary textbox's real bottom at the time, 431, + a
+     ROW_GAP) + 92 - 30, each step in lockstep with ANCHOR_ABS_Y's own (+92 dropping the rows,
+     then -30 raising them on request, 2026-09-20 - nothing above the rows moved that time, only
+     this clip line and the stack) - a one-time starting point, not a relationship this value
+     tracks: keep it as-is even as the hero-info detail elements (clearlogo/meta row/summary)
+     get repositioned. Peek-above (folded in as a child of group 51
+     below, at its own fixed relative offset) has no <visible> condition of its own; whether it's
+     shown falls out entirely from where this clip's boundary sits (see its own comment).
+     A control's clip rect reliably follows its own current position (confirmed by this control's
+     own behavior, and by the original pre-redesign row-0 mechanism), which is why the clip and
+     the row content deliberately live on separate controls (this one clips and never moves;
+     inner group 51 is what Python positions - see LibraryWindow.onFirstInit()).
+     History: this used to sit at y=135 with a Conditional slide to 548 keyed on no_hero_art,
+     back when the hero overlay was only shown for movie/TV items and the rows moved up to fill
+     the space otherwise. The overlay is unconditional now, so the position is baked in.
      Kept as id="50" since default.xml.tpl's header controls target it directly via
      <ondown>50</ondown> - only needs to route focus into 51 via defaultcontrol, never itself
      addressed from Python (grouplist controls aren't - see the id=502/Part 5 comment below). -->
 <control type="grouplist" id="50">
-    <!-- Keyed on no_hero_art alone, deliberately NOT also on hub.sliding: nudge the clip down from
-         its y=135 base to a FIXED y=548 (a shift of +413 - must match HomeWindow.HUB_SLIDE_CLIP_SHIFT_HERO
-         exactly) so the sliding row's own title/images, which otherwise briefly sweep through that
-         band on their way past 516, never render above the hero summary text. 548 = 456 (the
-         original target) + 92, bumped on request in lockstep with ANCHOR_ABS_Y's own +92 - before
-         that, 456 was chosen as the hero summary textbox's real bottom (431, at the time) + a gap
-         (matching HomeWindow.ROW_GAP) - but that's a one-time starting point, not a relationship
-         this value tracks: the user wants this target kept as-is even as the hero-info detail
-         elements (clearlogo/meta row/summary) keep getting repositioned - see
-         HUB_SLIDE_CLIP_SHIFT_HERO's own comment in home.py. Don't recompute 413 to match wherever
-         the summary currently sits. No
-         corresponding no-hero-art animation is needed - the clip is already at its widest (y=135) by
-         default, so there's nothing further to shift to for that case.
-
-         Tying this to no_hero_art rather than hub.sliding is what makes it only ever animate when
-         hero-art status actually *changes* - for the overwhelmingly common case (moving between two
-         hubs that both have or both lack hero art), this control is already sitting at the correct
-         position from before the transition started, so it doesn't move at all during the slide.
-         Found live: gating this on hub.sliding as well made it re-evaluate on *every* vertical move
-         regardless of whether hero-art status changed, producing a spurious re-apply (harmless once
-         this is instant, but still pointless work) on ordinary same-state transitions.
-
-         time="0": this control's own move must be instant, not eased. This control shifts THIS
-         control (50), which 51 - the Python-positioned row content - is nested inside, so the shift
-         also adds directly to 51's own on-screen position (nested controls always render at
-         parent-position + own-local-offset). HomeWindow._setNoHeroArt() counter-shifts 51's own
-         local offset by this same signed amount, in the very same synchronous call that flips the
-         no_hero_art property this animation is keyed on - so as long as THIS animation is also
-         instant, both moves land in the same rendered frame and the anchor's absolute position never
-         leaves ANCHOR_ABS_Y, not even for one intermediate frame. Was time="150" tween="sine"
-         easing="inout" originally; with 51's own counter-shift applied instantly (see
-         _setNoHeroArt()) but this control still easing over 150ms, the two were out of sync for that
-         whole window - the entire row stack visibly swung through the full 321px difference before
-         settling, on top of whatever the ordinary hub-to-hub row slide was already doing. Precedent
-         for instant Conditional repositioning elsewhere in this codebase: seasons_meta_row.xml.tpl,
-         script-plex-seasons.xml.tpl:261. -->
-    <animation effect="slide" end="0,413" time="0"
-               condition="String.IsEmpty(Window.Property(no_hero_art))">Conditional</animation>
-
     <defaultcontrol>51</defaultcontrol>
     <!-- posx=105, not 55: the sidebar rail is drawn on top (see its own comment in default.xml.tpl's
          header block) - this leaves room for the collapsed rail's icon column, moved right again on
@@ -97,12 +66,12 @@
          their own posx reduced by the same 50px total this moved right, to keep resting positions
          unchanged (60->10, 55->5). -->
     <posx>105</posx>
-    <posy>{{ vscale(135) }}</posy>
+    <posy>{{ vscale(518) }}</posy>
     <width>2085</width>
-    <!-- 945 = 1080 (screen bottom) - 135 (this control's own base posy) - reaches to the bottom of
-         the screen. Not compensated when the animation above shifts this control's own posy down
-         by 413 - height stays fixed, so the clip's bottom edge (548+945=1493) also shifts down,
-         comfortably past the screen bottom regardless, so nothing is newly clipped there. -->
+    <!-- Deliberately taller than the 562 that would reach the screen bottom exactly: 945 is the
+         height this control always had (1080 - its old y=135 base), left uncompensated when it
+         slid to 548, so the clip's bottom edge was already past the screen - in every live
+         state with the overlay showing. Kept identical rather than tightened. -->
     <height>{{ vscale(945) }}</height>
     <usecontrolcoords>true</usecontrolcoords>
     <orientation>vertical</orientation>
@@ -118,17 +87,17 @@
              persistent ~289-308px too-low offset that survived even after every other variable was
              eliminated, consistent with the grouplist's auto-stack re-applying its own computed
              contribution on top of whatever this control's own posy already held, rather than
-             genuinely handing off control once Python had set it explicitly. HomeWindow now owns
-             this control's position unconditionally and exclusively - every bind/slide/settle call
-             (_bindAllHubSlots()/_startHubSlide()/_settleHubSlide()) always sets it explicitly via
-             setPosition(), from HomeWindow.GROUP51_BASELINE_OFFSET (381) as the true absolute
-             local-offset target, not a value added on top of anything else. The one gap this
-             leaves: before HomeWindow's first bind ever runs, grouplist 50 auto-stacks this,
-             its only child, flush to 0 (ignoring this declared posy, same as always) - a one-frame
-             flash at init, corrected the instant onFirstInit's own first bind runs. -->
+             genuinely handing off control once Python had set it explicitly. LibraryWindow owns
+             this control's position exclusively - onFirstInit() sets it once per 'recommended'
+             entry via setPosition(), to LibraryWindow.GROUP51_BASELINE_OFFSET (-32: 518 + -32 =
+             486, ANCHOR_ABS_Y) as the true absolute local-offset target, not a value added on
+             top of anything else; nothing moves it afterwards (slides move the per-role wrappers
+             inside it). The one gap this leaves: before that first setPosition() runs, grouplist
+             50 auto-stacks this, its only child, flush to 0 (ignoring this declared posy, same as
+             always) - a one-frame flash at init. -->
         <defaultcontrol>500</defaultcontrol>
         <posx>0</posx>
-        <posy>{{ vscale(381) }}</posy>
+        <posy>{{ vscale(-32) }}</posy>
         <width>2085</width>
         <height>{{ vscale(425) }}</height>
         <usecontrolcoords>true</usecontrolcoords>
@@ -142,7 +111,7 @@
              from _bindAllHubSlots()/_startHubSlide()/_finishHubSlide()) - the posy/height declared
              below are just the pre-bind fallback, matching whichever role this control starts in.
              Every role's Y is computed by the same one recurrence, walked outward from the anchor
-             (fixed at HomeWindow.ANCHOR_ABS_Y, 516) in whichever direction is needed: each row's Y
+             (fixed at LibraryWindow.ANCHOR_ABS_Y, 486) in whichever direction is needed: each row's Y
              is its neighbor's Y, plus or minus that neighbor's own real rendered content height
              (HomeWindow.ROW_CONTENT_HEIGHT, keyed by display type) plus a fixed gap
              (HomeWindow.ROW_GAP) - not a fixed constant for peek-above and a dynamic one for
@@ -161,12 +130,11 @@
              separately-animated piece of state (a crop property) that could ever fall out of sync
              with position, at any point mid-slide, the way the old per-type override could.
 
-             Title visibility only needs one remaining role signal: HomeWindow writes the currently-
+             Title visibility only needs one remaining role signal: Python writes the currently-
              focused control's own id to hub.anchor_id as roles rotate, and each title's own
              condition compares against that (see below) - hidden only for the anchor's own title,
-             and only during a has-hero-art slide (protects the separate hero-summary-text overlay -
-             unrelated to cropping, still real even though hero art is currently force-disabled for
-             this testing phase). Peek-above's title needs no special hiding of its own any more
+             and only during a slide (protects the separate hero-summary-text overlay - unrelated
+             to cropping). Peek-above's title needs no special hiding of its own any more
              either - at H >= 364px (every real display type clears this with margin - tightest is
              square/no-second-line at 395, a 31px margin worth keeping in mind if a shorter display
              type is ever added), the title is naturally clipped away the same way the art is, for
@@ -185,24 +153,26 @@
                 <height>{{ vscale(decl_height) }}</height>
                 <control type="label">
                     <!-- See this whole block's own comment above for the full reasoning. Visible
-                         unless this control is currently the anchor (hub.anchor_id) AND a
-                         has-hero-art slide is in progress - peek-above/peek-below never hide their
-                         title for this reason (String.IsEmpty(hub.sliding) | !String.IsEmpty(no_hero_art):
-                         only the has-hero-art case needs hiding during a slide - see grouplist 50's
-                         own comment for why the sweep-through-the-summary problem only exists then).
-                         Peek-above's title needs no separate hide at all any more - it's naturally
-                         clipped away the same way the art is (see this block's own comment). -->
-                    <visible>!String.IsEqual(Window.Property(hub.anchor_id), {{ id - 100 }}) | [String.IsEmpty(Window.Property(hub.sliding)) | !String.IsEmpty(Window.Property(no_hero_art))]</visible>
+                         unless this control is currently the anchor (hub.anchor_id) AND a slide
+                         is in progress - peek-above/peek-below never hide their title for this
+                         reason (see grouplist 50's own comment for the sweep-through-the-summary
+                         problem this guards against). Peek-above's title needs no separate hide
+                         at all any more - it's naturally clipped away the same way the art is
+                         (see this block's own comment). -->
+                    <visible>!String.IsEqual(Window.Property(hub.anchor_id), {{ id - 100 }}) | String.IsEmpty(Window.Property(hub.sliding))</visible>
                     <posx>10</posx>
                     <posy>0</posy>
                     <width>1000</width>
                     <height>{{ vscale(87) }}</height>
-                    <font>font13</font>
+                    <!-- font30_title: InterUI at font13's own 30px but with a real
+                         <style>bold</style> (skin.plextuary's font.xml) - the [B] markup this
+                         used on font13 never rendered visibly bold. -->
+                    <font>font30_title</font>
                     <align>left</align>
                     <aligny>center</aligny>
                     <textcolor>FFD2CCCE</textcolor>
                     <shadowcolor>66000000</shadowcolor>
-                    <label>[B]$INFO[Window.Property(hub.{{ id - 100 }})][/B]</label>
+                    <label>$INFO[Window.Property(hub.{{ id - 100 }})]</label>
                 </control>
                 <control type="list" id="{{ id - 100 }}">
                     <posx>0</posx>
@@ -243,10 +213,10 @@
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
-    <height>{{ vscale(135) }}</height>
+    <height>{{ vscale(125) }}</height>
     <control type="label">
         <right>60</right>
-        <posy>{{ vscale(35) }}</posy>
+        <posy>{{ vscale(30) }}</posy>
         <width>200</width>
         <height>{{ vscale(65) }}</height>
         <font>font12</font>
@@ -275,7 +245,7 @@
         <control type="group">
             <control type="button" id="204">
                 <posx>0</posx>
-                <posy>{{ vscale(36) }}</posy>
+                <posy>{{ vscale(31) }}</posy>
                 <width>63</width>
                 <height>{{ vscale(63) }}</height>
                 <onleft condition="Control.IsVisible(320)">320</onleft>
@@ -287,7 +257,7 @@
             </control>
             <control type="image">
                 <posx>0</posx>
-                <posy>{{ vscale(36) }}</posy>
+                <posy>{{ vscale(31) }}</posy>
                 <width>63</width>
                 <height>{{ vscale(63) }}</height>
                 <texture diffuse="script.plex/masks/square-mask.png">$INFO[Player.Art(thumb)]</texture>
@@ -303,7 +273,7 @@
             <control type="image">
                 <visible>Control.HasFocus(204)</visible>
                 <posx>-3</posx>
-                <posy>{{ vscale(33) }}</posy>
+                <posy>{{ vscale(28) }}</posy>
                 <width>69</width>
                 <height>{{ vscale(69) }}</height>
                 <texture diffuse="script.plex/masks/ring-mask-square-69.png">script.plex/white-square.png</texture>
@@ -320,14 +290,14 @@
                in the track rows' colours (includes/track_row.xml.tpl): white title, AAFFFFFF artist. #}
             <control type="image">
                 <posx>75</posx>
-                <posy>{{ vscale(30) }}</posy>
+                <posy>{{ vscale(25) }}</posy>
                 <width>260</width>
                 <height>{{ vscale(75) }}</height>
                 <texture colordiffuse="E0000000" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="label">
                 <posx>90</posx>
-                <posy>{{ vscale(40) }}</posy>
+                <posy>{{ vscale(35) }}</posy>
                 <width>230</width>
                 <height>{{ vscale(20) }}</height>
                 <font>font8</font>
@@ -338,7 +308,7 @@
             </control>
             <control type="label">
                 <posx>90</posx>
-                <posy>{{ vscale(64) }}</posy>
+                <posy>{{ vscale(59) }}</posy>
                 <width>230</width>
                 <height>{{ vscale(20) }}</height>
                 <font>font8</font>
@@ -350,7 +320,7 @@
             <control type="progress">
                 <description>Progressbar</description>
                 <posx>90</posx>
-                <posy>{{ vscale(94) }}</posy>
+                <posy>{{ vscale(89) }}</posy>
                 <width>230</width>
                 <height>{{ vscale(1) }}</height>
                 <texturebg colordiffuse="9AFFFFFF">script.plex/white-square-1px.png</texturebg>
@@ -447,15 +417,16 @@
          than a child of that grouplist, so it needs its own copy of the animation to move in sync
          rather than inheriting it. -->
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
-    <!-- no_hero_art (HomeWindow.updateHeroFrom, home.py): hide the whole overlay - not just the
-         art box in default_background.xml.tpl - for items with no real background art (Photos,
-         many Music artists/albums), rather than showing text describing art that isn't there. -->
+    <!-- no_hero_art (LibraryWindow._setNoHeroArt, library.py): hide the whole overlay - not just
+         the art box in default_background.xml.tpl - while nothing is bound yet (fresh entry before
+         the hubs land, or a section with no hubs). No longer a per-item-type gate: the overlay
+         shows for every focused hub item, whatever its type. -->
     <visible>!String.IsEmpty(Window.Property(title)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
     <posx>52</posx>
-    <posy>{{ vscale(135) }}</posy>
+    <posy>{{ vscale(125) }}</posy>
     <height>{{ vscale(388) }}</height>
     <control type="label">
-        <visible>String.IsEmpty(Window.Property(clear.logo))</visible>
+        <visible>String.IsEmpty(Window.Property(clear.logo)) + !String.IsEqual(Window.Property(hero.type),playlist) + !String.IsEqual(Window.Property(hero.type),artist)</visible>
         <posx>61</posx>
         <posy>0</posy>
         <width>616</width>
@@ -468,8 +439,45 @@
         <textcolor>FFFFFFFF</textcolor>
         <label>$INFO[Window.Property(title)]</label>
     </control>
+    <!-- Artist heading (on request, 2026-09-20): the Artist screen's own title control
+         (script-plex-artist.xml.tpl) verbatim - font45_title, FFD2CCCE, top-anchored 708x61 box at
+         y=107 - so a focused artist on Home reads exactly as its own screen does. Artists never
+         have a clearlogo, so this is their only heading. -->
+    <control type="label">
+        <visible>String.IsEqual(Window.Property(hero.type),artist)</visible>
+        <posx>61</posx>
+        <posy>{{ vscale(107) }}</posy>
+        <width>708</width>
+        <height>{{ vscale(61) }}</height>
+        <font>font45_title</font>
+        <align>left</align>
+        <aligny>top</aligny>
+        <scroll>true</scroll>
+        <scrollspeed>35</scrollspeed>
+        <textcolor>FFD2CCCE</textcolor>
+        <label>$INFO[Window.Property(title)]</label>
+    </control>
+    <!-- Playlist heading (on request, 2026-09-20): the episode screen's own no-clearlogo title
+         control (script-plex-episodes.xml.tpl - font45_title in a 61-tall bottom-anchored box,
+         660 wide), landing at the same absolute bottom edge (125+48+61 = 234) as that screen's
+         and as the font45 fallback above. Playlists never have a clearlogo, so this is their
+         only heading; the items/runtime line below it sits where the episode title would. -->
+    <control type="label">
+        <visible>String.IsEqual(Window.Property(hero.type),playlist)</visible>
+        <posx>61</posx>
+        <posy>{{ vscale(48) }}</posy>
+        <width>660</width>
+        <height>{{ vscale(61) }}</height>
+        <font>font45_title</font>
+        <align>left</align>
+        <aligny>bottom</aligny>
+        <scroll>true</scroll>
+        <scrollspeed>35</scrollspeed>
+        <textcolor>FFFFFFFF</textcolor>
+        <label>$INFO[Window.Property(title)]</label>
+    </control>
     <control type="image">
-        <visible>!String.IsEmpty(Window.Property(clear.logo)) + !String.IsEqual(Window.Property(hero.type),episode)</visible>
+        <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEmpty(Window.Property(hero.small_logo))</visible>
         <posx>61</posx>
         <posy>0</posy>
         <width>722</width>
@@ -477,10 +485,11 @@
         <aspectratio align="left" aligny="bottom">keep</aspectratio>
         <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
     </control>
-    <!-- Episode variant: smaller box, leaves room for the episode-title line underneath it -
-         see this group's own CLEAR_LOGO_DIM_EPISODE comment (library.py) for the budget. -->
+    <!-- Two-line variant (hero.small_logo - episodes and rolled-up seasons, see setHeroInfo(),
+         library.py): smaller box, leaves room for the hero.subtitle line underneath it - see this
+         group's own CLEAR_LOGO_DIM_EPISODE comment (library.py) for the budget. -->
     <control type="image">
-        <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEqual(Window.Property(hero.type),episode)</visible>
+        <visible>!String.IsEmpty(Window.Property(clear.logo)) + !String.IsEmpty(Window.Property(hero.small_logo))</visible>
         <posx>61</posx>
         <posy>0</posy>
         <width>660</width>
@@ -488,15 +497,14 @@
         <aspectratio align="left" aligny="bottom">keep</aspectratio>
         <texture background="true">$INFO[Window.Property(clear.logo)]</texture>
     </control>
-    <!-- Episode title, sitting under the show's clearlogo: 19px gap below the 98px logo (13px
-         original gap + 6px explicit drop), font32_title (bold variant, 32px - see this session's
-         font-size math for the box budget - ~1.3x box-to-font ratio matching
-         font10/height=vscale(30) elsewhere in this row) sized to that box. Window.Property(title)
-         is already the episode's own title (not
-         the show's - that's grandparentTitle, used nowhere in this overlay), same property the
-         non-logo title label above reads. -->
+    <!-- Second line under the show's clearlogo - the episode title, or the season name for a
+         rolled-up season item (hero.subtitle, setHeroInfo() - library.py; a playlist's
+         "<n> items &#8226; <runtime>" uses the font30_title copy below instead): 19px gap below the 98px logo (13px original
+         gap + 6px explicit drop), font32_title (bold variant, 32px - see this session's font-size
+         math for the box budget - ~1.3x box-to-font ratio matching font10/height=vscale(30)
+         elsewhere in this row) sized to that box. -->
     <control type="label">
-        <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEqual(Window.Property(hero.type),episode)</visible>
+        <visible>!String.IsEmpty(Window.Property(clear.logo)) + !String.IsEmpty(Window.Property(hero.small_logo))</visible>
         <posx>61</posx>
         <posy>{{ vscale(117) }}</posy>
         <width>660</width>
@@ -507,7 +515,23 @@
         <scroll>true</scroll>
         <scrollspeed>35</scrollspeed>
         <textcolor>FFD2CCCE</textcolor>
-        <label>$INFO[Window.Property(title)]</label>
+        <label>$INFO[Window.Property(hero.subtitle)]</label>
+    </control>
+    <!-- Playlist copy of the line above: same slot, font30_title instead of font32_title (on
+         request) - a separate control only because a font can't be switched per item. -->
+    <control type="label">
+        <visible>String.IsEqual(Window.Property(hero.type),playlist)</visible>
+        <posx>61</posx>
+        <posy>{{ vscale(117) }}</posy>
+        <width>660</width>
+        <height>{{ vscale(51) }}</height>
+        <font>font30_title</font>
+        <align>left</align>
+        <aligny>top</aligny>
+        <scroll>true</scroll>
+        <scrollspeed>35</scrollspeed>
+        <textcolor>FFD2CCCE</textcolor>
+        <label>$INFO[Window.Property(hero.subtitle)]</label>
     </control>
     {% include "includes/pp_meta_row.xml.tpl" %}
     <control type="textbox">

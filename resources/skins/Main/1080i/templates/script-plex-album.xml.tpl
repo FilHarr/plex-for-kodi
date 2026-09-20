@@ -21,7 +21,7 @@
     <!-- posx=52/posy=135: the Artist screen's own outer offsets, so this screen's left column
          lands on the same absolute x=113 every heading in the skin aligns to. -->
     <posx>52</posx>
-    <posy>{{ vscale(135) }}</posy>
+    <posy>{{ vscale(125) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
     <!-- COVER ############################################################################## -->

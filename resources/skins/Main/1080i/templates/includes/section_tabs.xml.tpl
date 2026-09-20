@@ -53,19 +53,19 @@
          and Categories - 800 fits all 4; harmless slack for the still-common 2/3-tab cases, a
          type="list" control's own bounding box beyond its actual items renders nothing extra. -->
     <width>800</width>
-    <height>{{ vscale(135) }}</height>
+    <height>{{ vscale(125) }}</height>
     <onleft>9000</onleft>
     <onright condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onright>
     <onright>noop</onright>
     <onup>noop</onup>
     <ondown>{{ tab_ondown }}</ondown>
     <orientation>horizontal</orientation>
-    <itemlayout width="200" height="{{ vscale(135) }}">
+    <itemlayout width="200" height="{{ vscale(125) }}">
         <control type="label">
             <posx>0</posx>
             <posy>0</posy>
             <width>200</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font12</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -75,14 +75,14 @@
         <control type="image">
             <visible>!String.IsEmpty(ListItem.Property(current))</visible>
             <posx>50</posx>
-            <posy>{{ vscale(94) }}</posy>
+            <posy>{{ vscale(89) }}</posy>
             <width>100</width>
             <height>2</height>
             <texture>script.plex/white-square.png</texture>
             <colordiffuse>FFE5A00D</colordiffuse>
         </control>
     </itemlayout>
-    <focusedlayout width="200" height="{{ vscale(135) }}">
+    <focusedlayout width="200" height="{{ vscale(125) }}">
         <!-- Focus background, gated the same as the white-text label below (real window focus, not
              just cursor position) - same 33FFFFFF rounded pill used elsewhere for a focus highlight
              (e.g. Seasons'/Episodes' own season tabs, the summary click-target, button-row label
@@ -90,7 +90,7 @@
         <control type="image">
             <visible>Control.HasFocus(320)</visible>
             <posx>5</posx>
-            <posy>{{ vscale(42) }}</posy>
+            <posy>{{ vscale(37) }}</posy>
             <width>190</width>
             <height>{{ vscale(50) }}</height>
             <colordiffuse>33FFFFFF</colordiffuse>
@@ -101,7 +101,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>200</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font12</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -113,7 +113,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>200</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font12</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -123,7 +123,7 @@
         <control type="image">
             <visible>!String.IsEmpty(ListItem.Property(current))</visible>
             <posx>50</posx>
-            <posy>{{ vscale(94) }}</posy>
+            <posy>{{ vscale(89) }}</posy>
             <width>100</width>
             <height>2</height>
             <texture>script.plex/white-square.png</texture>

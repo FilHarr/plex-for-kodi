@@ -377,7 +377,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.setProperty('title', self.mediaItem.title)
         logo = util.clearLogoFrom(self.mediaItem, *self.CLEAR_LOGO_DIM)
         self.setProperty('clear.logo', logo)
-        self.setProperty('summary', util.widenParagraphBreaks(self.mediaItem.summary))
+        self.setProperty('summary', util.summaryForBox(self.mediaItem.summary))
         self.updateBackgroundFrom(self.mediaItem)
         self.setProperty('duration', util.durationToShortText(self.mediaItem.fixedDuration(), noSpaces=True))
         self.setProperty('info', '')
@@ -1383,7 +1383,7 @@ class ArtistWindow(ShowWindow):
             listControl.removeItem(mli.pos())
 
     def updateProperties(self):
-        self.setProperty('summary', util.widenParagraphBreaks(self.mediaItem.summary))
+        self.setProperty('summary', util.summaryForBox(self.mediaItem.summary))
         self.setProperty('related.header', T(32960, 'Similar Artists'))
         self.setProperty('popular_tracks.header', T(35065, 'Popular Tracks'))
         # 'Albums' (35072), not the album-type rows' own headers below - the primary/studio row

@@ -2300,7 +2300,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 properties["title"] = video.title
                 methods.append(("setLabel", video.title))
             if "summary" in types:
-                properties["summary"] = util.widenParagraphBreaks(video.summary.strip().replace('\t', ' '))
+                properties["summary"] = util.summaryForBox(video.summary)
 
             if "thumbnail" in types:
                 methods.append(("setThumbnailImage", video.thumb.asTranscodedImageURL(*self.THUMB_AR16X9_DIM)))
@@ -2316,7 +2316,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
             if "summary" in types:
                 properties["summary"] = ((hide_spoilers and self.noSummaries and T(33008, '')) or
-                                         util.widenParagraphBreaks(video.summary.strip().replace('\t', ' ')))
+                                         util.summaryForBox(video.summary))
 
             if "thumbnail" in types:
                 methods.append(("setThumbnailImage",
@@ -2497,7 +2497,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # not the title itself.
         mli.setProperty('show.title', self.show_.title if self.show_ else '')
         mli.setProperty('title', seasonOrShow.title)
-        mli.setProperty('summary', util.widenParagraphBreaks(seasonOrShow.summary.strip().replace('\t', ' ')))
+        mli.setProperty('summary', util.summaryForBox(seasonOrShow.summary))
 
         # watched/unwatched: same properties, same meaning, as a real episode's own
         # (EpisodesPaginator.prepareListItem()) - Season has the same isFullyWatched/isWatched

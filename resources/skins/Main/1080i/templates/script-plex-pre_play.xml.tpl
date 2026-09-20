@@ -89,7 +89,7 @@
          bumped by the same 20px so their absolute positions - and their spacing relative to the
          details block above them - stay exactly where they were; only the details block itself
          actually moved. -->
-    <posy>{{ vscale(135) }}</posy>
+    <posy>{{ vscale(125) }}</posy>
     <defaultcontrol>101</defaultcontrol>
 
     {% block buttons %}

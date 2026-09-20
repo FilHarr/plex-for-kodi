@@ -13,15 +13,15 @@
     </control>
     <control type="image">
         <posx>0</posx>
-        <posy>{{ vscale(135) }}</posy>
+        <posy>{{ vscale(125) }}</posy>
         <width>564</width>
-        <height>{{ vscale(810) }}</height>
+        <height>{{ vscale(820) }}</height>
         <visible>String.IsEmpty(Window.Property(hide.kbd))</visible>
         <texture colordiffuse="FF2D2D2D">script.plex/white-square.png</texture>
     </control>
     <control type="image">
         <posx>0</posx>
-        <posy>{{ vscale(135) }}</posy>
+        <posy>{{ vscale(125) }}</posy>
         <width>564</width>
         <height>{{ vscale(248) }}</height>
         <visible>!String.IsEmpty(Window.Property(hide.kbd))</visible>
@@ -49,7 +49,7 @@
     <animation effect="zoom" start="100" end="144" time="100" center="80,{{ vscale(67.5) }}" reversible="false">Focus</animation>
     <animation effect="zoom" start="144" end="100" time="100" center="80,{{ vscale(67.5) }}" reversible="false">UnFocus</animation>
     <posx>60</posx>
-    <posy>{{ vscale(47.5) }}</posy>
+    <posy>{{ vscale(42.5) }}</posy>
     <width>40</width>
     <height>{{ vscale(40) }}</height>
     <ondown>900</ondown>

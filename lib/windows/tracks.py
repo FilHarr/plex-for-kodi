@@ -485,7 +485,7 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         self.setProperty('artist.title', self.album.parentTitle or '')
         self.setProperty('album.title', self.album.title)
         self.setProperty('album.meta', self.albumMetaLine())
-        self.setProperty('summary', util.widenParagraphBreaks(self.album.get('summary') or ''))
+        self.setProperty('summary', util.summaryForBox(self.album.get('summary')))
 
     def albumMetaLine(self):
         """The header's second meta line: release date, then genres, bullet-separated.

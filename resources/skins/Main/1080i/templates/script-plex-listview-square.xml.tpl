@@ -298,7 +298,7 @@
     {% block listview_list %}
     <control type="group" id="50">
         <posx>0</posx>
-        <posy>{{ vscale(135) }}</posy>
+        <posy>{{ vscale(125) }}</posy>
         <defaultcontrol>101</defaultcontrol>
 
         <control type="group" id="100">

@@ -11,7 +11,7 @@
          overriding onClick or xmlFile). -->
     {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
-{% block header_anim %}<animation effect="slide" end="0,{{ vscale(-135) }}" time="200" tween="sine" easing="inout" condition="!String.IsEmpty(Window.Property(on.extras)) + !ControlGroup(200).HasFocus(0)">Conditional</animation>{% endblock %}
+{% block header_anim %}<animation effect="slide" end="0,{{ vscale(-125) }}" time="200" tween="sine" easing="inout" condition="!String.IsEmpty(Window.Property(on.extras)) + !ControlGroup(200).HasFocus(0)">Conditional</animation>{% endblock %}
 
 {% block content %}
 <!-- Background -->

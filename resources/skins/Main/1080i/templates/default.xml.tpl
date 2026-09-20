@@ -13,7 +13,7 @@
         <posx>0</posx>
         <posy>0</posy>
         <width>1920</width>
-        <height>{{ vscale(135) }}</height>
+        <height>{{ vscale(125) }}</height>
         {% block header_bgfade %}
         <control type="image">
             <animation effect="fade" start="0" end="100" time="200" tween="quadratic" easing="out" reversible="true">VisibleChange</animation>
@@ -21,7 +21,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>1920</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <texture>script.plex/white-square.png</texture>
             <colordiffuse>C0000000</colordiffuse>
         </control>
@@ -29,7 +29,7 @@
         {% block header_topleft %}
         <control type="grouplist">
             <posx>60</posx>
-            <posy>{{ vscale(47.5) }}</posy>
+            <posy>{{ vscale(42.5) }}</posy>
             <width>1000</width>
             <height>{{ vscale(40) }}</height>
             <align>left</align>
@@ -78,7 +78,7 @@
         {% block header_middle_add %}{% endblock %}
         <control type="label">
             <right>60</right>
-            <posy>{{ vscale(35) }}</posy>
+            <posy>{{ vscale(30) }}</posy>
             <width>200</width>
             <height>{{ vscale(65) }}</height>
             <font>font12</font>
@@ -102,7 +102,7 @@
             <control type="group">
                 <control type="button" id="204">
                     <posx>0</posx>
-                    <posy>{{ vscale(36) }}</posy>
+                    <posy>{{ vscale(31) }}</posy>
                     <width>63</width>
                     <height>{{ vscale(63) }}</height>
                     {% block header_audiowidget_onleft %}<onleft>202</onleft>{% endblock %}
@@ -114,7 +114,7 @@
                 </control>
                 <control type="image">
                     <posx>0</posx>
-                    <posy>{{ vscale(36) }}</posy>
+                    <posy>{{ vscale(31) }}</posy>
                     <width>63</width>
                     <height>{{ vscale(63) }}</height>
                     <texture diffuse="script.plex/masks/square-mask.png">$INFO[Player.Art(thumb)]</texture>
@@ -130,7 +130,7 @@
                 <control type="image">
                     <visible>Control.HasFocus(204)</visible>
                     <posx>-3</posx>
-                    <posy>{{ vscale(33) }}</posy>
+                    <posy>{{ vscale(28) }}</posy>
                     <width>69</width>
                     <height>{{ vscale(69) }}</height>
                     <texture diffuse="script.plex/masks/ring-mask-square-69.png">script.plex/white-square.png</texture>
@@ -147,14 +147,14 @@
                    in the track rows' colours (includes/track_row.xml.tpl): white title, AAFFFFFF artist. #}
                 <control type="image">
                     <posx>75</posx>
-                    <posy>{{ vscale(30) }}</posy>
+                    <posy>{{ vscale(25) }}</posy>
                     <width>260</width>
                     <height>{{ vscale(75) }}</height>
                     <texture colordiffuse="E0000000" border="10">script.plex/white-square-rounded.png</texture>
                 </control>
                 <control type="label">
                     <posx>90</posx>
-                    <posy>{{ vscale(40) }}</posy>
+                    <posy>{{ vscale(35) }}</posy>
                     <width>230</width>
                     <height>{{ vscale(20) }}</height>
                     <font>font8</font>
@@ -165,7 +165,7 @@
                 </control>
                 <control type="label">
                     <posx>90</posx>
-                    <posy>{{ vscale(64) }}</posy>
+                    <posy>{{ vscale(59) }}</posy>
                     <width>230</width>
                     <height>{{ vscale(20) }}</height>
                     <font>font8</font>
@@ -177,7 +177,7 @@
                 <control type="progress">
                     <description>Progressbar</description>
                     <posx>90</posx>
-                    <posy>{{ vscale(94) }}</posy>
+                    <posy>{{ vscale(89) }}</posy>
                     <width>230</width>
                     <height>{{ vscale(1) }}</height>
                     <texturebg colordiffuse="9AFFFFFF">script.plex/white-square-1px.png</texturebg>

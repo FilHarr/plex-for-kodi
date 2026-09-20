@@ -46,7 +46,12 @@
          below is positioned relative to this group, so the shift applies uniformly without
          touching any of their own pixel-tuned offsets. -->
     <posx>60</posx>
-    <posy>{{ vscale(155) }}</posy>
+    <!-- 145, not the long-standing 155: dropped 10 with the header (135 -> 125, 2026-09-20) so the
+         clearlogo box lands at the same absolute y=125 as Pre-play/Seasons/Home's hero overlay -
+         every child is relative to this group, so the carousel/buttons/Roles/Extras below all
+         moved up 10 with it, the same shift every other screen's content took. Absolute y figures
+         quoted in comments further down that were derived from 155 are all 10 less now. -->
+    <posy>{{ vscale(145) }}</posy>
     <!--<defaultcontrol>101</defaultcontrol>-->
 
     <control type="group">
@@ -60,11 +65,10 @@
              row and summary below match Seasons'/Pre-play's own instead (script-plex-seasons.xml.tpl).
              All of it lands at absolute x=113, matching the episode row/Roles/Extras below (see their
              own comments) rather than Recommended's/Seasons' own raw x=112/115 - group 50's own posx=60
-             here + each control's own posx=53 reaches that column. Same idea on the y axis: group 50's own posy is still the
-             old 155 here (Seasons/Pre-play tuned theirs to 135 - see that control's own comment - but
-             moving Episodes' group 50 to match would shift the episode carousel/buttons/Roles/Extras
-             below it too, well beyond this block), so every posy below is each reference screen's own
-             raw value minus 20 to land at the same absolute y those screens reach with theirs. -->
+             here + each control's own posx=53 reaches that column. Same idea on the y axis: group 50's
+             own posy (145) is 20 more than Seasons'/Pre-play's/Home's (125) - see its own comment for
+             why it isn't simply matched - so every posy below is each reference screen's own raw
+             value minus 20 to land at the same absolute y those screens reach with theirs. -->
         <control type="label">
             <!-- font45_title, not font45; height=61, not the old 109 (on request, matching Artist's/
                  Seasons' own title control - script-plex-artist.xml.tpl/script-plex-seasons.xml.tpl).
@@ -1669,7 +1673,7 @@
     <posx>120</posx>
     <posy>0</posy>
     <width>1420</width>
-    <height>{{ vscale(135) }}</height>
+    <height>{{ vscale(125) }}</height>
     <focusposition>3</focusposition>
     <!-- See script-plex-seasons.xml.tpl's own copy of this row for why this is needed (without it,
          Kodi pins the focused item at the focusposition slot from the very first item, leaving blank
@@ -1691,12 +1695,12 @@
     <!-- ITEM LAYOUT ########################################## -->
     <!-- 200, not 170 - matches the same widened cell on script-plex-seasons.xml.tpl's own copy of
          this row (see its own comment for the full reasoning). -->
-    <itemlayout width="200" height="{{ vscale(135) }}">
+    <itemlayout width="200" height="{{ vscale(125) }}">
         <control type="label">
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1706,7 +1710,7 @@
         <control type="image">
             <visible>!String.IsEmpty(ListItem.Property(current))</visible>
             <posx>25</posx>
-            <posy>{{ vscale(94) }}</posy>
+            <posy>{{ vscale(89) }}</posy>
             <width>120</width>
             <height>2</height>
             <texture>script.plex/white-square.png</texture>
@@ -1722,7 +1726,7 @@
        was last highlighted after focus moves away. Splitting into two labels keyed off actual control focus
        makes it fall back to the same grey as itemlayout the rest of the time; the current-season underline
        below is unaffected since it never depended on focus. #}
-    <focusedlayout width="200" height="{{ vscale(135) }}">
+    <focusedlayout width="200" height="{{ vscale(125) }}">
         <!-- Focus background, gated the same as the white-text label below (real window focus, not
              just cursor position) - same 33FFFFFF rounded pill used elsewhere for a focus highlight
              (e.g. the summary click-target, button-row label overlays). Drawn first so the label/
@@ -1730,7 +1734,7 @@
         <control type="image">
             <visible>Control.HasFocus(205)</visible>
             <posx>0</posx>
-            <posy>{{ vscale(42) }}</posy>
+            <posy>{{ vscale(37) }}</posy>
             <width>170</width>
             <height>{{ vscale(50) }}</height>
             <colordiffuse>33FFFFFF</colordiffuse>
@@ -1741,7 +1745,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1755,7 +1759,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1765,7 +1769,7 @@
         <control type="image">
             <visible>!String.IsEmpty(ListItem.Property(current))</visible>
             <posx>25</posx>
-            <posy>{{ vscale(94) }}</posy>
+            <posy>{{ vscale(89) }}</posy>
             <width>120</width>
             <height>2</height>
             <texture>script.plex/white-square.png</texture>
@@ -1784,7 +1788,7 @@
     <posx>120</posx>
     <posy>0</posy>
     <width>1420</width>
-    <height>{{ vscale(135) }}</height>
+    <height>{{ vscale(125) }}</height>
     <onup>200</onup>
     <onleft>9000</onleft>
     <onright condition="Control.IsVisible(204)">204</onright>
@@ -1795,12 +1799,12 @@
     <!-- Fallback is 350's own ondown, skipping the stop when there's no summary. -->
     <ondown>400</ondown>
     <orientation>horizontal</orientation>
-    <itemlayout width="200" height="{{ vscale(135) }}">
+    <itemlayout width="200" height="{{ vscale(125) }}">
         <control type="label">
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1810,19 +1814,19 @@
         <control type="image">
             <visible>!String.IsEmpty(ListItem.Property(current))</visible>
             <posx>25</posx>
-            <posy>{{ vscale(94) }}</posy>
+            <posy>{{ vscale(89) }}</posy>
             <width>120</width>
             <height>2</height>
             <texture>script.plex/white-square.png</texture>
             <colordiffuse>FFE5A00D</colordiffuse>
         </control>
     </itemlayout>
-    <focusedlayout width="200" height="{{ vscale(135) }}">
+    <focusedlayout width="200" height="{{ vscale(125) }}">
         <!-- Focus background - see 205's own copy of this control above for the full reasoning. -->
         <control type="image">
             <visible>Control.HasFocus(206)</visible>
             <posx>0</posx>
-            <posy>{{ vscale(42) }}</posy>
+            <posy>{{ vscale(37) }}</posy>
             <width>170</width>
             <height>{{ vscale(50) }}</height>
             <colordiffuse>33FFFFFF</colordiffuse>
@@ -1833,7 +1837,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1847,7 +1851,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>
-            <height>{{ vscale(135) }}</height>
+            <height>{{ vscale(125) }}</height>
             <font>font10</font>
             <align>center</align>
             <aligny>center</aligny>
@@ -1857,7 +1861,7 @@
         <control type="image">
             <visible>!String.IsEmpty(ListItem.Property(current))</visible>
             <posx>25</posx>
-            <posy>{{ vscale(94) }}</posy>
+            <posy>{{ vscale(89) }}</posy>
             <width>120</width>
             <height>2</height>
             <texture>script.plex/white-square.png</texture>

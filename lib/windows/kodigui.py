@@ -361,8 +361,26 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             self.setFocusId(focus)
 
     def updateBackgroundFrom(self, ds):
-        if util.addonSettings.dynamicBackgrounds and ds:
-            art = ds.get('art', ds.get('parentArt', ds.get('grandparentArt', None)))
+        # `ds is not None`, not truthiness: an unopened Playlist is falsy (BasePlaylist.__len__()
+        # is its item count, empty until opened) - see LibraryWindow.setHeroInfo(). Playlists
+        # then resolve to no art here (they carry `composite`, deliberately not treated as
+        # background art - the hero art box is hidden for them via hero.no_art) but still get
+        # their seeded panel corners below.
+        if util.addonSettings.dynamicBackgrounds and ds is not None:
+            # First non-empty of the three, checked one at a time. The old nested
+            # ds.get('art', ds.get('parentArt', ds.get('grandparentArt', None))) form was wrong at
+            # the end of the chain: PlexObject.get() wraps a missing key's default in a PlexValue,
+            # and PlexValue(None) is the *string* "None" - truthy - so an item with no art at all
+            # (live: the artist "Scott Bond" in the Recently Played row) produced a transcode URL
+            # ending in "...127.0.0.1:32400None" that Kodi's texture loader then failed on
+            # (CCurlFile::Open errors in kodi.log) every time the item was focused, instead of the
+            # no-art path below.
+            art = None
+            for key in ('art', 'parentArt', 'grandparentArt'):
+                candidate = ds.get(key)
+                if candidate:
+                    art = candidate
+                    break
             # 4-corner tinted-panel colors, Phase 1 approximation of official Plex's native
             # per-corner art color extraction - see docs/notes/hero-art-background-status.md.
             # getattr, not ds.get(): ultraBlurColors is a plain instance attribute only present on

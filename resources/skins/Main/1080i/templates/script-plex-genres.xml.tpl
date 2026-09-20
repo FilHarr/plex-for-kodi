@@ -40,7 +40,7 @@
          itemlayout group posx=60 = 120 absolute - see the panel/itemlayout comments below), not
          the screen's general sidebar-clearance x (60, what header_topleft used). -->
     <posx>120</posx>
-    <posy>{{ vscale(135) }}</posy>
+    <posy>{{ vscale(125) }}</posy>
     <width>600</width>
     <height>{{ vscale(65) }}</height>
     <font>font10</font>

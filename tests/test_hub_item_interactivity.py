@@ -81,6 +81,8 @@ class FakeLibraryWindow(object):
 
     hubItemClicked = library.LibraryWindow.hubItemClicked
     carriedProps = library.LibraryWindow.carriedProps
+    _hubIsMusic = library.LibraryWindow._hubIsMusic
+    MUSIC_ITEM_TYPES = library.LibraryWindow.MUSIC_ITEM_TYPES
     _anchorControlId = library.LibraryWindow._anchorControlId
     # HUB_CONTROL_ID lives on RecommendedWindow (the template-backed content shell), not
     # LibraryWindow itself - a real LibraryWindow instance resolves self.HUB_CONTROL_ID via

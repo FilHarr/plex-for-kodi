@@ -408,7 +408,7 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             util.backgroundFromArt(self.playlist.composite, width=self.width, height=self.height)
         )
         self.setProperty('playlist.thumb', self.playlist.composite.asTranscodedImageURL(*self.ALBUM_THUMB_DIM))
-        self.setProperty('playlist.title', self.playlist.title)
+        self.setProperty('playlist.title', util.colorizeEmoji(self.playlist.title))
         self.setProperty('playlist.duration', util.durationToText(self.playlist.duration.asInt()))
 
     def updateListItem(self, idx, pi, mli=None):

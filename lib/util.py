@@ -163,6 +163,31 @@ def sortTitle(title):
     return title.startswith('The ') and title[4:] or title
 
 
+# Emoji the skin's own InterUI.ttf carries as monochrome outlines (it has no colour font tables,
+# and Kodi's font engine wouldn't rasterise them if it did) - Kodi draws them in the label's text
+# colour, so a "red heart" playlist title renders a white heart. Wrapping just that glyph in
+# [COLOR] markup at display time is the only way to get its colour back. Keyed on the codepoint;
+# U+FE0F (the emoji-presentation selector Plex stores after it) has no glyph in any bundled font
+# and is dropped. Only glyphs the font actually has belong here - a colourised missing-glyph box
+# is worse than a plain one.
+EMOJI_COLORS = {
+    u'\u2764': 'FFDD2E44',   # heavy black heart (the standard "red heart")
+    u'\u2665': 'FFDD2E44',   # black heart suit
+}
+
+
+def colorizeEmoji(text):
+    """text with its known emoji wrapped in Kodi [COLOR] markup (see EMOJI_COLORS) - display-time
+    only, never for sorting/comparison. Passes non-str values (None, PlexValue '') straight through."""
+    if not text:
+        return text
+    out = str(text).replace(u'\ufe0f', '')
+    for ch, color in EMOJI_COLORS.items():
+        if ch in out:
+            out = out.replace(ch, u'[COLOR {0}]{1}[/COLOR]'.format(color, ch))
+    return out
+
+
 def widenParagraphBreaks(text):
     """
     Plex summaries (artist bios, show/season/episode/movie/collection descriptions, person bios)
@@ -186,7 +211,17 @@ def widenParagraphBreaks(text):
         return text
     text = text.replace('\r\n', '\n').replace('\r', '\n')
     text = re.sub(r'(?m)^[ \t]+$', '', text)
+    text = normalizeDashes(text)
     return re.sub(r'(?<!\n)\n(?!\n)', '\n\n', text)
+
+
+def normalizeDashes(text):
+    """A typewriter double hyphen ("the Beatles -- and their story") to an en dash. AllMusic-sourced
+    artist bios use "--" throughout; Kodi renders two adjacent InterUI hyphens with a visible gap
+    (live-reported as "- -" in the home hero summary, 2026-09-20 - the data itself is a plain
+    ASCII "--"). Only runs of exactly two hyphens between non-hyphens, so "---" rules and hyphenated
+    words are left alone. InterUI carries U+2013."""
+    return re.sub(r'(?<!-)--(?!-)', u'–', text)
 
 
 def durationToText(seconds):
@@ -243,6 +278,16 @@ def durationToShortText(ms, shortHourMins=False, shortSeconds=False, noSpaces=Fa
         secs /= 1000
         return '{0}{1}s'.format(round(secs) if shortSeconds and round(secs) == int(secs) else secs, "" if noSpaces else " ")
     return noSpaces and '0s' or '0 s'
+
+
+def durationToHoursMinutes(ms):
+    """Total runtime as hours and minutes ("146h 39m", "3h", "25m") - durationToShortText()'s
+    no-space style but never rolling over into days, for playlist totals that routinely exceed
+    one. '' for zero/None so callers can drop the line entirely."""
+    if not ms:
+        return ''
+    hours, mins = divmod(int(ms) // 60000, 60)
+    return ' '.join(p for p in (hours and '{0}h'.format(hours), mins and '{0}m'.format(mins)) if p)
 
 
 def remainingTimeToShortText(ms):
@@ -311,6 +356,40 @@ def shortenText(text, size):
         return text
 
     return u'{0}\u2026'.format(text[:size - 1])
+
+
+# Longest summary handed to any screen's 813px/font10, 90px-tall summary textbox (home hero,
+# pre-play, seasons, episodes, artist, album - all the same box): its three visible lines
+# (700 live-measured at just over 9 lines; 230 spilled, 200 ran short), so nothing is left for
+# the autoscroll to reveal. Kodi word-wraps the *whole* string on the render thread every time
+# the property changes, and artist bios run to tens of thousands of characters (The Beatles:
+# 36k / 41 paragraphs), which stalled the home hub row on every focus move (live, 2026-09-20).
+# The popups behind each box's click target (info.showSummary()) read the full text straight
+# off the object, never this property, so nothing is lost.
+SUMMARY_BOX_MAX_CHARS = 215
+
+
+def summaryForBox(text, size=None):
+    """A Plex summary prepared for one of the small summary textboxes: tabs flattened, capped at
+    SUMMARY_BOX_MAX_CHARS on a word boundary (shortenTextAtWord()), paragraph breaks widened and
+    "--" normalised (widenParagraphBreaks()). '' for None/empty."""
+    if not text:
+        return ''
+    return widenParagraphBreaks(
+        shortenTextAtWord(str(text).strip().replace('\t', ' '), size or SUMMARY_BOX_MAX_CHARS))
+
+
+def shortenTextAtWord(text, size):
+    """shortenText() that cuts at the last word boundary before size instead of mid-word
+    (falls back to a hard cut if there's no space in the first size characters). Trailing
+    punctuation left dangling by the cut (",", ";", ":", an open dash) is dropped too, so the
+    ellipsis follows a word rather than ",..." (on request, 2026-09-20)."""
+    if len(text) < size:
+        return text
+    cut = text.rfind(' ', 0, size - 1)
+    if cut < size // 2:
+        cut = size - 1
+    return u'{0}\u2026'.format(text[:cut].rstrip().rstrip(u',;:-\u2013\u2014 '))
 
 
 def scaleResolution(w, h, by=None):
