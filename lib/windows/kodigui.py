@@ -378,6 +378,11 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             # opacity=100: this art is now a focal, vivid box next to its own color panel, not a
             # full-bleed wash with text floating on top anywhere - backgroundArtOpacityAmount2's
             # server-side dimming was designed for that older look and just reads as muddy here.
+            # Always a plain 16:9 transcode. The zoom inside the hero-art box is done entirely in
+            # the skin (default_background.xml.tpl, hero_zoom_pad): PMS's minSize=1 does NOT crop to
+            # the requested aspect, it returns the whole image scaled until both dimensions are
+            # >= what was asked (verified live: 1920x1440 requested -> 2560x1440 returned), so asking
+            # for a non-16:9 size here only wastes bandwidth and texture memory.
             return self.windowSetBackground(util.backgroundFromArt(art, width=self.width, height=self.height, opacity=100))
 
     PANEL_CORNER_PROPS = (('background_panel_tl', 'topLeft'), ('background_panel_tr', 'topRight'),

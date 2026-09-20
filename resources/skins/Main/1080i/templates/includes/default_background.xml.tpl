@@ -143,6 +143,20 @@
        whole chain. Negative flag deliberately: an undefined variable is falsy here, so every
        other caller of this include keeps the box with no change. #}
     {% if not suppress_hero_art %}
+    {# Zoom of the item art inside the hero box, done purely in the skin and anchored at the
+       screen's top-right corner: the two art controls below are made hero_zoom_pad wider than the
+       1229x691 box, all of it added on the *left*, so the art's right edge stays on the screen's
+       right edge; under <aspectratio>scale</aspectratio> the 16:9 texture then overflows the
+       control's height, Kodi clips that overflow to the control rect (GUITexture.cpp sets a clip
+       region whenever the scaled texture exceeds it), and aligny="top" keeps the art's top edge on
+       the screen's top edge so only the bottom is cut. Zoom = (1229 + pad) / 1229, so 61 -> 1.05x, 122 ->
+       1.10x, 406 -> 1.33x. The vignette mask has to be padded on the left by exactly the same
+       amount (masks/background-vignette-zoom.png, generated from background-vignette.png by
+       docs/notes/vignette-zoom-pad.py - re-run it after changing this) because scalediffuse="false"
+       maps the mask onto the whole control rect. Not done via the transcode request: PMS's
+       minSize=1 does NOT crop to a non-16:9 size, it returns the whole image scaled up (verified
+       live), so there is nothing server-side that can zoom. #}
+    {% with hero_zoom_pad = 61 %}
     <!-- shrunk to ~64% and anchored top-right, matching official Plex's own pre_play framing.
          The vignette mask below is a rounded-rectangle falloff (flat sides, curved corners only),
          not a smooth ellipse - fit against real pixel measurements off official Plex renders. An
@@ -159,9 +173,9 @@
              previous item's art or a placeholder - empty/unset for every other window, so this
              only ever actively hides anything on the home screen. -->
         <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
-        <posx>691</posx>
+        <posx>{{ 691 - hero_zoom_pad }}</posx>
         <posy>0</posy>
-        <width>1229</width>
+        <width>{{ 1229 + hero_zoom_pad }}</width>
         <height>691</height>
         <!-- 250ms, not instant: this layer sits statically behind the crossfading one below for most
              of its life, but BaseWindow._scheduleBackgroundStaticSync() (kodigui.py) catches it up to
@@ -173,26 +187,34 @@
              Shortened from an original 500ms/0.5s pairing on request - shorter reads as less of the
              previous item's art visibly lingering/blending under the new one during the transition. -->
         <fadetime>250</fadetime>
-        <texture background="true" diffuse="script.plex/masks/background-vignette.png">$INFO[Window.Property(background_static)]</texture>
+        <texture background="true" diffuse="script.plex/masks/background-vignette-zoom.png">$INFO[Window.Property(background_static)]</texture>
         <!-- lets the 4-corner tinted panel bleed through the art uniformly, not just at the
              vignette's own edge falloff - same sibling-<colordiffuse>-plus-diffuse-mask pattern
              as the scrim control below (colordiffuse as an attribute on <texture> alongside
              diffuse= silently does nothing, this sibling-element form is the one that works).
              White RGB, alpha only, so this is a pure opacity trim - no colour shift of its own. -->
         <colordiffuse>66FFFFFF</colordiffuse>
-        {% include "includes/scale_background.xml.tpl" %}
+        <!-- unconditional (not the needs_scaling-gated scale_background include): "scale" is
+             what makes the 16:9 texture cover this deliberately wider-than-16:9 control and overflow
+             vertically for the zoom (the default "stretch" would just squash it wider), aligny="top"
+             keeps the art's top edge on the screen's top edge (the overflow is cut off the bottom),
+             and scalediffuse="false" pins the (padded) vignette mask to this control's rect - the
+             default true maps it onto the enlarged texture rect instead, so it would be clipped
+             along with the art. Same tag on the layer below. -->
+        <aspectratio align="center" aligny="top" scalediffuse="false">scale</aspectratio>
     </control>
     <control type="image">
         <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art))</visible>
-        <posx>691</posx>
+        <posx>{{ 691 - hero_zoom_pad }}</posx>
         <posy>0</posy>
-        <width>1229</width>
+        <width>{{ 1229 + hero_zoom_pad }}</width>
         <height>691</height>
         <fadetime>250</fadetime>
-        <texture background="true" diffuse="script.plex/masks/background-vignette.png">{{ background_source|default("$INFO[Window.Property(background)]") }}</texture>
+        <texture background="true" diffuse="script.plex/masks/background-vignette-zoom.png">{{ background_source|default("$INFO[Window.Property(background)]") }}</texture>
         <colordiffuse>66FFFFFF</colordiffuse>
-        {% include "includes/scale_background.xml.tpl" %}
+        <aspectratio align="center" aligny="top" scalediffuse="false">scale</aspectratio>
     </control>
+    {% endwith %}
     <!-- a flat, neutral scrim directly over the art box - official Plex's own key art plateaus
          well short of full brightness even on its palest art (measured ~40% dimmed toward black),
          but stays achromatic doing it. An earlier version tinted this with the item's own

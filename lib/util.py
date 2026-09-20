@@ -930,9 +930,10 @@ def clearLogoFrom(item, width, height):
     logo gives visibly jagged edges - the server has to do the resizing. png rather than the transcoder's
     default, so the alpha channel survives.
 
-    minSize is off, unlike everywhere else: it makes the server scale until the box is covered and crop the
-    overflow, which is what you want for a poster and never for a logo - a wide wordmark would be blown up
-    until its height filled the box and then have its sides cut off. Off means fit inside the box instead.
+    minSize is off, unlike everywhere else: on it makes the server scale until the box is covered (both
+    dimensions >= requested; it does NOT crop the overflow - verified live, a 1920x1440 request returns the
+    whole 16:9 image at 2560x1440), so a wide wordmark would come back blown up until its height filled the
+    box. Off means fit inside the box instead.
     """
     if not getSetting('clear_logos', True):
         return ''
