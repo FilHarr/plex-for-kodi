@@ -17,6 +17,7 @@ from kodi_six import xbmcgui
 from plexnet import playqueue
 from plexnet import playlist
 from plexnet import plexapp
+from plexnet import plexlibrary
 from plexnet import plexobjects
 from plexnet import util as pnUtil
 from six.moves import range
@@ -141,7 +142,7 @@ SORT_KEYS = {
         'userRating': {'title': T(33103, 'By my Rating'), 'display': T(33104, 'My Rating'), 'defSortDesc': True},
         'contentRating': {'title': T(33105, 'By Content Rating'), 'display': T(33106, 'Content Rating'),
                           'defSortDesc': False, 'subDisplay': 'contentRating'},
-        'resolution': {'title': T(32361, 'By Resolution'), 'display': T(32362, 'Resolution'), 'defSortDesc': True, 'subDisplay': 'resolutionString'},
+        'mediaHeight': {'title': T(32361, 'By Resolution'), 'display': T(32362, 'Resolution'), 'defSortDesc': True, 'subDisplay': 'resolutionString'},
         'duration': {'title': T(32363, 'By Duration'), 'display': T(32364, 'Duration'), 'defSortDesc': True, 'subDisplay': 'duration'},
         'unwatched': {'title': T(32367, 'By Unplayed'), 'display': T(32368, 'Unplayed'), 'defSortDesc': False},
         'year': {'title': T(32377, 'Year'), 'display': T(32377, 'Year'), 'defSortDesc': True},
@@ -171,12 +172,21 @@ SORT_KEYS = {
     },
     'artist': {
         'titleSort': {'title': T(32357, 'By Title'), 'display': T(32358, 'Title'), 'defSortDesc': False},
-        'artist.titleSort': {'title': T(32463, 'By Artist'), 'display': T(32462, 'Artist'), 'defSortDesc': False},
+        # The server's compound artist.titleSort,album.titleSort,... sort; "Album Artist" is its
+        # own name for it, and for tracks it sits next to the plain track-artist sort below.
+        'artist.titleSort': {'title': T(35091, 'By Album Artist'), 'display': T(35092, 'Album Artist'), 'defSortDesc': False},
+        'originalTitle': {'title': T(32463, 'By Artist'), 'display': T(32462, 'Artist'), 'defSortDesc': False},
+        'album.titleSort': {'title': T(34042, 'By Album'), 'display': T(34043, 'Album'), 'defSortDesc': False},
         'userRating': {'title': T(33103, 'By my Rating'), 'display': T(33104, 'My Rating'), 'defSortDesc': True},
         'addedAt': {'title': T(32351, 'By Date Added'), 'display': T(32352, 'Date Added'), 'defSortDesc': True, 'subDisplay': 'addedAt'},
-        'lastViewedAt': {'title': T(32369, 'By Date Played'), 'display': T(32370, 'Date Played'), 'defSortDesc': False},
+        'lastViewedAt': {'title': T(32369, 'By Date Played'), 'display': T(32370, 'Date Played'), 'defSortDesc': True},
         'viewCount': {'title': T(32371, 'By Play Count'), 'display': T(32372, 'Play Count'), 'defSortDesc': True, 'subDisplay': 'viewCount'},
         'random': {'title': T(33730, 'Randomly'), 'display': T(33730, 'Randomly'), 'defSortDesc': True},
+        # Track-only on the server side (like originalTitle/album.titleSort above); here because
+        # sortButtonClicked()/sortDisplay() look labels up by section type, and a music section's
+        # TYPE is 'artist' whatever ITEM_TYPE is.
+        'lastRatedAt': {'title': T(35087, 'By Date Rated'), 'display': T(35088, 'Date Rated'), 'defSortDesc': True},
+        'ratingCount': {'title': T(35089, 'By Popularity'), 'display': T(35090, 'Popularity'), 'defSortDesc': True},
     },
     'track': {
         'titleSort': {'title': T(32357, 'By Title'), 'display': T(32358, 'Title'), 'defSortDesc': False},
@@ -189,7 +199,7 @@ SORT_KEYS = {
         'addedAt': {'title': T(32351, 'By Date Added'), 'display': T(32352, 'Date Added'), 'defSortDesc': True, 'subDisplay': 'addedAt'},
         'originallyAvailableAt': {'title': T(32373, 'By Date Taken'), 'display': T(32374, 'Date Taken'),
                                   'defSortDesc': True, 'subDisplay': 'originallyAvailableAt', 'subDisplayExclusive': True},
-        'photos.titleSort': {'title': T(32357, 'By Title'), 'display': T(32358, 'Title'), 'defSortDesc': False},
+        'photo.titleSort': {'title': T(32357, 'By Title'), 'display': T(32358, 'Title'), 'defSortDesc': False},
         'mediaCount': {'title': T(34042, 'By Album'), 'display': T(34043, 'Album'), 'defSortDesc': False},
     },
     'photodirectory': {},
@@ -222,6 +232,16 @@ def isAlphaSort(sortKey):
     'sort.alpha' window property tracks the actual outcome per-fill.
     """
     return sortKey == 'titleSort' or bool(sortKey) and sortKey.endswith('.titleSort')
+
+
+# Sort keys the addon used to persist under its own spelling, mapped to the server's (as
+# /sorts advertises them, and as SORT_KEYS/serverSortOptions() now key them). Applied when a
+# stored 'sort' setting is read back; both spellings sort identically server-side, this just
+# keeps an old setting matching its menu entry.
+LEGACY_SORT_KEYS = {
+    'resolution': 'mediaHeight',
+    'photos.titleSort': 'photo.titleSort',
+}
 
 
 ITEM_TYPE = None
@@ -885,6 +905,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.boolFilters = self.librarySettings.getSetting('filter.bools', {}) or {}
         self.filter = self.filter or self.librarySettings.getSetting('filter', None)
         self.sort = self.librarySettings.getSetting('sort', self.section.DEFAULT_SORT)
+        self.sort = LEGACY_SORT_KEYS.get(self.sort, self.sort)
         self.sortDesc = self.librarySettings.getSetting('sort.desc', self.section.DEFAULT_SORT_DESC)
 
         self.alreadyFetchedChunkList = set()
@@ -2286,12 +2307,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Seed the filter display from current state (value filter + any active booleans),
         # not just unwatched, since boolFilters persists across sessions.
         self.updateFilterDisplay()
-        try:
-            self.setProperty('sort.display',
-                             SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
-            self.updateSortIcon()
-        except TypeError:
+        display = self.sortDisplay()
+        if display is None:
             self.resetSort()
+        else:
+            self.setProperty('sort.display', display)
+            self.updateSortIcon()
         self.setProperty('media.itemType', ITEM_TYPE or self.section.TYPE)
         self.setProperty('media.type', TYPE_PLURAL.get(ITEM_TYPE or self.section.TYPE, self.section.TYPE))
         self.setProperty('media', self.section.TYPE)
@@ -3801,7 +3822,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             args[filter_[0]] = filter_[1]
 
         if sort:
-            args['sort'] = '{0}:{1}'.format(*sort)
+            args['sort'] = plexlibrary.sortArg(sort)
 
         if self.section.TYPE == 'movie':
             args['sourceType'] = '1'
@@ -4061,12 +4082,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # ordinary in-place refill below is unaffected for every other section type.
         if not self.nextWindow(self.forcedViewWindow() or False):
             self.setProperty('media.type', TYPE_PLURAL.get(ITEM_TYPE or self.section.TYPE, self.section.TYPE))
-            try:
-                self.setProperty('sort.display', SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
-                self.updateSortIcon()
-            except TypeError:
+            display = self.sortDisplay()
+            if display is None:
                 # stored sort isn't valid for this item type
                 self.resetSort()
+            else:
+                self.setProperty('sort.display', display)
+                self.updateSortIcon()
             self.fill(keep_focus=keep_focus)
 
         # No-op for the Recommended/Library tabList flavor (updateActiveTabMarker() keys off
@@ -4082,10 +4104,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         options = []
         defSortByOption = {}
 
-        if self.section.TYPE == 'movie':
+        # The static lists below are the fallback for when the server has no /sorts answer
+        # (old PMS, request failed) and for the section types usesServerSorts() excludes.
+        serverOptions = self.usesServerSorts() and self.serverSortOptions() or []
+
+        if serverOptions:
+            for opt in serverOptions:
+                option = dict(opt, indicator=self.sort == opt['type'] and ind or '')
+                defSortByOption[opt['type']] = opt['defSortDesc']
+                options.append(option)
+        elif self.section.TYPE == 'movie':
             searchTypes = ['titleSort', 'year', 'originallyAvailableAt', 'rating', 'audienceRating', 'userRating',
                            'contentRating', 'duration', 'viewOffset', 'viewCount', 'addedAt', 'lastViewedAt',
-                           'resolution', 'mediaBitrate', 'random']
+                           'mediaHeight', 'mediaBitrate', 'random']
             if ITEM_TYPE == 'collection':
                 searchTypes = ['titleSort', 'addedAt', 'contentRating']
 
@@ -4130,7 +4161,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 defSortByOption[stype] = option.get('defSortDesc')
                 options.append(option)
         elif self.section.TYPE == 'photo':
-            searchTypes = ['addedAt', 'originallyAvailableAt', 'photos.titleSort', 'mediaCount']
+            searchTypes = ['addedAt', 'originallyAvailableAt', 'photo.titleSort', 'mediaCount']
             for stype in searchTypes:
                 option = SORT_KEYS['photo'].get(stype, SORT_KEYS['movie'].get(stype)).copy()
                 option['type'] = stype
@@ -4238,7 +4269,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         elif choice == 'contentRating':
             self.showPanelControl.sort(lambda i: i.dataSource.get('titleSort') or i.dataSource.title)
             self.showPanelControl.sort(lambda i: i.dataSource.get('contentRating'), reverse=self.sortDesc)
-        elif choice == 'resolution':
+        elif choice == 'mediaHeight':
             self.showPanelControl.sort(lambda i: i.dataSource.maxHeight, reverse=self.sortDesc)
         elif choice == 'duration':
             self.showPanelControl.sort(lambda i: i.dataSource.duration.asInt(), reverse=self.sortDesc)
@@ -4385,7 +4416,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.librarySettings.setSetting('sort.desc', self.sortDesc)
 
         util.setGlobalProperty('sort', self.sort)
-        self.setProperty('sort.display', SORT_KEYS[self.section.TYPE].get(self.sort, SORT_KEYS['movie'].get(self.sort))['display'])
+        self.setProperty('sort.display', self.sortDisplay())
         self.updateSortIcon()
 
     def updateSortIcon(self):
@@ -4609,7 +4640,91 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if not self.sort:
             return None
 
-        return (self.sort, self.sortDesc and 'desc' or 'asc')
+        key = self.sort
+        if self.usesServerSorts():
+            # Send the server's canonical key rather than the short one self.sort holds: for
+            # Album Artist that's the compound 'artist.titleSort,album.titleSort,album.index,...',
+            # which pins the secondary order (and what :desc flips, see plexlibrary.sortArg())
+            # to the server's own definition instead of whatever it defaults to for a bare key.
+            for opt in self.serverSortOptions():
+                if opt['type'] == key:
+                    key = opt['serverKey']
+                    break
+
+        return (key, self.sortDesc and 'desc' or 'asc')
+
+    def usesServerSorts(self):
+        """Whether this section's sort menu comes from the server (/sorts?includeAdvanced=1)
+        rather than the static lists in sortButtonClicked().
+
+        Every real PMS section type. Checked against PMS 1.43.4 (2026-09-20): with includeAdvanced
+        the server's list is a superset of the static one for every item type - identical for
+        movies/shows/artists, and adding the sorts the static lists lacked for episodes (Year,
+        Duration, Progress, Plays, Resolution), albums (Year, Rating) and especially tracks (Album
+        Artist, Artist, Album, Rating, Duration, Date Rated, Popularity, Bitrate, Randomly).
+
+        Not for: the watchlist (not a PMS section), synthetic folder sections (subDir - their key
+        is a path, and the static list is the right answer there anyway), and collections, where
+        the server only advertises Title but the addon has always offered Date Added (and Content
+        Rating for movie collections) too, and the server does honour them.
+        """
+        return self.section.TYPE in ('movie', 'show', 'artist', 'photo') \
+            and bool(self.section.key) and self.section.key.isdigit() \
+            and self.librarySettings.getItemType() != 'collection'
+
+    def serverSortOptions(self):
+        """The sorts the server advertises for the current section + item type, as dropdown
+        option dicts in server order, or [] when it has nothing usable (old server, request
+        failed, unknown item type) so callers fall back to the static lists.
+
+        'type' is the *leading component* of the server key - 'artist.titleSort' for the compound
+        Album Artist sort - and is what self.sort holds and LibrarySettings persists. That keeps
+        every existing consumer of self.sort working unchanged (isAlphaSort(), the SORT_KEYS
+        label/subDisplay lookups, the jumpList guards in fillShows(), previously stored settings);
+        only getSortOpts() expands it to the full 'serverKey' at request time. Labels come from
+        SORT_KEYS where pm4k has localized ones, else the server's own title - the same hybrid as
+        FILTER_LABELS/_filterLabel().
+        """
+        libtype = self.librarySettings.getItemType() or self.section.TYPE
+        try:
+            sorts = self.section.listSorts(libtype=libtype)
+        except Exception:
+            util.ERROR('serverSortOptions: listSorts failed')
+            return []
+
+        options = []
+        seen = set()
+        for srt in sorts:
+            serverKey = srt.key
+            if not serverKey:
+                continue
+            key = serverKey.split(',')[0]
+            if key in seen:
+                continue
+            seen.add(key)
+            known = SORT_KEYS[self.section.TYPE].get(key) or SORT_KEYS['movie'].get(key) or {}
+            title = srt.title or key
+            options.append({
+                'type': key,
+                'serverKey': serverKey,
+                'title': known.get('title', title),
+                'display': known.get('display', title),
+                'defSortDesc': srt.defaultDirection == 'desc',
+            })
+        return options
+
+    def sortDisplay(self):
+        """Sort-button label for self.sort: pm4k's localized SORT_KEYS text where it has one,
+        else the server's title for that sort, else None - the key is unknown to both, so the
+        caller should resetSort()."""
+        known = SORT_KEYS[self.section.TYPE].get(self.sort) or SORT_KEYS['movie'].get(self.sort)
+        if known:
+            return known['display']
+        if self.usesServerSorts():
+            for opt in self.serverSortOptions():
+                if opt['type'] == self.sort:
+                    return opt['display']
+        return None
 
 
     def getDefChunkSize(self, size):
@@ -4647,10 +4762,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # sorts, and only for the item types/sections it's known to support: episode titles
         # are excluded since browsing episodes by their own title isn't a sensible A-Z
         # anchor, but show.titleSort groups by the parent show's title, so episodes are let
-        # through specifically for that one. artist.titleSort is excluded outright - the
-        # server 500s on it (confirmed against a real PMS), so it always falls through to
-        # the plain scrollbar below instead.
-        if isAlphaSort(self.sort) and self.sort != 'artist.titleSort' and ITEM_TYPE != 'folder' \
+        # through specifically for that one. artist.titleSort (Album Artist, for albums and
+        # tracks) used to be excluded here over a server 500 - that was the merged 'type=9,18'
+        # below (collections have no artist to join on), not the sort itself; with the plain
+        # type PMS 1.43.4 answers it correctly for both (buckets checked against the sorted
+        # list) and flags the sort with firstCharacterKey itself. A server that still can't
+        # just fails the request, which jumpList() turns into None and the plain scrollbar.
+        if isAlphaSort(self.sort) and ITEM_TYPE != 'folder' \
                 and (ITEM_TYPE != 'episode' or self.sort == 'show.titleSort') \
                 and not self.subDir and self.section.TYPE not in ("collection", "movies_shows"):
             # find library collection mode setting, as we need to force-feed the collection type to the jumpList,
@@ -4659,7 +4777,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                                                        {"value": plexobjects.PlexValue(2)})["value"].asInt()
 
             jl_type = type_
-            if collection_mode == 2 and not (self.filter or self.boolFilters.get('unwatched')):
+            # collectionMode ("hide items which are in collections") is a movie/show library pref;
+            # music and photo sections have no such entry in /prefs (live-checked), so the default
+            # of 2 above would fabricate one for them - and the merged type it leads to is exactly
+            # what makes the server 500 on the artist-joined Album Artist sort.
+            if self.section.TYPE != 'artist' and collection_mode == 2 \
+                    and not (self.filter or self.boolFilters.get('unwatched')):
                 jl_type = getQueryItemType(self.section, fallback_to_section_type=True, force_include_collections=True)
 
             jumpList = self.section.jumpList(filter_=self.getFilterOpts(), sort=self.getSortOpts(),

@@ -3504,3 +3504,27 @@ msgstr ""
 msgctxt "#35086"
 msgid "Stop whatever is playing, and clear Kodi's playlists, whenever the addon exits - including signing out or switching users. Off: playback carries on under Kodi's own player after Plex has closed."
 msgstr ""
+
+msgctxt "#35087"
+msgid "By Date Rated"
+msgstr ""
+
+msgctxt "#35088"
+msgid "Date Rated"
+msgstr ""
+
+msgctxt "#35089"
+msgid "By Popularity"
+msgstr ""
+
+msgctxt "#35090"
+msgid "Popularity"
+msgstr ""
+
+msgctxt "#35091"
+msgid "By Album Artist"
+msgstr ""
+
+msgctxt "#35092"
+msgid "Album Artist"
+msgstr ""

@@ -15,6 +15,17 @@ from lib.exceptions import NoDataException
 from six.moves import map
 
 
+def sortArg(sort):
+    """ The sort= value for a (key, direction) pair. The direction goes on the leading
+        component only, so a compound key from /sorts ('artist.titleSort,album.titleSort,
+        album.index,...') becomes 'artist.titleSort:desc,album.titleSort,album.index,...' -
+        the shape of the server's own descKey for it. A plain key is just 'key:dir'.
+    """
+    key, direction = sort
+    first, sep, rest = key.partition(',')
+    return '{0}:{1}{2}{3}'.format(first, direction, sep, rest)
+
+
 class Library(plexobjects.PlexObject):
     def __repr__(self):
         return '<Library:{0}>'.format(self.title1.encode('utf8'))
@@ -286,7 +297,7 @@ class LibrarySection(plexobjects.PlexObject):
             args['includeCollections'] = 1
 
         if sort:
-            args['sort'] = '{0}:{1}'.format(*sort)
+            args['sort'] = sortArg(sort)
 
         if type_:
             args['type'] = str(type_)
@@ -313,7 +324,7 @@ class LibrarySection(plexobjects.PlexObject):
             args['includeCollections'] = 1
 
         if sort:
-            args['sort'] = '{0}:{1}'.format(*sort)
+            args['sort'] = sortArg(sort)
 
         if type_:
             args['type'] = str(type_)
@@ -372,19 +383,37 @@ class LibrarySection(plexobjects.PlexObject):
             section default if that errors or returns nothing. Results are cached
             per (key, libtype). Returns a possibly-empty list.
         """
+        return self._listSectionMeta('filters', libtype)
+
+    def listSorts(self, libtype=None):
+        """ Return the sorts the server accepts for this section as a list of Directory
+            items (each has .key, .title, .defaultDirection, .descKey; the section's
+            default one also has .default). .key is the full server key and can be
+            compound ('artist.titleSort,album.titleSort,album.index,...') - see sortArg().
+            Same libtype handling and caching as listFilters(). Returns a possibly-empty list.
+
+            includeAdvanced=1 matters: without it the server trims the list to a basic
+            subset (9 of 15 for movies on PMS 1.43.4 - no Year/Rating/Content Rating/
+            Progress/Plays/Bitrate). It's what Plex Web sends, and the same flag exposes
+            the extra 'duplicate' filter on /filters, which listFilters() doesn't ask for.
+        """
+        return self._listSectionMeta('sorts', libtype, {'includeAdvanced': 1})
+
+    def _listSectionMeta(self, endpoint, libtype, extra_args=None):
         cache = getattr(self, '_filtersCache', None)
         if cache is None:
             cache = self._filtersCache = {}
-        if libtype in cache:
-            return cache[libtype]
+        ck = (endpoint, libtype)
+        if ck in cache:
+            return cache[ck]
 
         if self.key.startswith('/'):
-            base = '{0}/filters'.format(self.key)
+            base = '{0}/{1}'.format(self.key, endpoint)
         else:
-            base = '/library/sections/{0}/filters'.format(self.key)
+            base = '/library/sections/{0}/{1}'.format(self.key, endpoint)
 
         def _fetch(with_type):
-            args = {}
+            args = dict(extra_args or {})
             if with_type and libtype is not None:
                 args['type'] = plexobjects.searchType(libtype)
             return plexobjects.listItems(self.server, '{0}{1}'.format(base, util.joinArgs(args)), bytag=True)
@@ -399,15 +428,15 @@ class LibrarySection(plexobjects.PlexObject):
             try:
                 result = _fetch(False)
             except exceptions.BadRequest:
-                util.ERROR('listFilters() request error for section {0}'.format(repr(self.key)))
+                util.ERROR('{0}() request error for section {1}'.format(endpoint, repr(self.key)))
                 return []
         except Exception:
-            util.ERROR('listFilters() unexpected error for section {0}'.format(repr(self.key)))
+            util.ERROR('{0}() unexpected error for section {1}'.format(endpoint, repr(self.key)))
             return []
 
         # Only successful results are cached, so a transient failure doesn't poison
         # the cache for the rest of the session.
-        cache[libtype] = result
+        cache[ck] = result
         return result
 
     def search(self, title=None, sort=None, maxresults=999999, libtype=None, **kwargs):
