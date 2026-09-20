@@ -174,9 +174,9 @@
              per-item-type gate any more - once a hub item is focused the box shows for every
              type. Empty/unset for every other window, so this only ever actively hides anything
              on the Recommended tab.
-             hero.no_art (LibraryWindow.setHeroInfo, HERO_NO_ART_TYPES): the one per-type
-             exception - item types (playlists) that keep the info overlay on the left but not
-             this art box. Same condition on both art layers below. -->
+             hero.no_art (LibraryWindow.setHeroInfo, HERO_NO_ART_TYPES; also
+             CollectionWindow.setup() for a collection with no art): keeps the info overlay on
+             the left but not this art box. Same condition on both art layers below. -->
         <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art)) + String.IsEmpty(Window.Property(hero.no_art))</visible>
         <posx>{{ 691 - hero_zoom_pad }}</posx>
         <posy>0</posy>

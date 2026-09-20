@@ -9,6 +9,7 @@ from lib import util
 from lib.util import T
 from plexnet import plexapp
 from . import home
+from . import info
 from . import kodigui
 from . import pagination
 from . import preplay
@@ -29,11 +30,10 @@ MOVE_SET = frozenset((
 # lifted from script-plex-posters.xml.tpl, so the same fetch dimensions apply.
 THUMB_DIM = util.scaleResolution(268, 402)
 ART_DIM = util.scaleResolution(630, 355)
-# Matches the clearlogo/title box size script-plex-recommended.xml.tpl's own focused-hub-item
-# overlay uses (script-plex-recommended.xml.tpl:445,459) - the info panel is now sized to match
-# that overlay directly, not a from-scratch size (the collection poster inset this used to sit
-# beside was dropped per direct feedback).
-CLEAR_LOGO_DIM = util.scaleResolution(616, 109)
+# The home hero overlay's own big-clearlogo box (LibraryWindow.CLEAR_LOGO_DIM, library.py -
+# script-plex-recommended.xml.tpl's movie/show variant): the collection info panel is that overlay
+# verbatim, minus its meta row (on request, 2026-09-20). Was 616x109, the title-fallback box.
+CLEAR_LOGO_DIM = util.scaleResolution(722, 162)
 
 
 class BoundedGridPaginator(pagination.MCLPaginator):
@@ -110,6 +110,10 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
     be the real cost of folding these into the descendant-container work, not a design-mechanism
     gap.
     """
+
+    # Whether a grid focus move re-seeds the window background/corner colours from the newly
+    # focused item (SubDirWindow: yes, nothing else owns the screen; CollectionWindow: no).
+    BACKGROUND_FOLLOWS_FOCUS = True
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
     res = '1080i'
@@ -122,6 +126,10 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
     dismissOnClose = True
 
     GRID_ID = 101
+    # Click/focus target over the info panel's summary textbox (script-plex-collection.xml.tpl) -
+    # same id/role as ShowWindow's/ArtistWindow's own (subitems.py). Only CollectionWindow's
+    # template declares it; SubDirWindow has no info panel.
+    SUMMARY_BUTTON_ID = 305
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -185,10 +193,14 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
                 self.paginator.paginate()
             # Mirrors library.py's own MOVE_SET handling (library.py:1955-1982) - keep the
             # background/ultrablur tint in sync with whatever's actually focused, not stuck on
-            # whatever setup() set it to once at open time.
-            mli = self.gridControl.getSelectedItem()
-            if mli and mli.dataSource is not None:
-                self.updateBackgroundFrom(mli.dataSource)
+            # whatever setup() set it to once at open time. Not on the Collection screen
+            # (BACKGROUND_FOLLOWS_FOCUS): its art and corner colours are the collection's own,
+            # on request (2026-09-20), the way the hero overlay describes the collection, not
+            # the focused member.
+            if self.BACKGROUND_FOLLOWS_FOCUS:
+                mli = self.gridControl.getSelectedItem()
+                if mli and mli.dataSource is not None:
+                    self.updateBackgroundFrom(mli.dataSource)
         kodigui.ControlledWindow.onAction(self, action)
 
     def onClick(self, controlID):
@@ -196,6 +208,8 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
             return
         if controlID == self.GRID_ID:
             self.itemClicked()
+        elif controlID == self.SUMMARY_BUTTON_ID:
+            self.summaryButtonClicked()
         elif controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
 
@@ -214,6 +228,12 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
     def setup(self):
         raise NotImplementedError
 
+    def summaryButtonClicked(self):
+        """Full-text summary popup - the same info.showSummary() dialog every other media screen's
+        summary click target opens (subitems.py/preplay.py/episodes.py). Only CollectionWindow
+        gives it a control to be reached from."""
+        raise NotImplementedError
+
     def createListItem(self, data):
         # Base construction only (empty label, dataSource wired up) - the paginator's own
         # createListItem() calls this via MCLPaginator.createListItem()'s default delegation
@@ -228,6 +248,11 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         # (plexobjects.py), so this works unchanged for a Generic/TYPE=='Directory' folder entry too.
         mli.setLabel(data.defaultTitle)
         mli.setProperty('summary', util.widenParagraphBreaks(data.get('summary')))
+        # Second caption line under the poster (script-plex-collection.xml.tpl's 'year' label, the
+        # library grid's own - on request, 2026-09-20). Plain year only: the grid's sort-key
+        # subDisplay variants don't apply here, there's no sort. Nested collections/folders
+        # carry no year, so theirs stays a single line.
+        mli.setProperty('year', data.TYPE != 'collection' and data.get('year') or '')
         if data.TYPE == 'collection':
             # Collections often have no own poster - fall back to a composite of member posters,
             # same as library.py's _chunkCallback() (library.py:4071-4076) and the dead-code
@@ -445,6 +470,9 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
 
 class CollectionWindow(BoundedGridWindow):
     xmlFile = 'script-plex-collection.xml'
+    # The background art/corner colours stay the collection's own (setup()) rather than
+    # following the focused member - see BoundedGridWindow.onAction().
+    BACKGROUND_FOLLOWS_FOCUS = False
 
     def __init__(self, *args, **kwargs):
         BoundedGridWindow.__init__(self, *args, **kwargs)
@@ -452,12 +480,30 @@ class CollectionWindow(BoundedGridWindow):
         if self.entrySectionId is None and not self.entryFromWatchlist:
             self.entrySectionId = self.collection.getLibrarySectionId()
 
+    def summaryButtonClicked(self):
+        # The full text, off the object - the collection.summary property only ever holds the
+        # capped display copy (util.summaryForBox()).
+        info.showSummary(self.collection.title, self.collection.get('summary'))
+
+    def metaLine(self, count):
+        """"<n> items" plus, after a bullet, the members' year span "minYear-maxYear" - only when
+        it is a span: a single-year collection (live: a one-show TV collection reports
+        minYear == maxYear) shows just the count, no bullet, no year (on request, 2026-09-20).
+        minYear/maxYear come with the collection on every path that reaches this window (the
+        library grid's /all?type=18 listing, verified the same day)."""
+        parts = [T(35055, '{0} items').format(count)]
+        min_year = self.collection.get('minYear')
+        max_year = self.collection.get('maxYear')
+        if min_year and max_year and min_year != max_year:
+            parts.append(u'{0}-{1}'.format(min_year, max_year))
+        return u' \u2022 '.join(parts)
+
     def setup(self):
         # summary/childCount read via .get() (raw XML attribute access, PlexValue-wrapped), same
         # convention library.py's _chunkCallback() uses for the same kind of field - live-confirmed
         # against a real server response (2026-08-24): both populate correctly.
         self.setProperty('collection.title', self.collection.title)
-        self.setProperty('collection.summary', util.widenParagraphBreaks(self.collection.get('summary')))
+        self.setProperty('collection.summary', util.summaryForBox(self.collection.get('summary')))
         # Same clearlogo-with-title-fallback pattern as PrePlayWindow/EpisodesWindow - the template
         # shows whichever of the two sibling controls matches whether this property is empty, not
         # a Python-side branch. util.clearLogoFrom() itself already returns '' safely when the
@@ -465,8 +511,16 @@ class CollectionWindow(BoundedGridWindow):
         self.setProperty('clear.logo', util.clearLogoFrom(self.collection, *CLEAR_LOGO_DIM))
 
         self.updateBackgroundFrom(self.collection)
+        # No art on this collection (live: 6 of 106 movie collections): hide the hero art box
+        # (default_background.xml.tpl reads hero.no_art, the same gate Home uses for playlists)
+        # rather than leave it showing windowSetBackground(None)'s black fallback over a ghost of
+        # whatever art the previous screen last showed. The corner panel above it still tints
+        # from the collection's own ultraBlurColors. Set once - BACKGROUND_FOLLOWS_FOCUS is False
+        # here, so nothing later would repopulate the box anyway.
+        self.setBoolProperty('hero.no_art', not self.collection.get('art'))
 
         leafCount = self.collection.get('childCount').asInt()
+        self.setProperty('collection.meta', self.metaLine(leafCount))
 
         self.paginator = CollectionPaginator(self.gridControl, parent_window=self, leaf_count=leafCount)
         self.paginator.paginate()

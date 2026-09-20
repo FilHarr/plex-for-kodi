@@ -119,10 +119,10 @@
                             <visible>!String.IsEmpty(ListItem.Property(subtitle))</visible>
                             <scroll>false</scroll>
                             <posx>0</posx>
-                            <posy>{{ vscale(396) }}</posy>
+                            <posy>{{ vscale(401) }}</posy>
                             <width>240</width>
                             <height>{{ vscale(72) }}</height>
-                            <font>font10</font>
+                            <font>font8</font>
                             <align>center</align>
                             <textcolor>A0FFFFFF</textcolor>
                             <label>$INFO[ListItem.Property(subtitle)]</label>
@@ -131,10 +131,10 @@
                             <visible>!String.IsEmpty(ListItem.Property(year)) + String.IsEmpty(ListItem.Property(subtitle))</visible>
                             <scroll>false</scroll>
                             <posx>0</posx>
-                            <posy>{{ vscale(396) }}</posy>
+                            <posy>{{ vscale(401) }}</posy>
                             <width>240</width>
                             <height>{{ vscale(72) }}</height>
-                            <font>font10</font>
+                            <font>font8</font>
                             <align>center</align>
                             <textcolor>A0FFFFFF</textcolor>
                             <label>$INFO[ListItem.Property(year)]</label>
@@ -223,10 +223,10 @@
                                 <visible>!String.IsEmpty(ListItem.Property(subtitle))</visible>
                                 <scroll>false</scroll>
                                 <posx>0</posx>
-                                <posy>{{ vscale(396) }}</posy>
+                                <posy>{{ vscale(401) }}</posy>
                                 <width>240</width>
                                 <height>{{ vscale(72) }}</height>
-                                <font>font10</font>
+                                <font>font8</font>
                                 <align>center</align>
                                 <textcolor>A0FFFFFF</textcolor>
                                 <label>$INFO[ListItem.Property(subtitle)]</label>
@@ -235,10 +235,10 @@
                                 <visible>!String.IsEmpty(ListItem.Property(year)) + String.IsEmpty(ListItem.Property(subtitle))</visible>
                                 <scroll>false</scroll>
                                 <posx>0</posx>
-                                <posy>{{ vscale(396) }}</posy>
+                                <posy>{{ vscale(401) }}</posy>
                                 <width>240</width>
                                 <height>{{ vscale(72) }}</height>
-                                <font>font10</font>
+                                <font>font8</font>
                                 <align>center</align>
                                 <textcolor>A0FFFFFF</textcolor>
                                 <label>$INFO[ListItem.Property(year)]</label>

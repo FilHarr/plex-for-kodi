@@ -429,13 +429,16 @@
         <visible>String.IsEmpty(Window.Property(clear.logo)) + !String.IsEqual(Window.Property(hero.type),playlist) + !String.IsEqual(Window.Property(hero.type),artist)</visible>
         <posx>61</posx>
         <posy>0</posy>
-        <width>616</width>
-        <height>{{ vscale(109) }}</height>
-        <font>font45</font>
+        <width>722</width>
+        <height>{{ vscale(162) }}</height>
+        <font>font45_title</font>
         <align>left</align>
-        <aligny>bottom</aligny>
-        <scroll>true</scroll>
-        <scrollspeed>35</scrollspeed>
+        <aligny>center</aligny>
+        <!-- The clearlogo box exactly (722x162 at the same origin), title text centred in it and
+             wrapped rather than scrolled - up to two lines of 45px fit (on request, 2026-09-20).
+             center is the only vertical alignment a Kodi label honours; "bottom" is silently top,
+             which is why the old 616x109/aligny=bottom box drew its text at the top edge. -->
+        <wrapmultiline>true</wrapmultiline>
         <textcolor>FFFFFFFF</textcolor>
         <label>$INFO[Window.Property(title)]</label>
     </control>
