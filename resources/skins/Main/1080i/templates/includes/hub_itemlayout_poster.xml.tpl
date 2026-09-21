@@ -12,6 +12,9 @@
              currently at. -->
         <posy>{{ vscale(52) }}</posy>
         <control type="group">
+            <!-- The whole card is hidden for the row's "See more" item (is.more) - see
+                 includes/hub_see_more_pill.xml.tpl, the sibling below that shows in its place. -->
+            <visible>String.IsEmpty(ListItem.Property(is.more))</visible>
             <control type="image">
                 <posx>0</posx>
                 <posy>0</posy>
@@ -21,32 +24,6 @@
             </control>
             <posx>3</posx>
             <posy>3</posy>
-            <control type="group">
-                <visible>!String.IsEmpty(ListItem.Property(is.end))</visible>
-                <control type="image">
-                    <posx>0</posx>
-                    <posy>0</posy>
-                    <width>240</width>
-                    <height>{{ vscale(360) }}</height>
-                    <texture colordiffuse="FF404040">script.plex/white-square.png</texture>
-                </control>
-                <control type="image">
-                    <visible>String.IsEmpty(ListItem.Property(is.updating))</visible>
-                    <posx>92.5</posx>
-                    <posy>{{ vscale(135) }}</posy>
-                    <width>55</width>
-                    <height>{{ vscale(90) }}</height>
-                    <texture colordiffuse="40000000">script.plex/indicators/chevron-white.png</texture>
-                </control>
-                <control type="image">
-                    <visible>!String.IsEmpty(ListItem.Property(is.updating))</visible>
-                    <posx>62.5</posx>
-                    <posy>{{ vscale(122.5) }}</posy>
-                    <width>115</width>
-                    <height>{{ vscale(115) }}</height>
-                    <texture>script.plex/home/busy.gif</texture>
-                </control>
-            </control>
             <control type="image">
                 <!-- Native fallback= (not a separate stacked/masked control - see this include's
                      own history) - Kodi shows this while ListItem.Thumb is empty/loading/failed,
@@ -94,5 +71,6 @@
             </control>
             {% include "includes/watched_indicator.xml.tpl" with xoff=240 & uw_size=43 & wbg_w=32 & wbg_h=32 & with_count=True & scale="medium" %}
         </control>
+        {% include "includes/hub_see_more_pill.xml.tpl" with px=3 & py=158 %}
     </control>
 </itemlayout>

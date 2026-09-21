@@ -14,6 +14,9 @@
         <!-- Always top-anchored - see hub_itemlayout_poster.xml.tpl's own matching comment. -->
         <posy>{{ vscale(52) }}</posy>
         <control type="group">
+            <!-- The whole card is hidden for the row's "See more" item (is.more) - see
+                 includes/hub_see_more_pill.xml.tpl, the sibling below that shows in its place. -->
+            <visible>String.IsEmpty(ListItem.Property(is.more))</visible>
             <!-- 259,147 = the art's centre in this group's own frame (3 inset + 512/2, 3 + 288/2)
                  - the episode screen's own zoom centre. -->
             <animation effect="zoom" start="100" end="104" time="100" center="259,{{ vscale(147) }}" reversible="false">Focus</animation>
@@ -30,32 +33,6 @@
             <control type="group">
                 <posx>3</posx>
                 <posy>3</posy>
-                <control type="group">
-                    <visible>!String.IsEmpty(ListItem.Property(is.end))</visible>
-                    <control type="image">
-                        <posx>0</posx>
-                        <posy>0</posy>
-                        <width>512</width>
-                        <height>{{ vscale(288) }}</height>
-                        <texture colordiffuse="FF404040">script.plex/white-square.png</texture>
-                    </control>
-                    <control type="image">
-                        <visible>String.IsEmpty(ListItem.Property(is.updating))</visible>
-                        <posx>225.5</posx>
-                        <posy>{{ vscale(94) }}</posy>
-                        <width>61</width>
-                        <height>{{ vscale(100) }}</height>
-                        <texture colordiffuse="40000000">script.plex/indicators/chevron-white.png</texture>
-                    </control>
-                    <control type="image">
-                        <visible>!String.IsEmpty(ListItem.Property(is.updating))</visible>
-                        <posx>192</posx>
-                        <posy>{{ vscale(80) }}</posy>
-                        <width>128</width>
-                        <height>{{ vscale(128) }}</height>
-                        <texture>script.plex/home/busy.gif</texture>
-                    </control>
-                </control>
                 <control type="image">
                     <!-- See hub_itemlayout_ar16x9.xml.tpl's own copy of this control for the full
                          reasoning. -->
@@ -164,5 +141,6 @@
                 <colordiffuse>FFE9A20D</colordiffuse>
             </control>
         </control>
+        {% include "includes/hub_see_more_pill.xml.tpl" with px=3 & py=122 %}
     </control>
 </focusedlayout>

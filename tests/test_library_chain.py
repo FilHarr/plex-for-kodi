@@ -235,8 +235,6 @@ onAction = library.LibraryWindow.onAction
 _captureRootRestoreState = library.LibraryWindow._captureRootRestoreState
 _consumeRestoreItemPos = library.LibraryWindow._consumeRestoreItemPos
 _captureHostedShellRestoreState = library.LibraryWindow._captureHostedShellRestoreState
-_extendHubToPosition = library.LibraryWindow._extendHubToPosition
-_ensureHubReselectReach = library.LibraryWindow._ensureHubReselectReach
 onFocus = library.LibraryWindow.onFocus
 
 
@@ -1226,190 +1224,6 @@ class OnActionTest(KodiTestCase):
         self.assertEqual([action], dispatchCalls)
 
 
-class _FakeHubValue(object):
-    """Stands in for a PlexValue - real Hub.offset/size/more (plexlibrary.py) are all this
-    shape, read via .asInt()/.asBool()."""
-
-    def __init__(self, value):
-        self._value = value
-
-    def asInt(self):
-        return int(self._value)
-
-    def asBool(self):
-        return bool(self._value)
-
-
-class _FakeExtendableHub(object):
-    """A hub double carrying only what LibraryWindow._extendHubToPosition() (the real, unbound
-    method under test below - it never touches self, only its hub/pos arguments) actually reads
-    or calls."""
-
-    def __init__(self, offset, size, items, more=True, extend_returns=(), extend_raises=False):
-        self.offset = _FakeHubValue(offset)
-        self.size = _FakeHubValue(size)
-        self.items = list(items)
-        self.more = _FakeHubValue(more)
-        self._extend_returns = list(extend_returns)
-        self._extend_raises = extend_raises
-        self.extendCalls = []
-
-    def extend(self, start=None, size=None):
-        self.extendCalls.append((start, size))
-        if self._extend_raises:
-            raise RuntimeError("simulated request failure")
-        return self._extend_returns
-
-
-class ExtendHubToPositionTest(KodiTestCase):
-    """LibraryWindow._extendHubToPosition() - the one-shot fetch _bindHubToControl() uses to close
-    a reselect-position gap before binding (live-reported, 2026-09-03): a hub row item only
-    reached last visit via ExtendHubTask's own load-more pagination couldn't be restored on Back,
-    because a fresh 'recommended' entry always re-fetches brand-new Hub objects starting back at
-    their first page. Fetches the deficit *plus* HUB_ROW_SELECT_OVERCOMMIT in one request - not
-    home.ExtendHubTask's usual HUB_PAGE_SIZE=10-at-a-time walk (would otherwise need several round
-    trips for a position this deep), and not just the bare deficit either (live-reported,
-    2026-09-04: fetching exactly enough to cover the target position left it as hub.items' own
-    last real item, so _bindHubToControl()'s "select ahead, then back" scroll-in trick had nothing
-    real to select ahead onto and landed on the is.end placeholder instead)."""
-
-    class _Host(object):
-        """self is only ever read for HUB_ROW_SELECT_OVERCOMMIT - a real LibraryWindow class
-        attribute (2, library.py), not delegated/instance state, so a plain stand-in is enough."""
-        HUB_ROW_SELECT_OVERCOMMIT = 2
-
-    def test_fetches_the_deficit_plus_overcommit_and_appends_it(self):
-        """offset=0, size=10 (10 items already held), target position 24 - needs items
-        10..24+HUB_ROW_SELECT_OVERCOMMIT(2)=26, i.e. 17 more, not just the bare 15-item deficit to
-        24 alone, and not just one more HUB_PAGE_SIZE=10 page."""
-        hub = _FakeExtendableHub(offset=0, size=10, items=list(range(10)),
-                                  extend_returns=list(range(10, 27)))
-
-        _extendHubToPosition(self._Host(), hub, 24)
-
-        self.assertEqual([(10, 17)], hub.extendCalls)
-        self.assertEqual(list(range(27)), hub.items)
-
-    def test_no_op_when_hub_reports_no_more_content(self):
-        hub = _FakeExtendableHub(offset=0, size=10, items=list(range(10)), more=False)
-
-        _extendHubToPosition(self._Host(), hub, 24)
-
-        self.assertEqual([], hub.extendCalls)
-        self.assertEqual(list(range(10)), hub.items)
-
-    def test_no_op_when_the_position_and_its_overcommit_buffer_are_already_covered(self):
-        """Shouldn't happen given _bindHubToControl()'s own pre-check (pos >= len(hub.items)) -
-        covered directly anyway as a safety net against a negative/zero-size fetch."""
-        hub = _FakeExtendableHub(offset=0, size=10, items=list(range(10)))
-
-        _extendHubToPosition(self._Host(), hub, 5)
-
-        self.assertEqual([], hub.extendCalls)
-
-    def test_swallows_a_request_failure_and_leaves_items_unchanged(self):
-        """Best-effort enhancement to an already-working fallback (item 0) - a network/server
-        error here must not raise out of _bindHubToControl()'s own bind."""
-        hub = _FakeExtendableHub(offset=0, size=10, items=list(range(10)), extend_raises=True)
-
-        _extendHubToPosition(self._Host(), hub, 24)  # must not raise
-
-        self.assertEqual(list(range(10)), hub.items)
-
-    def test_an_empty_result_leaves_items_unchanged(self):
-        """The server can legitimately return nothing (e.g. hub.more lied, or content changed
-        between fetches) - must not append a falsy result."""
-        hub = _FakeExtendableHub(offset=0, size=10, items=list(range(10)), extend_returns=[])
-
-        _extendHubToPosition(self._Host(), hub, 24)
-
-        self.assertEqual(list(range(10)), hub.items)
-
-    def test_starts_from_the_hubs_own_offset_plus_size_not_len_items(self):
-        """start = hub.offset + hub.size (home.ExtendHubTask's own formula, mirrored exactly) -
-        not len(hub.items), in case the two have ever diverged."""
-        hub = _FakeExtendableHub(offset=5, size=10, items=list(range(20)),
-                                  extend_returns=list(range(15, 27)))
-
-        _extendHubToPosition(self._Host(), hub, 24)
-
-        self.assertEqual([(15, 12)], hub.extendCalls)
-
-
-class _FakeHubItem(object):
-    def __init__(self, rating_key):
-        self.ratingKey = rating_key
-
-
-class _FakeHubWithItems(object):
-    def __init__(self, items):
-        self.items = items
-
-
-class EnsureHubReselectReachTest(KodiTestCase):
-    """LibraryWindow._ensureHubReselectReach() - the shared gap-check both _previewSelectedItem()
-    (hero art/info preview) and _bindHubToControl() (the row's own item binding) use before
-    reading self._hubReselectPositions for real, so both agree on whether hub.items needs
-    extending first (live-reported, 2026-09-04: without sharing this, the hero panel showed the
-    wrong (first) item's info while the row itself correctly showed the restored one).
-    _extendHubToPosition() itself is stubbed here to isolate this method's own trigger logic from
-    that method's own fetch math (ExtendHubToPositionTest, above)."""
-
-    class _Bag(object):
-        def __init__(self):
-            self._hubReselectPositions = {}
-            self.extendCalls = []
-
-        def _extendHubToPosition(self, hub, pos):
-            self.extendCalls.append((hub, pos))
-
-    def test_extends_when_position_is_beyond_hub_items_and_ratingkey_not_present(self):
-        host = self._Bag()
-        host._hubReselectPositions['hub-a'] = ('999', 15)
-        hub = _FakeHubWithItems([_FakeHubItem('1'), _FakeHubItem('2')])
-
-        _ensureHubReselectReach(host, hub, 'hub-a')
-
-        self.assertEqual([(hub, 15)], host.extendCalls)
-
-    def test_no_op_when_ratingkey_already_present_even_if_pos_is_out_of_range(self):
-        host = self._Bag()
-        host._hubReselectPositions['hub-a'] = ('2', 15)
-        hub = _FakeHubWithItems([_FakeHubItem('1'), _FakeHubItem('2')])
-
-        _ensureHubReselectReach(host, hub, 'hub-a')
-
-        self.assertEqual([], host.extendCalls)
-
-    def test_no_op_when_position_is_already_within_range(self):
-        host = self._Bag()
-        host._hubReselectPositions['hub-a'] = ('999', 1)
-        hub = _FakeHubWithItems([_FakeHubItem('1'), _FakeHubItem('2')])
-
-        _ensureHubReselectReach(host, hub, 'hub-a')
-
-        self.assertEqual([], host.extendCalls)
-
-    def test_no_op_when_nothing_remembered_for_this_hub(self):
-        host = self._Bag()
-        hub = _FakeHubWithItems([_FakeHubItem('1')])
-
-        _ensureHubReselectReach(host, hub, 'hub-a')
-
-        self.assertEqual([], host.extendCalls)
-
-    def test_no_op_when_remembered_position_is_none(self):
-        """A ratingKey-only reselect entry (pos=None) - _extendHubToPosition() itself couldn't
-        act on a None position anyway (needs pos+1 to compute a fetch size)."""
-        host = self._Bag()
-        host._hubReselectPositions['hub-a'] = ('999', None)
-        hub = _FakeHubWithItems([_FakeHubItem('1')])
-
-        _ensureHubReselectReach(host, hub, 'hub-a')
-
-        self.assertEqual([], host.extendCalls)
-
-
 class _FakeOnFocusHost(object):
     """A hand-built double carrying only what LibraryWindow.onFocus() (the real, unbound method
     under test below) actually touches for a 'recommended'-mode, non-SECTION_LIST_ID focus event -
@@ -1473,3 +1287,112 @@ class OnFocusHubEntryFlagTest(KodiTestCase):
         onFocus(host, self.ANCHOR_CONTROL_ID)
 
         self.assertFalse(host._hubJustEnteredFromOutside)
+
+
+class MigrateOldContinueWatchingTest(KodiTestCase):
+    """LibraryWindow._migrateOldContinueWatching() - the one-time rewrite loadHubSettings() runs
+    on a saved hub config: the server's old separate home.continue/home.ondeck home hubs no longer
+    exist (plexserver.hubs() always substitutes the combined continueWatching hub), so a custom
+    config still listing them must list continueWatching instead or the row vanishes."""
+
+    migrate = library.LibraryWindow._migrateOldContinueWatching
+
+    def test_old_pair_becomes_one_continue_watching_entry_at_the_earliest_position(self):
+        settings = {None: {'custom': True, 'hubs': [
+            {'catalog_id': 'home.movies.recent', 'order': 0},
+            {'catalog_id': 'home.continue', 'order': 1},
+            {'catalog_id': 'home.ondeck', 'order': 2},
+            {'catalog_id': 'home.music.recent', 'order': 3},
+        ]}}
+        self.assertTrue(self.migrate(settings))
+        self.assertEqual(
+            [('home.movies.recent', 0), ('continueWatching', 1), ('home.music.recent', 2)],
+            [(h['catalog_id'], h['order']) for h in settings[None]['hubs']])
+
+    def test_old_entries_just_drop_when_continue_watching_is_already_listed(self):
+        settings = {None: {'custom': True, 'hubs': [
+            {'catalog_id': 'continueWatching', 'order': 0},
+            {'catalog_id': 'home.ondeck', 'order': 1},
+        ]}}
+        self.assertTrue(self.migrate(settings))
+        self.assertEqual(['continueWatching'], [h['catalog_id'] for h in settings[None]['hubs']])
+
+    def test_every_section_is_rewritten_not_just_home(self):
+        settings = {'3': {'custom': True, 'hubs': [
+            {'catalog_id': 'home.continue', 'order': 0},
+            {'catalog_id': '3:movie.recentlyadded', 'order': 1},
+        ]}}
+        self.assertTrue(self.migrate(settings))
+        self.assertEqual(['continueWatching', '3:movie.recentlyadded'],
+                         [h['catalog_id'] for h in settings['3']['hubs']])
+
+    def test_a_config_without_the_old_ids_is_left_alone(self):
+        hubs = [{'catalog_id': 'home.movies.recent', 'order': 0}]
+        settings = {None: {'custom': True, 'hubs': hubs}, '3': {'custom': False}}
+        self.assertFalse(self.migrate(settings))
+        self.assertIs(hubs, settings[None]['hubs'])
+
+    def test_empty_or_missing_settings_are_fine(self):
+        self.assertFalse(self.migrate({}))
+        self.assertFalse(self.migrate(None))
+
+
+class _TitledHub(object):
+    def __init__(self, title, hub_identifier):
+        self.title = title
+        self.hubIdentifier = hub_identifier
+
+
+class _TitledSection(object):
+    def __init__(self, title):
+        self.title = title
+
+
+class HomeHubDisplayTitleTest(KodiTestCase):
+    """LibraryWindow.homeHubDisplayTitle()/promotedHubSourceKey() - a library hub the server
+    promotes onto Home (trailing section-id suffix on its hubIdentifier) is shown with its library
+    named, Home's own hubs stay bare."""
+
+    sections = {'32': _TitledSection('Other Videos'), '22': _TitledSection('Movies')}
+
+    def title(self, hub_title, hub_identifier, ambiguous=None):
+        host = library.LibraryWindow.__new__(library.LibraryWindow)
+        if ambiguous is None:
+            ambiguous = {hub_title.lower()}
+        return library.LibraryWindow.homeHubDisplayTitle(
+            host, _TitledHub(hub_title, hub_identifier), ambiguous, self.sections.get)
+
+    def test_ambiguous_titles_are_the_ones_shared_between_hubs(self):
+        hubs = [_TitledHub('Continue Watching', 'continueWatching'),
+                _TitledHub('Continue Watching', 'video.inprogress.32'),
+                _TitledHub('Recently Released Movies', 'movie.recentlyreleased.22'),
+                _TitledHub('', 'x'), _TitledHub(None, 'y')]
+        self.assertEqual({'continue watching'}, library.LibraryWindow.ambiguousHubTitles(hubs))
+
+    def test_a_promoted_hub_with_an_unshared_title_stays_bare(self):
+        self.assertEqual('Recently Released Movies',
+                         self.title('Recently Released Movies', 'movie.recentlyreleased.22', ambiguous=set()))
+
+    def test_source_key_is_the_single_trailing_suffix_on_home(self):
+        self.assertEqual('32', library.LibraryWindow.promotedHubSourceKey('video.inprogress.32'))
+        self.assertEqual('10', library.LibraryWindow.promotedHubSourceKey('music.recent.played.10'))
+
+    def test_source_key_is_the_section_not_the_instance_for_a_two_suffix_identifier(self):
+        self.assertEqual('22', library.LibraryWindow.promotedHubSourceKey('movie.recentlyadded.22.1'))
+
+    def test_homes_own_hubs_have_no_source_key(self):
+        for ident in ('home.movies.recent', 'continueWatching', 'home.playlists', '', None):
+            self.assertIsNone(library.LibraryWindow.promotedHubSourceKey(ident), ident)
+
+    def test_a_promoted_library_hub_names_its_library(self):
+        self.assertEqual(u'Continue Watching \u2013 Other Videos',
+                         self.title('Continue Watching', 'video.inprogress.32'))
+
+    def test_homes_own_hub_stays_bare(self):
+        self.assertEqual('Continue Watching', self.title('Continue Watching', 'continueWatching'))
+
+    def test_an_unresolvable_library_stays_bare(self):
+        self.assertEqual('Recently Played Music', self.title('Recently Played Music', 'music.recent.played.10'))
+
+    def test_a_title_identical_to_the_library_name_stays_bare(self):
+        self.assertEqual('Movies', self.title('Movies', 'movie.something.22'))

@@ -779,12 +779,6 @@ class Settings(object):
                     T(33714, 'Resume in-progress items directly instead of visiting the media.')
                 ),
                 BoolSetting(
-                    'hubs_use_new_continue_watching', T(32998, 'Use new Continue Watching hub on Home'), False
-                ).description(
-                    T(32999, "Instead of separating Continue Watching and On Deck hubs, behave like the modern "
-                             "Plex clients, which combine those two types of hubs into one Continue Watching hub.")
-                ),
-                BoolSetting(
                     'hubs_linear', T(34091, 'Linear Hubs'), False
                 ).description(
                     T(34092, "Certain hubs, such as Top Unwatched Movies, are randomized by Plex by default, "

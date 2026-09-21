@@ -567,6 +567,14 @@ class LibrarySettings(object):
         self._mutate(apply_)
 
 
+class _CatalogHub(object):
+    """Just enough of a hub (title + hubIdentifier) for LibraryWindow.homeHubDisplayTitle() to
+    re-label a Manage Hubs catalog entry, which stores those as plain fields."""
+    def __init__(self, title, hub_identifier):
+        self.title = title
+        self.hubIdentifier = hub_identifier
+
+
 class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin, windowutils.SidebarMixin, CommonMixin):
     bgXML = 'script-plex-blank.xml'
     path = util.ADDON.getAddonInfo('path')
@@ -5339,11 +5347,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # Hub identifiers that have mixed content (movies + episodes) - always use poster format
     HUBS_MIXED_CONTENT = {
         'continueWatching',  # Combined continue watching hub (modern Plex clients) - mixed movies/episodes
-        'home.ondeck',  # Old-style On Deck hub - uses show posters
         'tv.inprogress', 'tv.ondeck', 'movie.inprogress',
     }
-    # Note: home.continue (old Continue Watching) is NOT in HUBS_MIXED_CONTENT
-    # because it shows episodes only and should use 16x9 thumbnails
+    # The server's old separate home.continue (episodes, 16:9) / home.ondeck (show posters) pair
+    # no longer reaches here at all - plexserver.hubs() always substitutes the combined
+    # continueWatching hub (removed outright 2026-09-21, along with the
+    # hubs_use_new_continue_watching setting that used to choose).
 
     def getHubDisplayType(self, hub, identifier):
         """Determine the display type for a hub: 'poster', 'ar16x9', or 'square'.
@@ -5397,15 +5406,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         'home.top_watchlisted', 'home.coming-soon', 'home.trending-friends',
         'home.trending-for-you', 'home.new-for-you',
     }
-    # Same set, reused for a different reason (plan item 10, Group A): these are curated/algorithmic
-    # Discover-sourced hubs, not paginated library listings - live-confirmed hub.more() reports True
-    # for them (Watchlist's Coming Soon/Recently Added, both well under a single page) even though
-    # there's nothing more the server will actually return, so the "load more" placeholder
-    # (_bindHubToControl()/extendHubCallback() below) briefly showed a loading spinner then vanished
-    # on every one of them with nothing to show for it. Kept as its own separately-named constant
-    # (not just reusing HUBS_NO_PROGRESS directly at each call site) since the two exclusions exist
-    # for different reasons and may not always coincide, even though they currently do.
-    HUBS_NO_PAGINATION = HUBS_NO_PROGRESS
+    # Same set, reused for a different reason: these are curated/algorithmic Discover-sourced
+    # hubs, not library listings - live-confirmed hub.more reports True for them (Watchlist's
+    # Coming Soon/Recently Added, both well under a page) even though there's nothing more the
+    # server will actually return, so they get no "See more" item (_bindHubToControl()). Was
+    # HUBS_NO_PAGINATION, gating the old in-row "load more" placeholder for the same reason.
+    # Kept as its own separately-named constant (not just reusing HUBS_NO_PROGRESS directly at
+    # each call site) since the two exclusions exist for different reasons and may not always
+    # coincide, even though they currently do.
+    HUBS_NO_SEE_MORE = HUBS_NO_PROGRESS
 
     def getHubRenderFlags(self, hub, identifier):
         """Get rendering flags for a hub based on identifier patterns and content.
@@ -5543,8 +5552,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         'home.music.': 'square',
         'home.photos.': 'square',
         'home.videos.': 'ar16x9',
-        # Old-style split Continue Watching hub (episodes only)
-        'home.continue': 'ar16x9',
         # Hub prefixed variants
         'hub.tv.': 'poster',
         'hub.show.': 'poster',
@@ -5608,6 +5615,44 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         except:
             util.ERROR()
 
+        if self._migrateOldContinueWatching(self.hubSettings):
+            self.saveHubSettings()
+
+    # The server's old separate Continue Watching / On Deck home hubs, dropped outright
+    # (2026-09-21) in favour of the combined continueWatching hub the modern clients show -
+    # plexserver.hubs() no longer yields them, so a saved hub config still naming one would
+    # leave the user with no Continue Watching row at all (a custom config only shows what it
+    # lists). Was previously a per-mode choice (hubs_use_new_continue_watching), toggled by a
+    # both-ways mapping in getEnabledHubsForSection()/sortHubsByUserOrder()/showHubSettingsDialog();
+    # now a one-way, one-time rewrite of the saved config on load instead.
+    OLD_CONTINUE_WATCHING_IDS = ('home.continue', 'home.ondeck')
+
+    @classmethod
+    def _migrateOldContinueWatching(cls, hub_settings):
+        """Rewrites every section's saved hub list in place: the old home.continue/home.ondeck
+        entries become one continueWatching entry at the earliest of their positions (or just
+        disappear if continueWatching is already listed), orders renumbered. Every section, not
+        just Home - a library's custom config can pull Home's hubs in cross-section, under the
+        same catalog ids. Returns whether anything changed (the caller saves)."""
+        changed = False
+        for section_config in (hub_settings or {}).values():
+            hubs = section_config.get('hubs') if isinstance(section_config, dict) else None
+            if not hubs:
+                continue
+            old = [h for h in hubs if h.get('catalog_id', h.get('identifier')) in cls.OLD_CONTINUE_WATCHING_IDS]
+            if not old:
+                continue
+            kept = [h for h in hubs if h not in old]
+            if not any(h.get('catalog_id', h.get('identifier')) == 'continueWatching' for h in kept):
+                kept.append({'catalog_id': 'continueWatching',
+                             'order': min(h.get('order', 999) for h in old)})
+            kept.sort(key=lambda h: h.get('order', 999))
+            for i, h in enumerate(kept):
+                h['order'] = i
+            section_config['hubs'] = kept
+            changed = True
+        return changed
+
     def saveHubSettings(self):
         setting_key = 'hub.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:],
                                                   plexapp.ACCOUNT.ID)
@@ -5639,21 +5684,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if not section_config or not section_config.get('custom'):
             return None
 
-        enabled = {h.get('catalog_id', h.get('identifier')) for h in section_config.get('hubs', [])}
-
-        # When CW mode changes, the hub identifiers change but saved config may have old ones.
-        # Map between them so hubs stay enabled after switching modes.
-        if section_key is None:  # Home section only
-            use_new_continue_watching = util.getSetting('hubs_use_new_continue_watching', False)
-            if use_new_continue_watching:
-                if 'home.continue' in enabled or 'home.ondeck' in enabled:
-                    enabled.add('continueWatching')
-            else:
-                if 'continueWatching' in enabled:
-                    enabled.add('home.continue')
-                    enabled.add('home.ondeck')
-
-        return enabled
+        # No old/new Continue Watching identifier mapping any more - loadHubSettings() migrates
+        # saved configs to continueWatching once, up front.
+        return {h.get('catalog_id', h.get('identifier')) for h in section_config.get('hubs', [])}
 
     def isHubHidden(self, identifier, section_key=None):
         """Check if user has explicitly hidden this hub.
@@ -5676,8 +5709,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             catalog_id = '{}:{}'.format(section_key, identifier)
 
-        # Use getEnabledHubsForSection so CW mode mapping is applied consistently.
-        # (e.g. config has 'continueWatching' but old mode expects 'home.continue'/'home.ondeck')
         enabled = self.getEnabledHubsForSection(section_key)
         if enabled is None:
             return False
@@ -5699,22 +5730,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             for idx, hub_config in enumerate(section_config.get('hubs', [])):
                 cat_id = hub_config.get('catalog_id', hub_config.get('identifier'))
                 user_order[cat_id] = hub_config.get('order', idx)
-
-        # When CW mode changes, map order between old/new identifiers so user ordering is preserved.
-        if section_key is None:  # Home section only
-            use_new_continue_watching = util.getSetting('hubs_use_new_continue_watching', False)
-            if use_new_continue_watching:
-                if 'home.continue' in user_order and 'continueWatching' not in user_order:
-                    user_order['continueWatching'] = user_order['home.continue']
-                elif 'home.ondeck' in user_order and 'continueWatching' not in user_order:
-                    user_order['continueWatching'] = user_order['home.ondeck']
-            else:
-                if 'continueWatching' in user_order:
-                    cw_order = user_order['continueWatching']
-                    if 'home.continue' not in user_order:
-                        user_order['home.continue'] = cw_order
-                    if 'home.ondeck' not in user_order:
-                        user_order['home.ondeck'] = cw_order + 0.5
 
         # Pre-compute hub index lookup for O(1) access instead of O(n) per hub
         hubs_list = list(hubs)
@@ -5813,6 +5828,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 pass
             except Exception:
                 pass
+
+        # A library's own hub promoted to Home by the server is catalogued as a Home hub, so
+        # Manage Hubs labelled it "[Home]" like every other - which for Other Videos' in-progress
+        # hub meant a second, indistinguishable "Continue Watching [Home]" next to the real
+        # combined one (live-reported 2026-09-21). homeHubDisplayTitle() names the library in
+        # the title when the bare title is shared by another Home entry (same rule the row
+        # itself uses, against the catalog's Home entries here rather than the visible rows);
+        # resolved against the allSections just built here rather than the sidebar, so a
+        # library hidden from the sidebar still labels. Title only - source_section_title stays
+        # "Home", it's what the dialog groups by.
+        home_entries = [_CatalogHub(info['title'], info['hubIdentifier'])
+                        for info in availableHubs.values() if info['source_section_key'] is None]
+        ambiguous = self.ambiguousHubTitles(home_entries)
+        for hub_info in availableHubs.values():
+            if hub_info['source_section_key'] is None:
+                hub_info['title'] = self.homeHubDisplayTitle(
+                    _CatalogHub(hub_info['title'], hub_info['hubIdentifier']), ambiguous, allSections.get)
 
         self.availableHubs = availableHubs
         self.allSections = allSections
@@ -6090,41 +6122,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         section_key = section.key
         section_title = section.title if hasattr(section, 'title') else 'Home'
         self._managingHubsForSectionTitle = section_title
-
-        config_key = str(section_key) if section_key is not None else None
-
-        section_config = self.hubSettings.get(config_key, {}) if self.hubSettings else {}
-        has_custom_config = section_config.get('custom', False)
-        configured_hubs = section_config.get('hubs', []) if has_custom_config else []
-
-        if section_key is None and has_custom_config and configured_hubs:
-            use_new_continue_watching = util.getSetting('hubs_use_new_continue_watching', False)
-            configured_ids = {h.get('catalog_id', h.get('identifier')) for h in configured_hubs}
-            if use_new_continue_watching and ('home.continue' in configured_ids or 'home.ondeck' in configured_ids) \
-                    and 'continueWatching' not in configured_ids:
-                old_entries = [h for h in configured_hubs
-                               if h.get('catalog_id') in ('home.continue', 'home.ondeck')]
-                min_order = min(h.get('order', 999) for h in old_entries)
-                new_hubs = [h for h in configured_hubs
-                            if h.get('catalog_id') not in ('home.continue', 'home.ondeck')]
-                new_hubs.append({'catalog_id': 'continueWatching', 'order': min_order})
-                new_hubs.sort(key=lambda h: h.get('order', 999))
-                for i, h in enumerate(new_hubs):
-                    h['order'] = i
-                section_config['hubs'] = new_hubs
-                self.saveHubSettings()
-            elif not use_new_continue_watching and 'continueWatching' in configured_ids \
-                    and 'home.continue' not in configured_ids and 'home.ondeck' not in configured_ids:
-                cw_entry = next(h for h in configured_hubs if h.get('catalog_id') == 'continueWatching')
-                cw_order = cw_entry.get('order', 0)
-                new_hubs = [h for h in configured_hubs if h.get('catalog_id') != 'continueWatching']
-                new_hubs.append({'catalog_id': 'home.continue', 'order': cw_order})
-                new_hubs.append({'catalog_id': 'home.ondeck', 'order': cw_order + 0.5})
-                new_hubs.sort(key=lambda h: h.get('order', 999))
-                for i, h in enumerate(new_hubs):
-                    h['order'] = i
-                section_config['hubs'] = new_hubs
-                self.saveHubSettings()
 
         options = self._buildHubSettingsOptions(section_key, section_title)
         if not options:
@@ -6563,13 +6560,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # which is never inside grouplist 50's own clip range regardless of which two controls
     # currently hold it, that rebind is always safely off-screen, never visible.
     HUB_ROTATION_RING = (403, 401, 400, 402, 404)
-    # _bindHubToControl()'s "select ahead, then back" scroll-in trick (mirrors keyClicked()'s own
-    # CHUNK_OVERCOMMIT for the poster grid) - a plain constant, not per-viewtype like
-    # CHUNK_OVERCOMMIT, since hub display type (poster/square/ar16x9) is a per-*hub* property, not
-    # a per-window one the way grid viewtype is; no single control class to hang a delegated
-    # override off. An approximation of "enough items to not land the target at the row's very
-    # trailing edge" across every display type, not pixel-exact.
-    HUB_ROW_SELECT_OVERCOMMIT = 2
     # Each ring control's own wrapper control id (script-plex-recommended.xml.tpl groups
     # 500-504) - fixed, structural, so "moving" a control between roles means repositioning
     # *its* wrapper, not re-parenting the list control itself. Ported verbatim from
@@ -6854,18 +6844,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         _bindHubToControl()'s own reselect resolution (ratingKey first, then position), reading
         the same self._hubReselectPositions entry that method will use moments later. Falls back
         to the hub's first item when there's no remembered position (never-visited hub) or it
-        can't be resolved (e.g. a still-unextended page).
+        can't be resolved (the hub's content shrank).
 
-        _ensureHubReselectReach() first (live-reported 2026-09-04): without it, a remembered
-        position beyond hub.items' freshly-(re)fetched first page always fell through to
-        hub.items[0] here specifically, even once _bindHubToControl() correctly extended and
-        selected the real target moments later - the hero art/title/summary showed the wrong
-        item's info while the row itself showed the right one."""
+        Every remembered position is within hub.items by construction now: a row holds at most
+        home.HUB_ROW_MAX_ITEMS, all fetched up front (SectionHubsTask), so the old reach-extension
+        step (_ensureHubReselectReach()/_extendHubToPosition(), which grew a first page to cover a
+        position reached by in-row pagination last visit) is gone along with that pagination."""
         if not hub.items:
             return None
         is_home = self.section.key is None
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
-        self._ensureHubReselectReach(hub, identifier)
         reselect = self._hubReselectPositions.get(identifier)
         if reselect:
             rk, pos = reselect
@@ -6917,9 +6905,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def checkHubItem(self, control_id, action=None):
         """Horizontal (left/right) in-row hub navigation - hero-art sync (delegated to
-        _updateHeroFromFocusedHubItem() above), pagination, and reselect-position memory, all
-        hooked into this one call site (onAction()'s hub-row branch). Port of
-        HomeWindow.checkHubItem() (home.py), plan item 10 Group A (quiet-orbiting-heron.md).
+        _updateHeroFromFocusedHubItem() above) and reselect-position memory, both hooked into
+        this one call site (onAction()'s hub-row branch). Port of HomeWindow.checkHubItem()
+        (home.py), plan item 10 Group A (quiet-orbiting-heron.md). In-row pagination (the old
+        "load more" placeholder this also used to trigger) is gone - a row is capped at
+        home.HUB_ROW_MAX_ITEMS, see _bindHubToControl().
 
         Round-robin wraparound (the old hubs_round_robin setting) was deliberately dropped after
         this landed, not ported: pressing Left at a row's first item already exits to the sidebar
@@ -6940,13 +6930,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """
         control = self.hubControls[control_id - self.HUB_CONTROL_ID]
         mli = control.getSelectedItem()
-        is_valid_mli = mli and mli.getProperty('is.end') != '1'
+        # The "See more" item (is.more) has no dataSource - nothing to sync the hero to, and not
+        # a position worth remembering (the reselect would land on it, not on content).
+        is_valid_mli = mli and mli.getProperty('is.more') != '1'
 
         if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
             pos = control.getSelectedPos()
             if pos is not None and pos > 0:
                 control.selectItem(0)
                 self.updateHeroFrom(control[0].dataSource)
+                # Forget the remembered position too - selectItem() is Python-initiated, so the
+                # MOVE_SET path below that normally records the reselect position never runs
+                # for it, and the stale entry would put the row straight back where it was the
+                # next time it's rebuilt (sliding far enough for the wrap-control rebind,
+                # _bindHubToControl()) - live-reported 2026-09-21.
+                if control.dataSource:
+                    identifier = control.dataSource.getCleanHubIdentifier(is_home=self.section.key is None)
+                    self._hubReselectPositions.pop(identifier, None)
                 return False
             # Already at item 0 - nothing for this method to do; tell the caller to let the
             # NAV_BACK/PREVIOUS_MENU action propagate instead of swallowing it.
@@ -6965,85 +6965,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 pos = control.getSelectedPos()
                 if pos is not None and mli.dataSource is not None:
                     self._hubReselectPositions[identifier] = (str(mli.dataSource.ratingKey), pos)
-            return
 
-        # Pagination: the selected item is the row's "load more" placeholder (is.end, appended by
-        # _bindHubToControl()/extendHubCallback() whenever the hub's own hub.more says there's
-        # another page beyond what's currently bound).
-        if not mli or mli.getProperty('is.updating') == '1':
-            return
-
-        mli.setBoolProperty('is.updating', True)
-        task = home.ExtendHubTask().setup(
-            control.dataSource, self.extendHubCallback,
-            canceledCallback=lambda hub: mli.setBoolProperty('is.updating', False))
-        self.tasks.add(task)
-        backgroundthread.BGThreader.addTask(task)
-
-    def extendHubCallback(self, hub, items, reselect_pos=None):
-        """ExtendHubTask's callback - pagination result. reselect_pos is accepted, not read - it's
-        always passed through by ExtendHubTask.run() (defaults None); only meant anything for the
-        round-robin wraparound trigger, which was deliberately dropped (see checkHubItem()'s own
-        docstring). Simpler than
-        HomeWindow.extendHubCallback()/updateHubCallback() (home.py): no sectionHubs-search dance
-        needed to find which control is showing hub - D2's model already tracks that directly via
-        each control's own .dataSource. Plan item 10, Group A (quiet-orbiting-heron.md).
-
-        Replaces the "load more" placeholder (the is.end item that triggered this fetch -
-        checkHubItem() always leaves it as the control's own last item, since selecting it is what
-        starts the fetch) with the first newly-fetched item, then appends the rest - same shape
-        HomeWindow.showHub()'s own update path used (home.py: `control.replaceItem(end, items[0]);
-        control.addItems(items[1:])`), not a full replaceItems() rebind. Explicitly reselects that
-        same index afterward (`control.selectItem(end)` in the original too, unconditionally here
-        since reselect_pos-driven round-robin positioning no longer exists) - live-confirmed
-        needed, not optional: neither replaceItem() nor addItems() actually preserves the native
-        container's selected position on their own, so without this the row visibly snapped back
-        to item 0 the moment a page finished loading. Appends a fresh is.end placeholder after the
-        new batch if hub.more says there's still another page beyond it - same condition
-        _bindHubToControl() uses for the initial bind."""
-        if self.closing or self.contentMode != 'recommended':
-            return
-
-        control = next((c for c in self.hubControls if c.dataSource is hub), None)
-        if control is None:
-            # Hub scrolled off / rotated away, or the section was left entirely, since this fetch
-            # was scheduled - hub.items itself was already extended by ExtendHubTask, so nothing
-            # is lost, just nothing left to bind into right now.
-            return
-
-        identifier = hub.getCleanHubIdentifier(is_home=self.section.key is None)
-        flags = self.getHubRenderFlags(hub, identifier)
-        new_mlis = [mli for mli in
-                    (self.createListItem(obj, wide=flags['with_art']) for obj in items) if mli]
-        if flags['with_progress']:
-            for mli in new_mlis:
-                mli.setProperty('progress', util.getProgressImage(mli.dataSource))
-
-        if hub.more.asBool() and identifier not in self.HUBS_NO_PAGINATION:
-            end = kodigui.ManagedListItem('')
-            end.setBoolProperty('is.end', True)
-            new_mlis.append(end)
-
-        if not new_mlis:
-            # The fetch came back empty despite hub.more - drop the stale placeholder rather than
-            # leaving it stuck mid-update (is.updating='1') forever.
-            if control.size():
-                control.removeItem(control.size() - 1)
-            return
-
-        end_index = control.size() - 1
-        control.replaceItem(end_index, new_mlis[0])
-        if len(new_mlis) > 1:
-            control.addItems(new_mlis[1:])
-        control.selectItem(end_index)
-
-        # Sync the hero overlay too - control.selectItem() above is a Python-initiated selection
-        # change, not a real keypress onAction() would otherwise catch and hand to checkHubItem()
-        # for its own hero-sync. Only if this hub row is still the anchor (the fetch is
-        # async - the user may have slid to a different row by the time it lands, in which case
-        # the anchor's own hero state must not be overwritten by a row that's no longer focused).
-        if control is self.hubControls[self._anchorControlId() - self.HUB_CONTROL_ID]:
-            self.updateHeroFrom(new_mlis[0].dataSource)
+    def hubSeeMoreClicked(self, hub):
+        """The row's trailing "See more" item (is.more, _bindHubToControl()) was clicked. Meant
+        to open a grid of the hub's full listing (hub.key / hub.hubKey is that endpoint) - that
+        screen isn't built yet, so this only logs for now (on request, 2026-09-21: the item and
+        the 20-item row cap first, the grid afterwards)."""
+        util.DEBUG_LOG('Hub "See more" clicked (grid not built yet): {0}', hub)
 
     def _anchorControlId(self):
         """Whichever physical control (400-404) is currently serving the anchor role. Ported
@@ -7118,9 +7046,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # `is None`, not truthiness: an unopened Playlist (home.playlists hub) is falsy -
         # BasePlaylist.__len__() is its item count, empty until opened - so a truthiness check
         # silently swallowed every playlist click here (live-reported 2026-09-20). Same trap
-        # showPanelClicked()/setHeroInfo() document. The is.end placeholder has no dataSource at
-        # all, so it still returns here.
+        # showPanelClicked()/setHeroInfo() document.
         if not mli or mli.dataSource is None:
+            if mli and mli.getProperty('is.more') == '1':
+                self.hubSeeMoreClicked(control.dataSource)
             return
 
         # In-progress auto-resume - ported from HomeWindow.hubItemClicked() (home.py).
@@ -7247,6 +7176,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             catalog_id = '{}:{}'.format(hub_source_key, clean_identifier)
 
         hub_title = hub.__dict__.get('_displayTitle') or hub.title or clean_identifier
+        if hub_is_home:
+            hub_title = self.homeHubDisplayTitle(hub, self.ambiguousHubTitles(self.visibleHubs))
 
         select_base = 0
 
@@ -7254,7 +7185,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         has_prev = False
         is_watchlist = self.lastSection == home.watchlist_section
         # Don't allow disabling hubs for watchlist or main CW/On Deck hubs
-        if not is_watchlist and hub.hubIdentifier not in ("continueWatching", "home.continue", "home.ondeck"):
+        if not is_watchlist and hub.hubIdentifier != "continueWatching":
             options.append({'key': 'disable_hub', 'display': T(33659, "Disable Hub: {}").format(hub_title)})
             has_prev = True
 
@@ -7274,7 +7205,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 has_mp = True
 
             if ds.TYPE in ('episode', 'movie'):
-                if (hub.hubIdentifier in ("continueWatching", "home.continue", "home.ondeck") or
+                if (hub.hubIdentifier == "continueWatching" or
                         clean_identifier in ("tv.inprogress", "movie.inprogress")):
                     # allow removing items from CW / On Deck
                     options.append(dropdown.SEPARATOR)
@@ -7411,6 +7342,60 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             except Exception as e:
                 util.DEBUG_LOG("Couldn't clear cache: {}", e)
 
+    @staticmethod
+    def promotedHubSourceKey(hub_identifier):
+        """The library section key a server-promoted Home hub belongs to, or None for Home's
+        own hubs. On Home the server lists a library's own hubs alongside Home's (promoted="1"),
+        told apart only by a trailing section-id suffix on the hubIdentifier -
+        video.inprogress.32, movie.recentlyreleased.22, music.recent.played.10 - where Home's
+        own carry none (home.movies.recent, continueWatching). A section's own hub listing
+        uses two suffixes (section + instance, movie.recentlyadded.22.1 - see
+        BaseHub.getCleanHubIdentifier(), plexlibrary.py), so the section is the last numeric
+        part before any second numeric one, never blindly the last."""
+        parts = (hub_identifier or '').split('.')
+        digits = []
+        while parts and parts[-1].isdigit():
+            digits.append(parts.pop())
+        if not digits or not parts:
+            return None
+        return digits[-1]
+
+    @staticmethod
+    def ambiguousHubTitles(hubs):
+        """The titles (lower-cased) more than one of `hubs` shares - the set
+        homeHubDisplayTitle() disambiguates against. Bare titles only: a hub's own _displayTitle
+        isn't consulted, that's this same mechanism's output."""
+        seen, dupes = set(), set()
+        for hub in hubs:
+            title = (getattr(hub, 'title', None) or '').lower()
+            if title:
+                (dupes if title in seen else seen).add(title)
+        return dupes
+
+    def homeHubDisplayTitle(self, hub, ambiguous, lookup=None):
+        """The title a hub shows under on Home. A library hub promoted onto Home by the server
+        gets its library named ("Continue Watching – Other Videos"), but only when its bare
+        title is ambiguous - shared with another hub on Home (`ambiguous`, from
+        ambiguousHubTitles() over whatever set the caller shows: the visible rows, or the Manage
+        Hubs catalog). The case: Other Videos' own in-progress hub is titled plain "Continue
+        Watching", indistinguishable from the combined continueWatching hub next to it (live-
+        reported 2026-09-21, first in Manage Hubs, then the row itself). Not every promoted hub
+        (Recently Released Movies etc.) - on request, only the ambiguous ones; and an en dash,
+        not home.attributeCrossSectionHub()'s em dash, also on request. Home's own hubs stay
+        bare, as does one whose title already is the library's name. `lookup` resolves a
+        section key to its section (default: the sidebar's own list, sectionByKey()); an
+        unresolvable key (hidden library) leaves the title bare rather than guessing."""
+        title = hub.__dict__.get('_displayTitle') or hub.title or ''
+        if not title or title.lower() not in ambiguous:
+            return title
+        source_key = self.promotedHubSourceKey(getattr(hub, 'hubIdentifier', None))
+        if source_key is None:
+            return title
+        section = (lookup or self.sectionByKey)(source_key)
+        if section is None or not section.title or section.title.lower() == title.lower():
+            return title
+        return u'{} – {}'.format(title, section.title)
+
     def _bindHubToControl(self, hub, control_index):
         """Populate physical hub-row control HUB_CONTROL_ID + control_index with hub's content -
         the properties/dataSource/items population D1's flat _recommendedHubsCallback() did
@@ -7418,23 +7403,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         bind and _startHubSlide()'s wrap-control rebind need to do exactly this for one control
         at a time. Deliberately NOT HomeWindow.showHub()/_showHub() - those also handle hero-art/
         spoiler/cache-clearing, out of scope for D2 (see this block's own header comment).
-        Reselect-position restoration (plan item 10, Group A) and the pagination "load more"
-        placeholder (is.end - checkHubItem() below is what actually acts on it) are handled here
-        though, ported from that same HomeWindow.showHub()."""
+        Reselect-position restoration (plan item 10, Group A) and the row's trailing "See more"
+        item (is.more - hubItemClicked() is what acts on it) are handled here though; the former
+        ported from that same HomeWindow.showHub()."""
         is_home = self.section.key is None
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
-
-        # Close any reselect-position gap (see _ensureHubReselectReach()'s own docstring) before
-        # items gets built below, so this method binds the fully-extended hub in a single pass -
-        # _bindAllHubSlots() already called this once for the anchor hub, before hero-art preview
-        # (_previewSelectedItem()), so this is usually already a no-op by the time it gets here for
-        # that same hub - kept anyway, both for every non-anchor hub (peek rows) and as a harmless
-        # safety net.
-        self._ensureHubReselectReach(hub, identifier)
 
         display_type = self.getHubDisplayType(hub, identifier)
         flags = self.getHubRenderFlags(hub, identifier)
         title = hub.__dict__.get('_displayTitle') or hub.title or ''
+        if is_home:
+            title = self.homeHubDisplayTitle(hub, self.ambiguousHubTitles(self.visibleHubs))
 
         # Row title label reads $INFO[Window.Property(hub.{{ id - 100 }})] (id 500-504, so
         # property name is hub.400 .. hub.404) - same property name/format
@@ -7449,8 +7428,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         control = self.hubControls[control_index]
         control.dataSource = hub
+        # [:HUB_ROW_MAX_ITEMS]: SectionHubsTask already fetches exactly that many, so this is a
+        # no-op for a server hub; it's for anything that builds hub.items some other way
+        # (PlaylistHub's own fixed fetch, plexlibrary.py) - the cap is the row's, not the fetch's.
         items = [mli for mli in
-                (self.createListItem(obj, wide=flags['with_art']) for obj in hub.items) if mli]
+                (self.createListItem(obj, wide=flags['with_art'])
+                 for obj in hub.items[:home.HUB_ROW_MAX_ITEMS]) if mli]
 
         # getHubRenderFlags() above already computes with_progress (hub-identifier-based - e.g.
         # False for watchlist/discovery hubs via HUBS_NO_PROGRESS), but nothing ever acted on it -
@@ -7470,122 +7453,38 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             for mli in items:
                 mli.setProperty('progress', util.getProgressImage(mli.dataSource))
 
-        # Pagination "load more" placeholder - ported from HomeWindow.showHub() (home.py):
-        # `if hub.more.asBool(): end = ManagedListItem(''); end.setBoolProperty('is.end', True);
-        # items.append(end)`. Its own empty title/no dataSource is what makes checkHubItem()'s
-        # `not mli.getProperty('is.end')` early-return skip it, falling through to actually
-        # trigger ExtendHubTask once the user scrolls onto it - without this, hub.more being true
-        # never surfaced anywhere for the D2 port to act on, so pagination never fired at all
-        # (live-confirmed: no placeholder was ever created, so checkHubItem()'s pagination branch
-        # was dead code on every hub, round-robin setting on or off).
+        # Trailing "See more" item, when the row's cap cut the hub short (hub.more: the server
+        # had more than the HUB_ROW_MAX_ITEMS asked for; the len() check covers items built some
+        # other way, see the slice above). Replaces the old in-row "load more" placeholder
+        # (is.end + ExtendHubTask pagination) - on request, 2026-09-21: a row loads all of its
+        # items up front and never pages. Its empty label/no dataSource is what checkHubItem()/
+        # hubItemClicked() key off (is.more); the label is the item's own caption
+        # (hub_itemlayout_*.xml.tpl's "See more" pill reads ListItem.Label). HUBS_NO_SEE_MORE:
+        # hubs whose hub.more flag lies (see its own comment).
         #
-        # HUBS_NO_PAGINATION exclusion added after a second live-confirmed bug: hub.more() reports
-        # True for curated/algorithmic Discover hubs (Watchlist's Coming Soon/Recently Added, both
-        # well under a single page of content) even though the server has nothing more to actually
-        # return - the placeholder appeared, briefly showed a loading spinner once focused
-        # (ExtendHubTask firing for real), then silently vanished (extendHubCallback()'s own
-        # empty-fetch branch) with nothing gained. Same identifier set HUBS_NO_PROGRESS already
-        # uses to flag this exact category of hub for a different reason.
-        if hub.more.asBool() and identifier not in self.HUBS_NO_PAGINATION:
-            end = kodigui.ManagedListItem('')
-            end.setBoolProperty('is.end', True)
-            items.append(end)
-
-        control.replaceItems(items)
-
         # Reselect-position memory (plan item 10, Group A) - ported from
         # HomeWindow._hubReselectPositions, restored here since every rebind path (the initial
         # full bind and _startHubSlide()'s wrap-control rebind) funnels through this one method.
-        # ratingKey resolution first, falling back to the stored position - items now normally
-        # extends far enough to resolve either one, thanks to _ensureHubReselectReach() above;
-        # this final bounds check is what's left for a position that never existed at all (e.g.
-        # the hub's real content shrank) or that a failed/short fetch couldn't actually reach.
+        # ratingKey resolution first, falling back to the stored position; the bounds check is
+        # for a position that no longer exists (the hub's real content shrank). No "select ahead,
+        # then back" any more: the row is a fixedlist now (script-plex-recommended.xml.tpl), which
+        # places a selected item deterministically (pinned at the row's start, or spread across
+        # the last slots when the tail fits), not "scrolled the minimum to bring it on-screen".
+        if ((hub.more.asBool() or len(hub.items) > home.HUB_ROW_MAX_ITEMS)
+                and identifier not in self.HUBS_NO_SEE_MORE):
+            more = kodigui.ManagedListItem(T(35093, 'See more'))
+            more.setBoolProperty('is.more', True)
+            items.append(more)
+
+        control.replaceItems(items)
+
         reselect = self._hubReselectPositions.get(identifier)
         if reselect and items:
             rk, pos = reselect
             resolved = next((i for i, mli in enumerate(items)
                               if mli.dataSource and str(mli.dataSource.ratingKey) == rk), pos)
             if resolved is not None and 0 <= resolved < len(items):
-                # Select ahead first, then back to the real target - same idiom keyClicked() uses
-                # for the poster grid's own alphabet-jump (CHUNK_OVERCOMMIT there). A single
-                # selectItem() straight to a position that was never previously visible only
-                # scrolls the row the minimum needed to bring it on-screen, which for a jump this
-                # size (live-reported, 2026-09-04) lands it right at the trailing edge, partially
-                # clipped - selecting past it first, then back, gives the row somewhere further to
-                # have already scrolled to, leaving real breathing room on either side of the
-                # actual target. HUB_ROW_SELECT_OVERCOMMIT is an approximation (item width varies
-                # by hub display type - poster/square/ar16x9), not pixel-exact, same as
-                # CHUNK_OVERCOMMIT's own per-viewtype approximation.
-                overcommit_target = min(resolved + self.HUB_ROW_SELECT_OVERCOMMIT, len(items) - 1)
-                if overcommit_target != resolved:
-                    control.selectItem(overcommit_target)
                 control.selectItem(resolved)
-
-    def _ensureHubReselectReach(self, hub, identifier):
-        """Extends hub (via _extendHubToPosition()) if its own remembered reselect position
-        (self._hubReselectPositions) isn't resolvable within hub.items yet - a fresh 'recommended'
-        entry always re-fetches brand-new Hub objects starting back at their first page, even if
-        the position was only ever reached last visit by scrolling further (live-reported,
-        2026-09-03/04).
-
-        Shared by _bindAllHubSlots() (for the anchor hub, before _previewSelectedItem() - hero
-        art/title/summary must see the same, already-extended hub.items the row binding will use
-        moments later, or the hero panel shows the wrong (first) item's info while the row itself
-        correctly shows the restored one, live-reported 2026-09-04) and _bindHubToControl() (every
-        hub actually being bound, anchor included - idempotent by the time it gets here for the
-        anchor, a cheap len() check, no duplicate fetch).
-
-        Only attempted when the position genuinely isn't resolvable yet (ratingKey not already
-        present, mirroring the real resolution both callers do afterward) - avoids a wasted fetch
-        whenever the plain reselect would have succeeded anyway."""
-        reselect = self._hubReselectPositions.get(identifier)
-        if not reselect:
-            return
-        rk, pos = reselect
-        if (pos is not None and pos >= len(hub.items)
-                and not any(getattr(item, 'ratingKey', None) and str(item.ratingKey) == rk
-                            for item in hub.items)):
-            self._extendHubToPosition(hub, pos)
-
-    def _extendHubToPosition(self, hub, pos):
-        """One bounded, direct fetch to grow hub.items to at least pos+1+HUB_ROW_SELECT_OVERCOMMIT
-        real items (not just pos+1) - the consuming half of _bindHubToControl()'s own
-        reselect-gap check just above it, which is the only caller. Sequential from wherever
-        hub.items currently ends (home.ExtendHubTask's own `start = hub.offset + hub.size`
-        formula, mirrored exactly here, including its own side effect of overwriting
-        hub.offset/size/more to describe this fetch - Hub.extend() itself does that,
-        plexlibrary.py) - Hub.extend()'s underlying request supports an arbitrary start on its
-        own, but hub.items is an append-only accumulator with no gap-filling (see
-        ExtendHubTask.run()'s own comment on why it's kept authoritative at all), so a genuinely
-        non-sequential jump straight to `pos` would leave a hole every later position lookup would
-        silently misread against. Bounded by hub.more/leafCount naturally - the server just
-        returns fewer items than asked once it runs out, no explicit cap needed the way an
-        unbounded walk would need one. Swallows its own request failure (network/server error) -
-        this is a best-effort enhancement to an already-working fallback (item 0), not allowed to
-        break the Recommended tab bind it's called from.
-
-        The +HUB_ROW_SELECT_OVERCOMMIT (live-reported, 2026-09-04): fetching exactly pos+1 leaves
-        `pos` as hub.items' own last real item, so whatever _bindHubToControl()'s own "select
-        ahead, then back" scroll-in trick (same overcommit constant) selects ahead of `pos` lands
-        on the is.end "load more" placeholder instead of a real item - live-confirmed as landing
-        the placeholder immediately to the restored item's right, not a real item. Fetching a bit
-        further than strictly necessary gives that trick real content to select ahead onto, same
-        as how it was always intended to work for an ordinarily-scrolled-to position. No effect
-        when the hub's real content genuinely ends at/near `pos` - hub.more/leafCount still bound
-        this fetch exactly like before, this only asks for more, never guarantees it exists."""
-        if not hub.more.asBool():
-            return
-        start = hub.offset.asInt() + hub.size.asInt()
-        size = pos + 1 + self.HUB_ROW_SELECT_OVERCOMMIT - start
-        if size <= 0:
-            return
-        try:
-            items = hub.extend(start=start, size=size)
-        except Exception:
-            util.ERROR()
-            return
-        if items:
-            hub.items.extend(items)
 
     def _recommendedHubsCallbackFor(self, generation):
         """Wraps _recommendedHubsCallback() with the _listGeneration snapshot taken when the

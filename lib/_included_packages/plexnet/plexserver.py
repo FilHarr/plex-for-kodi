@@ -182,8 +182,11 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
 
         self.currentHubs = {} if self.currentHubs is None else self.currentHubs
 
-        newCW = util.INTERFACE.getPreference('hubs_use_new_continue_watching', False) and not search_query \
-            and not section
+        # Home always gets the combined Continue Watching hub (/hubs/continueWatching, what the
+        # modern Plex clients show) in place of the server's old separate home.continue/home.ondeck
+        # pair, which are dropped below. Used to be the hubs_use_new_continue_watching preference;
+        # the old pair was removed outright (2026-09-21), the preference with it.
+        newCW = not search_query and not section
 
         if newCW:
             cq = '/hubs/continueWatching'
@@ -201,7 +204,8 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                 hubIdent = elem.attrib.get('hubIdentifier')
                 self.currentHubs["{}:{}".format(section, hubIdent)] = elem.attrib.get('title')
 
-                # Skip old-style continue/ondeck hubs when using combined continueWatching
+                # Skip the old-style continue/ondeck hubs - the combined continueWatching hub
+                # above replaces them
                 if newCW and hubIdent and (hubIdent.startswith('home.continue') or hubIdent.startswith('home.ondeck')):
                     continue
 

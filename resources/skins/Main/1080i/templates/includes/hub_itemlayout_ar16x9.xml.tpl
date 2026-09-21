@@ -20,6 +20,9 @@
              ROW_CONTENT_HEIGHT (library.py) is derived from it. -->
         <posy>{{ vscale(52) }}</posy>
         <control type="group">
+            <!-- The whole card is hidden for the row's "See more" item (is.more) - see
+                 includes/hub_see_more_pill.xml.tpl, the sibling below that shows in its place. -->
+            <visible>String.IsEmpty(ListItem.Property(is.more))</visible>
             <control type="image">
                 <posx>0</posx>
                 <posy>0</posy>
@@ -29,32 +32,6 @@
             </control>
             <posx>3</posx>
             <posy>3</posy>
-            <control type="group">
-                <visible>!String.IsEmpty(ListItem.Property(is.end))</visible>
-                <control type="image">
-                    <posx>0</posx>
-                    <posy>0</posy>
-                    <width>512</width>
-                    <height>{{ vscale(288) }}</height>
-                    <texture colordiffuse="FF404040">script.plex/white-square.png</texture>
-                </control>
-                <control type="image">
-                    <visible>String.IsEmpty(ListItem.Property(is.updating))</visible>
-                    <posx>225.5</posx>
-                    <posy>{{ vscale(94) }}</posy>
-                    <width>61</width>
-                    <height>{{ vscale(100) }}</height>
-                    <texture colordiffuse="40000000">script.plex/indicators/chevron-white.png</texture>
-                </control>
-                <control type="image">
-                    <visible>!String.IsEmpty(ListItem.Property(is.updating))</visible>
-                    <posx>192</posx>
-                    <posy>{{ vscale(80) }}</posy>
-                    <width>128</width>
-                    <height>{{ vscale(128) }}</height>
-                    <texture>script.plex/home/busy.gif</texture>
-                </control>
-            </control>
             <control type="image">
                 <!-- Fill for is.photo's letterboxed thumb below - photos keep their full frame
                      (no crop) so this shows through wherever the image doesn't reach. -->
@@ -166,5 +143,6 @@
                 {% include "includes/watched_indicator.xml.tpl" with xoff=512 & uw_size=35 & wbg_w=40 %}
             </control>
         </control>
+        {% include "includes/hub_see_more_pill.xml.tpl" with px=3 & py=122 %}
     </control>
 </itemlayout>

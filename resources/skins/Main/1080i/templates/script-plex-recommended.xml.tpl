@@ -174,7 +174,26 @@
                     <shadowcolor>66000000</shadowcolor>
                     <label>$INFO[Window.Property(hub.{{ id - 100 }})]</label>
                 </control>
-                <control type="list" id="{{ id - 100 }}">
+                <!-- fixedlist, not list (on request, 2026-09-21): the focused item stays pinned
+                     at the row's start and the row scrolls under it, instead of the focus walking
+                     across the screen and only scrolling once it hits the right edge. focusposition
+                     0 is that pin; movement is how far the cursor may leave it, which Kodi only
+                     lets happen at the row's tail (GUIFixedListContainer::SelectItem(): once the
+                     remaining items fit in the cursor range they spread across the last slots
+                     rather than scrolling on into blank space) or for a row short enough to fit
+                     entirely (GetCursorRange() shrinks the range to the item count - no scroll at
+                     all). The effective range is min(movement, itemsPerPage), itemsPerPage being
+                     (width - item width) / item width + 1: 7 for 272-wide poster/square items,
+                     3 for 544-wide 16:9 ones, so movement=5 gives a range of 5 (last poster in
+                     the 6th slot) and 3 (last 16:9 tile in the 4th slot, the partially visible
+                     one) respectively. The 16:9 case is a known, accepted compromise: one shared
+                     control can't carry a per-display-type movement, and narrowing the width to
+                     make itemsPerPage come out as 2 for 16:9 would clip the row short of the
+                     screen edge (the list clips to its own box). It only shows on a 16:9 row
+                     with more than 3 items, on its last few - and the only 16:9 rows left are
+                     the home-video ones (home.videos.*/video.*), since the old episodes-only
+                     home.continue hub was dropped the same day. -->
+                <control type="fixedlist" id="{{ id - 100 }}">
                     <posx>0</posx>
                     <posy>{{ vscale(29) }}</posy>
                     <width>1920</width>
@@ -189,6 +208,8 @@
                     <onright>noop</onright>
                     <scrolltime>200</scrolltime>
                     <orientation>horizontal</orientation>
+                    <focusposition>0</focusposition>
+                    <movement>5</movement>
                     <preloaditems>4</preloaditems>
 
                     {% with hub_id = id - 100 %}

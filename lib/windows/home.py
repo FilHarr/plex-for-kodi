@@ -18,6 +18,10 @@ HUBS_REFRESH_INTERVAL = 300  # 5 Minutes
 REACHABILITY_CHECK_INTERVAL = 600  # 10 Minutes
 PATH_MAPPING_PROBE_INTERVAL = 60  # 1 Minute
 HUB_PAGE_SIZE = 10
+# Hard cap on what a Recommended hub row shows, fetched in one go (SectionHubsTask below) - no
+# in-row pagination past it. A row with more than this (hub.more) ends in a "See more" item
+# instead (LibraryWindow._bindHubToControl(), library.py). On request, 2026-09-21.
+HUB_ROW_MAX_ITEMS = 20
 
 MOVE_SET = frozenset(
     (
@@ -89,21 +93,10 @@ def getEnabledHubsForSection(hub_settings, section_key):
     if not section_config or not section_config.get('custom'):
         return None
 
-    enabled = {h.get('catalog_id', h.get('identifier')) for h in section_config.get('hubs', [])}
-
-    # When CW mode changes, the hub identifiers change but saved config may have old ones.
-    # Map between them so hubs stay enabled after switching modes.
-    if section_key is None:  # Home section only
-        use_new_continue_watching = util.getSetting('hubs_use_new_continue_watching', False)
-        if use_new_continue_watching:
-            if 'home.continue' in enabled or 'home.ondeck' in enabled:
-                enabled.add('continueWatching')
-        else:
-            if 'continueWatching' in enabled:
-                enabled.add('home.continue')
-                enabled.add('home.ondeck')
-
-    return enabled
+    # No old/new Continue Watching identifier mapping here any more - the old home.continue/
+    # home.ondeck pair is gone (plexserver.hubs() only ever yields continueWatching) and saved
+    # configs are migrated on load (LibraryWindow.loadHubSettings(), library.py).
+    return {h.get('catalog_id', h.get('identifier')) for h in section_config.get('hubs', [])}
 
 
 def getCombinedHubsForSection(section, section_hubs, hub_settings, include_cross_section=True,
@@ -222,22 +215,6 @@ def getCombinedHubsForSection(section, section_hubs, hub_settings, include_cross
     configured_hubs = section_config.get('hubs', [])
     catalog_id_to_order = {h.get('catalog_id', h.get('identifier')): i for i, h in enumerate(configured_hubs)}
 
-    # When CW mode changes, map order between old/new identifiers so user ordering is preserved.
-    if section_key is None:  # Home section only
-        use_new_continue_watching = util.getSetting('hubs_use_new_continue_watching', False)
-        if use_new_continue_watching:
-            if 'home.continue' in catalog_id_to_order and 'continueWatching' not in catalog_id_to_order:
-                catalog_id_to_order['continueWatching'] = catalog_id_to_order['home.continue']
-            elif 'home.ondeck' in catalog_id_to_order and 'continueWatching' not in catalog_id_to_order:
-                catalog_id_to_order['continueWatching'] = catalog_id_to_order['home.ondeck']
-        else:
-            if 'continueWatching' in catalog_id_to_order:
-                cw_order = catalog_id_to_order['continueWatching']
-                if 'home.continue' not in catalog_id_to_order:
-                    catalog_id_to_order['home.continue'] = cw_order
-                if 'home.ondeck' not in catalog_id_to_order:
-                    catalog_id_to_order['home.ondeck'] = cw_order + 0.5
-
     def get_order(hub):
         cat_id = getattr(hub, '_catalogId', None)
         if cat_id and cat_id in catalog_id_to_order:
@@ -301,7 +278,7 @@ class SectionHubsTask(backgroundthread.Task):
             return
 
         try:
-            hubs = HubsList(self.section.server.hubs(self.section.key, count=HUB_PAGE_SIZE,
+            hubs = HubsList(self.section.server.hubs(self.section.key, count=HUB_ROW_MAX_ITEMS,
                                                                       section_ids=self.section_keys)).init()
             hubs.identifier = self.section.key
             if self.isCanceled():
