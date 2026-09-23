@@ -177,10 +177,7 @@ class FakeHostWindow(object):
         self.onCloseSignalCalls = []
         self.onActionCalls = []
         self._pendingSectionTimer = None
-        self.lastSection = None
-        # _deferOpenSection()'s _fire() closure checks `if self.openSection(section):` - a real
-        # LibraryWindow.openSection() returns True/False; configurable here per-test since most
-        # tests only care whether/how it was called, not the success-path lastSection update.
+        # A real LibraryWindow.openSection() returns True/False; configurable here per-test.
         self.openSectionReturnValue = False
 
     def openSection(self, *args, **kwargs):
@@ -1083,7 +1080,7 @@ class DeferOpenSectionTest(KodiTestCase):
         self.assertFalse(secondTimer.cancelled)
         self.assertIs(host._pendingSectionTimer, secondTimer)
 
-    def test_firing_the_timer_calls_openSection_and_updates_lastSection_on_success(self):
+    def test_firing_the_timer_calls_openSection(self):
         host = FakeHostWindow()
         host.openSectionReturnValue = True
         original = self._patchedTimer()
@@ -1096,22 +1093,7 @@ class DeferOpenSectionTest(KodiTestCase):
         timer.function()  # simulates the timer actually firing
 
         self.assertEqual([(('the-section',), {'force': False})], host.openSectionCalls)
-        self.assertEqual('the-section', host.lastSection)
         self.assertIsNone(host._pendingSectionTimer, "must clear itself once fired, or a later call could cancel a dead timer for nothing")
-
-    def test_firing_the_timer_does_not_update_lastSection_on_a_declined_openSection(self):
-        host = FakeHostWindow()
-        host.openSectionReturnValue = False
-        original = self._patchedTimer()
-        try:
-            host._deferOpenSection('the-section')
-            timer = host._pendingSectionTimer
-        finally:
-            library.threading.Timer = original
-
-        timer.function()
-
-        self.assertIsNone(host.lastSection)
 
 
 class OnActionTest(KodiTestCase):

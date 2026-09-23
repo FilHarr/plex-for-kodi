@@ -609,16 +609,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._pendingSection = None
         self._pendingSectionForce = False
         self.section = kwargs.get('section')
-        # openSection() keeps this mirroring self.section on every real section swap (a handful of
-        # methods - hubMenu() among them - read self.lastSection directly) - but openSection() itself is
-        # never called for the very first section a LibraryWindow is constructed with (cold start,
-        # main.py, constructs directly with section=home_section and never calls openSection()).
-        # Left unset, self.lastSection would raise AttributeError the first time anything read it
-        # before the first real section switch - live-confirmed: hubMenu() (the hub-item context
-        # menu) silently did nothing on a hub item click on cold start, working normally only
-        # after switching to a different section for the first time. Seeded here so it's never in
-        # an undefined state.
-        self.lastSection = self.section
 
         # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
         # mellow-pondering-magpie.md, 2026-08-18) - see preplay.py's PrePlayWindow.__init__ for the
@@ -1393,8 +1383,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # docstring. Harmless no-op for section types that were never eligible for the probe in
         # the first place (nothing to evict).
         _invalidateSectionHasCollectionsCache(section)
-        # Kept mirroring self.section for the menus that still read self.lastSection.
-        self.lastSection = section
         # hashed-orbiting-pizza.md Phase 4: a sidebar section click reaches here even while a
         # descendant chain is hosted (bubbled via PrePlayWindow etc.'s own goHome(section=...),
         # windowutils.py's GoHomeMixin/_dispatchSectionOpen(), landing on this deferred call) -
@@ -2382,8 +2370,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         def _fire():
             self._pendingSectionTimer = None
-            if self.openSection(section, force=force):
-                self.lastSection = section
+            self.openSection(section, force=force)
 
         self._pendingSectionTimer = threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, _fire)
         self._pendingSectionTimer.start()
@@ -3274,7 +3261,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # show deletion
                 source, target = section.getMappedPath(choice["path"])
                 section.deleteMapping(target)
-                return self.lastSection
+                return self.section
 
             else:
                 # show fb - select loc to map
@@ -3282,7 +3269,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 if not d:
                     return
                 pmm.addPathMapping(d, choice["path"])
-                return self.lastSection
+                return self.section
         elif choice["key"] == "hide":
             if section.key not in self.navSettings:
                 self.navSettings[section.key] = {}
@@ -3294,18 +3281,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 if choice["section_id"] in self.navSettings:
                     self.navSettings[choice["section_id"]]['show'] = True
                     self.saveNavSettings()
-                    return self.lastSection
+                    return self.section
         elif choice["key"] == "move":
             self.sectionMover(item, "init")
         elif choice["key"] == "reset_order":
             if "order" in self.navSettings:
                 del self.navSettings["order"]
                 self.saveNavSettings()
-                return self.lastSection
+                return self.section
         elif choice["key"] == "refresh":
             with busy.BusyContext(delay=True, delay_time=0.2):
                 section.refresh()
-            return self.lastSection
+            return self.section
         elif choice["key"] == "emptyTrash":
             button = optionsdialog.show(
                 T(33083, 'Empty Trash'),
@@ -3317,7 +3304,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             if button == 0:
                 with busy.BusyContext(delay=True, delay_time=0.2):
                     section.emptyTrash()
-                return self.lastSection
+                return self.section
         elif choice["key"] == "analyze":
             with busy.BusyContext(delay=True, delay_time=0.2):
                 section.analyze()
@@ -3343,11 +3330,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # serverRefresh(section=...) handoff, is this window's own refresh mechanism, so only
             # ask for it when something actually changed.
             if self._hubsSettingsChanged:
-                return self.lastSection
+                return self.section
             return
 
         elif choice["key"] == "refresh_hubs":
-            return self.lastSection
+            return self.section
 
     def sectionMover(self, item, action):
         """Sidebar section-reorder ("Move") mode - ported verbatim from HomeWindow.sectionMover()
@@ -3556,9 +3543,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
     # this window's needs exactly: home_section is just another section value here (LibraryWindow
     # has openSection(), so is.home no longer gets any special treatment - see that method's own
-    # is.home-equivalent TYPE == 'mixed' check for how it lands on the right tab), skip re-opening
-    # the already-shown section via lastSection tracking, playlists -> PlaylistsWindow, else ->
-    # opener.sectionClicked().
+    # is.home-equivalent TYPE == 'mixed' check for how it lands on the right tab).
 
     def displayServerAndUser(self, **kwargs):
         """Sidebar avatar/username and server icon/name. Window properties are
@@ -6161,14 +6146,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return
 
         if choice.get('key') == 'refresh_hubs':
-            section_key = getattr(self, '_managingHubsForSection', self.lastSection.key)
+            section_key = getattr(self, '_managingHubsForSection', self.section.key)
             section_title = getattr(self, '_managingHubsForSectionTitle', '')
             self._discoverHubsSync()
             options = self._buildHubSettingsOptions(section_key, section_title)
             return ('rebuild', options, 0)
 
         if choice.get('key') == 'reset_hubs':
-            section_key = getattr(self, '_managingHubsForSection', self.lastSection.key)
+            section_key = getattr(self, '_managingHubsForSection', self.section.key)
             section_title = getattr(self, '_managingHubsForSectionTitle', '')
             self.resetSectionHubs(section_key)
             self._hubsSettingsChanged = True
@@ -6179,7 +6164,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return
 
         catalog_id = choice.get('catalog_id', choice.get('identifier'))
-        section_key = getattr(self, '_managingHubsForSection', self.lastSection.key)
+        section_key = getattr(self, '_managingHubsForSection', self.section.key)
         is_currently_enabled = choice.get('enabled', False)
 
         if is_currently_enabled:
@@ -6638,8 +6623,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         currently showing - used by _roleLocalY()'s stacking recurrence. hub=None (nothing bound
         at some intermediate offset, e.g. the empty-hubs case) falls back to the tallest real
         case (poster). Ported from HomeWindow._hubRowHeight() (home.py) - is_home adapted per
-        this file's own convention (self.section.key is None; LibraryWindow has no
-        self.lastSection concept, self.section already is "whatever's currently shown")."""
+        this file's own convention (self.section.key is None)."""
         if hub is None:
             return self.ROW_CONTENT_HEIGHT[('poster', False)]
         is_home = self.section.key is None
@@ -6936,7 +6920,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         the extra state/complexity (self._lastSelectedItem, the old double-press detector, is gone
         too - nothing else in this file ever needed it).
 
-        self.section.key is None replaces self.lastSection's is-home check (this file's own
+        self.section.key is None replaces HomeWindow's lastSection is-home check (this file's own
         is_home convention throughout - see _hubRowHeight()'s docstring). self.tasks.add() (not
         .append()+a separate cleanTasks() call, the old shape) - Tasks.add() (backgroundthread.py)
         already self-prunes dead tasks. Drops self._anyItemAction (HomeWindow-only bookkeeping, no
@@ -7179,11 +7163,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         ds = mli.dataSource
 
-        # Determine the hub's source section and catalog_id. (The original also computed a
-        # `self.lastSection`-is-home flag here for the 'add_to_home' option's own visibility check
+        # Determine the hub's source section and catalog_id. (HomeWindow's original also computed a
+        # lastSection-is-home flag here for the 'add_to_home' option's own visibility check
         # - not ported, see this method's own docstring, so only hub_is_home below is needed.)
         cross_source = hub.__dict__.get('_crossSectionSource')
-        hub_source_key = cross_source if cross_source is not None else self.lastSection.key
+        hub_source_key = cross_source if cross_source is not None else self.section.key
         hub_is_home = hub_source_key is None
         clean_identifier = hub.getCleanHubIdentifier(is_home=hub_is_home)
 
@@ -7201,7 +7185,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         options = []
         has_prev = False
-        is_watchlist = self.lastSection == home.watchlist_section
+        is_watchlist = self.section == home.watchlist_section
         # Don't allow disabling hubs for watchlist or main CW/On Deck hubs
         if not is_watchlist and hub.hubIdentifier != "continueWatching":
             options.append({'key': 'disable_hub', 'display': T(33659, "Disable Hub: {}").format(hub_title)})
@@ -7267,14 +7251,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         elif choice["key"] == "disable_hub":
             # Disable hub via Manage Hubs settings (same as disabling in the dialog). Returning
-            # self.lastSection hands off to onAction()'s serverRefresh() call, same pattern
+            # self.section hands off to onAction()'s serverRefresh() call, same pattern
             # sectionMenu()'s own 'manage_hubs'/'refresh_hubs' choices use - forces the section
             # to reopen, which re-triggers hub fetching/isHubHidden() filtering and so drops the
             # now-disabled hub from view.
-            section_key = self.lastSection.key
+            section_key = self.section.key
             self._ensureCustomConfigExists(section_key)
             self._disableHub(catalog_id, section_key)
-            return self.lastSection
+            return self.section
 
         elif choice["key"] in ("mark_watched", "mark_unwatched"):
             if util.getSetting('home_confirm_actions'):
@@ -7313,7 +7297,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # Force a reopen (unlike mark_watched/mark_unwatched's in-place tile update) - the
             # whole point of removing an item from Continue Watching is for it to disappear from
             # the hub, which an in-place property update on this one tile can't do.
-            return self.lastSection
+            return self.section
 
         elif choice["key"] == "to_show":
             try:

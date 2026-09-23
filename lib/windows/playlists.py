@@ -162,9 +162,7 @@ class PlaylistsWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowuti
         self.sectionList.addItems(items)
 
     # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
-    # this window's needs exactly (including the section == self.lastSection skip, which now also
-    # covers clicking "Playlists" while already here - previously that reopened a redundant second
-    # PlaylistsWindow instance on top of this one).
+    # this window's needs exactly.
 
     def displayServerAndUser(self):
         """Sidebar avatar/username and server icon/name. Mirrors library.py's/preplay.py's
