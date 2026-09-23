@@ -51,6 +51,7 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
             self.buildSectionList()
         else:
             self.sectionList.newControl(self)
+        self._selectActiveSection()
         self.displayServerAndUser()
 
         # library.xml.tpl's tab row (control 320, inherited verbatim - script-plex-genres.xml.tpl
@@ -118,17 +119,11 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
                                     kwargs={'item_type': item_type}).start()
 
     def onAction(self, action):
-        if self.getFocusId() == self.SECTION_LIST_ID:
-            self.checkSectionItem(action=action)
-
         kodigui.ControlledWindow.onAction(self, action)
 
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem()
 
     def searchButtonClicked(self):
         self.processCommand(search.dialog(self, section_id=self.section.key))

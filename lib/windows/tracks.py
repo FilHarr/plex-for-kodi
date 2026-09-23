@@ -74,6 +74,7 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             self.buildSectionList()
         else:
             self.sectionList.newControl(self)
+        self._selectActiveSection()
         self.displayServerAndUser()
 
         self.setup()
@@ -87,9 +88,6 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem()
 
     def onReInit(self):
         if self.lastPlayingRK:
@@ -129,9 +127,6 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
 
     def onAction(self, action):
         controlID = self.getFocusId()
-
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem(action=action)
 
         try:
             if action == xbmcgui.ACTION_LAST_PAGE and xbmc.getCondVisibility('ControlGroup(300).HasFocus(0)'):

@@ -204,6 +204,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             self.buildSectionList()
         else:
             self.sectionList.newControl(self)
+        self._selectActiveSection()
         self.displayServerAndUser()
 
         local_server = plexapp.SERVERMANAGER.selectedServer
@@ -228,9 +229,6 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
     def onAction(self, action):
         try:
             controlID = self.getFocusId()
-
-            if controlID == self.SECTION_LIST_ID:
-                self.checkSectionItem(action=action)
 
             if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                 self.doClose()
@@ -272,9 +270,6 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem()
 
         if self.FILMOGRAPHY_LIST_ID <= controlID <= self.DISCOVER_LIST_BASE_ID + DISCOVER_HUB_SLOTS:
             self.setProperty('hub.focus', str(controlID - self.FILMOGRAPHY_LIST_ID))

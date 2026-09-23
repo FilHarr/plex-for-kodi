@@ -106,6 +106,7 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.buildSectionList()
         else:
             self.sectionList.newControl(self)
+        self._selectActiveSection()
         self.displayServerAndUser()
 
         self.fillPlaylist()
@@ -117,9 +118,6 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem()
 
     # def onAction(self, action):
     #     try:
@@ -145,9 +143,6 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.video_progress[rk] = state
 
     def onAction(self, action):
-        if self.getFocusId() == self.SECTION_LIST_ID:
-            self.checkSectionItem(action=action)
-
         try:
             if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                 self.doClose()

@@ -12,8 +12,8 @@ are pre-existing, already-live code paths (real HOME/_MWBackground/opener.handle
 interactions), not what this session's Phase 1 work changed.
 
 GoHomeMixin._liveChainHost() exists because of a real, live-caught crash: a shell's own
-settled-focus debounce thread (sectionChanged()/_sectionChanged() below) can still be in flight
-from *before* a swapTo() swapped that shell out (or the whole chain closed), and land here calling
+settled-focus debounce thread (since removed - the sidebar is click-only now) could still be in
+flight from *before* a swapTo() swapped that shell out (or the whole chain closed), and land here calling
 self.goHome() well after self._chainHost's own _current/_currentOnAction were already del'd by
 MultiWindow._open()'s teardown (kodigui.py) - AttributeError, live-confirmed via kodi.log, not a
 hypothetical. _allClosed is a real, never-del'd flag (unlike _current), so checking it first is what

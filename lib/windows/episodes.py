@@ -504,13 +504,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.startOver = kwargs.get('start_over')
         self.debouncing = False
         # Settled-focus debounce for the Roles/Extras rows (checkForHeaderFocus()/
-        # scheduleRowDataUpdate()/_updateRowData() below) - same shape as SidebarMixin's own
-        # sectionChangeTimeout/sectionChangeThread (windowutils.py), just scoped to this window
-        # instead of the sidebar. Extras aren't part of an episode's own listing data (unlike
-        # Roles, already present on every episode from the season listing fetch) - filling it
-        # requires a dedicated network fetch per episode (fillExtras() below), so without this
-        # holding a direction key to scroll through the row would fire one request per episode
-        # flown past instead of one for wherever focus actually settles.
+        # scheduleRowDataUpdate()/_updateRowData() below). Extras aren't part of an episode's own
+        # listing data (unlike Roles, already present on every episode from the season listing
+        # fetch) - filling it requires a dedicated network fetch per episode (fillExtras() below),
+        # so without this holding a direction key to scroll through the row would fire one request
+        # per episode flown past instead of one for wherever focus actually settles.
         self.rowDataChangeTimeout = 0
         self.rowDataChangeThread = None
         # fillExtras() below can't trust ds.extras' own truthiness + PlexObject.__getattr__'s .NA
@@ -841,6 +839,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.buildSectionList()
         else:
             self.sectionList.newControl(self)
+        self._selectActiveSection()
         self.displayServerAndUser()
 
         VIDEO_PROGRESS.clear()
@@ -1221,9 +1220,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
             controlID = self.getFocusId()
 
-            if controlID == self.SECTION_LIST_ID:
-                self.checkSectionItem(action=action)
-
             if not self.initialized and not self.currentItemLoaded:
                 tries = 0
                 self.debouncing = True
@@ -1396,9 +1392,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem()
 
         if 399 < controlID < 500:
             self.setProperty('hub.focus', str(controlID - 400))
@@ -2179,8 +2172,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 xbmc.executebuiltin('Action(down)')
 
     def scheduleRowDataUpdate(self, immediate=False):
-        """Settled-focus debounce for fillRoles()/fillExtras() - same shape as SidebarMixin's
-        sectionChanged()/_sectionChanged() (windowutils.py). Roles data is already present on
+        """Settled-focus debounce for fillRoles()/fillExtras(). Roles data is already present on
         every episode from the season listing fetch (no network involved), but Extras isn't -
         fillExtras() below has to fetch it per-episode, so without debouncing, holding a
         direction key to fly through the row would fire one request per episode passed over
@@ -2206,7 +2198,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             return
 
         while not util.MONITOR.waitFor():
-            # timing issue - same pattern as SidebarMixin._sectionChanged() (windowutils.py)
+            # timing issue
             if not self.rowDataChangeTimeout:
                 return
             if time.time() >= self.rowDataChangeTimeout:

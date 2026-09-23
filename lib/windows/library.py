@@ -609,10 +609,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._pendingSection = None
         self._pendingSectionForce = False
         self.section = kwargs.get('section')
-        # openSection() keeps this mirroring self.section on every real section swap (its own
-        # comment there explains why: SidebarMixin's _sectionChanged() gates every sidebar click/
-        # settled-focus on `section == self.lastSection`, and a handful of other methods -
-        # hubMenu() among them - read self.lastSection directly) - but openSection() itself is
+        # openSection() keeps this mirroring self.section on every real section swap (a handful of
+        # methods - hubMenu() among them - read self.lastSection directly) - but openSection() itself is
         # never called for the very first section a LibraryWindow is constructed with (cold start,
         # main.py, constructs directly with section=home_section and never calls openSection()).
         # Left unset, self.lastSection would raise AttributeError the first time anything read it
@@ -723,14 +721,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # read by main.py's outer loop once this window's session ends (quit/exit/restart/update/
         # recompile/sign-out/switch/etc. - see shutdown()/closeWRecompileTpls() below for the
         # methods that set it). _shuttingDown is read directly, unguarded, by player.py's
-        # playQueueCallback() and checked by SidebarMixin's own sectionChanged()/_sectionChanged()
-        # - must exist before anything else can run, not just before shutdown() is ever called.
+        # playQueueCallback() - must exist before anything else can run, not just before
+        # shutdown() is ever called.
         # go_root/_goRootHoldUntil are consumed by onReInit()/onAction()/onFocus() below - see
         # those for the full mechanism, ported from HomeWindow's own go_root handling.
         self.closeOption = None
         self._shuttingDown = False
         self.go_root = False
         self._goRootHoldUntil = 0
+        self._goRootFocusTarget = None
         # One-shot: onFirstInit() below clears the cold-start busy spinner (background.setBusy())
         # the moment the first real content is confirmed showing, same timing main.py's old
         # create()+waitForOpen() two-step gave HomeWindow - but only once, not on every later
@@ -776,10 +775,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Section-reorder ("Move") mode - ported from HomeWindow's identical state (home.py).
         self.movingSection = False
         self._initialMovingSectionPos = None
-        # Set while sectionMenu()'s modal dropdown is up - guards SidebarMixin._sectionChanged()
-        # (windowutils.py) against its debounce thread settling on a section change while the menu
-        # is still open, same race HomeWindow's identical flag (home.py) guards against there.
-        self.block_section_change = False
 
         # Stage D2 (quiet-orbiting-heron.md): rotation-ring/anchor positioning state, ported
         # from HomeWindow's own __init__ (home.py) - same names, no reason to rename. These are
@@ -813,10 +808,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         # Plan item 10, Group A (quiet-orbiting-heron.md): reselect-position memory. Ported from
         # HomeWindow._hubReselectPositions (home.py) - same name/shape (identifier -> (ratingKey,
-        # pos)). Deliberately NOT reset alongside visibleHubs/focusedHubIndex on every fresh
-        # 'recommended' bind - LibraryWindow is the persistent, session-lifetime object now, same
-        # as HomeWindow always was, so a position remembered from an earlier visit should survive
-        # a swap away and back, not just a rotation-ring slide within one visit.
+        # pos)). Scoped to one visit: cleared on every fresh entry (openSection()/switchTab() with
+        # fresh=True - a sidebar click, tab switch, go-root or server change) and by the Home
+        # rule's in-place reset (_resetHubsToTop()), kept only through popBack() and
+        # swapToSection(). Within a visit it keeps a row's position when the row rotates off the
+        # ring and back, and lets Back from a hosted screen land on the right item
+        # (_captureRootRestoreState() only records which row).
         self._hubReselectPositions = {}
 
         # Plan item 0 (quiet-orbiting-heron.md): the section-tabs row (Library/Recommended).
@@ -1183,7 +1180,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # force=True: section == self.section will be true here (root state is never
             # mutated while a shell is hosted), which openSection()'s own no-op guard would
             # otherwise decline.
-            self.openSection(force=True, **kwargs)
+            self.openSection(force=True, fresh=False, **kwargs)
         else:
             self.swapTo(cls, push=False, **kwargs)
 
@@ -1220,7 +1217,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             entryKwargs = {'section': self.section, 'filter_': self.filter}
             entryKwargs.update(self._captureRootRestoreState())
             entry = (None, entryKwargs)
-        self.openSection(section, filter_=filter_, force=True)
+        self.openSection(section, filter_=filter_, force=True, fresh=False)
         self._backStack = precedingBackStack + [entry]
 
     def switchTab(self, mode, item_type=None):
@@ -1273,6 +1270,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # no-op when contentMode isn't 'recommended' (self._hubSliding is only ever True there).
         self._settleHubSlide()
         self._listGeneration += 1
+        # A tab switch is a fresh entry - see _hubReselectPositions' own comment (__init__).
+        self._hubReselectPositions = {}
         self.contentMode = mode
         if item_type is not None:
             self.librarySettings.setItemType(item_type)
@@ -1328,7 +1327,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.switchTab('library', item_type='collection')
 
-    def openSection(self, section, filter_=None, force=False):
+    def openSection(self, section, filter_=None, force=False, fresh=True):
         """Swap this already-open window to a different section in place, reusing the same
         outer LibraryWindow object rather than closing and reconstructing a new one - see the
         Home-ControlledWindow plan's "One window, not two" / thread-safety discussion. Safe to
@@ -1357,6 +1356,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         user detoured through a different section first (which, being genuinely != self.section,
         did trigger a real reload and incidentally left self.section pointing at the new server's
         data, making Home reachable again from there).
+
+        fresh=True (every caller except popBack() and swapToSection()) opens the section as if for
+        the first time: the hub rows' remembered positions (_hubReselectPositions) are cleared.
+        Saved per-section preferences (sort, filters, view type, tab) are not navigation state and
+        always apply.
         """
         try:
             isCurrent = self.is_current_window
@@ -1376,6 +1380,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Settle any in-flight hub-slide animation before doClose() below - see switchTab()'s
         # identical call for why (this section may currently be showing its own Recommended tab).
         self._settleHubSlide()
+        if fresh:
+            self._hubReselectPositions = {}
         # Bumped here, not just inside doRefill(), so a suspended call elsewhere that captured
         # showPanelControl/mli.dataSource before this swap can detect the invalidation the moment
         # it actually happens, not only once _open()'s loop gets back around to rebuilding.
@@ -1387,15 +1393,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # docstring. Harmless no-op for section types that were never eligible for the probe in
         # the first place (nothing to evict).
         _invalidateSectionHasCollectionsCache(section)
-        # Keep SidebarMixin's own change-tracking in sync too (windowutils.py's
-        # _dispatchSectionOpen()/_sectionChanged() gate every sidebar click/settled-focus on
-        # `section == self.lastSection`) - not just whichever caller happened to reach this
-        # in-place swap through that path. Live-confirmed regression without this: back-navigating
-        # to Home (onReInit()'s go_root branch, which calls openSection() directly, not through
-        # the sidebar dispatch) updated self.section correctly but left self.lastSection stale at
-        # whatever section was showing before - so re-clicking that same section in the sidebar
-        # afterward hit `section == self.lastSection` and silently no-opped, until a genuinely
-        # different section was clicked first (which finally advanced lastSection for real).
+        # Kept mirroring self.section for the menus that still read self.lastSection.
         self.lastSection = section
         # hashed-orbiting-pizza.md Phase 4: a sidebar section click reaches here even while a
         # descendant chain is hosted (bubbled via PrePlayWindow etc.'s own goHome(section=...),
@@ -2067,6 +2065,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.displayServerAndUser()
         else:
             self.sectionList.newControl(self)
+        # newControl() re-adds the items to a fresh native control whose selection starts at index
+        # 0 (Search) - reselect the active section so the collapsed rail shows it from the first
+        # frame (SidebarMixin._selectActiveSection()'s rule).
+        self._selectActiveSection()
 
         if self.tabList is None:
             self.tabList = kodigui.ManagedControlList(self, self.TAB_LIST_ID, 5)
@@ -2487,15 +2489,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # state never changes while a shell is hosted - which openSection()'s own no-op
                 # guard would otherwise wrongly honor). Harmless when the section genuinely differs
                 # too, same as every other force=True caller in this dispatch family.
+                #
+                # The rebuilt Home view lands on the first row, item 0 by itself: openSection() is
+                # fresh by default, and onFirstInit() focuses the anchor row.
                 threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection,
                                  args=(home.home_section,), kwargs={'force': True}).start()
             else:
-                self.setFocusId(self.SECTION_LIST_ID)
-            # Set at the end, same as HomeWindow's own version - openSection() above is deferred
-            # and can itself take a while (hub fetch/render) once it fires, so measuring the 150ms
-            # hold from here (not from go_root's entry) is what keeps it long enough to actually
-            # catch the stray reactivation focus event once the swap lands.
-            self._goRootHoldUntil = time.time() + 0.15
+                # Already showing Home: reset it in place to the first row, item 0 (the Home
+                # rule), then hold that focus for 150ms against the stray focus event Kodi fires
+                # when this window reactivates with its previously-focused control still recorded
+                # (see onFocus()). No hold on the rebuild branch above - it can't outlast the
+                # deferred rebuild, and the new window sets its own focus.
+                self._goRootFocusTarget = self._resetHubsToTop()
+                self._goRootHoldUntil = time.time() + 0.15
             return
 
         if self.refill and self.contentMode != 'recommended':
@@ -2633,25 +2639,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 if self.movingSection:
                     # Section-reorder ("Move") mode - ported from HomeWindow's identical routing
                     # (home.py's onAction()). sectionMover() owns every action while active; nothing
-                    # below in this method (checkSectionItem()/context menu) should also react.
+                    # below in this method (the context menu) should also react.
                     self.sectionMover(self.movingSection, action)
                     return
                 if action == xbmcgui.ACTION_CONTEXT_MENU:
                     # Section-item context menu - ported from HomeWindow's identical routing
-                    # (home.py's onAction()). block_section_change (see __init__'s/
-                    # SidebarMixin._sectionChanged()'s own comments) guards against a debounce
-                    # thread already in flight from focus movement just before this settling on a
-                    # section change while the modal dropdown is up.
-                    try:
-                        self.block_section_change = True
-                        show_section = self.sectionMenu()
-                    finally:
-                        self.block_section_change = False
+                    # (home.py's onAction()).
+                    show_section = self.sectionMenu()
                     if not show_section:
                         return
                     self.serverRefresh(section=show_section)
                     return
-                self.checkSectionItem(action=action)
             elif controlID == self.SERVER_BUTTON_ID:
                 # Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - ported from HomeWindow's
                 # identical SERVER_BUTTON_ID handling (home.py's onAction()). selectServer() below
@@ -3160,8 +3158,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.librarySettings (home.py's per-section show/hide/pin/order dict) -> self.navSettings
         (see __init__'s comment for the name-collision reason), self.saveLibrarySettings() ->
         self.saveNavSettings(). Triggered from onAction()'s SECTION_LIST_ID/ACTION_CONTEXT_MENU
-        branch, which also owns the block_section_change guard and the return-value ->
-        serverRefresh() handoff - see that branch's own comment for why.
+        branch, which also owns the return-value -> serverRefresh() handoff.
         """
         item = self.sectionList.getSelectedItem()
         if not item or not item.getProperty('item') or item.getProperty('is.search'):
@@ -3370,15 +3367,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                                               data_source=home.home_section)
             homemli.setProperty('is.home', '1')
             homemli.setProperty('item', '1')
+            if home.home_section.key == self.section.key:
+                homemli.setProperty('is.active', '1')
             if reset:
                 if self._initialMovingSectionPos is not None:
                     self.sectionList.moveItem(item, self._initialMovingSectionPos)
                 self._initialMovingSectionPos = None
             self.sectionList.insertItem(0, homemli)
             self.sectionList.insertItem(0, searchmli)
-            if reset:
-                self.sectionList.selectItem(1)  # Home
-            self.sectionChanged()
+            # Finishing or cancelling a move navigates nowhere - put the selection back on the
+            # section actually showing.
+            self._selectActiveSection()
 
         if action == "init":
             self.movingSection = item
@@ -3613,29 +3612,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             was_outside_hub = not (399 < (self.lastFocusID or -1) < 500)
             self._hubJustEnteredFromOutside = (399 < controlID < 500) and was_outside_hub
 
-        # Within the 150ms hold window after go_root, any non-section-list focus event is the
-        # stray Kodi fires when this window reactivates with its previously-focused control still
-        # recorded. Snap it back and consume the deadline so real user input (which arrives well
-        # after the window closes) passes through unblipped. Ported from HomeWindow's identical
-        # onFocus() guard (home.py) - see onReInit()'s go_root handling.
-        if (time.time() < self._goRootHoldUntil
-                and 100 < controlID < 500 and controlID != self.SECTION_LIST_ID):
+        # Within the 150ms hold window after an in-place go_root reset, a focus event anywhere
+        # but the reset's own target is the stray Kodi fires when this window reactivates with its
+        # previously-focused control still recorded. Snap it back and consume the deadline so real
+        # user input (which arrives well after the window closes) passes through unblipped. See
+        # onReInit()'s go_root handling.
+        if time.time() < self._goRootHoldUntil and controlID != self._goRootFocusTarget:
             self._goRootHoldUntil = 0
-            self.setFocusId(self.SECTION_LIST_ID)
+            self.lastFocusID = self._goRootFocusTarget
+            self.setFocusId(self._goRootFocusTarget)
             return
 
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-        if controlID == self.SECTION_LIST_ID and not self.changingServer and not self.movingSection:
-            # changingServer guard: ported from HomeWindow's identical onFocus() check (home.py) -
-            # selectServer() below sets focus to SECTION_LIST_ID itself as its very first step,
-            # well before the switch actually completes - without this, that focus event would
-            # fire checkSectionItem() immediately and re-trigger a section reload mid-switch.
-            # movingSection guard: same reasoning, also ported from HomeWindow (home.py) - focus
-            # moves within the list constantly during a reorder (moveItem()/selectItem() calls in
-            # sectionMover() itself), none of which should be treated as "settle on this section".
-            self.checkSectionItem()
 
         if self.contentMode == 'recommended':
             # quiet-orbiting-heron.md Stage B: RecommendedWindow has no KEY_LIST_ID (or any
@@ -6864,6 +6853,35 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             if pos is not None and 0 <= pos < len(hub.items):
                 return hub.items[pos]
         return hub.items[0]
+
+    def _resetHubsToTop(self):
+        """The Home rule's in-place half (onReInit()'s go_root branch, when Home is already the
+        view on screen): land on the first hub row, item 0, as if Home had just been opened -
+        without rebuilding the window. Forgets every row's remembered position, rebinds the ring
+        from hub 0 (which also puts the hero on hub 0's first item), selects item 0 in every row,
+        and focuses the anchor row. Returns the control id it focused, for onFocus()'s hold - the
+        sidebar when there are no hubs, the same exception a section with no content gets."""
+        self._settleHubSlide()
+        self._hubReselectPositions = {}
+        if not self.visibleHubs or not self.hubControls:
+            self.setFocusId(self.SECTION_LIST_ID)
+            return self.SECTION_LIST_ID
+
+        self.focusedHubIndex = 0
+        self._anchorRingPos = self.HUB_ROTATION_RING.index(self.HUB_CONTROL_ID)
+        self._bindAllHubSlots()
+        # _bindHubToControl() only selects when there's a remembered position, and these are the
+        # same native controls, so they keep whatever they last had selected.
+        for hc in self.hubControls:
+            if hc.size():
+                hc.selectItem(0)
+
+        target = self._anchorControlId()
+        # Pre-seeded for the same reason onFirstInit() does it: the programmatic focus below must
+        # not look like a native arrival from outside the hub range to onFocus().
+        self.lastFocusID = target
+        self.setFocusId(target)
+        return target
 
     def _prepareHubSlideHero(self):
         """Sync the hero art/info overlay to the hub about to become the anchor

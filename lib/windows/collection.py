@@ -167,6 +167,7 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
             self.buildSectionList()
         else:
             self.sectionList.newControl(self)
+        self._selectActiveSection()
         self.displayServerAndUser()
         self.setup()
         self.setBoolProperty('initialized', True)
@@ -174,15 +175,6 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
 
     def onAction(self, action):
         controlID = self.getFocusId()
-
-        # checkSectionItem() must run from onAction() too, not just onFocus() - Kodi only fires
-        # onFocus() on a control-level focus change, not as the selected item within an already-
-        # focused list changes while arrowing through it. Without this, settling on a different
-        # sidebar section while already inside the list never got noticed - live-confirmed as
-        # "focus navigation doesn't trigger at all". Same pattern as preplay.py's own onAction()
-        # (preplay.py:250-251).
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem(action=action)
 
         if controlID == self.GRID_ID and action.getId() in MOVE_SET:
             # paginate() itself calls populate(), which fully repopulates gridControl - no
@@ -221,9 +213,6 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         # self.lastFocusID before overwriting it, not after. Never wired up before now.
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem()
 
     def setup(self):
         raise NotImplementedError

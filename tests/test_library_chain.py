@@ -439,7 +439,9 @@ class SwapToAndBackStackTest(KodiTestCase):
 
         popBack(host)
 
-        self.assertEqual([((), {'force': True, 'section': 'the-section', 'filter_': 'the-filter'})],
+        # fresh=False: Back restores the hub rows' remembered positions instead of clearing them.
+        self.assertEqual([((), {'force': True, 'fresh': False, 'section': 'the-section',
+                                'filter_': 'the-filter'})],
                           host.openSectionCalls)
         # openSection(), not swapTo() - _next/_nextKwargs must be untouched by this pop.
         self.assertIsNone(host._next)
@@ -481,7 +483,9 @@ class SwapToAndBackStackTest(KodiTestCase):
 
         self.assertEqual(5, host._pendingRestoreItemPos)
         self.assertEqual('hub-x', host._pendingRestoreHubId)
-        self.assertEqual([((), {'force': True, 'section': 'the-section', 'filter_': 'the-filter'})],
+        # fresh=False: Back restores the hub rows' remembered positions instead of clearing them.
+        self.assertEqual([((), {'force': True, 'fresh': False, 'section': 'the-section',
+                                'filter_': 'the-filter'})],
                           host.openSectionCalls)
 
     def test_pop_back_on_a_root_restore_entry_without_restore_kwargs_clears_pending_state(self):
@@ -701,8 +705,8 @@ class SwapToSectionTest(KodiTestCase):
     would pass even if swapToSection() forgot to re-append its own entry afterward."""
 
     def _openSectionClearingBackStack(self, host):
-        def _fake(section, filter_=None, force=False):
-            host.openSectionCalls.append((section, filter_, force))
+        def _fake(section, filter_=None, force=False, fresh=True):
+            host.openSectionCalls.append((section, filter_, force, fresh))
             host._backStack = []
             return True
         return _fake
@@ -715,7 +719,8 @@ class SwapToSectionTest(KodiTestCase):
 
         swapToSection(host, 'new-section', filter_='new-filter')
 
-        self.assertEqual([('new-section', 'new-filter', True)], host.openSectionCalls)
+        # fresh=False: the chain is kept, so the hub rows' remembered positions are too.
+        self.assertEqual([('new-section', 'new-filter', True, False)], host.openSectionCalls)
         self.assertEqual([(FakeShell, {'video': 'the-movie'})], host._backStack)
 
     def test_from_the_grid_pushes_a_root_restore_entry(self):
@@ -740,8 +745,8 @@ class SwapToSectionTest(KodiTestCase):
         host.section = 'old-section'
         host.filter = 'old-filter'
 
-        def _fakeMutatingOpenSection(section, filter_=None, force=False):
-            host.openSectionCalls.append((section, filter_, force))
+        def _fakeMutatingOpenSection(section, filter_=None, force=False, fresh=True):
+            host.openSectionCalls.append((section, filter_, force, fresh))
             host.section = section
             host.filter = filter_
             host._backStack = []

@@ -62,14 +62,8 @@ class PlaylistsWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowuti
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem()
-
     def onAction(self, action):
         try:
-            if self.getFocusId() == self.SECTION_LIST_ID:
-                self.checkSectionItem(action=action)
-
             if action == xbmcgui.ACTION_CONTEXT_MENU:
                 if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
                     self.setFocusId(self.OPTIONS_GROUP_ID)

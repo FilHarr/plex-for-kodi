@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 
 import threading
-import time
 
 import six
 
@@ -30,12 +29,9 @@ HOME = None
 # confirmed as the fix for a native crash that otherwise recurred at the exact same faulting
 # address across independent crash dumps - i.e. one deterministic bug, not generic corruption.
 #
-# The addon's existing sidebar focus-settle debounce (sectionChanged()/_sectionChanged() below,
-# 0.5s) already provides this delay incidentally, which is almost certainly why swapping sections
-# via arrow-key/settled-focus navigation has always been reliable - this constant is for direct-
-# click dispatch paths (sectionClicked(), library.py's tab-list onClick()) that had no delay at
-# all before this was diagnosed. Short enough to feel instant to a user, long enough (many frames
-# at any realistic refresh rate) to be a real safety margin, not a token gesture.
+# Used by the click dispatch paths (sectionClicked(), library.py's tab-list onClick()) that had no
+# delay at all before this was diagnosed. Short enough to feel instant to a user, long enough (many
+# frames at any realistic refresh rate) to be a real safety margin, not a token gesture.
 SKIN_RELOAD_DEFER_SECONDS = 0.15
 
 
@@ -53,13 +49,11 @@ class GoHomeMixin():
     def _liveChainHost(self):
         """None if this window was never chained, OR if its host has already fully closed
         (_allClosed - a real, never-del'd attribute, unlike _current/_currentOnAction, which
-        MultiWindow._open()'s teardown does del - kodigui.py) - live-confirmed crash otherwise:
-        this shell's own settled-focus debounce thread (sectionChanged()/_sectionChanged() below)
-        can still be in flight from *before* a swapTo() swapped this shell out (or the whole chain
-        closed), landing here well after self._chainHost's own _current/_currentOnAction are
-        gone. Same root shape as _sectionChanged()'s own pre-existing AttributeError guard below
-        (a MultiWindow reference outliving its own teardown) - a stale reference here, not a bug in
-        the caller, so treating it as "nothing left to act on" is correct, not a workaround."""
+        MultiWindow._open()'s teardown does del - kodigui.py) - live-confirmed crash otherwise: a
+        call already in flight on another thread from *before* a swapTo() swapped this shell out
+        (or the whole chain closed) can land here well after self._chainHost's own
+        _current/_currentOnAction are gone. A stale reference here, not a bug in the caller, so
+        treating it as "nothing left to act on" is correct, not a workaround."""
         host = self._chainHost
         if host is not None and host._allClosed:
             return None
@@ -218,234 +212,62 @@ class SidebarMixin():
             return True
         return False
 
-    def reselectActiveSection(self, controlID, previousFocusID):
-        """Call from onFocus(controlID), passing the control that had focus immediately before
-        (self.lastFocusID, captured before it gets overwritten with controlID). If focus just moved
-        onto the section list from outside the sidebar's own controls, snap the highlight to
-        whichever item carries is.active - the section actually on screen - instead of leaving it on
-        the list's last internally-browsed position, or, on a window's first focus event, index 0,
-        which is always Search.
-        """
-        if controlID != self.SECTION_LIST_ID:
-            return
-
-        if previousFocusID in (self.SIDEBAR_GROUP_ID, self.SECTION_LIST_ID,
-                                self.SERVER_BUTTON_ID, self.USER_BUTTON_ID):
-            return
-
+    def _selectActiveSection(self):
+        """Select the sidebar entry marked is.active - the section actually on screen. The rule this
+        maintains: whenever the section list doesn't have focus, its selection is the active
+        section, so the collapsed rail never shows a section the user only scrolled past. Walks the
+        Python-side items rather than sectionList[i], which makes a native getListItem() call per
+        entry."""
         sectionList = getattr(self, 'sectionList', None)
         if not sectionList:
             return
 
-        for i in range(sectionList.size()):
-            mli = sectionList[i]
-            if mli and mli.getProperty('is.active'):
+        for i, mli in enumerate(sectionList.items):
+            if mli.getProperty('is.active'):
                 sectionList.setSelectedItemByPos(i)
                 return
 
-    # --- Focus-driven section navigation ---------------------------------------------------
-    #
-    # checkSectionItem()/sectionChanged()/_sectionChanged() debounce sidebar focus movement
-    # (originally home.py-only) so settling on a section - not just clicking it - opens it.
-    # _dispatchSectionOpen(item) is what actually happens once the debounce settles on a genuinely
-    # different section; sectionClicked() is the immediate, non-debounced click path, sharing the
-    # same dispatch. HomeWindow overrides _dispatchSectionOpen() to keep its existing in-place hub
-    # preview instead (it never leaves itself via this path) and keeps its own separate
-    # sectionClicked(), since click and settled-focus intentionally do different things there.
-
-    def _ensureSidebarNavState(self):
-        """Lazy-init for windows other than HomeWindow, which already sets these in __init__.
-        lastSection seeds from whichever sidebar entry is already marked is.active (the section
-        this window itself belongs to/is displaying, per buildSectionList()) so simply re-focusing
-        or re-clicking your own current section doesn't look like a change and doesn't reopen it -
-        this is what let library.py's old explicit `section.key == self.section.key` guard go away
-        in favor of the same lastSection tracking HomeWindow already used.
-        """
-        if not hasattr(self, 'sectionChangeTimeout'):
-            self.sectionChangeTimeout = 0
-            self.sectionChangeThread = None
-        if not hasattr(self, 'lastSection'):
-            self.lastSection = None
-            sectionList = getattr(self, 'sectionList', None)
-            if sectionList:
-                for i in range(sectionList.size()):
-                    mli = sectionList[i]
-                    if mli and mli.getProperty('is.active'):
-                        self.lastSection = mli.dataSource
-                        break
-
-    def checkSectionItem(self, force=False, action=None):
-        self._ensureSidebarNavState()
-
-        item = self.sectionList.getSelectedItem()
-        if not item or item.getProperty('is.search'):
+    def reselectActiveSection(self, controlID, previousFocusID):
+        """Call from onFocus(controlID), passing the control that had focus immediately before
+        (self.lastFocusID, captured before it gets overwritten with controlID). Sections only open
+        on a click, so browsing the list moves nothing but the highlight - this snaps it back to the
+        active section when focus leaves the list, and when focus enters it from outside the
+        sidebar's own controls (on a window's first focus event the list would otherwise sit on
+        index 0, which is always Search). Skipped while sectionMover() owns the selection."""
+        if getattr(self, 'movingSection', False):
             return
 
-        self._onSectionItemFocused(item)
-
-        if item.dataSource != self.lastSection or force:
-            self.sectionChanged(force=force)
-
-    def _onSectionItemFocused(self, item):
-        """Hook: runs on every settled focus, even when the section hasn't changed. HomeWindow
-        overrides this to storeLastBG() on its own entry; nothing to do for everyone else."""
-        pass
-
-    def sectionChanged(self, force=False):
-        if getattr(self, '_shuttingDown', False):
-            return
-
-        self.sectionChangeTimeout = time.time() + 0.5
-
-        self._waitForPendingFetches()
-
-        if force:
-            self.sectionChangeTimeout = None
-            self._sectionChanged(immediate=True)
-            return
-
-        if not self.sectionChangeThread or (self.sectionChangeThread and not self.sectionChangeThread.is_alive()):
-            self.sectionChangeThread = threading.Thread(target=self._sectionChanged, name="sectionchanged")
-            self.sectionChangeThread.start()
-
-    def _waitForPendingFetches(self):
-        """Hook: block briefly if a fetch relevant to currently-displayed content is still in
-        flight, so a settling debounce doesn't act against stale state. HomeWindow overrides this
-        with its own busy-spinner + task-list wait; nothing worth waiting on here otherwise yet."""
-        pass
-
-    def _sectionChanged(self, immediate=False):
-        if getattr(self, '_shuttingDown', False):
-            return
-
-        # Set by LibraryWindow while sectionMenu()'s modal dropdown is up (home.py's HomeWindow has
-        # an identical guard for the same reason) - without it, a debounce thread already in flight
-        # from focus movement just before the context menu opened could settle on a section change
-        # mid-menu, racing sectionMenu()'s own return-value handling. Default False via getattr so
-        # windows that never set this attribute (anything but LibraryWindow) are unaffected.
-        if getattr(self, 'block_section_change', False):
-            return
-
-        if not immediate:
-            if not self.sectionChangeTimeout:
+        if controlID == self.SECTION_LIST_ID:
+            if previousFocusID in (self.SIDEBAR_GROUP_ID, self.SECTION_LIST_ID,
+                                   self.SERVER_BUTTON_ID, self.USER_BUTTON_ID):
                 return
-            while not util.MONITOR.waitFor():
-                # timing issue
-                if not self.sectionChangeTimeout:
-                    return
-                if time.time() >= self.sectionChangeTimeout:
-                    break
-
-            # by the time the debounce settled, focus may have moved past the section list
-            # entirely (e.g. down onto the server/user button) - the selection it's about to
-            # read is stale in that case, so don't act on a section the user isn't even browsing
-            # anymore
-            try:
-                if self.getFocusId() != self.SECTION_LIST_ID:
-                    return
-            except AttributeError:
-                # self itself (a MultiWindow - a nested LibraryWindow instance) may have been torn
-                # down for real - not just covered - while this thread slept: item 4's goHome()
-                # bubble (Home-ControlledWindow plan) now actively unwinds descendant windows from
-                # outside, including ones with their own independent settled-focus debounce thread
-                # still in flight from before the unwind started. getFocusId() isn't defined on
-                # MultiWindow directly - it's delegated via __getattr__ to self._current, which real
-                # teardown already `del`'d by the time this fires (see __getattr__'s own comment,
-                # kodigui.py) - so this is exactly the same "focus moved away, don't act" case
-                # above, just discovered by AttributeError instead of a control ID mismatch.
-                # Live-confirmed: an uncaught exception here otherwise, logged from the debounce
-                # thread's own top-level exception handler - not a crash, but not clean either.
-                return
-
-        item = self.sectionList.getSelectedItem()
-        if not item or item.getProperty('is.search') or item.dataSource is None:
-            # checkSectionItem() applies this same filter when it starts the debounce timer, but
-            # focus can still move onto Search (or anything else with no real section behind it)
-            # inside the section list before the timer fires - the "focus left the list entirely"
-            # check above doesn't catch that, since it never leaves SECTION_LIST_ID. Re-checking
-            # here against this settled-on item, not just the one that started the timer, is what
-            # was missing - live-confirmed crash otherwise (opener.sectionClicked() dereferencing
-            # a None section).
+        elif previousFocusID != self.SECTION_LIST_ID:
             return
 
-        if self.lastSection == item.dataSource:
-            return
+        self._selectActiveSection()
 
-        self._dispatchSectionOpen(item)
-
-    def _dispatchSectionOpen(self, item, force=False):
-        """What happens once the debounce settles on a genuinely different section (also reused by
-        sectionClicked() below for the immediate click path). is.home is not special-cased at all
-        any more (Home-ControlledWindow plan, items 1 and 4): home_section is just another section
-        value, whether self can swap in place or has to unwind a descendant chain first.
-
-        force=True (sectionClicked() only) skips the "already on this section" no-op below - an
-        explicit click on the sidebar entry that's already active/focused should still act: for a
-        descendant (nested LibraryWindow, ShowWindow/PrePlayWindow/EpisodesWindow etc.), that means
-        unwinding the chain back to the section's root instead of silently doing nothing, which is
-        the whole point of clicking it - there was previously no way to get back to a focused
-        section's root except detouring through a different section first. The settled-focus
-        debounce path (_sectionChanged() above) never passes force - merely re-focusing/re-settling
-        on the already-active section shouldn't reopen it, only an explicit click should.
+    def _dispatchSectionOpen(self, item):
+        """Open the clicked sidebar section fresh. A click always acts, even on the section already
+        showing: that resets it to its root (from a descendant, unwinds the chain back to it).
 
         Two cases, split on whether self is the true root (windowutils.HOME):
 
-        - self IS HOME: safe in-place swap (library.py's LibraryWindow.openSection()), deferred via
-          SKIN_RELOAD_DEFER_SECONDS the same as always - see that constant's own comment. Callable
-          from any thread, including the settled-focus debounce thread - openSection()'s own
-          doClose()-based swap is what this whole plan's threading work made safe from anywhere.
-          Still guarded by openSection()'s own is_current_window check (declines, doesn't act, if
-          somehow not current) as defense in depth, though a genuine descendant shouldn't be able to
-          reach this branch any more per the point below.
+        - self IS HOME: in-place swap (library.py's LibraryWindow.openSection()), deferred by
+          SKIN_RELOAD_DEFER_SECONDS via _deferOpenSection() - see that constant's own comment.
 
-        - self is any descendant - a nested LibraryWindow instance (a movie collection, a subDir
-          browse) *or* a plain ControlledWindow with its own SidebarMixin (ShowWindow, PrePlayWindow,
-          EpisodesWindow) - unwinds via the exact same forceDismiss()+closeWithCommand()+HOME.show()
-          bubble goHome() already uses for the Home button, now carrying the clicked section through
-          instead of always landing on home_section. This replaces two previously-separate, narrower
-          mechanisms: a nested LibraryWindow used to swap *itself* in place instead of unwinding
-          (wrong - it isn't the root), and everything else used to force-dismiss self and push a
-          brand new LibraryWindow instance via opener.sectionClicked() (openSidebarTarget(), now
-          removed) - a second, redundant session object, not "one window."
-
-          goHome()'s forceDismiss()/HOME.show() are real, synchronous native window calls, not the
-          flag-only doClose() the HOME branch above relies on - unlike openSection()'s doClose(),
-          there's no owning loop for a plain ControlledWindow (ShowWindow/PrePlayWindow/
-          EpisodesWindow open via one blocking .modal() call, not MultiWindow._open()'s polled loop)
-          to defer the real native work onto, so this calls forceDismiss() directly, cross-thread,
-          from the settled-focus debounce thread same as from a direct click. Live-tested both ways:
-          clicking a section from inside a descendant, and settled-focus/hover with no click, from a
-          nested LibraryWindow (a collection) and multi-level plain-descendant chains (person/actor
-          pages several deep) alike - all correctly unwind and land on the target section, no native
-          crash. One real bug found and fixed along the way, not this call site - see
-          _sectionChanged()'s own try/except AttributeError above.
+        - self is a descendant - a real hosted shell's own onClick() lands here (ShowWindow,
+          PrePlayWindow, EpisodesWindow...), since a real shell's onClick is not redirected to the
+          host (see handleSidebarDropdownClick()'s own comment). goHome() bubbles the section up to
+          the host, carrying force so library.py's goHome() override doesn't no-op on the
+          already-active section.
         """
         section = item.dataSource
-        if section == self.lastSection and not force:
-            return
-
         if self is HOME:
-            # _deferOpenSection() (library.py's LibraryWindow, the only thing HOME ever is):
-            # single-flight - see its own comment for the live-confirmed reentrancy hazard
-            # (kodi.log: 7 concurrent openSection() calls racing each other) a bare
-            # threading.Timer(...).start() here used to allow, with no coordination against
-            # goHome()'s own identical defer or repeated triggers of this same method.
-            self._deferOpenSection(section, force=force)
+            self._deferOpenSection(section, force=True)
         else:
-            # This is also the branch a real hosted shell's own onClick() reaches (EpisodesWindow,
-            # PrePlayWindow, etc.) - self is that shell instance here, never HOME, since a real
-            # shell's onClick is deliberately not monkeypatched to the host's (see
-            # handleSidebarDropdownClick()'s own comment). goHome()'s own bubble resolves self back
-            # to HOME internally (via _liveChainHost()) - force has to be threaded through that
-            # bubble too (goHome()/_goHomeDirect() above), or a click on the already-active section
-            # from inside a hosted shell silently no-ops once it reaches library.py's goHome()
-            # override, which has its own identical "already there" guard.
-            self.lastSection = section
-            self.goHome(section=section, force=force)
+            self.goHome(section=section, force=True)
 
     def sectionClicked(self):
-        self._ensureSidebarNavState()
-
         item = self.sectionList.getSelectedItem()
         if not item:
             return
@@ -454,10 +276,7 @@ class SidebarMixin():
             self.searchButtonClicked()
             return
 
-        # force=True: an explicit click on the already-active section should still act (reset it
-        # in place if self is HOME, unwind back to its root if self is a descendant) - see
-        # _dispatchSectionOpen()'s own comment on why this differs from the settled-focus path.
-        self._dispatchSectionOpen(item, force=True)
+        self._dispatchSectionOpen(item)
 
 
 class UtilMixin(GoHomeMixin):

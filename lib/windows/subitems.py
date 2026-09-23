@@ -178,6 +178,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.buildSectionList()
         else:
             self.sectionList.newControl(self)
+        self._selectActiveSection()
         self.displayServerAndUser()
 
         self.setup()
@@ -447,9 +448,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         try:
             controlID = self.getFocusId()
 
-            if controlID == self.SECTION_LIST_ID:
-                self.checkSectionItem(action=action)
-
             if not controlID and self.lastFocusID and not action == xbmcgui.ACTION_MOUSE_MOVE:
                 self.setFocusId(self.lastFocusID)
 
@@ -596,9 +594,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     def onFocus(self, controlID):
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem()
 
         if 399 < controlID < 500:
             # controlID - 399, not - 400: gives the season row its own tier (1) instead of colliding
@@ -1295,6 +1290,7 @@ class ArtistWindow(ShowWindow):
             self.buildSectionList()
         else:
             self.sectionList.newControl(self)
+        self._selectActiveSection()
         self.displayServerAndUser()
 
         self.setup()
@@ -1318,9 +1314,6 @@ class ArtistWindow(ShowWindow):
         # least once", not off returning to exactly 0).
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-        if controlID == self.SECTION_LIST_ID:
-            self.checkSectionItem()
 
         if 399 < controlID < 500:
             tier = self.HUB_FOCUS_TIERS.get(controlID, controlID - 399)
