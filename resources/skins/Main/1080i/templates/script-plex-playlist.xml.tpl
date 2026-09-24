@@ -1,6 +1,5 @@
 {% extends "default.xml.tpl" %}
 {% block headers %}<defaultcontrol>100</defaultcontrol>{% endblock %}
-{% block header_topleft %}{% endblock %}
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}

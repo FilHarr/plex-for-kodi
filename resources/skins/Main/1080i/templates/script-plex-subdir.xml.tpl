@@ -7,7 +7,6 @@
    posy) rather than script-plex-collection.xml.tpl's compressed, 1-row-trigger ones - those were
    specifically compensating for the info panel's vertical cost, which doesn't apply here. Retune
    live if this doesn't hold once tested against a real deep folder tree. #}
-{% block header_topleft %}{% endblock %}
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}

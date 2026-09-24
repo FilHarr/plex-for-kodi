@@ -77,7 +77,7 @@
             <posy>0</posy>
             <width>590</width>
             <height>741</height>
-            <onleft>201</onleft>
+            <onleft>noop</onleft>
             <onright>noop</onright>
             <scrolltime>200</scrolltime>
             <orientation>vertical</orientation>
@@ -502,7 +502,6 @@
 
 
 <control type="group" id="200">
-    <defaultcontrol always="true">201</defaultcontrol>
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
@@ -524,22 +523,6 @@
         <itemgap>60</itemgap>
         <orientation>horizontal</orientation>
         <ondown>50</ondown>
-        <control type="group">
-            <width>40</width>
-            <height>{{ vscale(40) }}</height>
-            <control type="button" id="201">
-                <animation effect="zoom" start="100" end="144" time="100" center="20,{{ vscale(20) }}" reversible="false">Focus</animation>
-                <animation effect="zoom" start="144" end="100" time="100" center="20,{{ vscale(20) }}" reversible="false">UnFocus</animation>
-                <width>40</width>
-                <height>{{ vscale(40) }}</height>
-                <ondown>50</ondown>
-                <font>font12</font>
-                <focusedcolor>FF000000</focusedcolor>
-                <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/home-focus.png</texturefocus>
-                <texturenofocus colordiffuse="99FFFFFF">script.plex/buttons/home.png</texturenofocus>
-                <label> </label>
-            </control>
-        </control>
         <control type="label">
             <width max="500">auto</width>
             <height>{{ vscale(40) }}</height>

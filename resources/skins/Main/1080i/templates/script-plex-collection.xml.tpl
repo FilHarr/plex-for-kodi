@@ -4,7 +4,6 @@
    section-tabs row, no sort/filter/view-type-toggle chrome, no key-scrubber) - see
    hashed-orbiting-pizza.md's Phase 4. Same header/sidebar opt-in pattern as
    script-plex-episodes.xml.tpl/script-plex-pre_play.xml.tpl. #}
-{% block header_topleft %}{% endblock %}
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}

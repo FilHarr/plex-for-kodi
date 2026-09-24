@@ -8,13 +8,6 @@
    own comment on the flag for the view-swap bug that made the property approach unreliable. #}
 {% block background %}{% include "includes/default_background.xml.tpl" with suppress_hero_art=True %}{% endblock %}
 
-{# Blanked, same as script-plex-episodes.xml.tpl: the sidebar (header_sidebar below) already
-   provides Search and Home as its own first two entries (LibraryWindow.buildSectionList()),
-   making these icons a pure duplicate left over from before the sidebar existed - safe to drop
-   for the section-tabs row's sake (quiet-orbiting-heron.md, plan item 0), not a functionality
-   loss. #}
-{% block header_topleft %}{% endblock %}
-
 {# header_middle_add is default.xml.tpl's hook, but the header block below fully replaces
    default.xml.tpl's header body (see {% block header %} immediately following) and never
    references header_middle_add - so overriding that block name here would be dead code,
@@ -42,7 +35,6 @@
         <colordiffuse>C0000000</colordiffuse>
     </control>
     {% endblock %}
-    {% block header_topleft %}{% endblock header_topleft %}
     <control type="label">
         <right>60</right>
         <posy>{{ vscale(30) }}</posy>
@@ -63,9 +55,7 @@
            see that file's copy of this group for the full layout reasoning. onleft prefers the
            section-tabs row (320, includes/section_tabs.xml.tpl) when it's actually on screen -
            the symmetric return path for that row's own onright into this widget - falling back to
-           the sidebar rail (9001) instead of default's search button (202) when there's no tab
-           row to land on, since this header's own header_topleft is blanked in favor of the
-           sidebar - see the header_topleft block above. #}
+           the sidebar rail (9001) when there's no tab row to land on. #}
         <posx>360r</posx>
         <posy>0</posy>
         {# Collapsed to just the art thumbnail: 63x63, rounded through square-mask.png with the mask pinned

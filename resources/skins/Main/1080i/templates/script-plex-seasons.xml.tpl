@@ -1,5 +1,4 @@
 {% extends "default.xml.tpl" %}
-{% block header_topleft %}{% endblock %}
 <!-- default.xml.tpl's own header_anim only hides the header (and this screen's season-tab row inside
      it, id=205) once on.extras fires - i.e. tier 2+ (Roles/Extras/Related), not tier 1 (the season row
      itself, hub.focus>0 + Visible(500) - see group 50's own tier comment above content). The season-tab

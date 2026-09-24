@@ -1,6 +1,5 @@
 {% extends "default.xml.tpl" %}
 {% block headers %}<defaultcontrol>100</defaultcontrol>{% endblock %}
-{% block header_topleft %}{% endblock %}
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
@@ -115,7 +114,7 @@
                 <onup condition="!String.IsEmpty(Window.Property(summary))">305</onup>
                 <!-- Fallback is exactly where 305's own onup goes, so the row behaves as if the
                      target simply weren't there. 200 is the header group, which has no focusable
-                     children on this screen (header_topleft is blanked in favour of the sidebar),
+                     children on this screen (the default header has no left-hand buttons),
                      so in practice this consumes the press. -->
                 <onup>200</onup>
                 <!-- 402 (Popular Tracks), not 400 - see group 50's own defaultcontrol comment above. -->

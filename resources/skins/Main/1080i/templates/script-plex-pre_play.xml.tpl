@@ -1,13 +1,10 @@
 {% extends "default.xml.tpl" %}
-{# Blanks the default Home/Search topleft nav and slots the persistent sidebar rail in its
-   place instead - see default.xml.tpl's header_topleft block. Ids 201/202 (Home/Search there)
-   are reused by the rail's server/user buttons, so onClick handling for those ids moves to the
-   section list below. The rail itself is NOT filled in via default.xml.tpl's header_sidebar
+{# Slots the persistent sidebar rail in at the header's left. Its server/user buttons are ids
+   201/202, handled with the section list below. The rail itself is NOT filled in via default.xml.tpl's header_sidebar
    block - that block sits inside header group 200, which slides off-screen on scroll
    (header_anim above it), and the rail must stay fixed. Instead header is overridden here to
    render default's header via super() and then append the rail outside/after it, mirroring
    why library.xml.tpl's sidebar include sits outside its own group 200. #}
-{% block header_topleft %}{% endblock %}
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}

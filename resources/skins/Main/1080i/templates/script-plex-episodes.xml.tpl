@@ -1,11 +1,10 @@
 {% extends "default.xml.tpl" %}
-{# Blanks the default Home/Search topleft nav and slots the persistent sidebar rail in its
-   place instead - see script-plex-pre_play.xml.tpl's identical opt-in and the comment there
+{# Slots the persistent sidebar rail in at the header's left - see
+   script-plex-pre_play.xml.tpl's identical opt-in and the comment there
    explaining why the rail must be appended after super()'s header output rather than filled
    into default.xml.tpl's header_sidebar block (that block sits inside header group 200, which
-   slides off-screen on scroll). Ids 201/202 (Home/Search there) are reused by the rail's
-   server/user buttons, so onClick handling for those ids moves to the section list below. #}
-{% block header_topleft %}{% endblock %}
+   slides off-screen on scroll). The rail's server/user buttons are ids 201/202, handled with
+   the section list below. #}
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
@@ -1634,11 +1633,7 @@
 </control>
 {% endblock content %}
 
-{# widget sits at the header's far right, past the tabs, so the header runs tabs -> widget. There's no
-   more header_search_onright override here - it used to wire the default Search button's (id 202)
-   onright, but that button is gone now that header_topleft is blanked above (id 202 is the sidebar's
-   user button instead), so overriding a tag nested inside markup that no longer renders would be
-   dead code. #}
+{# widget sits at the header's far right, past the tabs, so the header runs tabs -> widget. #}
 {% block header_audiowidget_onleft %}<onleft condition="Control.IsVisible(205)">205</onleft><onleft condition="Control.IsVisible(206)">206</onleft><onleft>9000</onleft>{% endblock %}
 
 {% block header_middle_add %}

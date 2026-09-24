@@ -26,54 +26,6 @@
             <colordiffuse>C0000000</colordiffuse>
         </control>
         {% endblock %}
-        {% block header_topleft %}
-        <control type="grouplist">
-            <posx>60</posx>
-            <posy>{{ vscale(42.5) }}</posy>
-            <width>1000</width>
-            <height>{{ vscale(40) }}</height>
-            <align>left</align>
-            <itemgap>60</itemgap>
-            <orientation>horizontal</orientation>
-            <ondown>50</ondown>
-            <control type="group">
-                <width>40</width>
-                <height>{{ vscale(40) }}</height>
-                <control type="button" id="201">
-                    <animation effect="zoom" start="100" end="144" time="100" center="20,{{ vscale(20) }}" reversible="false">Focus</animation>
-                    <animation effect="zoom" start="144" end="100" time="100" center="20,{{ vscale(20) }}" reversible="false">UnFocus</animation>
-                    <width>40</width>
-                    <height>{{ vscale(40) }}</height>
-                    <onright>202</onright>
-                    <ondown>50</ondown>
-                    <font>font12</font>
-                    <focusedcolor>FF000000</focusedcolor>
-                    <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/home-focus.png</texturefocus>
-                    <texturenofocus colordiffuse="99FFFFFF">script.plex/buttons/home.png</texturenofocus>
-                    <label> </label>
-                </control>
-            </control>
-            {% block topleft_add %}{% endblock %}
-            <control type="group">
-                <width>40</width>
-                <height>{{ vscale(40) }}</height>
-                <control type="button" id="202">
-                    <animation effect="zoom" start="100" end="144" time="100" center="20,{{ vscale(20) }}" reversible="false">Focus</animation>
-                    <animation effect="zoom" start="144" end="100" time="100" center="20,{{ vscale(20) }}" reversible="false">UnFocus</animation>
-                    <width>40</width>
-                    <height>{{ vscale(40) }}</height>
-                    {% block header_search_onright %}<onright>204</onright>{% endblock %}
-                    <onleft>201</onleft>
-                    <ondown>50</ondown>
-                    <font>font12</font>
-                    <focusedcolor>FF000000</focusedcolor>
-                    <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/search-focus.png</texturefocus>
-                    <texturenofocus colordiffuse="99FFFFFF">script.plex/buttons/search.png</texturenofocus>
-                    <label> </label>
-                </control>
-            </control>
-        </control>
-        {% endblock header_topleft %}
         {% block header_sidebar %}{% endblock %}
         {% block header_middle_add %}{% endblock %}
         <control type="label">
