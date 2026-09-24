@@ -105,6 +105,9 @@ class FakeShell(object):
     def doClose(self, **kw):
         self.closed = True
 
+    def forceDismiss(self):
+        self.nativelyClosed = True
+
 
 class OtherFakeShell(FakeShell):
     """A second, unrelated real-shell class - swapTo() must accept a genuinely different class."""
@@ -312,6 +315,17 @@ class SetupCurrentTest(KodiTestCase):
         self.assertIs(host, shell._hostRef())
         self.assertFalse(hasattr(host, '_currentOnAction'))
 
+    def test_swapping_out_a_real_shell_closes_its_native_window(self):
+        """doClose() only flags a hosted shell; closing it natively was left to the forced gc
+        disposing it, which a task still running for it prevents - Kodi then re-activated it over
+        the next view (live-caught 2026-09-24)."""
+        host = FakeHostWindow()
+        _setupCurrent(host, FakeShell)
+        outgoing = host._current
+        _setupCurrent(host, OtherFakeShell)
+        self.assertTrue(getattr(outgoing, 'nativelyClosed', False))
+        self.assertFalse(getattr(host._current, 'nativelyClosed', False))
+
     def test_real_shell_branch_leaves_onClick_and_onFocus_and_onReInit_untouched(self):
         host = FakeHostWindow()
 
@@ -458,7 +472,9 @@ class SwapToAndBackStackTest(KodiTestCase):
         self.assertEqual({'video': 'a'}, host._nextKwargs)
         _setupCurrent(host, host._next)
 
-        # pop: shell A -> root grid
+        # pop: shell A -> root grid. The real openSection() clears _backStack when it swaps; the
+        # fake only reports that it did.
+        host.openSectionReturnValue = True
         popBack(host)
         self.assertEqual([], host._backStack)
         self.assertEqual(1, len(host.openSectionCalls))
@@ -468,6 +484,7 @@ class SwapToAndBackStackTest(KodiTestCase):
         kwargs - popBack() must peel them off into self._pendingRestore*/hand openSection() only
         section/filter_, so a stale/unexpected kwarg doesn't reach it directly."""
         host = FakeHostWindow()
+        host.openSectionReturnValue = True
         host._backStack = [(None, {'section': 'the-section', 'filter_': 'the-filter',
                                     '_restoreItemPos': 5, '_restoreHubId': 'hub-x'})]
         _setupCurrent(host, FakeShell)
@@ -480,6 +497,23 @@ class SwapToAndBackStackTest(KodiTestCase):
         self.assertEqual([((), {'force': True, 'fresh': False, 'section': 'the-section',
                                 'filter_': 'the-filter'})],
                           host.openSectionCalls)
+
+    def test_a_declined_pop_back_keeps_its_entry_for_the_next_back(self):
+        """openSection() declines while the current view isn't Kodi's current window yet (Back
+        pressed as a screen was still opening). Live-caught 2026-09-24: the popped entry was lost,
+        leaving an empty chain, and the next Back offered to exit the addon."""
+        entry = (None, {'section': 'the-section', 'filter_': 'the-filter',
+                        '_restoreItemPos': 5, '_restoreHubId': 'hub-x'})
+        host = FakeHostWindow()
+        host.openSectionReturnValue = False
+        host._backStack = [entry]
+        _setupCurrent(host, FakeShell)
+
+        popBack(host)
+
+        self.assertEqual([entry], host._backStack)
+        self.assertIsNone(host._pendingRestoreItemPos)
+        self.assertIsNone(host._pendingRestoreHubId)
 
     def test_pop_back_on_a_root_restore_entry_without_restore_kwargs_clears_pending_state(self):
         host = FakeHostWindow()
@@ -703,6 +737,17 @@ class SwapToSectionTest(KodiTestCase):
             host._backStack = []
             return True
         return _fake
+
+    def test_a_declined_open_section_adds_no_entry(self):
+        """Appending anyway would make Back 'return' to the screen still showing."""
+        host = FakeHostWindow()
+        _setupCurrent(host, FakeShell)
+        host._backStack = [(None, {'section': 'root', 'filter_': None})]
+        host.openSectionReturnValue = False
+
+        swapToSection(host, 'new-section')
+
+        self.assertEqual([(None, {'section': 'root', 'filter_': None})], host._backStack)
 
     def test_from_a_hosted_shell_pushes_the_shells_own_reconstruction_entry(self):
         host = FakeHostWindow()
@@ -1545,6 +1590,7 @@ class _FakePeekHost(object):
         self.contentMode = 'recommended'
         self._hubSliding = False
         self._hubPeekBindPending = True
+        self._isHostedShell = False
         self.bound = []
 
     def _bindHubToControl(self, hub, index):
@@ -1578,6 +1624,15 @@ class PeekBindOwedTest(KodiTestCase):
     def test_deferred_timer_declines_once_already_paid(self):
         host = _FakePeekHost()
         host._hubPeekBindPending = False
+
+        library.LibraryWindow._bindPeekHubsDeferred(host, 1)
+
+        self.assertEqual([], host.bound)
+
+    def test_deferred_timer_declines_under_a_hosted_screen(self):
+        """Opening an item within the defer changes neither the generation nor contentMode."""
+        host = _FakePeekHost()
+        host._isHostedShell = True
 
         library.LibraryWindow._bindPeekHubsDeferred(host, 1)
 

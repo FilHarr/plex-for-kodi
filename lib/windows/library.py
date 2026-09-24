@@ -737,6 +737,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.reset()
 
         self.lock = threading.Lock()
+        # Placeholder chunks for a keyed (title-sort) grid must land in order; each waits on this
+        # for its turn instead of spinning on the lock (see _defaultItemsCallback()).
+        self._defaultItemsTurn = threading.Condition(self.lock)
 
         # Stage C (quiet-orbiting-heron.md, Recommended-tab sharing): minimal state so the ported
         # isHubHidden()/sortHubsByUserOrder()/getEnabledHubsForSection() below don't AttributeError
@@ -969,10 +972,21 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # thread from before this swap must find no chain host (_liveChainHost() -> None), not act
         # on the host's new current window. Its input needs no clearing - hostedBy() drops a late
         # callback on a window that's no longer current.
+        #
+        # Its native window is closed here too, while it's still Kodi's active window and before
+        # the next one is shown. doClose() only flags it, and closing used to be left to the forced
+        # collection below disposing it - which only happens if nothing else still references
+        # it. Tasks still running for it after Tasks.kill() stopped joining the workers do (e.g.
+        # its watchlist checks), and live-caught 2026-09-24: Back on an Episodes screen still
+        # loading swapped to Home, then Kodi re-activated the old Episodes window over it
+        # (its onReInit() ran after Home's onFirstInit()), where every input was dropped as
+        # coming from a window that's no longer current - the addon looked frozen.
         outgoingShell = self._current
         outgoingWasRealShell = outgoingShell is not None and getattr(outgoingShell, '_chainHost', None) is not None
         if outgoingWasRealShell:
             outgoingShell._chainHost = None
+            util.DEBUG_LOG("Library: _setupCurrent() closing outgoing {0}'s native window", outgoingShell)
+            outgoingShell.forceDismiss()
         del outgoingShell
 
         if not self._isRealShell(cls):
@@ -1152,7 +1166,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._current.doClose()
 
     def popBack(self):
-        cls, kwargs = self._backStack.pop()
+        entry = self._backStack.pop()
+        cls, kwargs = entry
         if cls is None:
             # _restoreItemPos/_restoreHubId (_captureRootRestoreState()) aren't real
             # openSection() kwargs - peel them off into the pending-restore attributes fillShows()/
@@ -1164,7 +1179,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # force=True: section == self.section will be true here (root state is never
             # mutated while a shell is hosted), which openSection()'s own no-op guard would
             # otherwise decline.
-            self.openSection(force=True, fresh=False, **kwargs)
+            if not self.openSection(force=True, fresh=False, **kwargs):
+                # Declined - the current view isn't Kodi's current window yet (Back pressed as a
+                # screen was still opening; its _winID is only set once its onInit() runs). Keep
+                # the entry, so the chain is intact for the next Back: live-caught 2026-09-24,
+                # losing it left an Episodes screen with an empty chain, where the next Back
+                # offered to exit the addon.
+                self._pendingRestoreItemPos = None
+                self._pendingRestoreHubId = None
+                self._backStack.append(entry)
         else:
             self.swapTo(cls, push=False, **kwargs)
 
@@ -1201,8 +1224,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             entryKwargs = {'section': self.section, 'filter_': self.filter}
             entryKwargs.update(self._captureRootRestoreState())
             entry = (None, entryKwargs)
-        self.openSection(section, filter_=filter_, force=True, fresh=False)
-        self._backStack = precedingBackStack + [entry]
+        # Only when the swap happened: a declined openSection() leaves _backStack as it was, and
+        # appending anyway would make Back "return" to the screen still showing.
+        if self.openSection(section, filter_=filter_, force=True, fresh=False):
+            self._backStack = precedingBackStack + [entry]
 
     def switchTab(self, mode, item_type=None):
         """Swap this already-open window between content modes ('library' grid vs.
@@ -4794,7 +4819,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 jitems.append(mli)
                 totalSize += ji_size
 
-                tasks.append(CreateDefaultItemsTask().setup(idx, ji.size.asInt(), totalSize, self.thumb_fallback, self._defaultItemsCallback, key=ji.key))
+                tasks.append(CreateDefaultItemsTask().setup(idx, ji.size.asInt(), totalSize, self.thumb_fallback, self._defaultItemsCallbackFor(self._listGeneration), key=ji.key))
                 idx += ji_size
 
             util.DEBUG_LOG('JumpList item size: {}', totalSize)
@@ -4822,7 +4847,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 return
             else:
                 for startPosition in range(0, totalSize, self.getDefChunkSize(totalSize)):
-                    tasks.append(CreateDefaultItemsTask().setup(startPosition, self.getDefChunkSize(totalSize), totalSize, self.thumb_fallback, self._defaultItemsCallback))
+                    tasks.append(CreateDefaultItemsTask().setup(startPosition, self.getDefChunkSize(totalSize), totalSize, self.thumb_fallback, self._defaultItemsCallbackFor(self._listGeneration)))
 
         self.setProperty("items.count", str(totalSize))
 
@@ -5108,27 +5133,33 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if keys:
             util.setGlobalProperty('key', keys[0])
 
-    def _defaultItemsCallback(self, items, key, firstMli):
+    def _defaultItemsCallbackFor(self, generation):
+        """Same staleness snapshot as _chunkCallbackFor() below."""
+        def callback(items, key, firstMli):
+            self._defaultItemsCallback(items, key, firstMli, generation)
+        return callback
+
+    def _defaultItemsCallback(self, items, key, firstMli, generation=None):
         if not items:
             return
 
-        while True:
-            self.lock.acquire()
+        with self._defaultItemsTurn:
             # When creating the default items for the title sort we need to add them to the list
-            # in order.  So we look at the first index of the incoming items to see if it's the
-            # next batch of items to add.  If not then it releases the lock and adds a small delay
-            # so that other threads can grab the lock.
+            # in order. So we look at the first index of the incoming items to see if it's the
+            # next batch of items to add, and if not, wait for the batch before it. Used to spin on
+            # the lock with a 1 ms sleep, forever if an earlier batch was cancelled - which also
+            # hung the old joining Tasks.kill(). A swap (_listGeneration) or close ends the wait.
             if key and firstMli:
-                if int(firstMli.getProperty('index')) != self.showPanelControl.size():
-                    self.lock.release()
-                    xbmc.sleep(1)
-                    continue
+                while int(firstMli.getProperty('index')) != self.showPanelControl.size():
+                    if (generation is not None and generation != self._listGeneration) or self.closing:
+                        util.DEBUG_LOG("Library: _defaultItemsCallback() declined - list moved on")
+                        return
+                    self._defaultItemsTurn.wait(0.25)
 
                 self.firstOfKeyItems[key] = firstMli
 
             self.showPanelControl.addItems(items)
-            self.lock.release()
-            break
+            self._defaultItemsTurn.notify_all()
 
     def _chunkCallbackFor(self, generation):
         """Wraps _chunkCallback() with the _listGeneration snapshot taken when the chunk fetch
@@ -7753,9 +7784,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         Home reset left row 3 blank): a slide only rebinds the one control wrapping round from the
         far end, while the unbound extreme on the near side rotates into a visible role empty.
         _hubPeekBindPending now outlives a cancelled or declined timer, and _startHubSlide()
-        binds the two controls itself (_bindPeekHubs()) before rotating while it's still set."""
+        binds the two controls itself (_bindPeekHubs()) before rotating while it's still set.
+
+        _isHostedShell too: opening an item (swapTo()) changes neither the generation nor
+        contentMode, which stays 'recommended' under a hosted screen. Live-caught 2026-09-24: an
+        Episodes screen opened within the defer got this bind, which raised AttributeError
+        (HUB_CONTROL_ID resolved against the Episodes window). Back rebuilds Home anyway."""
         with self.lock:
-            if (generation != self._listGeneration or self.closing
+            if (generation != self._listGeneration or self.closing or self._isHostedShell
                     or self.contentMode != 'recommended' or self._hubSliding
                     or not self._hubPeekBindPending):
                 return
