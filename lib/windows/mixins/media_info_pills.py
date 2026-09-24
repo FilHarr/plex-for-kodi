@@ -66,9 +66,10 @@ class MediaInfoPillsMixin(object):
         else:
             left_inset = self.PILL_PADDING // 2
 
-        # +2: small fudge on top of the measured text width itself (not the insets) - measureFont8Width()
-        # is a real per-glyph measurement but still an estimate (see this class's own header comment),
-        # and text was landing a couple px tighter than the padding alone accounts for.
+        # +2: small margin on top of the measured text width itself (not the insets). Added when the
+        # measurement summed exact advances and text landed a couple px tighter than that; the
+        # measurement now rounds per glyph at the screen's render size the way Kodi does (see
+        # text_metrics.measureTextWidth()), and the margin stays for what it still doesn't model.
         width = min(max(left_inset + right_inset + self.measureFont8Width(text) + 2, self.PILL_MIN_WIDTH), max_width)
         width = int(round(width))
 

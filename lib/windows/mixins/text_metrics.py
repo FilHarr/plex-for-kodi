@@ -19,6 +19,8 @@ If the active Kodi "Skin Fonts" setting ever changes away from "Default", these 
 real typeface in use and would need re-measuring against whichever font file replaces it.
 """
 
+import math
+
 UNITS_PER_EM = 2048
 
 FONT8_POINT_SIZE = 18
@@ -43,7 +45,38 @@ CHAR_WIDTHS = {
 CHAR_WIDTH_FALLBACK = sum(CHAR_WIDTHS.values()) / len(CHAR_WIDTHS)
 
 
-def measureTextWidth(text, point_size):
-    """Estimated rendered width of `text` in pixels at `point_size`."""
-    units = sum(CHAR_WIDTHS.get(ch, CHAR_WIDTH_FALLBACK) for ch in (text or ''))
-    return units * point_size / UNITS_PER_EM
+# The skin's own coordinate height (1080i): font sizes and control widths are in these pixels.
+SKIN_HEIGHT = 1080
+
+
+def renderScale():
+    """Screen pixels per skin pixel. Kodi loads a font at point_size x this (so 36px on a 2160p
+    screen, 18px at 1080p for font8) and lays text out at that size. Uses the resolution read once
+    at startup (util.DISPLAY_RESOLUTION) rather than asking Kodi per measurement: every Python GUI
+    call feeds Kodi's frame throttle, and the resolution very rarely changes mid-session. Kodi's
+    skin zoom setting also scales fonts and isn't accounted for (default 0%)."""
+    try:
+        from lib import util
+        return util.DISPLAY_RESOLUTION[1] / float(SKIN_HEIGHT) or 1.0
+    except Exception:
+        return 1.0
+
+
+def measureTextWidth(text, point_size, scale=None):
+    """Estimated rendered width of `text` in skin pixels at `point_size`, the way Kodi lays it out on
+    this screen: FreeType's hinting rounds each glyph's advance to whole pixels at the size the font
+    is actually rendered at (point_size x scale), so that's summed and scaled back to skin pixels.
+
+    Used to sum the exact, unrounded advances, which matches only at high resolutions. At 1080p
+    the rounding mostly goes up for this font, and 'English (TrueHD Atmos 7.1)' measured 238.4
+    against the 241 Kodi actually lays out - 1px over its 240px audio-pill label box, so it scrolled
+    on the 1080p AM6B but not on a 2160p PC (239.5 there, where each rounding error is halved in
+    skin pixels). Live-reported 2026-09-24. Kerning still isn't modelled (it only narrows).
+
+    scale: screen pixels per skin pixel; defaults to renderScale()."""
+    if scale is None:
+        scale = renderScale()
+    size = point_size * scale
+    screen_px = sum(math.floor(CHAR_WIDTHS.get(ch, CHAR_WIDTH_FALLBACK) * size / UNITS_PER_EM + 0.5)
+                    for ch in (text or ''))
+    return screen_px / scale
