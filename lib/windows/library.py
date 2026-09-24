@@ -6,6 +6,7 @@ import os
 import random
 import threading
 import time
+import weakref
 
 import plexnet
 import six
@@ -595,7 +596,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     TAB_LIST_ID = 320
 
     # onFocus()'s own "just crossed into the hub range from outside it" flag, consumed by
-    # onAction()'s hub-branch - see onFocus()'s own comment for the double-delivery bug this
+    # routeAction()'s hub-branch - see onFocus()'s own comment for the double-delivery bug this
     # guards against. Class-level default so it's never missing before the first onFocus() call.
     _hubJustEnteredFromOutside = False
     # The anchor control onFocus() just redirected an arrival to (see there), so that redirect's
@@ -716,7 +717,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # methods that set it). _shuttingDown is read directly, unguarded, by player.py's
         # playQueueCallback() - must exist before anything else can run, not just before
         # shutdown() is ever called.
-        # go_root/_goRootAwaitFocus are consumed by onReInit()/onAction()/onFocus() below - see
+        # go_root/_goRootAwaitFocus are consumed by onReInit()/routeAction()/onFocus() below - see
         # those for the full mechanism, ported from HomeWindow's own go_root handling.
         self.closeOption = None
         self._shuttingDown = False
@@ -729,7 +730,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # section/tab swap's own onFirstInit() re-entry (self._openBaseWinID stays set for this
         # instance's whole life, this flag doesn't).
         self._coldStartSignaled = False
-        # Reentrancy guard for the exit-confirmation dialog (onAction()'s NAV_BACK handling,
+        # Reentrancy guard for the exit-confirmation dialog (routeAction()'s NAV_BACK handling,
         # confirmExit() below) - ported from HomeWindow's identical guard (home.py).
         self._checkingForExit = False
 
@@ -948,33 +949,30 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                         cls, getattr(self, '_realShellHostCount', 0), self._isHostedShell)
 
         # EXPERIMENTAL fix, being tested live (hashed-orbiting-pizza.md crash investigation):
-        # self._current._chainHost = self (below) creates a reference cycle between the host
-        # and every hosted shell (shell -> host via _chainHost/onAction/onFirstInit's closure;
-        # host -> shell via self._current, while it's current) - refcounting alone can't free a
-        # genuine cycle, so the outgoing shell can survive past reassignment below until
-        # Python's cyclic GC happens to run, which nothing here ever forces between swaps (the
-        # only gc.collect() in this whole session is MultiWindow.open()'s, once, at session
-        # end). Hypothesis: Kodi's native side needs the outgoing window's Python object torn
-        # down promptly to safely reuse its window ID for the next one, and a shell kept alive
-        # by an uncollected cycle is what corrupts the next window built on that reused ID -
-        # live-confirmed as a 100%-deterministic native crash (identical faulting instruction
-        # and address - a classic "used a not-found sentinel as a pointer" read at
-        # 0xFFFFFFFFFFFFFFFF - across 5 independent captures) that only manifests after a real
-        # shell has been hosted more than once before a section switch. Not proven; explicitly
-        # breaking the cycle and forcing collection here is the direct test of that hypothesis.
+        # hosted shells used to hold the host strongly (_chainHost, plus the host's bound
+        # onAction/onFirstInit patched onto them), making a reference cycle with self._current -
+        # refcounting alone can't free a genuine cycle, so the outgoing shell could survive past
+        # reassignment below until Python's cyclic GC happened to run. Hypothesis: Kodi's native
+        # side needs the outgoing window's Python object torn down promptly to safely reuse its
+        # window ID for the next one, and a shell kept alive by an uncollected cycle is what
+        # corrupts the next window built on that reused ID - live-confirmed as a
+        # 100%-deterministic native crash (identical faulting instruction and address - a classic
+        # "used a not-found sentinel as a pointer" read at 0xFFFFFFFFFFFFFFFF - across 5
+        # independent captures) that only manifests after a real shell has been hosted more than
+        # once before a section switch. Not proven. Shells now reach the host only through weak
+        # references (_hostRef, _chainHost - windowutils.UtilMixin), so that cycle no longer
+        # exists; _forceCollectOutgoing() below still runs, since other cycles (plexobjects'
+        # item<->container) keep it collecting thousands of objects per swap - whether it can go
+        # needs E4's gc timing (navigation review).
         #
-        # Breaking the cycle (clearing the outgoing shell's own back-references) has to happen
-        # here, before self._current is reassigned below - but gc.collect() itself must NOT run
-        # until after that reassignment, since self._current is still the only remaining
-        # reference to the outgoing shell until then; collecting too early would find it still
-        # referenced and do nothing. See _forceCollectOutgoing() below, called at the tail of
-        # both branches once self._current genuinely points at the new object instead.
+        # _chainHost is still cleared on the outgoing shell: a call already in flight on another
+        # thread from before this swap must find no chain host (_liveChainHost() -> None), not act
+        # on the host's new current window. Its input needs no clearing - hostedBy() drops a late
+        # callback on a window that's no longer current.
         outgoingShell = self._current
         outgoingWasRealShell = outgoingShell is not None and getattr(outgoingShell, '_chainHost', None) is not None
         if outgoingWasRealShell:
             outgoingShell._chainHost = None
-            outgoingShell.onAction = None
-            outgoingShell.onFirstInit = None
         del outgoingShell
 
         if not self._isRealShell(cls):
@@ -989,6 +987,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._isHostedShell = True
         self._current = cls(cls.xmlFile, cls.path, cls.theme, cls.res, **self._nextKwargs)
         self._currentKwargs = self._nextKwargs
+        # Both weak (see the top of this method): _hostRef routes the shell's routeAction() through
+        # routeAction() (kodigui.BaseWindow.routeActionToHost()), _chainHost is what its
+        # navigation calls (openWindow(), goHome(), ...) find as the chain's host.
+        self._current._hostRef = weakref.ref(self)
         self._current._chainHost = self
         # Phase 2 (hashed-orbiting-pizza.md): hand the host's own sectionList object to the
         # shell - its onFirstInit() sees a non-None sectionList and rebinds via newControl()
@@ -999,43 +1001,28 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # backward (popBack() reconstructs via this same method).
         self._current.sectionList = self.sectionList
 
-        # Wraps (not replaces) the shell's own real onFirstInit - deliberately does NOT call
-        # self._onFirstInit()/self.onFirstInit() the way base MultiWindow._setupCurrent() would:
-        # LibraryWindow.onFirstInit() is real logic keyed to LibraryWindow's own templates
-        # (sectionList/tabList/userList/serverList, POSTERS_PANEL_ID focus) and would run broken
-        # against a real shell's native window (e.g. PrePlayWindow's XML has none of those
-        # controls). Only registers the close.windows signal (the other host-generic line base
-        # MultiWindow._onFirstInit() does, kodigui.py) - deliberately does NOT also replay
-        # self._properties onto the shell the way that base method does for LibraryWindow's own
-        # thin proxies. Live-confirmed bug without this exclusion: self._properties accumulates
+        # The host's close.windows handler, which base MultiWindow._onFirstInit() registers for its
+        # own views. Registration is idempotent (SignalsMixin.on()), and the host has normally
+        # been registered since its first view anyway. Deliberately NOT the rest of
+        # _onFirstInit(): LibraryWindow.onFirstInit() is real logic keyed to LibraryWindow's own
+        # templates (sectionList/tabList/userList/serverList, POSTERS_PANEL_ID focus) and would
+        # run broken against a real shell's native window (e.g. PrePlayWindow's XML has none of
+        # those controls). Nor does the shell get self._properties replayed onto it the way a
+        # thin view does. Live-confirmed bug without that exclusion: self._properties accumulates
         # whatever LibraryWindow's own 'recommended'-mode hero display last set via
         # updateHeroFrom()/setHeroInfo() (clear.logo/summary/etc. for the focused hub item) and
         # nothing overwrites those specific keys again once the user is just browsing an
         # ordinary grid - so they sit frozen at whatever hub item was focused when Home's hubs
-        # first drew this session (Continue Watching's first item, in practice) for the rest of
-        # the session. A real shell like PrePlayWindow happens to use the same property names
-        # for its own, unrelated metadata panel, so blindly replaying the host's entire cache
-        # briefly shows that frozen, unrelated content until the shell's own setInfo() overwrites
-        # it a moment later - visible specifically when opening straight from a library grid
-        # (nothing there ever refreshes those keys), not when opening from a hub (navigating the
-        # hub row to reach the click target keeps refreshing them to something closer to
-        # correct). A real shell has its own independent metadata logic; it was never meant to
-        # inherit the host's display-state cache the way a thin proxy is.
-        shellOnFirstInit = self._current.onFirstInit
+        # first drew this session. A real shell like PrePlayWindow happens to use the same
+        # property names for its own, unrelated metadata panel, so replaying the host's cache
+        # briefly showed that frozen, unrelated content until the shell's own setInfo()
+        # overwrote it. A real shell has its own independent metadata logic; it was never meant
+        # to inherit the host's display-state cache the way a thin view is.
+        plexapp.util.APP.on('close.windows', self.onCloseSignal)
 
-        def _onFirstInit():
-            plexapp.util.APP.on('close.windows', self.onCloseSignal)
-            shellOnFirstInit()
-
-        self._current.onFirstInit = _onFirstInit
-
-        # Same capture-and-forward shape base MultiWindow.onAction() already uses - this
-        # window's own onAction() (below) handles NAV_BACK/PREVIOUS_MENU/hosted-shell dispatch
-        # itself before falling through to the shell's real onAction() for everything else.
-        self._currentOnAction = self._current.onAction
-        self._current.onAction = self.onAction
-        # onClick/onFocus/onReInit deliberately left untouched on the shell instance - unlike
-        # LibraryWindow's own thin view-type children, these seven carry real business logic.
+        # onClick/onFocus/onReInit aren't routed through the host for real shells - unlike
+        # LibraryWindow's own thin view-type children (kodigui.MultiWindowView), these carry real
+        # business logic of their own. Their onAction() calls routeActionToHost() first.
         if outgoingWasRealShell:
             self._forceCollectOutgoing(cls)
         # TEMPORARY diagnostic logging - see this method's own top.
@@ -1044,8 +1031,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def _forceCollectOutgoing(self, cls):
         """EXPERIMENTAL, see _setupCurrent()'s own comment on the hypothesis this tests. Called
-        only once self._current/self._currentOnAction have both already been reassigned away
-        from the outgoing shell (whose own back-references to self were already cleared) - at
+        only once self._current has already been reassigned away from the outgoing shell (whose
+        _chainHost was already cleared, and whose other reference to self is weak) - at
         this point nothing in this object graph should still reference it, so a forced
         collection should free it (and its native window resources) immediately rather than
         waiting on Python's own GC scheduling.
@@ -1396,7 +1383,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # an explicit sidebar click is exactly the case that should abandon any chain in
         # progress, not just leave it dangling. Without this, _backStack keeps whatever
         # root-restore entry the chain pushed on its way in, live-confirmed to cause real
-        # breakage on the *next* unrelated NAV_BACK/chain: onAction()'s NAV_BACK intercept below
+        # breakage on the *next* unrelated NAV_BACK/chain: routeAction()'s NAV_BACK intercept below
         # only checks "is _backStack non-empty," not whether a chain is actually still active, so
         # a stale entry here gets wrongly popped later, jumping back to whatever section this
         # abandoned chain started from instead of behaving like an ordinary section view.
@@ -1610,7 +1597,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def confirmExit(self):
         """Ported verbatim from HomeWindow.confirmExit() (home.py) - self-contained, no
-        Home-specific state. See onAction()'s NAV_BACK handling below for the caller."""
+        Home-specific state. See routeAction()'s NAV_BACK handling below for the caller."""
         lBtnExit = T(32336, 'Exit')
         lBtnQuit = T(32704, 'Quit Kodi')
         modifier = util.getSetting('exit_default_is_quit') and "quit" or "exit"
@@ -1641,12 +1628,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def _sidebarTarget(self):
         """Whichever window object the sidebar's server/user dropdown UI must actually read/write
         controls on right now: self._current (the live, currently-modal real shell) while one is
-        hosted, self otherwise. Needed because onAction() runs as this bound method even when a
-        real shell owns the screen (_setupCurrent()'s self._current.onAction = self.onAction
-        monkeypatch, so shared chrome like the sidebar is handled centrally) - but self's own
+        hosted, self otherwise. Needed because routeAction() runs on this host even when a real
+        shell owns the screen (the shell's routeAction() routes through it first, so shared chrome
+        like the sidebar is handled centrally) - but self's own
         native window has already been closed (doClose()) in favor of the shell's by then (see
         MultiWindow._open()'s .modal() loop). getFocusId() reads still resolve against whatever's
-        genuinely on screen (that's how onAction()'s SERVER_BUTTON_ID/USER_BUTTON_ID branches get
+        genuinely on screen (that's how routeAction()'s SERVER_BUTTON_ID/USER_BUTTON_ID branches get
         reached at all while hosted), but *writes* - getControl(...).setHeight()/.setPosition(),
         ManagedControlList mutations, setFocusId() - do not: live-confirmed 100% reproducible
         native Kodi crash (minidump captured) the moment showUserMenu()/showServers() ran those
@@ -2048,7 +2035,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # only one) have nothing to switch to - hiding the row entirely rather than showing a lone
         # "Recommended" tab with nothing to switch between. Set unconditionally, every fresh
         # onFirstInit() (i.e. every content-mode/section swap, not just once) - section_tabs.xml.tpl
-        # gates control 320's own <visible> on this; onAction()'s hub-row MOVE_UP interception below
+        # gates control 320's own <visible> on this; routeAction()'s hub-row MOVE_UP interception below
         # also checks it directly before redirecting focus there, since a hidden control can't
         # usefully receive focus.
         self.setBoolProperty('hide.section_tabs', self.section.TYPE == 'mixed')
@@ -2354,8 +2341,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.section/self._current/self._backStack/etc. at the same instant - triggered by
         something firing goHome()/_dispatchSectionOpen() repeatedly in quick succession (a
         Home-button remote auto-repeating while held is the prime suspect, now reachable from a
-        hosted shell too via onAction()'s _isHostedShell branch -> _dispatchNativeAction() ->
-        base MultiWindow.onAction()'s goHomeAction() check; the immediate-click and settled-
+        hosted shell too via routeAction()'s _isHostedShell branch -> _dispatchNativeAction() ->
+        base MultiWindow.routeAction()'s goHomeAction() check; the immediate-click and settled-
         focus-debounce paths both firing for the same section-list navigation is a second,
         independent way to get two overlapping triggers). This is exactly the "openSection()/
         switchTab() triggered a second time before _open()'s loop caught up and reassigned
@@ -2502,8 +2489,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             player.PLAYER.stopAndWait(fade=util.addonSettings.themeMusicFade, deferred=True)
 
     def _dispatchNativeAction(self, action):
-        """onAction() below funnels both its branches through here instead of calling
-        kodigui.MultiWindow.onAction() directly, to intercept NAV_BACK/PREVIOUS_MENU before that
+        """routeAction() below funnels both its branches through here instead of calling
+        kodigui.MultiWindow.routeAction() directly, to intercept NAV_BACK/PREVIOUS_MENU before that
         base class's own default handling (self.doClose(), kodigui.py) - correct for an ordinary
         in-session LibraryWindow (closing just reveals whatever opened it, e.g. Home used to be),
         wrong once this IS the cold-start root (windowutils.HOME): there's nothing left underneath
@@ -2515,43 +2502,50 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             if self.changingServer:
                 # fixme: cheap way of avoiding an early exit after a server change - ported from
                 # HomeWindow's identical guard (home.py's onAction()).
-                return
+                return True
 
             if self.section != home.home_section:
                 # Not at the true root yet - treat back as "go home" (same contract goHome()
                 # itself uses), not "exit anything".
                 self.go_root = True
                 self.show()
-                return
+                return True
 
             if self._checkingForExit or util.getSetting('disable_exit_on_back', False):
-                return
+                return True
 
             try:
                 self._checkingForExit = True
                 ex = self.confirmExit()
                 # 0 = exit; 1 = minimize; 2/None = cancel
                 if ex.button in (2, None):
-                    return
+                    return True
                 elif ex.button == 1:
                     util.setGlobalProperty('is_active', '')
                     xbmc.executebuiltin('ActivateWindow(10000)')
-                    return
+                    return True
                 elif ex.button == 0:
                     self._shuttingDown = True
                     background.setShutdown()
                     self.closeOption = "quit" if ex.modifier == "quit" else "exit"
                     self.doClose()
-                    return
+                    return True
             finally:
                 self._checkingForExit = False
-            return
+            return True
 
-        kodigui.MultiWindow.onAction(self, action)
+        return kodigui.MultiWindow.routeAction(self, action)
 
-    def onAction(self, action):
+    def routeAction(self, action):
+        """Every action on the current view comes here first: kodigui.MultiWindowView.onAction()
+        for the grid and Recommended views, and the first line of each hosted shell's own
+        onAction() (routeActionToHost()). Returns True when the action was used here; False hands
+        it back to the view's own onAction() (the old _currentOnAction forward). For a hosted
+        shell only the shared parts below apply - sidebar popups, Back (its handleBack(), then the
+        chain), the sidebar, server and user buttons, the Home button - before _isHostedShell
+        returns to the shell."""
         if self._shuttingDown:
-            return
+            return True
 
         # belt: real user input ends the post-go_root wait (see onFocus()), in case the reset's own
         # focus event never arrives.
@@ -2563,7 +2557,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # instead of just closing the popup.
         if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and \
                 self.dismissSidebarPopupOnBack(target=self._sidebarTarget()):
-            return
+            return True
 
         # A hosted screen's own Back steps (handleBack(), kodigui.BaseWindow) come before the chain
         # pops below. NAV_BACK only, as on the screens' own standalone path. On an error, Back
@@ -2571,7 +2565,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if action == xbmcgui.ACTION_NAV_BACK and self._isHostedShell:
             try:
                 if self._current.handleBack():
-                    return
+                    return True
             except Exception:
                 util.ERROR()
 
@@ -2589,7 +2583,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # which do define POSTERS_PANEL_ID), but once a real shell is hosted (e.g. PrePlayWindow,
         # after clicking an item from this exact grid) self._current has no such attribute at all.
         # Live-confirmed regression without this guard: raised a bare AttributeError from inside
-        # onAction() on every single Back press while any shell was hosted, silently swallowed
+        # routeAction() on every single Back press while any shell was hosted, silently swallowed
         # somewhere above this call - Back appeared to simply stop doing anything at all after
         # opening an item from a grid. contentMode == 'library' (not 'recommended') and focus on
         # POSTERS_PANEL_ID specifically - hub-row Back has its own separate semantics, untouched
@@ -2600,7 +2594,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             mli = self.showPanelControl.getSelectedItem() if self.showPanelControl else None
             if mli and mli.pos():
                 self.showPanelControl.selectItem(0)
-                return
+                return True
 
         # Descendant-chain back-stack (hashed-orbiting-pizza.md Phase 1) - swapTo() always
         # pushes a root-restore entry on the genesis swap out of this window's own grid, so
@@ -2612,19 +2606,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         #
         # Deferred via SKIN_RELOAD_DEFER_SECONDS, not called inline: popBack()/swapTo() end in the
         # exact same doClose()-based reconstruct openSection()/switchTab() use, and this is that
-        # reload triggered synchronously from inside onAction() itself - precisely the shape
+        # reload triggered synchronously from inside routeAction() itself - precisely the shape
         # hashed-orbiting-pizza.md's Phase 3 flagged as a live open risk (the documented Kodi core
         # OnAction() reentrancy bug this constant exists for). Live-confirmed crash during Phase 4
         # testing on a related path (a stale _backStack entry left behind by a sidebar section
         # switch mid-chain, since fixed in openSection() - see its own comment); deferring this
-        # call is the same cheap, low-risk mitigation every other onAction()-triggered reload in
+        # call is the same cheap, low-risk mitigation every other routeAction()-triggered reload in
         # this class already uses, not a proven fix for that specific bug.
         if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and self._backStack:
             def _popBack():
                 try:
                     self.popBack()
                 except:
-                    # threading.Timer callbacks aren't covered by this addon's normal onAction()-level
+                    # threading.Timer callbacks aren't covered by this addon's normal routeAction()-level
                     # error handling - an uncaught exception here (e.g. popBack()'s own _backStack.pop()
                     # live-suspected as a contributor to an intermittent unresponsive-black-screen hang
                     # after Back) would otherwise vanish completely: no traceback anywhere, the outgoing
@@ -2632,7 +2626,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     # behavior on the success path.
                     util.ERROR()
             threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, _popBack).start()
-            return
+            return True
 
         try:
             controlID = self.getFocusId()
@@ -2642,15 +2636,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     # (home.py's onAction()). sectionMover() owns every action while active; nothing
                     # below in this method (the context menu) should also react.
                     self.sectionMover(self.movingSection, action)
-                    return
+                    return True
                 if action == xbmcgui.ACTION_CONTEXT_MENU:
                     # Section-item context menu - ported from HomeWindow's identical routing
                     # (home.py's onAction()).
                     show_section = self.sectionMenu()
                     if not show_section:
-                        return
+                        return True
                     self.serverRefresh(section=show_section)
-                    return
+                    return True
             elif controlID == self.SERVER_BUTTON_ID:
                 # Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - ported from HomeWindow's
                 # identical SERVER_BUTTON_ID handling (home.py's onAction()). selectServer() below
@@ -2659,9 +2653,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # same reentrancy reasoning as switchTab()'s own deferred dispatch (see
                 # windowutils.SKIN_RELOAD_DEFER_SECONDS).
                 #
-                # This whole onAction() runs against a real hosted shell too (self._current.onAction
-                # is monkeypatched to this bound method - _setupCurrent()'s own comment above), but
-                # self here is still the *host* - and the host's own native window has already been
+                # This whole routeAction() runs for a real hosted shell too (its onAction() calls
+                # routeActionToHost() first - kodigui.BaseWindow), but self here is still the *host* - and the host's own native window has already been
                 # closed (doClose()) in favor of the shell's, once a real shell is showing (see
                 # MultiWindow._open()'s .modal() loop). showServers()/selectServer()/doUserOption()
                 # below are all _sidebarTarget()-aware (see that method's own comment) precisely
@@ -2669,42 +2662,42 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # genuinely live window, not self.
                 if action == xbmcgui.ACTION_SELECT_ITEM:
                     self.showServers()
-                    return
+                    return True
                 elif action == xbmcgui.ACTION_CONTEXT_MENU and util.getUserSetting('previous_server', None):
                     uuid = util.getUserSetting('previous_server', None)
                     if uuid != plexapp.SERVERMANAGER.selectedServer.uuid:
                         threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.selectServer, args=(uuid,)).start()
-                    return
+                    return True
                 elif action == xbmcgui.ACTION_MOUSE_LEFT_CLICK:
                     self.showServers(mouse=True)
                     self.setBoolProperty('show.servers', True)
-                    return
+                    return True
             elif controlID == self.USER_BUTTON_ID:
                 # Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - ported from HomeWindow's
                 # identical USER_BUTTON_ID handling (home.py's onAction()). See SERVER_BUTTON_ID's
                 # own comment just above on why this is safe against a real hosted shell too.
                 if action == xbmcgui.ACTION_SELECT_ITEM:
                     self.showUserMenu()
-                    return
+                    return True
                 elif action == xbmcgui.ACTION_CONTEXT_MENU and util.getSetting('previous_user'):
                     # fast-switch to the previous user, if not protected
                     uid = util.getSetting('previous_user')
                     if uid == plexapp.ACCOUNT.ID:
-                        return
+                        return True
                     user = plexapp.ACCOUNT.getHomeUser(uid)
                     if not user or user.isProtected:
                         self.doUserOption(force_option="switch")
-                        return
+                        return True
                     self.doUserOption(force_option={"fast_switch": user.id})
-                    return
+                    return True
                 elif action == xbmcgui.ACTION_MOUSE_LEFT_CLICK:
                     self.showUserMenu(mouse=True)
                     self.setBoolProperty('show.options', True)
-                    return
+                    return True
             elif controlID == self.SERVER_LIST_ID:
                 if action == xbmcgui.ACTION_SELECT_ITEM:
                     self.setFocusId(self.SERVER_BUTTON_ID)
-                    return
+                    return True
 
             if self._isHostedShell:
                 # Everything below here (grid MOVE_SET, drag, hub-rotation-ring) is specific to
@@ -2718,8 +2711,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # PrePlayWindow whose host was last on the 'recommended' tab would wrongly
                 # trigger _startHubSlide()/hub-menu logic against host-side state. The shared
                 # sidebar/server/user controls above (SidebarMixin) stay reachable either way.
-                self._dispatchNativeAction(action)
-                return
+                return self._dispatchNativeAction(action)
 
             if self.dragging:
                 if not action == xbmcgui.ACTION_MOUSE_DRAG:
@@ -2743,9 +2735,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                         # already carried focus into the hub range natively (via a control outside
                         # it - the tabs row 320, the audio widget 204, or the sidebar rail 9001 -
                         # all landing here through 50's <defaultcontrol> chain, via <ondown> or, for
-                        # the sidebar, <onright>) - Kodi delivers it to onAction() a second time
+                        # the sidebar, <onright>) - Kodi delivers it to routeAction() a second time
                         # *after* that navigation has already happened, which onFocus() flagged for
-                        # us (see its own comment; onAction() itself can't tell "just arrived" apart
+                        # us (see its own comment; routeAction() itself can't tell "just arrived" apart
                         # from "already settled here" - by the time it runs, the native move, if
                         # any, is already done either way).
                         #
@@ -2760,7 +2752,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                         # unconditionally here, for whatever action this replay actually is, is what
                         # keeps it from ever surviving to affect a later, unrelated real press.
                         self._hubJustEnteredFromOutside = False
-                        return
+                        return True
                     action_id = action.getId()
                     if action_id in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
                         # Topmost hub, pressing up: exit the rotation ring entirely instead of the
@@ -2776,29 +2768,29 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                         if action_id == xbmcgui.ACTION_MOVE_UP and self.focusedHubIndex == 0:
                             if self.tabList and self.section.TYPE != 'mixed':
                                 self.setFocusId(self.TAB_LIST_ID)
-                                return
+                                return True
                             elif xbmc.getCondVisibility(
                                     'Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))'):
                                 self.setFocusId(self.PLAYER_STATUS_BUTTON_ID)
-                                return
+                                return True
                         self._startHubSlide(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
-                        return
+                        return True
                     elif action_id in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
                         # Plan items 10 (Group A)/11: sync hero art/info to the item this move is
                         # landing on, plus pagination/reselect-position memory (checkHubItem(),
                         # all hooked into this same call site). Reads
                         # getSelectedItem() directly, same as MOVE_SET's own dynamic-background
                         # update below does for the grid - Kodi's native container cursor is
-                        # already at the new position by the time onAction() runs (that existing,
+                        # already at the new position by the time routeAction() runs (that existing,
                         # proven pattern is what this one's modeled on), not the old one, so no
                         # special before/after ordering is needed here. Deliberately doesn't
                         # return (checkHubItem()'s return value only matters for the NAV_BACK
                         # case below) - the actual cursor movement is Kodi's own native list
                         # behavior, not something this method does; falls through to
-                        # kodigui.MultiWindow.onAction() below like anything else unhandled here.
+                        # kodigui.MultiWindow.routeAction() below like anything else unhandled here.
                         self.checkHubItem(controlID, action=action)
                     elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
-                        # Only reached when self._backStack is empty (onAction()'s own top-of-
+                        # Only reached when self._backStack is empty (routeAction()'s own top-of-
                         # method check already intercepts NAV_BACK/PREVIOUS_MENU otherwise) - i.e.
                         # a hub row focused on the root 'recommended' tab, no chain in progress.
                         # checkHubItem() resets to item 0 first if not already there (returns
@@ -2806,7 +2798,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                         # default NAV_BACK handling exists below once already at item 0 - same
                         # shape as HomeWindow's own onAction() routing (home.py).
                         if not self.checkHubItem(controlID, action=action):
-                            return
+                            return True
                     elif action == xbmcgui.ACTION_CONTEXT_MENU:
                         # Hub-item context menu - ported from HomeWindow's identical routing
                         # (home.py's onAction(), `elif action == xbmcgui.ACTION_CONTEXT_MENU:`
@@ -2814,9 +2806,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                         # -> serverRefresh() handoff sectionMenu()'s own trigger uses above.
                         show_section = self.hubMenu(controlID)
                         if not show_section:
-                            return
+                            return True
                         self.serverRefresh(section=show_section)
-                        return
+                        return True
 
                 # quiet-orbiting-heron.md Stage B: everything below this point (MOVE_SET,
                 # mouse-drag, context-menu handling) reaches into grid-specific state
@@ -2833,8 +2825,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # A bare `return` here (the original D2 shape) went further than that guard
                 # needed, though - it's inside this method's own try: block, so it also skipped
                 # _dispatchNativeAction(action) entirely (the base-class/NAV_BACK dispatch at the
-                # very bottom of this method, which forwards ordinary actions to
-                # self._currentOnAction(action)) - the real native WindowXML.onAction() Kodi needs
+                # very bottom of this method, which hands ordinary actions back to the view's own
+                # onAction() by returning False) - the real native WindowXML.onAction() Kodi needs
                 # to actually move focus within a list. Horizontal in-hub navigation (left/right
                 # between items in the same hub row) was never actually reaching Kodi at all as a
                 # result - live-confirmed, not just "out of scope" the way checkHubItem()'s richer
@@ -2842,8 +2834,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # Calling the dispatch directly - skipping only this method's own grid-specific
                 # body in between - fixes that without reopening the crash the blanket return was
                 # protecting against.
-                self._dispatchNativeAction(action)
-                return
+                return self._dispatchNativeAction(action)
 
             if action.getId() in MOVE_SET:
                 mli = self.showPanelControl.getSelectedItem()
@@ -2886,40 +2877,40 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
                         self.lastNonOptionsFocusID = self.lastFocusID
                         self.setFocusId(self.OPTIONS_GROUP_ID)
-                        return
+                        return True
                     else:
                         if self.lastNonOptionsFocusID:
                             self.setFocusId(self.lastNonOptionsFocusID)
                             self.lastNonOptionsFocusID = None
-                            return
+                            return True
                 else:
-                    return
+                    return True
             elif self.isWatchedAction(action):
                 mli = self.showPanelControl.getSelectedItem()
                 if not mli or not mli.dataSource:
-                    return
+                    return True
                 self.toggleWatched(mli)
-                return
+                return True
 
             elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_CONTEXT_MENU):
                 if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)) and \
                         (not util.addonSettings.fastBack or action == xbmcgui.ACTION_CONTEXT_MENU):
                     if xbmc.getCondVisibility('Integer.IsGreater(Container(101).ListItem.Property(index),5)'):
                         self.showPanelControl.selectItem(0)
-                        return
+                        return True
 
             self.updateItem()
 
         except:
             util.ERROR()
 
-        self._dispatchNativeAction(action)
+        return self._dispatchNativeAction(action)
 
     def onClick(self, controlID):
         if controlID == self.SECTION_LIST_ID:
             # Ported from HomeWindow's identical guard (home.py's onClick()) - while
             # self.movingSection is set, sectionMover() owns ACTION_SELECT_ITEM itself (via
-            # onAction() above) to finalize the move; an ordinary click-dispatch here on the same
+            # routeAction() above) to finalize the move; an ordinary click-dispatch here on the same
             # press would otherwise also try to open whatever's now selected.
             if not self.movingSection:
                 self.sectionClicked()
@@ -2971,7 +2962,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         if controlID == self.SERVER_LIST_ID:
             # Stage 3: same shared-across-content-modes reasoning as USER_LIST_ID above. Deferred,
-            # not called inline - see the SERVER_BUTTON_ID onAction() branch's own comment for why
+            # not called inline - see the SERVER_BUTTON_ID routeAction() branch's own comment for why
             # selectServer() can't run synchronously from a native callback.
             self.setBoolProperty('show.servers', False)
             threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.selectServer).start()
@@ -3158,7 +3149,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         ported from HomeWindow.sectionMenu() (home.py), adapted to this window's own state:
         self.librarySettings (home.py's per-section show/hide/pin/order dict) -> self.navSettings
         (see __init__'s comment for the name-collision reason), self.saveLibrarySettings() ->
-        self.saveNavSettings(). Triggered from onAction()'s SECTION_LIST_ID/ACTION_CONTEXT_MENU
+        self.saveNavSettings(). Triggered from routeAction()'s SECTION_LIST_ID/ACTION_CONTEXT_MENU
         branch, which also owns the return-value -> serverRefresh() handoff.
         """
         item = self.sectionList.getSelectedItem()
@@ -3352,7 +3343,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def sectionMover(self, item, action):
         """Sidebar section-reorder ("Move") mode - ported verbatim from HomeWindow.sectionMover()
-        (home.py). Entered via sectionMenu()'s 'move' choice; onAction()/onClick() route input here
+        (home.py). Entered via sectionMenu()'s 'move' choice; routeAction()/onClick() route input here
         instead of their normal handling while self.movingSection is set - see those methods' own
         comments.
         """
@@ -3586,23 +3577,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def onFocus(self, controlID):
         # Flags "just crossed into the hub-row range (399-500) from a control outside it" for
-        # onAction()'s own hub-branch to consume - live-confirmed Kodi behavior: a directional
+        # routeAction()'s own hub-branch to consume - live-confirmed Kodi behavior: a directional
         # action that exits a native container via its own <onup>/<ondown>/<onright> (the tabs
         # row 320, the audio widget 204, or the sidebar rail 9001, all landing on a hub control
-        # via 50's <defaultcontrol> chain) gets delivered to onAction() a SECOND time *after*
+        # via 50's <defaultcontrol> chain) gets delivered to routeAction() a SECOND time *after*
         # native navigation has already moved focus - onFocus(<hub control>) fires before
-        # onAction()'s own getFocusId() for that same press, i.e. the move already happened once
-        # by the time our Python code runs at all. Without this guard, onAction()'s hub-branch
+        # routeAction()'s own getFocusId() for that same press, i.e. the move already happened once
+        # by the time our Python code runs at all. Without this guard, routeAction()'s hub-branch
         # treated that replay as a second, independent move and acted on it again (silently
         # continuing on to the next row on entry, or swallowing the next real press after a
         # sidebar interaction, depending on which action the replay carried).
         #
-        # Computed here, not in onAction(): this is the only place that reliably knows what
+        # Computed here, not in routeAction(): this is the only place that reliably knows what
         # controlID had focus *immediately before* this one (self.lastFocusID, not yet
-        # overwritten below) - onAction()'s own getFocusId() can't tell "just arrived from
+        # overwritten below) - routeAction()'s own getFocusId() can't tell "just arrived from
         # outside" apart from "already settled here", since by the time it runs the native move,
         # if any, has already completed either way. Consumed (reset to False) the first time
-        # onAction()'s hub-branch checks it, before branching on the action's own direction -
+        # routeAction()'s hub-branch checks it, before branching on the action's own direction -
         # the replay carries whatever direction caused the entry, not necessarily UP/DOWN - so
         # it never survives to affect a later, unrelated real press; those never re-fire onFocus
         # for the same control anyway, since in-hub vertical nav is entirely Python-owned
@@ -4882,7 +4873,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # Real art/metadata only exists for whichever chunk(s) have actually been fetched -
             # by default (retrieveAllMediaUpFront off) only chunk 0 is requested up front, above;
             # real chunks are otherwise only ever requested by MOVE_SET arrow-key navigation
-            # (onAction()) or keyClicked()'s identical jump-and-request pattern, which this
+            # (routeAction()) or keyClicked()'s identical jump-and-request pattern, which this
             # mirrors. selectItem() above is a plain Python-side position set - it never generates
             # that arrow-key navigation, so a restored position past chunk 0 would otherwise sit on
             # fallback-thumb placeholders until the user nudges focus. Deliberately placed after
@@ -4971,7 +4962,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def _setPlaylistBackground(self, pl):
         """Background art + corner-panel colors for a single playlist - factored out of
-        fillPlaylists() so the same per-item treatment can also run on focus-move (onAction()'s
+        fillPlaylists() so the same per-item treatment can also run on focus-move (routeAction()'s
         MOVE_SET handling below), not just once at fill time. Needed at all because playlists
         never go through the generic updateBackgroundFrom()/setBackground() path: that keys off
         ds.get('art', ...), which playlists don't have - mirrors the old playlists.py's own
@@ -6952,7 +6943,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def checkHubItem(self, control_id, action=None):
         """Horizontal (left/right) in-row hub navigation - hero-art sync (delegated to
         _updateHeroFromFocusedHubItem() above) and reselect-position memory, both hooked into
-        this one call site (onAction()'s hub-row branch). Port of HomeWindow.checkHubItem()
+        this one call site (routeAction()'s hub-row branch). Port of HomeWindow.checkHubItem()
         (home.py), plan item 10 Group A (quiet-orbiting-heron.md). In-row pagination (the old
         "load more" placeholder this also used to trigger) is gone - a row is capped at
         home.HUB_ROW_MAX_ITEMS, see _bindHubToControl().
@@ -7171,7 +7162,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def hubMenu(self, hubControlID):
         """Context menu (ACTION_CONTEXT_MENU) for whichever item is focused in a hub row - ported
         from HomeWindow.hubMenu() (home.py), adapted to this window's own state. Triggered from
-        onAction()'s hub-row branch (399 < controlID < 500), which owns the return-value ->
+        routeAction()'s hub-row branch (399 < controlID < 500), which owns the return-value ->
         serverRefresh() handoff, same shape as sectionMenu()'s own trigger.
 
         Two adaptations from the original, both deliberate scope-narrowing rather than a straight
@@ -7294,7 +7285,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         elif choice["key"] == "disable_hub":
             # Disable hub via Manage Hubs settings (same as disabling in the dialog). Returning
-            # self.section hands off to onAction()'s serverRefresh() call, same pattern
+            # self.section hands off to routeAction()'s serverRefresh() call, same pattern
             # sectionMenu()'s own 'manage_hubs'/'refresh_hubs' choices use - forces the section
             # to reopen, which re-triggers hub fetching/isHubHidden() filtering and so drops the
             # now-disabled hub from view.
@@ -8007,7 +7998,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._finishHubSlide()
 
 
-class PostersWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
+class PostersWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windowutils.UtilMixin):
     xmlFile = 'script-plex-posters.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -8104,7 +8095,7 @@ VIEWS_SQUARE_MUSIC = {
 }
 
 
-class RecommendedWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
+class RecommendedWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windowutils.UtilMixin):
     # Stage B (quiet-orbiting-heron.md, Recommended-tab sharing) - real template (near-verbatim
     # copy of script-plex-home.xml.tpl's hub row stack + hero-info overlay), no Python-side
     # hub-fetch/rendering logic wired to it yet (Stage C/D). Renders as an empty hub area until

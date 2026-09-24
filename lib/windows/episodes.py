@@ -1225,6 +1225,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 self.EXTRA_LIST_ID: self.extraListControl}
 
     def onAction(self, action):
+        # Hosted: the host sees the action first (kodigui.BaseWindow.routeActionToHost()).
+        if self.routeActionToHost(action):
+            return
         try:
             if self.debouncing:
                 util.DEBUG_LOG("Already waiting to work on previous input, debouncing.")

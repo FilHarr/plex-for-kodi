@@ -298,6 +298,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         return rows
 
     def onAction(self, action):
+        # Hosted: the host sees the action first (kodigui.BaseWindow.routeActionToHost()).
+        if self.routeActionToHost(action):
+            return
         try:
             controlID = self.getFocusId()
 

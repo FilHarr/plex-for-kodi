@@ -457,6 +457,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 self.RELATED_LIST_ID: self.relatedListControl}
 
     def onAction(self, action):
+        # Hosted: the host sees the action first (kodigui.BaseWindow.routeActionToHost()).
+        if self.routeActionToHost(action):
+            return
         try:
             controlID = self.getFocusId()
 

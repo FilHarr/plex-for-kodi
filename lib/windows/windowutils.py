@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 import threading
+import weakref
 
 import six
 
@@ -36,24 +37,36 @@ SKIN_RELOAD_DEFER_SECONDS = 0.15
 
 
 class GoHomeMixin():
-    # None for every window except a shell hosted inside a LibraryWindow-hosted descendant chain
-    # (set as an instance-attribute override by LibraryWindow._setupCurrent(), library.py), or
-    # LibraryWindow itself (which points this at self - see LibraryWindow.__init__'s own comment
-    # for why). See hashed-orbiting-pizza.md's Phase 1. A chained shell's own
-    # forceDismiss()/closeWithCommand() only ever touch itself, not the host - the host's _open()
-    # poll loop would just reconstruct and reopen the same shell again, since neither its
-    # _allClosed flag nor _next/_nextKwargs changed - goHome()/goHomeRoot() below must operate on
-    # the host itself once one exists, not on the chained shell that happened to receive the call.
-    _chainHost = None
+    # _chainHost is None for every window except a shell hosted inside a LibraryWindow-hosted
+    # descendant chain (set by LibraryWindow._setupCurrent(), library.py), or LibraryWindow itself
+    # (which points this at self - see LibraryWindow.__init__'s own comment for why). See
+    # hashed-orbiting-pizza.md's Phase 1. A chained shell's own forceDismiss()/closeWithCommand()
+    # only ever touch itself, not the host - the host's _open() poll loop would just reconstruct and
+    # reopen the same shell again, since neither its _allClosed flag nor _next/_nextKwargs changed -
+    # goHome()/goHomeRoot() below must operate on the host itself once one exists, not on the
+    # chained shell that happened to receive the call.
+    #
+    # Held weakly, so a shell (and LibraryWindow's own self-reference) makes no reference cycle
+    # with the host - see LibraryWindow._setupCurrent(). The host outlives its shells.
+    _chainHostRef = None
+
+    @property
+    def _chainHost(self):
+        ref = self._chainHostRef
+        return ref() if ref is not None else None
+
+    @_chainHost.setter
+    def _chainHost(self, host):
+        self._chainHostRef = weakref.ref(host) if host is not None else None
 
     def _liveChainHost(self):
         """None if this window was never chained, OR if its host has already fully closed
-        (_allClosed - a real, never-del'd attribute, unlike _current/_currentOnAction, which
-        MultiWindow._open()'s teardown does del - kodigui.py) - live-confirmed crash otherwise: a
-        call already in flight on another thread from *before* a swapTo() swapped this shell out
-        (or the whole chain closed) can land here well after self._chainHost's own
-        _current/_currentOnAction are gone. A stale reference here, not a bug in the caller, so
-        treating it as "nothing left to act on" is correct, not a workaround."""
+        (_allClosed - a real, never-del'd attribute, unlike _current, which MultiWindow._open()'s
+        teardown does del - kodigui.py) - live-confirmed crash otherwise: a call already in flight
+        on another thread from *before* a swapTo() swapped this shell out (or the whole chain
+        closed) can land here well after self._chainHost's own _current is gone. A stale
+        reference here, not a bug in the caller, so treating it as "nothing left to act on" is
+        correct, not a workaround."""
         host = self._chainHost
         if host is not None and host._allClosed:
             return None

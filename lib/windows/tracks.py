@@ -126,6 +126,9 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
                 self.trackListControl.setSelectedItem(mli)
 
     def onAction(self, action):
+        # Hosted: the host sees the action first (kodigui.BaseWindow.routeActionToHost()).
+        if self.routeActionToHost(action):
+            return
         controlID = self.getFocusId()
 
         try:

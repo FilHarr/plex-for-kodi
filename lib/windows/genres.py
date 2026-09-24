@@ -119,6 +119,9 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
                                     kwargs={'item_type': item_type}).start()
 
     def onAction(self, action):
+        # Hosted: the host sees the action first (kodigui.BaseWindow.routeActionToHost()).
+        if self.routeActionToHost(action):
+            return
         kodigui.ControlledWindow.onAction(self, action)
 
     def onFocus(self, controlID):

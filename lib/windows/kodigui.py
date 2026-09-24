@@ -5,6 +5,7 @@ import threading
 import time
 import traceback
 import os
+import weakref
 
 from kodi_six import xbmc
 from kodi_six import xbmcgui
@@ -239,12 +240,42 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             self.setProperties(list(carryProps.keys()), list(carryProps.values()))
         self.setBoolProperty('is_plextuary', util.SKIN_PLEXTUARY)
 
+    # Weak reference to the MultiWindow (LibraryWindow) showing this window as its current view,
+    # set by the host's _setupCurrent(). None for a window opened on its own. See hostedBy().
+    _hostRef = None
+
+    def hostedBy(self):
+        """The host showing this window as its current view, or None. None too once the host has
+        swapped this window out (or closed): Kodi can still deliver a late callback to it then, and
+        that must not reach the host's routing, which only ever acts on its current view."""
+        ref = self._hostRef
+        host = ref() if ref is not None else None
+        if host is not None and host.__dict__.get('_current') is self:
+            return host
+        return None
+
+    def routeActionToHost(self, action):
+        """Called first thing in onAction() by every window a host can show. A hosted window's
+        actions go through the host's routeAction() first (sidebar popups, the server and user
+        buttons, Back through the chain, the Home button); True means it used the action and
+        onAction() should stop there. A window that was hosted but no longer is its host's current
+        view drops the action (True). False: not hosted, handle it here as usual.
+
+        Replaces the host overwriting onAction on each hosted instance, so the method Kodi calls
+        is the one you read in the class, and nothing bound to the host is stored on the view."""
+        if self._hostRef is None:
+            return False
+        host = self.hostedBy()
+        if host is None:
+            return True
+        return host.routeAction(action)
+
     def handleBack(self):
         """This screen's own Back steps, the ones that keep it open (a scrolled row back to its
         first item, the extras rows back to the button row). Returns True when one of them used
         the press. Called from the screen's own onAction() when it runs standalone, and by
-        LibraryWindow.onAction() before it pops the chain when the screen is hosted - the host
-        takes over onAction(), so without this a hosted screen never saw Back."""
+        LibraryWindow.routeAction() before it pops the chain when the screen is hosted - the host
+        sees a hosted screen's actions first, so without this a hosted screen never saw Back."""
         return False
 
     def onCloseSignal(self, *args, **kwargs):
@@ -1269,6 +1300,39 @@ class _MWBackground(ControlledWindow):
         self._multiWindow._open()
 
 
+class MultiWindowView(object):
+    """A view that only ever exists as a MultiWindow's current window (LibraryWindow's grid and
+    Recommended views): the host owns all its input, so every callback goes straight to the host's
+    handler of the same name, and onAction() through the host's routeAction(). List it before
+    ControlledWindow in the bases. A late callback on a view the host has already swapped out is
+    dropped (see BaseWindow.hostedBy())."""
+
+    def onFirstInit(self):
+        host = self.hostedBy()
+        if host is not None:
+            host._onFirstInit()
+
+    def onReInit(self):
+        host = self.hostedBy()
+        if host is not None:
+            host.onReInit()
+
+    def onClick(self, controlID):
+        host = self.hostedBy()
+        if host is not None:
+            host.onClick(controlID)
+
+    def onFocus(self, controlID):
+        host = self.hostedBy()
+        if host is not None:
+            host.onFocus(controlID)
+
+    def onAction(self, action):
+        if self.routeActionToHost(action):
+            return
+        super(MultiWindowView, self).onAction(action)
+
+
 class MultiWindow(object):
     def __init__(self, windows=None, default_window=None, **kwargs):
         self._windows = windows
@@ -1297,9 +1361,9 @@ class MultiWindow(object):
         raise AttributeError(name)
 
     def forceDismiss(self):
-        # _MWBackground never receives routed onAction (MultiWindow._setupCurrent() re-routes
-        # onAction/onFocus/onClick from the currently-showing concrete window to this object, not to
-        # _MWBackground - confirmed live, it never fires), so it can't rely on the dismissOnClose/
+        # _MWBackground never receives routed onAction (the currently-showing concrete window routes
+        # its input to this object - routeActionToHost()/MultiWindowView - not to _MWBackground -
+        # confirmed live, it never fires), so it can't rely on the dismissOnClose/
         # onAction mechanism ControlledWindow.forceDismiss() otherwise uses; force-dismiss it directly
         # here alongside whichever concrete window is currently showing.
         if self._current:
@@ -1359,14 +1423,9 @@ class MultiWindow(object):
         return self._next
 
     def _setupCurrent(self, cls):
+        # cls is a MultiWindowView: its own class methods forward every callback here.
         self._current = cls(cls.xmlFile, cls.path, cls.theme, cls.res)
-        self._current.onFirstInit = self._onFirstInit
-        self._current.onReInit = self.onReInit
-        self._current.onClick = self.onClick
-        self._current.onFocus = self.onFocus
-
-        self._currentOnAction = self._current.onAction
-        self._current.onAction = self.onAction
+        self._current._hostRef = weakref.ref(self)
 
     @classmethod
     def open(cls, base_win_id=None, **kwargs):
@@ -1426,7 +1485,6 @@ class MultiWindow(object):
         self._current.doClose()
         del self._current
         del self._next
-        del self._currentOnAction
 
     def setProperty(self, key, value):
         self._properties[key] = value
@@ -1465,12 +1523,14 @@ class MultiWindow(object):
     def onReInit(self):
         pass
 
-    def onAction(self, action):
+    def routeAction(self, action):
+        """The current view's actions come here first (BaseWindow.routeActionToHost()). Returns True
+        when the action was used; False hands it back to the view's own onAction()."""
         if action == xbmcgui.ACTION_PREVIOUS_MENU or action == xbmcgui.ACTION_NAV_BACK:
             self.doClose()
         elif self.goHomeAction(action):
-            return
-        self._currentOnAction(action)
+            return True
+        return False
 
     def onClick(self, controlID):
         pass

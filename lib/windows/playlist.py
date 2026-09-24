@@ -143,6 +143,9 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.video_progress[rk] = state
 
     def onAction(self, action):
+        # Hosted: the host sees the action first (kodigui.BaseWindow.routeActionToHost()).
+        if self.routeActionToHost(action):
+            return
         try:
             if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                 self.doClose()

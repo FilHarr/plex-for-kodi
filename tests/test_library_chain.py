@@ -10,13 +10,12 @@ living directly on LibraryWindow instead of a separate MultiWindow subclass.
 
 Constructing a real LibraryWindow here would pull in LibrarySettings, backgroundthread.Tasks(),
 sidebar/hub state, and more - impractical for a pure-Python test. Instead, the real bound methods
-under test (swapTo/popBack/_setupCurrent/_isRealShell, and the two new onAction() early-returns)
+under test (swapTo/popBack/_setupCurrent/_isRealShell, and the early returns in routeAction())
 are called directly against a lightweight FakeHostWindow double that carries only the attributes
 those methods actually touch - same style the other lib.windows.* chain tests use.
 
-Two onAction() regressions get their own narrow tests (test_onAction_navback_pops_the_backstack /
-test_onAction_hosted_shell_skips_the_grid_body) rather than a full onAction() walkthrough: onAction()
-itself is a large method with many unrelated branches (section-list/server/user-button handling),
+Two routeAction() regressions get their own narrow tests (OnActionTest) rather than a full
+routeAction() walkthrough: routeAction() itself is a large method with many unrelated branches (section-list/server/user-button handling),
 and both new early-returns fire (and must return) before any of that runs - so FakeHostWindow
 deliberately does NOT define attributes those later branches would need (self.dragging,
 self.contentMode, self.movingSection, ...). If a regression ever made either early-return fall
@@ -204,14 +203,13 @@ class FakeHostWindow(object):
     def _sidebarTarget(self):
         return None
 
-    def onAction(self, action):
-        # Never exercised as real dispatch logic here - _setupCurrent() only needs *some* bound
-        # callable on the host to capture-and-forward onto the hosted shell. OnActionTest below
-        # calls the real library.LibraryWindow.onAction directly instead of through this stub.
+    def routeAction(self, action):
+        # Never exercised as real dispatch logic here. OnActionTest below calls the real
+        # library.LibraryWindow.routeAction directly instead of through this stub.
         self.onActionCalls.append(action)
+        return False
 
-    # base kodigui.MultiWindow._setupCurrent() (the thin-proxy branch) redirects these four
-    # straight onto the host - no-op stand-ins, only exercised for "was it reassigned" checks.
+    # kodigui.MultiWindowView forwards these four straight to the host - no-op stand-ins.
     def _onFirstInit(self):
         pass
 
@@ -234,7 +232,7 @@ popBack = library.LibraryWindow.popBack
 swapToSection = library.LibraryWindow.swapToSection
 switchTab = library.LibraryWindow.switchTab
 switchToCollections = library.LibraryWindow.switchToCollections
-onAction = library.LibraryWindow.onAction
+routeAction = library.LibraryWindow.routeAction
 _captureRootRestoreState = library.LibraryWindow._captureRootRestoreState
 _consumeRestoreItemPos = library.LibraryWindow._consumeRestoreItemPos
 _captureHostedShellRestoreState = library.LibraryWindow._captureHostedShellRestoreState
@@ -301,19 +299,18 @@ class SetupCurrentTest(KodiTestCase):
 
         self.assertIs(host, host._current._chainHost)
 
-    def test_real_shell_branch_wraps_rather_than_replaces_onFirstInit_and_onAction(self):
+    def test_real_shell_branch_patches_no_callbacks_and_holds_the_host_weakly(self):
+        """I8: the shell's own class methods are what Kodi calls - its onAction() routes through
+        the host by name (routeActionToHost()) - and nothing bound to the host is stored on it."""
         host = FakeHostWindow()
 
         _setupCurrent(host, FakeShell)
         shell = host._current
 
-        originalOnFirstInit = FakeShell.onFirstInit
-        originalOnAction = FakeShell.onAction
-
-        self.assertIsNot(originalOnFirstInit, shell.onFirstInit)
-        self.assertIsNot(originalOnAction, shell.onAction)
-        self.assertEqual(host.onAction, shell.onAction)
-        self.assertEqual(originalOnAction, host._currentOnAction.__func__)
+        for name in ('onAction', 'onFirstInit', 'onClick', 'onFocus', 'onReInit'):
+            self.assertNotIn(name, vars(shell), name)
+        self.assertIs(host, shell._hostRef())
+        self.assertFalse(hasattr(host, '_currentOnAction'))
 
     def test_real_shell_branch_leaves_onClick_and_onFocus_and_onReInit_untouched(self):
         host = FakeHostWindow()
@@ -325,29 +322,22 @@ class SetupCurrentTest(KodiTestCase):
         self.assertNotIn('onFocus', vars(shell))
         self.assertNotIn('onReInit', vars(shell))
 
-    def test_real_shell_branch_does_not_invoke_LibraryWindows_own_onFirstInit(self):
-        """Regression test for the wrap's own deviation from the naive port (see _setupCurrent()'s
-        comment in library.py): the wrap must NOT call the host's onFirstInit()/_onFirstInit() -
-        that's LibraryWindow's own real, template-specific setup, which would run broken against a
-        real shell's native window. FakeHostWindow defines no onFirstInit() at all, so calling the
-        wrapped closure would raise AttributeError if it ever tried to reach it - proving the wrap
-        only registers close.windows before running the shell's own real onFirstInit(), and does
-        NOT also replay self._properties onto it (see the next test)."""
+    def test_real_shell_branch_registers_the_hosts_close_signal_only(self):
+        """The one host-generic line of base MultiWindow._onFirstInit() a real shell needs: the
+        host's close.windows handler. Not the host's own onFirstInit()/_onFirstInit() - that's
+        LibraryWindow's template-specific setup, which would run broken against a real shell's
+        native window (FakeHostWindow defines no onFirstInit(), so reaching it would raise)."""
         from plexnet import plexapp
 
         host = FakeHostWindow()
-        _setupCurrent(host, FakeShell)
-        shell = host._current
-
         try:
-            shell.onFirstInit()  # must not raise, and must not need host.onFirstInit at all
-            # The host-generic line did run: close.windows got registered...
+            _setupCurrent(host, FakeShell)
             self.assertTrue(plexapp.util.APP.has_signal('close.windows', host.onCloseSignal))
+            host._current.onFirstInit()
         finally:
             plexapp.util.APP.off('close.windows', host.onCloseSignal)
 
-        # ...and the shell's own real onFirstInit still ran (wrapped, not replaced/discarded).
-        self.assertTrue(shell.onFirstInitCalled)
+        self.assertTrue(host._current.onFirstInitCalled)
 
     def test_real_shell_branch_does_not_replay_the_hosts_own_properties_onto_the_shell(self):
         """Live-confirmed bug this guards against: self._properties accumulates whatever
@@ -364,9 +354,9 @@ class SetupCurrentTest(KodiTestCase):
         host = FakeHostWindow()
         host._properties = {'clear.logo': 'stale-continue-watching-logo.png', 'summary': 'stale summary'}
 
-        _setupCurrent(host, FakeShell)
-        shell = host._current
         try:
+            _setupCurrent(host, FakeShell)
+            shell = host._current
             shell.onFirstInit()
         finally:
             plexapp.util.APP.off('close.windows', host.onCloseSignal)
@@ -1105,13 +1095,13 @@ class DeferOpenSectionTest(KodiTestCase):
 class OnActionTest(KodiTestCase):
     """Deliberately narrow - see module docstring. FakeHostWindow defines no self.dragging/
     self.contentMode/self.movingSection etc., so if either early-return below fell through instead
-    of returning, the real onAction() body would raise AttributeError trying to reach them."""
+    of returning, the real routeAction() body would raise AttributeError trying to reach them."""
 
     def test_navback_defers_popBack_via_a_timer_instead_of_calling_it_inline(self):
         """hashed-orbiting-pizza.md Phase 3's still-open OnAction()-reentrancy risk: popBack()
-        must not run synchronously from inside onAction() - the same shape the documented Kodi
+        must not run synchronously from inside routeAction() - the same shape the documented Kodi
         core OnAction() reentrancy bug (SKIN_RELOAD_DEFER_SECONDS's own comment) is suspected
-        unsafe for. Deferred the same way every other onAction()-triggered reload in this class
+        unsafe for. Deferred the same way every other routeAction()-triggered reload in this class
         already is. Monkeypatches library.threading.Timer rather than waiting on/invoking a real
         one - proving the defer was scheduled (right target, actually started), not that popBack()
         eventually runs (that's swapTo()/popBack()'s own coverage above)."""
@@ -1131,7 +1121,7 @@ class OnActionTest(KodiTestCase):
         originalTimer = library.threading.Timer
         library.threading.Timer = FakeTimer
         try:
-            onAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
+            routeAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
         finally:
             library.threading.Timer = originalTimer
 
@@ -1139,7 +1129,7 @@ class OnActionTest(KodiTestCase):
         self.assertEqual(1, len(FakeTimer.instances))
         timer = FakeTimer.instances[0]
         self.assertTrue(timer.started)
-        # Not host.popBack directly - onAction() wraps it in its own try/except closure
+        # Not host.popBack directly - routeAction() wraps it in its own try/except closure
         # (_popBack(), see its comment there) so a timer callback exception doesn't vanish
         # silently. Calling the real captured function proves it still actually reaches
         # host.popBack(), same intent the old direct-identity check had.
@@ -1148,7 +1138,7 @@ class OnActionTest(KodiTestCase):
 
     def test_navback_with_a_hosted_shell_does_not_touch_grid_specific_attributes(self):
         """Regression guard for a real live bug (2026-09-03): the grid "snap to item 0 first"
-        Back handling (onAction(), immediately above the chain-pop branch covered by the test
+        Back handling (routeAction(), immediately above the chain-pop branch covered by the test
         above) must short-circuit on `not self._isHostedShell` before touching
         self.contentMode/self.getFocusId()/self.POSTERS_PANEL_ID - none of which a real
         shell-hosting LibraryWindow actually has as its own attributes (they resolve via
@@ -1171,7 +1161,7 @@ class OnActionTest(KodiTestCase):
         originalTimer = library.threading.Timer
         library.threading.Timer = FakeTimer
         try:
-            onAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
+            routeAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
         finally:
             library.threading.Timer = originalTimer
 
@@ -1199,7 +1189,7 @@ class OnActionHandleBackTest(KodiTestCase):
         originalTimer = library.threading.Timer
         library.threading.Timer = FakeTimer
         try:
-            onAction(host, FakeAction(action_id))
+            routeAction(host, FakeAction(action_id))
         finally:
             library.threading.Timer = originalTimer
         return FakeTimer.instances
@@ -1260,7 +1250,7 @@ class OnActionHandleBackTest(KodiTestCase):
         host.popBack = lambda: popCalls.append(True)
 
         with self.assertRaises(AttributeError):
-            onAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
+            routeAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
 
         self.assertEqual([], popCalls)
 
@@ -1279,7 +1269,7 @@ class OnActionHandleBackTest(KodiTestCase):
         host._dispatchNativeAction = lambda action: dispatchCalls.append(action)
 
         action = FakeAction(xbmcgui.ACTION_MOVE_DOWN)
-        onAction(host, action)
+        routeAction(host, action)
 
         self.assertEqual([action], dispatchCalls)
 
@@ -1344,7 +1334,7 @@ class OnFocusHubEntryFlagTest(KodiTestCase):
         """Contrast case, proving the fix actually matters: without pre-seeding lastFocusID (the
         pre-fix shape - whatever native default control focus/None left it at), the exact same
         onFocus(<hub control>) call sets the flag, which then goes on to wrongly swallow the
-        user's next real press (onAction()'s own hub-branch, library.py:2638-2660)."""
+        user's next real press (routeAction()'s own hub-branch, library.py:2638-2660)."""
         host = _FakeOnFocusHost(last_focus_id=None)
 
         onFocus(host, self.ANCHOR_CONTROL_ID)
@@ -1742,7 +1732,7 @@ class OnFocusHubEntryRedirectTest(KodiTestCase):
         host = self._host(last_focus_id=self.TAB_LIST_ID, anchor=402)
 
         onFocus(host, 400)
-        host._hubJustEnteredFromOutside = False  # onAction()'s hub branch consumed the replay
+        host._hubJustEnteredFromOutside = False  # routeAction()'s hub branch consumed the replay
         onFocus(host, 402)
 
         self.assertFalse(host._hubJustEnteredFromOutside)

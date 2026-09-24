@@ -174,6 +174,9 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         self.initialized = True
 
     def onAction(self, action):
+        # Hosted: the host sees the action first (kodigui.BaseWindow.routeActionToHost()).
+        if self.routeActionToHost(action):
+            return
         controlID = self.getFocusId()
 
         if controlID == self.GRID_ID and action.getId() in MOVE_SET:
