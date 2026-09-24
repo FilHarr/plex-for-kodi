@@ -598,6 +598,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # onAction()'s hub-branch - see onFocus()'s own comment for the double-delivery bug this
     # guards against. Class-level default so it's never missing before the first onFocus() call.
     _hubJustEnteredFromOutside = False
+    # The anchor control onFocus() just redirected an arrival to (see there), so that redirect's
+    # own focus event leaves _hubJustEnteredFromOutside as the real arrival set it.
+    _hubEntryRedirect = None
 
     def __init__(self, *args, **kwargs):
         PlaybackBtnMixin.__init__(self)
@@ -3611,8 +3614,26 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self._goRootAwaitFocus = None
 
         if self.contentMode == 'recommended':
-            was_outside_hub = not (399 < (self.lastFocusID or -1) < 500)
-            self._hubJustEnteredFromOutside = (399 < controlID < 500) and was_outside_hub
+            redirect_landed = controlID == self._hubEntryRedirect
+            self._hubEntryRedirect = None
+            if not redirect_landed:
+                was_outside_hub = not (399 < (self.lastFocusID or -1) < 500)
+                self._hubJustEnteredFromOutside = (399 < controlID < 500) and was_outside_hub
+
+                # Entering the rows from outside (tabs, sidebar, audio widget) lands wherever Kodi's
+                # group focus memory says - the row control that last had focus. That's the anchor
+                # unless a slide finished while focus was outside the rows (_finishHubSlide() leaves
+                # focus alone then), so correct it here. The arrival's own flag stays set for the
+                # replayed action; the redirect's event (redirect_landed above) doesn't recompute
+                # it, whichever order the two arrive in, and lastFocusID is pre-seeded to the anchor.
+                if self._hubJustEnteredFromOutside and self.visibleHubs:
+                    anchor_id = self._anchorControlId()
+                    if controlID != anchor_id:
+                        self.reselectActiveSection(controlID, self.lastFocusID)
+                        self.lastFocusID = anchor_id
+                        self._hubEntryRedirect = anchor_id
+                        self.setFocusId(anchor_id)
+                        return
 
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
@@ -7920,7 +7941,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.setBoolProperty('hub.sliding', False)
         self._hubSliding = False
         anchor_id = self._anchorControlId()
-        if self.getFocusId() != anchor_id:
+        # Only while focus is still in the hub rows (on the control that was the anchor when the
+        # slide started). A press that left them mid-slide - Up from the first row to the tabs, or
+        # Left to the sidebar - must not be pulled back when the slide lands (live-caught
+        # 2026-09-24: fast Up presses into the tab bar bounced back to the row).
+        focus_id = self.getFocusId()
+        if 399 < focus_id < 500 and focus_id != anchor_id:
             self.setFocusId(anchor_id)
 
     def _settleHubSlide(self):

@@ -1228,6 +1228,17 @@ class _FakeOnFocusHost(object):
         self._goRootAwaitFocus = None
         self._goRootAwaitUntil = 0
         self.reselectActiveSectionCalls = []
+        # No hubs by default, so the entry redirect stays out of the way of the flag-only tests.
+        self.visibleHubs = []
+        self._anchorRingPos = self.HUB_ROTATION_RING.index(400)
+        self.focusCalls = []
+        self._hubEntryRedirect = None
+
+    HUB_ROTATION_RING = library.LibraryWindow.HUB_ROTATION_RING
+    _anchorControlId = library.LibraryWindow._anchorControlId
+
+    def setFocusId(self, control_id):
+        self.focusCalls.append(control_id)
 
     def reselectActiveSection(self, control_id, last_focus_id):
         self.reselectActiveSectionCalls.append((control_id, last_focus_id))
@@ -1564,3 +1575,116 @@ class HubRingRolesTest(KodiTestCase):
                 else:
                     self.assertEqual(before[cid] + 1, after[cid])
 
+
+class _FakeFinishSlideHost(object):
+    HUB_ROTATION_RING = library.LibraryWindow.HUB_ROTATION_RING
+    _anchorControlId = library.LibraryWindow._anchorControlId
+
+    def __init__(self, focus_id, anchor_id):
+        self._anchorRingPos = self.HUB_ROTATION_RING.index(anchor_id)
+        self._hubSliding = True
+        self.focus_id = focus_id
+        self.focusCalls = []
+        self.props = {}
+
+    def setBoolProperty(self, key, value):
+        self.props[key] = value
+
+    def getFocusId(self):
+        return self.focus_id
+
+    def setFocusId(self, control_id):
+        self.focusCalls.append(control_id)
+
+
+class FinishHubSlideFocusTest(KodiTestCase):
+    """_finishHubSlide() moves native focus onto the new anchor only while focus is still in the hub
+    rows. Live-caught 2026-09-24: Up pressed during a slide onto the first row sends focus to the
+    tab bar, and the slide landing afterwards pulled it back to the row."""
+
+    def test_moves_focus_from_the_old_anchor_to_the_new_one(self):
+        host = _FakeFinishSlideHost(focus_id=402, anchor_id=400)
+
+        library.LibraryWindow._finishHubSlide(host)
+
+        self.assertEqual([400], host.focusCalls)
+        self.assertFalse(host._hubSliding)
+
+    def test_leaves_focus_on_the_tab_bar(self):
+        host = _FakeFinishSlideHost(focus_id=320, anchor_id=400)
+
+        library.LibraryWindow._finishHubSlide(host)
+
+        self.assertEqual([], host.focusCalls)
+        self.assertFalse(host._hubSliding)
+
+    def test_leaves_focus_on_the_sidebar(self):
+        host = _FakeFinishSlideHost(focus_id=9001, anchor_id=400)
+
+        library.LibraryWindow._finishHubSlide(host)
+
+        self.assertEqual([], host.focusCalls)
+
+    def test_nothing_to_do_when_already_on_the_anchor(self):
+        host = _FakeFinishSlideHost(focus_id=400, anchor_id=400)
+
+        library.LibraryWindow._finishHubSlide(host)
+
+        self.assertEqual([], host.focusCalls)
+
+
+class OnFocusHubEntryRedirectTest(KodiTestCase):
+    """Entering the hub rows from outside lands on whichever row control Kodi's group focus memory
+    holds. After a slide that finished while focus was on the tabs or sidebar (_finishHubSlide()
+    leaves focus alone then) that's the previous row, not the anchor - live-caught 2026-09-24.
+    onFocus() redirects it to the anchor, keeping the entry flag for Kodi's replayed action."""
+
+    TAB_LIST_ID = 320
+
+    def _host(self, last_focus_id, anchor=400):
+        host = _FakeOnFocusHost(last_focus_id=last_focus_id)
+        host.visibleHubs = ['hub0', 'hub1', 'hub2']
+        host._anchorRingPos = host.HUB_ROTATION_RING.index(anchor)
+        return host
+
+    def test_arrival_on_a_stale_row_is_redirected_to_the_anchor(self):
+        host = self._host(last_focus_id=self.TAB_LIST_ID, anchor=402)
+
+        onFocus(host, 400)
+
+        self.assertEqual([402], host.focusCalls)
+        self.assertTrue(host._hubJustEnteredFromOutside)
+        self.assertEqual(402, host.lastFocusID)
+
+    def test_the_redirects_own_event_keeps_the_entry_flag(self):
+        host = self._host(last_focus_id=self.TAB_LIST_ID, anchor=402)
+
+        onFocus(host, 400)
+        onFocus(host, 402)
+
+        self.assertTrue(host._hubJustEnteredFromOutside)
+        self.assertEqual([402], host.focusCalls)
+
+    def test_after_the_replay_consumed_the_flag_the_redirect_does_not_set_it_again(self):
+        host = self._host(last_focus_id=self.TAB_LIST_ID, anchor=402)
+
+        onFocus(host, 400)
+        host._hubJustEnteredFromOutside = False  # onAction()'s hub branch consumed the replay
+        onFocus(host, 402)
+
+        self.assertFalse(host._hubJustEnteredFromOutside)
+
+    def test_arrival_on_the_anchor_is_left_alone(self):
+        host = self._host(last_focus_id=self.TAB_LIST_ID, anchor=400)
+
+        onFocus(host, 400)
+
+        self.assertEqual([], host.focusCalls)
+        self.assertTrue(host._hubJustEnteredFromOutside)
+
+    def test_moves_within_the_rows_are_never_redirected(self):
+        host = self._host(last_focus_id=401, anchor=400)
+
+        onFocus(host, 402)
+
+        self.assertEqual([], host.focusCalls)
