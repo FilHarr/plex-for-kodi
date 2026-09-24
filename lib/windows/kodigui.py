@@ -239,6 +239,14 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             self.setProperties(list(carryProps.keys()), list(carryProps.values()))
         self.setBoolProperty('is_plextuary', util.SKIN_PLEXTUARY)
 
+    def handleBack(self):
+        """This screen's own Back steps, the ones that keep it open (a scrolled row back to its
+        first item, the extras rows back to the button row). Returns True when one of them used
+        the press. Called from the screen's own onAction() when it runs standalone, and by
+        LibraryWindow.onAction() before it pops the chain when the screen is hosted - the host
+        takes over onAction(), so without this a hosted screen never saw Back."""
+        return False
+
     def onCloseSignal(self, *args, **kwargs):
         self._closeSignalled = True
         self.doClose(force=True)

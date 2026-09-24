@@ -87,9 +87,15 @@ class FakeShell(object):
         self.closed = False
         self.onFirstInitCalled = False
         self.setPropertyCalls = []
+        self.handleBackResult = False
+        self.handleBackCalls = 0
 
     def onFirstInit(self):
         self.onFirstInitCalled = True
+
+    def handleBack(self):
+        self.handleBackCalls += 1
+        return self.handleBackResult
 
     def setProperty(self, key, value):
         self.setPropertyCalls.append((key, value))
@@ -1156,6 +1162,7 @@ class OnActionTest(KodiTestCase):
         host._shuttingDown = False
         host._goRootAwaitFocus = None
         host._isHostedShell = True
+        host._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
         host._backStack = [(FakeShell, {})]
         popCalls = []
         host.popBack = lambda: popCalls.append(True)
@@ -1172,6 +1179,72 @@ class OnActionTest(KodiTestCase):
         # test actually guards is that the grid check above it didn't raise first.
         self.assertEqual([], popCalls)
         self.assertEqual(1, len(FakeTimer.instances))
+
+
+class OnActionHandleBackTest(KodiTestCase):
+    """I1: a hosted screen's own Back steps (handleBack()) run before the host pops the chain."""
+
+    def _host(self, handleBackResult=False):
+        host = FakeHostWindow()
+        host._shuttingDown = False
+        host._goRootAwaitFocus = None
+        host._isHostedShell = True
+        host._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
+        host._current.handleBackResult = handleBackResult
+        host._backStack = [(FakeShell, {})]
+        return host
+
+    def _press(self, host, action_id):
+        FakeTimer.instances = []
+        originalTimer = library.threading.Timer
+        library.threading.Timer = FakeTimer
+        try:
+            onAction(host, FakeAction(action_id))
+        finally:
+            library.threading.Timer = originalTimer
+        return FakeTimer.instances
+
+    def test_screen_that_uses_back_keeps_the_chain(self):
+        host = self._host(handleBackResult=True)
+        timers = self._press(host, xbmcgui.ACTION_NAV_BACK)
+        self.assertEqual(1, host._current.handleBackCalls)
+        self.assertEqual([], timers, "the chain must not pop when the screen used the press")
+
+    def test_screen_that_declines_back_pops_the_chain(self):
+        host = self._host(handleBackResult=False)
+        timers = self._press(host, xbmcgui.ACTION_NAV_BACK)
+        self.assertEqual(1, host._current.handleBackCalls)
+        self.assertEqual(1, len(timers))
+
+    def test_previous_menu_skips_the_screen_and_pops(self):
+        """The screens' standalone onAction() only runs these steps for NAV_BACK."""
+        host = self._host(handleBackResult=True)
+        timers = self._press(host, xbmcgui.ACTION_PREVIOUS_MENU)
+        self.assertEqual(0, host._current.handleBackCalls)
+        self.assertEqual(1, len(timers))
+
+    def test_an_error_in_the_screen_still_pops(self):
+        host = self._host()
+
+        def boom():
+            raise RuntimeError('control gone')
+        host._current.handleBack = boom
+        originalError = library.util.ERROR
+        library.util.ERROR = lambda *a, **k: None
+        try:
+            timers = self._press(host, xbmcgui.ACTION_NAV_BACK)
+        finally:
+            library.util.ERROR = originalError
+        self.assertEqual(1, len(timers))
+
+    def test_unhosted_host_never_asks_its_current_view(self):
+        """A grid/Recommended view isn't a hosted screen; its Back steps stay on the host."""
+        host = self._host(handleBackResult=True)
+        host._isHostedShell = False
+        host.contentMode = 'recommended'
+        timers = self._press(host, xbmcgui.ACTION_NAV_BACK)
+        self.assertEqual(0, host._current.handleBackCalls)
+        self.assertEqual(1, len(timers))
 
     def test_navback_with_an_empty_backstack_falls_through_unmodified(self):
         """Regression guard for the "empty stack means never chained" contract: swapTo() always

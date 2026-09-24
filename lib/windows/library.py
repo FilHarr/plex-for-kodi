@@ -2565,6 +2565,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self.dismissSidebarPopupOnBack(target=self._sidebarTarget()):
             return
 
+        # A hosted screen's own Back steps (handleBack(), kodigui.BaseWindow) come before the chain
+        # pops below. NAV_BACK only, as on the screens' own standalone path. On an error, Back
+        # still pops rather than doing nothing.
+        if action == xbmcgui.ACTION_NAV_BACK and self._isHostedShell:
+            try:
+                if self._current.handleBack():
+                    return
+            except Exception:
+                util.ERROR()
+
         # Grid "home" on Back, requested directly: Back while scrolled down the poster/list grid
         # snaps to item 0 first, rather than immediately leaving the section/chain - only once
         # already on item 0 does Back fall through to its normal meaning (below). Checked ahead of

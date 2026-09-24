@@ -286,6 +286,17 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         if oldFocusId in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID, self.RESTART_BUTTON_ID):
             self.focusPlayButton()
 
+    def handleBack(self):
+        return self.backToRowStartOrRetract()
+
+    def backResetRows(self):
+        rows = {self.ROLES_LIST_ID: self.rolesListControl,
+                self.REVIEWS_LIST_ID: self.reviewsListControl,
+                self.EXTRA_LIST_ID: self.extraListControl,
+                self.RELATED_LIST_ID: self.relatedListControl}
+        rows.update(zip(self.COLLECTION_LIST_IDS, self.collectionListControls))
+        return rows
+
     def onAction(self, action):
         try:
             controlID = self.getFocusId()
@@ -314,12 +325,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             elif action == xbmcgui.ACTION_NAV_BACK:
                 if self.dismissSidebarPopupOnBack():
                     return
-                # Retract to the button row rather than the header - see retractToButtonRow()
-                # (mixins/common.py) and the ACTION_CONTEXT_MENU branch above for why group 200 can't
-                # be focused here any more. on.extras clears as focus lands, so the next Back closes.
-                if not util.addonSettings.fastBack and self.getProperty('on.extras'):
-                    if self.retractToButtonRow():
-                        return
+                if self.handleBack():
+                    return
 
             elif self.isWatchedAction(action) and xbmc.getCondVisibility('ControlGroup({}).HasFocus(0)'.format(self.MAIN_BUTTON_GROUP_ID)):
                 self.toggleWatched(self.video)

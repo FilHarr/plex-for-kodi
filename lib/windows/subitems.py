@@ -444,6 +444,18 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         except (SystemError, RuntimeError):
             self.setFocusId(button_id)
 
+    def handleBack(self):
+        return self.backToRowStartOrRetract()
+
+    def backResetRows(self):
+        # SUB_ITEM_LIST_ID (the season posters) is deliberately not included, unlike the
+        # peripheral Roles/Extras/Related rows below it - it's this screen's own primary content,
+        # not one of several hub rows sharing space, so Back from it should leave the screen
+        # immediately, on request.
+        return {self.ROLES_LIST_ID: self.rolesListControl,
+                self.EXTRA_LIST_ID: self.extraListControl,
+                self.RELATED_LIST_ID: self.relatedListControl}
+
     def onAction(self, action):
         try:
             controlID = self.getFocusId()
@@ -478,38 +490,13 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 self.toggleWatched(item.dataSource)
                 return
 
-            elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_CONTEXT_MENU):
-                # Matches Recommended's own hub rows (LibraryWindow.checkHubItem(), library.py): Back on
-                # a row scrolled away from its first item resets to item 0 and stops there (swallowed),
-                # rather than immediately leaving the screen - a second Back, now already at item 0,
-                # falls through to the normal handling below. SUB_ITEM_LIST_ID (the season posters) is
-                # deliberately not included here, unlike the peripheral Roles/Extras/Related rows below
-                # it - it's this screen's own primary content, not one of several hub rows sharing space,
-                # so Back from it should leave the screen immediately, on request.
-                if action == xbmcgui.ACTION_NAV_BACK:
-                    if self.dismissSidebarPopupOnBack():
-                        return
-                    rowControl = {self.ROLES_LIST_ID: self.rolesListControl,
-                                 self.EXTRA_LIST_ID: self.extraListControl,
-                                 self.RELATED_LIST_ID: self.relatedListControl,
-                                 self.POPULAR_TRACKS_LIST_ID: getattr(self, 'popularTracksListControl', None)}.get(
-                        controlID) or getattr(self, 'albumTypeListControls', {}).get(controlID)
-                    if rowControl:
-                        pos = rowControl.getSelectedPos()
-                        if pos is not None and pos > 0:
-                            rowControl.selectItem(0)
-                            return
-
-                # First Back out of the extras rows retracts to the button row instead of leaving
-                # the screen; on.extras clears as focus lands there, so a second Back falls straight
-                # through to the close below. Was a jump to OPTIONS_GROUP_ID (the header) until that
-                # group turned out to have nothing focusable on these screens - see
-                # retractToButtonRow() (mixins/common.py) and the ACTION_CONTEXT_MENU branch above.
-                # The old `or action == ACTION_CONTEXT_MENU` fastBack exemption went with it: menu
-                # now returns from that branch and never reaches here.
-                if not util.addonSettings.fastBack and self.getProperty('on.extras'):
-                    if self.retractToButtonRow():
-                        return
+            elif action == xbmcgui.ACTION_NAV_BACK:
+                # Was `in (NAV_BACK, CONTEXT_MENU)`, but menu already returns from its own branch
+                # above and never reached here.
+                if self.dismissSidebarPopupOnBack():
+                    return
+                if self.handleBack():
+                    return
 
             if action == xbmcgui.ACTION_LAST_PAGE and xbmc.getCondVisibility('ControlGroup(300).HasFocus(0)'):
                 next(self)
@@ -1297,6 +1284,16 @@ class ArtistWindow(ShowWindow):
         self.initialized = True
 
         self.setFocusId(self.PLAY_BUTTON_ID)
+
+    def backResetRows(self):
+        # Own list, not ShowWindow's: this screen has no Roles/Extras controls (ShowWindow's version
+        # raised AttributeError here, so Back never reset a row on Artist), and Albums (400) is one
+        # row among several here, not the screen's main selection the way Seasons' 400 is.
+        rows = {self.SUB_ITEM_LIST_ID: self.subItemListControl,
+                self.RELATED_LIST_ID: self.relatedListControl,
+                self.POPULAR_TRACKS_LIST_ID: self.popularTracksListControl}
+        rows.update(self.albumTypeListControls)
+        return rows
 
     def onFocus(self, controlID):
         # Full override, not ShowWindow.onFocus()'s shared version - that one exempts

@@ -1212,6 +1212,18 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         self.episode = None
 
+    # Back from Roles/Extras retracts to the episode row, not the button row below it (on request);
+    # a further Back from there leaves the screen.
+    BACK_RETRACT_ID = EPISODE_LIST_ID
+
+    def handleBack(self):
+        return self.backToRowStartOrRetract()
+
+    def backResetRows(self):
+        # EPISODE_LIST_ID is left out: the selected episode is what this screen is showing.
+        return {self.ROLES_LIST_ID: self.rolesListControl,
+                self.EXTRA_LIST_ID: self.extraListControl}
+
     def onAction(self, action):
         try:
             if self.debouncing:
@@ -1293,14 +1305,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 return
 
             elif action == xbmcgui.ACTION_NAV_BACK:
-                # Retract to the button row rather than the header - see retractToButtonRow()
-                # (mixins/common.py) and the ACTION_CONTEXT_MENU branch above for why group 200 can't
-                # be focused here any more. Returns False when the screen is showing with
-                # disable_playback set (the button row is hidden entirely then), in which case Back
-                # falls through and closes the window as it would from anywhere else.
-                if not util.addonSettings.fastBack and self.getProperty('on.extras'):
-                    if self.retractToButtonRow():
-                        return
+                if self.handleBack():
+                    return
 
             if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                 if self.dismissSidebarPopupOnBack():
