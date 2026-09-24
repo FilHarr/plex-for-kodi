@@ -1007,6 +1007,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
         self.populateRatings(self.video, self)
 
+        # The rest of the shared meta row (CommonMixin.META_ROW_PROPERTIES) this screen has no
+        # value for; a Watchlist item has none for the two below either.
+        self.blankMetaRow('episode.code')
         if not self.fromWatchlist:
             self.setAudioAndSubtitleInfo(video_text)
 
@@ -1016,6 +1019,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 self.setProperty('remainingTime', T(33615, "{time} left").format(time=self.video.remainingTimeString))
             else:
                 self.setProperty('remainingTime', '')
+        else:
+            self.blankMetaRow('unavailable', 'remainingTime')
 
     def setAudioAndSubtitleInfo(self, video_text):
         # discover external audio files for mapped direct play

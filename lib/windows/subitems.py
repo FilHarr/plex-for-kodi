@@ -412,6 +412,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         # ' / ') - the metadata row (pp_meta_row.xml.tpl, shared with pre_play) wants its own shorter,
         # comma-separated form.
         self.setProperty('genres.short', genres and u', '.join([g.tag for g in genres][:2]) or '')
+        # The rest of the shared meta row (CommonMixin.META_ROW_PROPERTIES) this screen has no
+        # value for.
+        self.blankMetaRow('episode.code', 'remainingTime', 'unavailable')
 
         if self.fromWatchlist and not self.wl_availability:
             self.setProperty('wl_server_availability_verbose',

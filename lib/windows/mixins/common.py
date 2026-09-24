@@ -7,6 +7,20 @@ from lib.i18n import T
 
 
 class CommonMixin(object):
+    # Every Window.Property includes/pp_meta_row.xml.tpl reads. Each screen showing that row (Home's
+    # hero - LibraryWindow.setHeroInfo(), PrePlayWindow.setInfo(), ShowWindow.updateProperties())
+    # must write all of them, blanking the ones it has no value for: a window starts with whatever
+    # its reused window id last held, so a property a screen never writes shows another screen's
+    # value (live-reported 2026-09-24: Home's time-left pill carried into other screens).
+    # tests/test_meta_row.py checks each screen covers the list.
+    META_ROW_PROPERTIES = ('episode.code', 'duration', 'date', 'genres.short', 'content.rating',
+                           'remainingTime', 'unavailable')
+
+    def blankMetaRow(self, *keys):
+        """Write '' to the given META_ROW_PROPERTIES - the ones the caller has no value for."""
+        for key in keys:
+            self.setProperty(key, '')
+
     @classmethod
     def isWatchedAction(cls, action):
         return action == xbmcgui.ACTION_NONE and action.getButtonCode() == 61527

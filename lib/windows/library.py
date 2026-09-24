@@ -6881,6 +6881,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         except Exception:
             util.DEBUG_LOG('setHeroInfo: genres failed for {}', ds)
         self.setProperty('info', genres)
+        # The rest of the shared meta row (CommonMixin.META_ROW_PROPERTIES) this hero has no
+        # value for.
+        self.blankMetaRow('genres.short', 'unavailable')
 
         self.setProperty('studios', getattr(ds, 'studio', None) or '')
 
@@ -6979,10 +6982,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Written before no_hero_art is cleared - see updateHeroFrom().
         self.setHeroInfo(new_ds)
         self.updateBackgroundFrom(new_ds)
+        self._setNoHeroArt(False)
 
     def _updateHeroFromFocusedHubItem(self, control_id):
         """Sync the hero art/info overlay to whichever item is currently selected in hub-row
-        self._setNoHeroArt(False)
         control_id - called on horizontal (left/right) movement within a hub row, via
         checkHubItem() below. Port of the hero-art-relevant slice of HomeWindow.checkHubItem()
         (home.py) - just the hero-info replica update, mirroring updateHeroFrom() rather than
@@ -6999,10 +7002,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Written before no_hero_art is cleared - see updateHeroFrom().
         self.setHeroInfo(ds)
         self.updateBackgroundFrom(ds)
+        self._setNoHeroArt(False)
 
     def checkHubItem(self, control_id, action=None):
         """Horizontal (left/right) in-row hub navigation - hero-art sync (delegated to
-        self._setNoHeroArt(False)
         _updateHeroFromFocusedHubItem() above) and reselect-position memory, both hooked into
         this one call site (routeAction()'s hub-row branch). Port of HomeWindow.checkHubItem()
         (home.py), plan item 10 Group A (quiet-orbiting-heron.md). In-row pagination (the old
