@@ -992,6 +992,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if not self._isRealShell(cls):
             self._isHostedShell = False
             kodigui.MultiWindow._setupCurrent(self, cls)
+            if issubclass(cls, RecommendedWindow):
+                self._hideStaleHero()
             if outgoingWasRealShell:
                 self._forceCollectOutgoing(cls)
             util.DEBUG_LOG("Library: _setupCurrent({0}) thin-proxy branch complete", cls)
@@ -1042,6 +1044,25 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # TEMPORARY diagnostic logging - see this method's own top.
         util.DEBUG_LOG("Library: _setupCurrent({0}) real-shell branch complete, real_shell_count={1}",
                         cls, self._realShellHostCount)
+
+    def _hideStaleHero(self):
+        """Called on a fresh Recommended view before it's shown. Its hero (clear logo, title,
+        summary, art) otherwise shows the last Recommended visit's item until the first row binds:
+        Kodi reuses window ids and a new window starts with the properties the id last held, then
+        _onFirstInit() replays the host's cached string properties, hero ones included, and
+        onFirstInit()'s own no_hero_art hide only lands after both (live-reported 2026-09-24,
+        more visible on the AM6B). no_hero_art hides the overlay and the art box until the first
+        bind clears it - the hide onFirstInit() already applies, just in time. (Compared live
+        against hiding only the text, via a blank title; hiding both was the one kept.)
+
+        Written with xbmcgui.WindowXML.setProperty() directly, not the view's setProperty():
+        before a window is shown, BaseWindow.setProperty() takes Kodi's current window id - the
+        outgoing view's - as its own _winID and writes there (live: a section change raised
+        "Window id does not exist" for the already-disposed outgoing view, so the hide never
+        applied). Bool properties aren't in the host's replay cache (setBoolProperty() resolves to
+        the view), so nothing overwrites this before the bind."""
+        util.DEBUG_LOG("Library: hiding the stale hero before show")
+        xbmcgui.WindowXML.setProperty(self._current, 'no_hero_art', '1')
 
     def _forceCollectOutgoing(self, cls):
         """EXPERIMENTAL, see _setupCurrent()'s own comment on the hypothesis this tests. Called
@@ -6746,10 +6767,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         row, summary) from the same item, and clears no_hero_art - the overlay shows for every
         bound item, whatever its type. Ported from HomeWindow.updateHeroFrom() (home.py) - see that
         method's own docstring for why this wraps updateBackgroundFrom rather than folding into
-        it."""
-        self._setNoHeroArt(False)
+        it.
+
+        no_hero_art is cleared last, once everything is written: on a fresh view (hidden by
+        _hideStaleHero()) the properties underneath still hold the last visit's values, and
+        clearing it first showed them while setHeroInfo() worked through its writes -
+        live-caught 2026-09-24 as the previous item's time-left pill (remainingTime, written
+        last) flickering on section changes on the AM6B, where each write is slow enough for
+        Kodi to render frames in between."""
         result = self.updateBackgroundFrom(ds)
         self.setHeroInfo(ds)
+        self._setNoHeroArt(False)
         return result
 
     def setHeroInfo(self, ds):
@@ -6948,12 +6976,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         every move into a hub scrolled past its first item."""
         new_hub = self.visibleHubs[self.focusedHubIndex]
         new_ds = self._previewSelectedItem(new_hub)
-        self._setNoHeroArt(False)
+        # Written before no_hero_art is cleared - see updateHeroFrom().
         self.setHeroInfo(new_ds)
         self.updateBackgroundFrom(new_ds)
 
     def _updateHeroFromFocusedHubItem(self, control_id):
         """Sync the hero art/info overlay to whichever item is currently selected in hub-row
+        self._setNoHeroArt(False)
         control_id - called on horizontal (left/right) movement within a hub row, via
         checkHubItem() below. Port of the hero-art-relevant slice of HomeWindow.checkHubItem()
         (home.py) - just the hero-info replica update, mirroring updateHeroFrom() rather than
@@ -6967,12 +6996,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if not mli or mli.dataSource is None:
             return
         ds = mli.dataSource
-        self._setNoHeroArt(False)
+        # Written before no_hero_art is cleared - see updateHeroFrom().
         self.setHeroInfo(ds)
         self.updateBackgroundFrom(ds)
 
     def checkHubItem(self, control_id, action=None):
         """Horizontal (left/right) in-row hub navigation - hero-art sync (delegated to
+        self._setNoHeroArt(False)
         _updateHeroFromFocusedHubItem() above) and reselect-position memory, both hooked into
         this one call site (routeAction()'s hub-row branch). Port of HomeWindow.checkHubItem()
         (home.py), plan item 10 Group A (quiet-orbiting-heron.md). In-row pagination (the old
