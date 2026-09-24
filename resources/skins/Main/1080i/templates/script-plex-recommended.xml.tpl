@@ -21,9 +21,9 @@
 {% block headers %}<defaultcontrol>50</defaultcontrol>{% endblock %}
 {% block content %}
 <!-- Fixed-position hub row stack: whichever hub is logically focused always renders at the anchor's
-     fixed position (LibraryWindow.ANCHOR_ABS_Y, 486) - library.py rotates which of 5 physical row
-     controls (403/401/400/402/404, permanently ordered offsets -2 to +2 from focus -
-     HomeWindow.HUB_ROTATION_RING) currently plays that role, and every other role, as focus moves,
+     fixed position (LibraryWindow.ANCHOR_ABS_Y, 486) - library.py rotates which of 4 physical row
+     controls (401/400/402/403, permanently ordered offsets -1 to +2 from focus -
+     LibraryWindow.HUB_ROTATION_RING) currently plays that role, and every other role, as focus moves,
      rather than there being one physical control per hub actually scrolled, or content being
      rebound to match a fixed role every move (an earlier version of this design did that, and paid
      for it in visible texture-swap ghosting whenever a hub's data moved to a *different* physical
@@ -31,7 +31,7 @@
      three earlier <animation>-based attempts at a fixed clip line that failed, and why nesting hub
      rows as items inside one native vertical list is impossible - Kodi gives item-template content
      no real, addressable control identity, confirmed live, RuntimeError: Non-Existent Control).
-     Because content stays glued to whichever control it's already bound to, all 5 controls are kept
+     Because content stays glued to whichever control it's already bound to, all 4 controls are kept
      loaded at all times, so whichever one is about to become newly visible on any given transition
      already holds correct, previously-loaded content. id="50" is kept on the outer control because
      default.xml.tpl's header controls target it directly via <ondown>50</ondown>. -->
@@ -102,10 +102,12 @@
         <height>{{ vscale(425) }}</height>
         <usecontrolcoords>true</usecontrolcoords>
 
-        <!-- All 5 wrappers (500-504, wrapping list controls 400-404) share one uniform shape -
+        <!-- All 4 wrappers (500-503, wrapping list controls 400-403) share one uniform shape -
              wrapper > "has items" inner group > title label + list - since under rotation any of
-             the 5 controls can end up playing any role (two-above/peek-above/anchor/peek-below/
-             two-below) at different times, not just its original one.
+             the 4 controls can end up playing any role (above/anchor/peek-below/below) at
+             different times, not just its original one. Four, not five: see
+             LibraryWindow.HUB_ROTATION_RING's own comment for why -1..+2 is every role a slide
+             ever shows.
 
              Position/height are Python-managed (HomeWindow._setRoleGeometry()/_roleLocalY(), called
              from _bindAllHubSlots()/_startHubSlide()/_finishHubSlide()) - the posy/height declared
@@ -139,7 +141,7 @@
              square/no-second-line at 395, a 31px margin worth keeping in mind if a shorter display
              type is ever added), the title is naturally clipped away the same way the art is, for
              the same reason. -->
-        {% for id, decl_posy, decl_height in ((503, -800, 277), (501, -289, 277), (500, 0, 425), (502, 489, 167), (504, 950, 167)) %}
+        {% for id, decl_posy, decl_height in ((501, -289, 277), (500, 0, 425), (502, 489, 167), (503, 950, 167)) %}
         <control type="group" id="{{ id }}">
             <posx>0</posx>
             <posy>{{ vscale(decl_posy) }}</posy>

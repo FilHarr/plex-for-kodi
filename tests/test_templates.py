@@ -215,6 +215,24 @@ class TemplateRenderTest(KodiTestCase):
 
         self.assertEqual(few, many)
 
+    def test_recommended_defines_exactly_the_hub_ring(self):
+        # The hub rows are a fixed rotation ring (LibraryWindow.HUB_ROTATION_RING, four controls
+        # since 2026-09-24): the template's list controls and wrappers must match it exactly - a
+        # control library.py rotates through but the template lacks is a native "Non-Existent
+        # Control" error, and an extra one is 70KB of dead XML parsed on every Home build.
+        from kodienv import ENV
+        ENV.abort_requested = True
+        from lib.windows import library
+
+        xml = render_theme(make_engine(self.mktemp()), "modern")["recommended"]
+        ids = {int(c.get('id')) for c in ET.fromstring(xml).iter('control')
+               if c.get('id') and c.get('id').isdigit()}
+        ring = set(library.LibraryWindow.HUB_ROTATION_RING)
+        wrappers = set(library.LibraryWindow.HUB_WRAPPER_FOR_CONTROL.values())
+
+        self.assertEqual(ring, {i for i in ids if 400 <= i < 500})
+        self.assertEqual(wrappers, {i for i in ids if 500 <= i < 510})
+
     def test_search_window_defines_a_control_per_search_hub(self):
         xml = render_theme(make_engine(self.mktemp()), "modern")["search"]
         root = ET.fromstring(xml)

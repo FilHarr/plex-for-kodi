@@ -2098,7 +2098,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # onFirstInit() only runs when _setupCurrent() constructs a fresh _current, which for
             # this content mode only happens on a switchTab()/openSection() swap (VIEWS_RECOMMENDED
             # has a single view type, so nothing else re-triggers it). Index i always holds control
-            # id HUB_CONTROL_ID+i (400-404), same fixed mapping HomeWindow.hubControls uses - no
+            # id HUB_CONTROL_ID+i (400-403), same fixed mapping HomeWindow.hubControls uses - no
             # rotation here (deliberately out of scope), so this mapping is also the final one for
             # this swap's whole lifetime.
 
@@ -2137,7 +2137,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 1, 3),
                     kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 2, 3),
                     kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 3, 3),
-                    kodigui.ManagedControlList(self, self.HUB_CONTROL_ID + 4, 3),
                 )
             else:
                 # newControlEmpty(), not newControl(): this section's hub content is about to
@@ -6529,23 +6528,32 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # "Next step: Recommended-tab sharing" section (Stage D2) for the full scoping rationale.
     # ------------------------------------------------------------------------------------------
 
-    # Permanent geometric order of the 5 physical controls (see
-    # docs/notes/home-hub-fixed-focus-position-status.md for the full history behind this design
-    # - ported verbatim from HomeWindow.HUB_ROTATION_RING, home.py). Which ROLE (-2 two-above /
-    # -1 peek-above / 0 anchor / +1 peek-below / +2 two-below) a given control id currently plays
-    # rotates as focus moves - tracked by self._anchorRingPos (index into this tuple) - rather
-    # than roles being permanently glued to one control id with content rebound to match every
-    # move. A control that already has correct, already-rendered content for a hub keeps it and
-    # just repositions; only the one control "wrapping around" per move (see _startHubSlide())
-    # ever needs a fresh content bind, and since that control's role is always the extreme (±2),
-    # which is never inside grouplist 50's own clip range regardless of which two controls
-    # currently hold it, that rebind is always safely off-screen, never visible.
-    HUB_ROTATION_RING = (403, 401, 400, 402, 404)
+    # Permanent geometric order of the 4 physical controls (see
+    # docs/notes/home-hub-fixed-focus-position-status.md for the full history behind this design,
+    # ported from HomeWindow.HUB_ROTATION_RING). Which ROLE (-1 above / 0 anchor / +1 peek-below /
+    # +2 below) a given control id currently plays rotates as focus moves - tracked by
+    # self._anchorRingPos (index into this tuple) - rather than roles being permanently glued to
+    # one control id with content rebound to match every move. A control that already has
+    # correct, already-rendered content for a hub keeps it and just repositions; only the one
+    # control "wrapping around" per move (see _startHubSlide()) ever needs a fresh content bind.
+    #
+    # Four, not HomeWindow's five (2026-09-24): with the hero overlay always shown, only the
+    # anchor and a partial peek-below are ever on screen at rest - role -1's bottom edge sits at
+    # ANCHOR_ABS_Y - ROW_GAP (461), above grouplist 50's clip line (518), and role +2 starts at
+    # y >= 1188 even under the shortest rows, below the screen. A slide shows one more: going
+    # down, +2 slides up into peek-below; going up, -1 slides down into the anchor. So -1..+2
+    # covers both directions, and the wrapping control always moves between the two roles that
+    # are never on screen (-1 -> +2 going down, +2 -> -1 going up). The old -2 role was never
+    # visible at all; dropping it takes one 70KB list control out of the window XML.
+    HUB_ROTATION_RING = (401, 400, 402, 403)
+    # The ring's lowest role; the others follow in ring order up to HUB_MAX_ROLE.
+    HUB_MIN_ROLE = -1
+    HUB_MAX_ROLE = HUB_MIN_ROLE + len(HUB_ROTATION_RING) - 1
     # Each ring control's own wrapper control id (script-plex-recommended.xml.tpl groups
-    # 500-504) - fixed, structural, so "moving" a control between roles means repositioning
+    # 500-503) - fixed, structural, so "moving" a control between roles means repositioning
     # *its* wrapper, not re-parenting the list control itself. Ported verbatim from
     # HomeWindow.HUB_WRAPPER_FOR_CONTROL.
-    HUB_WRAPPER_FOR_CONTROL = {400: 500, 401: 501, 402: 502, 403: 503, 404: 504}
+    HUB_WRAPPER_FOR_CONTROL = {400: 500, 401: 501, 402: 502, 403: 503}
 
     # A row's own real rendered height (template-declared, pre-vscale units), keyed by the same
     # (display_type, text2lines) values getHubDisplayType()/getHubRenderFlags() already report.
@@ -6598,10 +6606,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     HUB_SLIDE_STEPS = 12
     HUB_SLIDE_TIME = 0.25
     # How long after a fresh 'recommended' entry _bindPeekHubsDeferred() waits before binding the
-    # ring's two extreme (role +-half) controls - always outside grouplist 50's clip region (see
-    # _startHubSlide()'s own docstring), so never visible at the moment they'd otherwise be bound
+    # ring's two extreme (HUB_MIN_ROLE/HUB_MAX_ROLE) controls - never on screen at rest (see
+    # HUB_ROTATION_RING's own comment), so never visible at the moment they'd otherwise be bound
     # inline. Long enough that the window has definitely painted with its immediately-visible rows
-    # (anchor + peek +-1) before this fires; short enough to almost always land before a user could
+    # (anchor + peek-below) before this fires; short enough to almost always land before a user could
     # plausibly slide that far. Not tied to HUB_SLIDE_TIME/SKIN_RELOAD_DEFER_SECONDS - a distinct
     # concern (background content bind, not animation or click-debounce), sized on its own.
     HUB_PEEK_BIND_DEFER_SECONDS = 0.2
@@ -6981,7 +6989,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         util.DEBUG_LOG('Hub "See more" clicked (grid not built yet): {0}', hub)
 
     def _anchorControlId(self):
-        """Whichever physical control (400-404) is currently serving the anchor role. Ported
+        """Whichever physical control (400-403) is currently serving the anchor role. Ported
         verbatim from HomeWindow._anchorControlId() (home.py)."""
         return self.HUB_ROTATION_RING[self._anchorRingPos]
 
@@ -7012,18 +7020,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     'hub.nolabels.{0}'.format(anchor_id): self._hubIsMusic(hub) and '1' or ''}
 
     def _ringRoleOffset(self, control_id, ring_pos=None):
-        """control_id's current role-offset (-2 two-above / -1 peek-above / 0 anchor / +1
-        peek-below / +2 two-below) relative to ring_pos (an index into HUB_ROTATION_RING -
+        """control_id's current role-offset (HUB_MIN_ROLE -1 above / 0 anchor / +1 peek-below /
+        HUB_MAX_ROLE +2 below) relative to ring_pos (an index into HUB_ROTATION_RING -
         defaults to the current anchor's own position, self._anchorRingPos, when not given).
         Ported verbatim from HomeWindow._ringRoleOffset() (home.py)."""
         if ring_pos is None:
             ring_pos = self._anchorRingPos
         ring = self.HUB_ROTATION_RING
-        half = len(ring) // 2
-        return ((ring.index(control_id) - ring_pos + half) % len(ring)) - half
+        return ((ring.index(control_id) - ring_pos - self.HUB_MIN_ROLE) % len(ring)) + self.HUB_MIN_ROLE
 
     def hubItemClicked(self, hub_control_id):
-        """Open whatever's focused in a hub row (controls 400-404). Port of
+        """Open whatever's focused in a hub row (controls 400-403). Port of
         HomeWindow.hubItemClicked() (home.py): generic opener.open() dispatch, since hub items
         span many different types across different hubs, unlike the grid's own section-TYPE-
         scoped showPanelClicked().
@@ -7422,8 +7429,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if is_home:
             title = self.homeHubDisplayTitle(hub, self.ambiguousHubTitles(self.visibleHubs))
 
-        # Row title label reads $INFO[Window.Property(hub.{{ id - 100 }})] (id 500-504, so
-        # property name is hub.400 .. hub.404) - same property name/format
+        # Row title label reads $INFO[Window.Property(hub.{{ id - 100 }})] (id 500-503, so
+        # property name is hub.400 .. hub.403) - same property name/format
         # HomeWindow._showHub() sets (home.py). hub.display.4NN drives which of
         # hub_itemlayout_{poster,square,ar16x9}.xml.tpl actually renders each item - without it
         # every itemlayout's <itemlayout condition="..."> is false and the list shows no visible
@@ -7626,12 +7633,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         construction only ever contains non-empty hubs, so any in-range index is automatically
         valid" (focusFirstValidHub()'s own comment there) still applies verbatim here.
 
-        defer_peek: True only from _recommendedHubsCallback()'s own fresh-entry call. Skips
-        binding (just resets) the ring's two extreme (role +-half) controls here and schedules
-        _bindPeekHubsDeferred() to do it ~HUB_PEEK_BIND_DEFER_SECONDS later instead - both are
-        always fully outside grouplist 50's clip region (see _startHubSlide()'s own docstring),
-        so this never leaves anything visible unbound, it just moves 2 of the 5 initial
-        createListItem() passes off the synchronous tab-entry path. False (the reset()-then-
+        defer_peek: True from _recommendedHubsCallback()'s fresh-entry call and _resetHubsToTop().
+        Skips binding (just resets) the ring's two extreme (HUB_MIN_ROLE/HUB_MAX_ROLE) controls
+        here and schedules _bindPeekHubsDeferred() to do it ~HUB_PEEK_BIND_DEFER_SECONDS later
+        instead - neither is on screen at rest (see HUB_ROTATION_RING's own comment), and a slide
+        before then binds them first (_hubPeekBindPending) - so it just moves 2 of the 4
+        createListItem() passes off the synchronous entry path. False (the reset()-then-
         continue "out of range" branch below already covers a real gap) for every other caller -
         those run mid-session, off the hot tab-entry path, where the eager behavior's own
         correctness (e.g. not leaving stale content from a just-deleted hub) matters more than
@@ -7666,33 +7673,27 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         anchor_ds = self._previewSelectedItem(anchor_hub)
         self.updateHeroFrom(anchor_ds)
 
-        half = len(self.HUB_ROTATION_RING) // 2
         for control_id in sorted(self.HUB_ROTATION_RING, key=lambda cid: abs(self._ringRoleOffset(cid))):
             role = self._ringRoleOffset(control_id)
             index = control_id - self.HUB_CONTROL_ID
             wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
             self._setRoleGeometry(wrapper, role, self.focusedHubIndex)
 
-            if defer_peek and abs(role) == half:
-                self.hubControls[index].reset()
-                self.setProperty('hub.display.4{0:02d}'.format(index), '')
-                continue
-
             hub_index = self.focusedHubIndex + role
-            if not (0 <= hub_index < len(self.visibleHubs)):
+            hub_exists = 0 <= hub_index < len(self.visibleHubs)
+            # From whether the hub exists, not whether it's bound yet: role -1 is a deferred
+            # extreme now (HUB_MIN_ROLE).
+            if role == -1:
+                self.setBoolProperty('hub.has_prev', hub_exists)
+            elif role == 1:
+                self.setBoolProperty('hub.has_next', hub_exists)
+
+            if not hub_exists or (defer_peek and role in (self.HUB_MIN_ROLE, self.HUB_MAX_ROLE)):
                 self.hubControls[index].reset()
                 self.setProperty('hub.display.4{0:02d}'.format(index), '')
-                if role == -1:
-                    self.setBoolProperty('hub.has_prev', False)
-                elif role == 1:
-                    self.setBoolProperty('hub.has_next', False)
                 continue
 
             self._bindHubToControl(self.visibleHubs[hub_index], index)
-            if role == -1:
-                self.setBoolProperty('hub.has_prev', True)
-            elif role == 1:
-                self.setBoolProperty('hub.has_next', True)
 
         if defer_peek:
             self._hubPeekBindPending = True
@@ -7705,7 +7706,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def _bindPeekHubsDeferred(self, generation):
         """threading.Timer target scheduled by _bindAllHubSlots(defer_peek=True) - binds the
-        ring's two extreme (role +-half) controls that call left skipped (reset only),
+        ring's two extreme (HUB_MIN_ROLE/HUB_MAX_ROLE) controls that call left skipped (reset only),
         ~HUB_PEEK_BIND_DEFER_SECONDS after a fresh 'recommended' entry. Re-derives which physical
         control currently holds each extreme role, and which hub belongs there, from live state
         (self.focusedHubIndex/self._anchorRingPos) rather than anything captured at schedule time,
@@ -7739,13 +7740,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self._bindPeekHubs()
 
     def _bindPeekHubs(self):
-        """Bind the ring's two extreme (role +-half) controls for the current anchor - the part
-        _bindAllHubSlots(defer_peek=True) left owed. Caller holds self.lock."""
+        """Bind the ring's two extreme (HUB_MIN_ROLE/HUB_MAX_ROLE) controls for the current
+        anchor - the part _bindAllHubSlots(defer_peek=True) left owed. Caller holds self.lock."""
         self._hubPeekBindPending = False
-        half = len(self.HUB_ROTATION_RING) // 2
         for control_id in self.HUB_ROTATION_RING:
             role = self._ringRoleOffset(control_id)
-            if abs(role) != half:
+            if role not in (self.HUB_MIN_ROLE, self.HUB_MAX_ROLE):
                 continue
             index = control_id - self.HUB_CONTROL_ID
             hub_index = self.focusedHubIndex + role
@@ -7820,14 +7820,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # The one control wrapping around: currently at the extreme role opposite the direction
         # of travel - its data isn't valid for any role in the new arrangement, so it needs a
         # fresh content bind and a position snap to its new role. Done synchronously,
-        # immediately - see this method's own docstring for why its old and new roles (both
-        # ±half, the ring's own extremes) are never inside grouplist 50's clip regardless of
-        # which controls currently hold them, so there's nothing to collide with.
-        half = len(self.HUB_ROTATION_RING) // 2
-        wrap_role = -half if delta > 0 else half
+        # immediately - its old and new roles are the ring's two extremes, -1 -> +2 going down
+        # and +2 -> -1 going up, neither ever on screen (HUB_ROTATION_RING's own comment), so
+        # there's nothing to collide with.
+        if delta > 0:
+            wrap_role, wrap_new_role = self.HUB_MIN_ROLE, self.HUB_MAX_ROLE
+        else:
+            wrap_role, wrap_new_role = self.HUB_MAX_ROLE, self.HUB_MIN_ROLE
         wrap_control_id = next(cid for cid in self.HUB_ROTATION_RING
                                 if self._ringRoleOffset(cid, ring_pos=old_ring_pos) == wrap_role)
-        wrap_new_role = -wrap_role
         wrap_index = wrap_control_id - self.HUB_CONTROL_ID
         wrap_wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[wrap_control_id])
         self._setRoleGeometry(wrap_wrapper, wrap_new_role, new_index)
@@ -7839,11 +7840,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.hubControls[wrap_index].reset()
             self.setProperty('hub.display.4{0:02d}'.format(wrap_index), '')
-        # No hub.has_prev/has_next update here - the wrap control's new role is always ±half (±2
-        # for this 5-ring), never ±1, so it never owns that state; whichever mover below lands on
-        # ±1 does.
+        # No hub.has_next update here - the wrap control's new role is -1 or +2, never +1, so it
+        # never owns that state; whichever mover below lands on +1 does. It does own has_prev when
+        # it lands on -1 (going up).
+        if wrap_new_role == -1:
+            self.setBoolProperty('hub.has_prev', wrap_hub_exists)
 
-        # The other 4 controls: reposition smoothly over the animation loop below, content
+        # The other 3 controls: reposition smoothly over the animation loop below, content
         # untouched (already correct for their new role - see this method's own docstring).
         movers = []
         for cid in self.HUB_ROTATION_RING:
@@ -7907,7 +7910,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def _finishHubSlide(self):
         """Slide-completion - deliberately NOT a full _recommendedHubsCallback() rebuild (that
-        would rebind all 5 controls' content unconditionally, defeating the ring design's whole
+        would rebind all 4 controls' content unconditionally, defeating the ring design's whole
         point). Both the wrap control and the movers' content/position are already fully
         handled, synchronously, by _startHubSlide() itself - this just clears hub.sliding
         (re-showing the anchor's own title label) and moves native Kodi focus to whichever
