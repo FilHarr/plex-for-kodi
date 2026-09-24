@@ -1111,7 +1111,7 @@ class OnActionTest(KodiTestCase):
         eventually runs (that's swapTo()/popBack()'s own coverage above)."""
         host = FakeHostWindow()
         host._shuttingDown = False
-        host._goRootHoldUntil = 0
+        host._goRootAwaitFocus = None
         # contentMode == 'recommended' (not 'library'): short-circuits the grid "snap to item 0
         # first" check just above the branch under test here without needing self.getFocusId()/
         # self.POSTERS_PANEL_ID (neither of which this minimal fake defines) - that check's own
@@ -1154,7 +1154,7 @@ class OnActionTest(KodiTestCase):
         with that same AttributeError instead of silently passing."""
         host = FakeHostWindow()
         host._shuttingDown = False
-        host._goRootHoldUntil = 0
+        host._goRootAwaitFocus = None
         host._isHostedShell = True
         host._backStack = [(FakeShell, {})]
         popCalls = []
@@ -1181,7 +1181,7 @@ class OnActionTest(KodiTestCase):
         fake) - proving control reached past the new early-return, not that it was skipped."""
         host = FakeHostWindow()
         host._shuttingDown = False
-        host._goRootHoldUntil = 0
+        host._goRootAwaitFocus = None
         host._backStack = []
         popCalls = []
         host.popBack = lambda: popCalls.append(True)
@@ -1194,7 +1194,7 @@ class OnActionTest(KodiTestCase):
     def test_hosted_shell_skips_the_grid_body_and_dispatches_natively(self):
         host = FakeHostWindow()
         host._shuttingDown = False
-        host._goRootHoldUntil = 0
+        host._goRootAwaitFocus = None
         host._backStack = [(FakeShell, {})]  # non-empty, but this action isn't NAV_BACK
         host._isHostedShell = True
         host.SECTION_LIST_ID = 1
@@ -1225,7 +1225,8 @@ class _FakeOnFocusHost(object):
         self.contentMode = 'recommended'
         self.lastFocusID = last_focus_id
         self._hubJustEnteredFromOutside = False
-        self._goRootHoldUntil = 0
+        self._goRootAwaitFocus = None
+        self._goRootAwaitUntil = 0
         self.reselectActiveSectionCalls = []
 
     def reselectActiveSection(self, control_id, last_focus_id):
@@ -1274,6 +1275,71 @@ class OnFocusHubEntryFlagTest(KodiTestCase):
         onFocus(host, self.ANCHOR_CONTROL_ID)
 
         self.assertFalse(host._hubJustEnteredFromOutside)
+
+
+class OnFocusGoRootWaitTest(KodiTestCase):
+    """LibraryWindow.onFocus()'s go_root wait. After an in-place go_root reset (onReInit(),
+    _resetHubsToTop()), the window's reactivation re-focuses whichever control had focus before the
+    Home press, and that event arrives before the reset's own focus event (live-confirmed
+    2026-09-24). Handled as real focus it recorded the old control as lastFocusID, so a stray from
+    the sidebar (9001) set _hubJustEnteredFromOutside on the target's own event and swallowed the
+    next real press. onFocus() now ignores everything until the target's own event arrives."""
+
+    ANCHOR_CONTROL_ID = 400
+    SIDEBAR_ID = 9001
+
+    def _awaiting(self, deadline_in=1.0):
+        # lastFocusID pre-seeded to the target, as _resetHubsToTop() does.
+        host = _FakeOnFocusHost(last_focus_id=self.ANCHOR_CONTROL_ID)
+        host._goRootAwaitFocus = self.ANCHOR_CONTROL_ID
+        host._goRootAwaitUntil = library.time.time() + deadline_in
+        return host
+
+    def test_the_stray_is_ignored_entirely(self):
+        host = self._awaiting()
+
+        onFocus(host, self.SIDEBAR_ID)
+
+        self.assertEqual(self.ANCHOR_CONTROL_ID, host.lastFocusID)
+        self.assertEqual([], host.reselectActiveSectionCalls)
+        self.assertEqual(self.ANCHOR_CONTROL_ID, host._goRootAwaitFocus)
+
+    def test_stray_then_target_leaves_the_hub_entry_flag_unset(self):
+        host = self._awaiting()
+
+        onFocus(host, self.SIDEBAR_ID)
+        onFocus(host, self.ANCHOR_CONTROL_ID)
+
+        self.assertFalse(host._hubJustEnteredFromOutside)
+        self.assertIsNone(host._goRootAwaitFocus)
+        self.assertEqual(self.ANCHOR_CONTROL_ID, host.lastFocusID)
+
+    def test_the_old_behaviour_set_the_flag(self):
+        """Contrast case: the same two events with nothing waiting (what the stray did before this
+        change, with the timed hold switched off) set the flag."""
+        host = _FakeOnFocusHost(last_focus_id=self.ANCHOR_CONTROL_ID)
+
+        onFocus(host, self.SIDEBAR_ID)
+        onFocus(host, self.ANCHOR_CONTROL_ID)
+
+        self.assertTrue(host._hubJustEnteredFromOutside)
+
+    def test_focus_already_on_the_target_clears_the_wait_on_the_first_event(self):
+        host = self._awaiting()
+
+        onFocus(host, self.ANCHOR_CONTROL_ID)
+        onFocus(host, self.ANCHOR_CONTROL_ID)
+
+        self.assertIsNone(host._goRootAwaitFocus)
+        self.assertFalse(host._hubJustEnteredFromOutside)
+
+    def test_past_the_deadline_focus_is_handled_normally(self):
+        host = self._awaiting(deadline_in=-1.0)
+
+        onFocus(host, self.SIDEBAR_ID)
+
+        self.assertIsNone(host._goRootAwaitFocus)
+        self.assertEqual(self.SIDEBAR_ID, host.lastFocusID)
 
 
 class MigrateOldContinueWatchingTest(KodiTestCase):

@@ -713,13 +713,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # methods that set it). _shuttingDown is read directly, unguarded, by player.py's
         # playQueueCallback() - must exist before anything else can run, not just before
         # shutdown() is ever called.
-        # go_root/_goRootHoldUntil are consumed by onReInit()/onAction()/onFocus() below - see
+        # go_root/_goRootAwaitFocus are consumed by onReInit()/onAction()/onFocus() below - see
         # those for the full mechanism, ported from HomeWindow's own go_root handling.
         self.closeOption = None
         self._shuttingDown = False
         self.go_root = False
-        self._goRootHoldUntil = 0
-        self._goRootFocusTarget = None
+        self._goRootAwaitFocus = None
+        self._goRootAwaitUntil = 0
         # One-shot: onFirstInit() below clears the cold-start busy spinner (background.setBusy())
         # the moment the first real content is confirmed showing, same timing main.py's old
         # create()+waitForOpen() two-step gave HomeWindow - but only once, not on every later
@@ -2483,12 +2483,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                                  args=(home.home_section,), kwargs={'force': True}).start()
             else:
                 # Already showing Home: reset it in place to the first row, item 0 (the Home
-                # rule), then hold that focus for 150ms against the stray focus event Kodi fires
-                # when this window reactivates with its previously-focused control still recorded
-                # (see onFocus()). No hold on the rebuild branch above - it can't outlast the
-                # deferred rebuild, and the new window sets its own focus.
-                self._goRootFocusTarget = self._resetHubsToTop()
-                self._goRootHoldUntil = time.time() + 0.15
+                # rule), then have onFocus() ignore the stray focus event this window's
+                # reactivation fires, until the reset's own focus event arrives (see onFocus()).
+                # Not needed on the rebuild branch above - the new window sets its own focus.
+                self._goRootAwaitFocus = self._resetHubsToTop()
+                self._goRootAwaitUntil = time.time() + 1.0
             return
 
         if self.refill and self.contentMode != 'recommended':
@@ -2548,10 +2547,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if self._shuttingDown:
             return
 
-        # belt: any real user input ends the post-go_root hold window early - ported from
-        # HomeWindow's identical onAction() guard (home.py). See onReInit()'s go_root handling.
-        if self._goRootHoldUntil:
-            self._goRootHoldUntil = 0
+        # belt: real user input ends the post-go_root wait (see onFocus()), in case the reset's own
+        # focus event never arrives.
+        self._goRootAwaitFocus = None
 
         # Dismiss the sidebar user/server popup first, before it can ever reach the back-stack
         # pop below - see dismissSidebarPopupOnBack()'s own comment (windowutils.py) for the bug
@@ -3593,20 +3591,25 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # it never survives to affect a later, unrelated real press; those never re-fire onFocus
         # for the same control anyway, since in-hub vertical nav is entirely Python-owned
         # (_startHubSlide()), not native.
+        # After an in-place go_root reset (onReInit()), this window's reactivation re-focuses
+        # whichever control had focus before the Home press. Live-confirmed 2026-09-24: that event
+        # is always delivered before the reset's own setFocusId() event (0-1ms vs ~100-135ms after
+        # the reset), so focus still ends on the target - but handled as real focus, it records the
+        # old control as lastFocusID. From the sidebar (9001) or the audio widget (204) that makes
+        # the target's own event below look like a native arrival from outside the hub range
+        # (_hubJustEnteredFromOutside), which then swallows the next real press. So ignore every
+        # focus event until the target's own arrives; the deadline is only a safety net.
+        if self._goRootAwaitFocus is not None:
+            if controlID == self._goRootAwaitFocus:
+                self._goRootAwaitFocus = None
+            elif time.time() < self._goRootAwaitUntil:
+                return
+            else:
+                self._goRootAwaitFocus = None
+
         if self.contentMode == 'recommended':
             was_outside_hub = not (399 < (self.lastFocusID or -1) < 500)
             self._hubJustEnteredFromOutside = (399 < controlID < 500) and was_outside_hub
-
-        # Within the 150ms hold window after an in-place go_root reset, a focus event anywhere
-        # but the reset's own target is the stray Kodi fires when this window reactivates with its
-        # previously-focused control still recorded. Snap it back and consume the deadline so real
-        # user input (which arrives well after the window closes) passes through unblipped. See
-        # onReInit()'s go_root handling.
-        if time.time() < self._goRootHoldUntil and controlID != self._goRootFocusTarget:
-            self._goRootHoldUntil = 0
-            self.lastFocusID = self._goRootFocusTarget
-            self.setFocusId(self._goRootFocusTarget)
-            return
 
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
@@ -6843,8 +6846,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         view on screen): land on the first hub row, item 0, as if Home had just been opened -
         without rebuilding the window. Forgets every row's remembered position, rebinds the ring
         from hub 0 (which also puts the hero on hub 0's first item), selects item 0 in every row,
-        and focuses the anchor row. Returns the control id it focused, for onFocus()'s hold - the
-        sidebar when there are no hubs, the same exception a section with no content gets."""
+        and focuses the anchor row. Returns the control id it focused, for onFocus()'s go_root
+        wait - the sidebar when there are no hubs, the same exception a section with no content
+        gets."""
         self._settleHubSlide()
         self._hubReselectPositions = {}
         if not self.visibleHubs or not self.hubControls:
