@@ -1449,3 +1449,69 @@ class HomeHubDisplayTitleTest(KodiTestCase):
 
     def test_a_title_identical_to_the_library_name_stays_bare(self):
         self.assertEqual('Movies', self.title('Movies', 'movie.something.22'))
+
+
+class _FakePeekHost(object):
+    """Only what _bindPeekHubs()/_bindPeekHubsDeferred() touch. Ring as in LibraryWindow: anchor 400
+    at ring position 2, so 403 (-2) and 404 (+2) are the extremes."""
+    HUB_ROTATION_RING = library.LibraryWindow.HUB_ROTATION_RING
+    HUB_CONTROL_ID = 400
+    _ringRoleOffset = library.LibraryWindow._ringRoleOffset
+    _bindPeekHubs = library.LibraryWindow._bindPeekHubs
+
+    def __init__(self, hub_count=6, focused=0):
+        self.lock = library.threading.Lock()
+        self._anchorRingPos = self.HUB_ROTATION_RING.index(400)
+        self.focusedHubIndex = focused
+        self.visibleHubs = ['hub{0}'.format(i) for i in range(hub_count)]
+        self._listGeneration = 1
+        self.closing = False
+        self.contentMode = 'recommended'
+        self._hubSliding = False
+        self._hubPeekBindPending = True
+        self.bound = []
+
+    def _bindHubToControl(self, hub, index):
+        self.bound.append((hub, self.HUB_CONTROL_ID + index))
+
+
+class PeekBindOwedTest(KodiTestCase):
+    """_bindAllHubSlots(defer_peek=True) leaves the ring's two extreme controls unbound and owes
+    them (_hubPeekBindPending). Live-caught 2026-09-24: a slide cancels the deferred timer, then
+    rotates the near-side extreme into a visible role - row 3 arrived blank. Whoever pays the debt
+    first (the timer, or _startHubSlide() via _bindPeekHubs()) clears it, and the timer declines
+    once it's paid."""
+
+    def test_binds_only_the_existing_extreme_hubs_and_clears_the_debt(self):
+        host = _FakePeekHost(hub_count=6, focused=0)
+
+        host._bindPeekHubs()
+
+        # Anchor on hub 0: +2 (control 404) holds hub 2; -2 (403) would be hub -2, which doesn't exist.
+        self.assertEqual([('hub2', 404)], host.bound)
+        self.assertFalse(host._hubPeekBindPending)
+
+    def test_deferred_timer_binds_while_owed(self):
+        host = _FakePeekHost()
+
+        library.LibraryWindow._bindPeekHubsDeferred(host, 1)
+
+        self.assertEqual([('hub2', 404)], host.bound)
+        self.assertFalse(host._hubPeekBindPending)
+
+    def test_deferred_timer_declines_once_already_paid(self):
+        host = _FakePeekHost()
+        host._hubPeekBindPending = False
+
+        library.LibraryWindow._bindPeekHubsDeferred(host, 1)
+
+        self.assertEqual([], host.bound)
+
+    def test_a_declined_timer_leaves_the_debt_for_the_next_slide(self):
+        host = _FakePeekHost()
+        host._hubSliding = True
+
+        library.LibraryWindow._bindPeekHubsDeferred(host, 1)
+
+        self.assertEqual([], host.bound)
+        self.assertTrue(host._hubPeekBindPending)

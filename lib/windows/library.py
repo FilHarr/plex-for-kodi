@@ -788,6 +788,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # off-screen extreme controls instead of doing it inline. Cancelled by _startHubSlide()/
         # _settleHubSlide() so it can never fire concurrently with a slide's own Control mutation.
         self._hubPeekBindTimer = None
+        # True from the moment _bindAllHubSlots(defer_peek=True) leaves those two controls unbound
+        # until _bindPeekHubs() actually binds them - independent of the timer, which a slide
+        # cancels and which can decline. _startHubSlide() binds them itself while this is set.
+        self._hubPeekBindPending = False
         # Built once per LibraryWindow lifetime, then rebound via newControl() on every later
         # 'recommended' entry - see onFirstInit()'s own comment for why (a fresh discard-and-
         # recreate every entry, the original shape here, is the one remaining structural
@@ -6845,10 +6849,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """The Home rule's in-place half (onReInit()'s go_root branch, when Home is already the
         view on screen): land on the first hub row, item 0, as if Home had just been opened -
         without rebuilding the window. Forgets every row's remembered position, rebinds the ring
-        from hub 0 (which also puts the hero on hub 0's first item), selects item 0 in every row,
-        and focuses the anchor row. Returns the control id it focused, for onFocus()'s go_root
-        wait - the sidebar when there are no hubs, the same exception a section with no content
-        gets."""
+        from hub 0 on item 0 (which also puts the hero on hub 0's first item), and focuses the
+        anchor row. Returns the control id it focused, for onFocus()'s go_root wait - the sidebar
+        when there are no hubs, the same exception a section with no content gets."""
         self._settleHubSlide()
         self._hubReselectPositions = {}
         if not self.visibleHubs or not self.hubControls:
@@ -6857,12 +6860,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self.focusedHubIndex = 0
         self._anchorRingPos = self.HUB_ROTATION_RING.index(self.HUB_CONTROL_ID)
-        self._bindAllHubSlots()
-        # _bindHubToControl() only selects when there's a remembered position, and these are the
-        # same native controls, so they keep whatever they last had selected.
-        for hc in self.hubControls:
-            if hc.size():
-                hc.selectItem(0)
+        # defer_peek, as on a fresh entry: the ring's two always-off-screen rows are bound
+        # HUB_PEEK_BIND_DEFER_SECONDS later, off the Home press. _bindHubToControl() selects item 0
+        # in every row it binds, now that nothing is remembered.
+        self._bindAllHubSlots(defer_peek=True)
 
         target = self._anchorControlId()
         # Pre-seeded for the same reason onFirstInit() does it: the programmatic focus below must
@@ -7484,13 +7485,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         control.replaceItems(items)
 
+        # Item 0 unless there's a remembered position: the native control keeps whatever it had
+        # selected across replaceItems()/reset(), which may belong to a different hub (a slide's
+        # wrap rebind) or to before a fresh entry (_resetHubsToTop()'s deferred peek bind).
+        selected = 0
         reselect = self._hubReselectPositions.get(identifier)
         if reselect and items:
             rk, pos = reselect
             resolved = next((i for i, mli in enumerate(items)
                               if mli.dataSource and str(mli.dataSource.ratingKey) == rk), pos)
             if resolved is not None and 0 <= resolved < len(items):
-                control.selectItem(resolved)
+                selected = resolved
+        if items:
+            control.selectItem(selected)
 
     def _recommendedHubsCallbackFor(self, generation):
         """Wraps _recommendedHubsCallback() with the _listGeneration snapshot taken when the
@@ -7629,6 +7636,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         those run mid-session, off the hot tab-entry path, where the eager behavior's own
         correctness (e.g. not leaving stale content from a just-deleted hub) matters more than
         shaving a few controls' worth of bind time."""
+        self._hubPeekBindPending = False
         if not self.visibleHubs:
             for index in range(len(self.hubControls)):
                 self.hubControls[index].reset()
@@ -7687,6 +7695,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self.setBoolProperty('hub.has_next', True)
 
         if defer_peek:
+            self._hubPeekBindPending = True
             generation = self._listGeneration
             timer = threading.Timer(self.HUB_PEEK_BIND_DEFER_SECONDS,
                                     self._bindPeekHubsDeferred, args=[generation])
@@ -7715,21 +7724,33 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         normally only reached in the narrow window where the timer had already started running
         (past cancel()'s reach) just as _settleHubSlide() ran. Worst case either way: the role
         stays unbound - still never visible - until the user's own next slide binds it for real
-        via the normal wrap path, never a wrong-content or missing-content-while-visible bug."""
+        via the normal wrap path, never a wrong-content or missing-content-while-visible bug.
+
+        That last claim was wrong (live-caught 2026-09-24, Down pressed within the defer after a
+        Home reset left row 3 blank): a slide only rebinds the one control wrapping round from the
+        far end, while the unbound extreme on the near side rotates into a visible role empty.
+        _hubPeekBindPending now outlives a cancelled or declined timer, and _startHubSlide()
+        binds the two controls itself (_bindPeekHubs()) before rotating while it's still set."""
         with self.lock:
             if (generation != self._listGeneration or self.closing
-                    or self.contentMode != 'recommended' or self._hubSliding):
+                    or self.contentMode != 'recommended' or self._hubSliding
+                    or not self._hubPeekBindPending):
                 return
+            self._bindPeekHubs()
 
-            half = len(self.HUB_ROTATION_RING) // 2
-            for control_id in self.HUB_ROTATION_RING:
-                role = self._ringRoleOffset(control_id)
-                if abs(role) != half:
-                    continue
-                index = control_id - self.HUB_CONTROL_ID
-                hub_index = self.focusedHubIndex + role
-                if 0 <= hub_index < len(self.visibleHubs):
-                    self._bindHubToControl(self.visibleHubs[hub_index], index)
+    def _bindPeekHubs(self):
+        """Bind the ring's two extreme (role +-half) controls for the current anchor - the part
+        _bindAllHubSlots(defer_peek=True) left owed. Caller holds self.lock."""
+        self._hubPeekBindPending = False
+        half = len(self.HUB_ROTATION_RING) // 2
+        for control_id in self.HUB_ROTATION_RING:
+            role = self._ringRoleOffset(control_id)
+            if abs(role) != half:
+                continue
+            index = control_id - self.HUB_CONTROL_ID
+            hub_index = self.focusedHubIndex + role
+            if 0 <= hub_index < len(self.visibleHubs):
+                self._bindHubToControl(self.visibleHubs[hub_index], index)
 
     def _startHubSlide(self, delta):
         """Move the logical focus delta positions (+1 down / -1 up) and animate the transition.
@@ -7777,6 +7798,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # always starts from a settled, consistent state instead of fighting or compounding with
         # one already in flight.
         self._settleHubSlide()
+
+        # A deferred peek bind still owed (the timer was just cancelled above, or declined): bind
+        # the two extreme controls now, for the pre-slide anchor. This slide only rebinds the
+        # control wrapping round from the far end - the near-side extreme rotates into a visible
+        # role, and would arrive empty (see _bindPeekHubsDeferred()'s docstring).
+        if self._hubPeekBindPending:
+            with self.lock:
+                self._bindPeekHubs()
 
         old_focused_index = self.focusedHubIndex
         self.focusedHubIndex = new_index
