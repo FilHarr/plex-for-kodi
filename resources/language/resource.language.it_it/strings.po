@@ -974,7 +974,7 @@ msgstr "Precedente"
 
 #: 
 msgctxt "#32439"
-msgid "Playing Next"
+msgid "Playing next"
 msgstr "Titolo successivo"
 
 #: 
@@ -1206,11 +1206,6 @@ msgstr "Salta Intro"
 msgctxt "#32496"
 msgid "Skip credits"
 msgstr "Salta Crediti"
-
-#: 
-msgctxt "#32500"
-msgid "Always show post-play screen (even for short videos)"
-msgstr "Mostra sempre la schermata di post-riproduzione (anche per video brevi)"
 
 #: 
 msgctxt "#32501"
@@ -1659,16 +1654,6 @@ msgstr "Kodi ha le sue impostazioni di intervalli salta. Prova a utilizzarle se 
 msgctxt "#32903"
 msgid "Use the above for seeking on the timeline as well."
 msgstr "Utilizza quanto sopra anche per cercare nella timeline."
-
-#: 
-msgctxt "#32904"
-msgid "In seconds."
-msgstr "In secondi."
-
-#: 
-msgctxt "#32905"
-msgid "Cancel post-play timer by pressing OK/SELECT"
-msgstr "Annulla il timer di post-riproduzione premendo OK/SELEZIONA"
 
 #: 
 msgctxt "#32906"
@@ -2702,11 +2687,6 @@ msgstr ""
 #: 
 msgctxt "#33648"
 msgid "Only handle plex.direct hosts when the server's attributes publicAddressMatches=1. Might not work in certain situations. Disable if you have connection issues. Default: On"
-msgstr ""
-
-#: 
-msgctxt "#32101"
-msgid "If enabled, when playback ends and there is a 'Next Up' item available, it will be automatically be played after a {} second delay."
 msgstr ""
 
 #: 

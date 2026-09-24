@@ -974,7 +974,7 @@ msgstr "上一个"
 
 #: 
 msgctxt "#32439"
-msgid "Playing Next"
+msgid "Playing next"
 msgstr "播放下一个"
 
 #: 
@@ -1206,11 +1206,6 @@ msgstr "跳过片头"
 msgctxt "#32496"
 msgid "Skip credits"
 msgstr "跳过片尾"
-
-#: 
-msgctxt "#32500"
-msgid "Always show post-play screen (even for short videos)"
-msgstr "始终显示播放后的画面（即使是短视频）"
 
 #: 
 msgctxt "#32501"
@@ -1659,16 +1654,6 @@ msgstr "Kodi 有自己的跳过设置。如果已配置，请尝试使用它们�
 msgctxt "#32903"
 msgid "Use the above for seeking on the timeline as well."
 msgstr "将上述设置应用到时间线定位。"
-
-#: 
-msgctxt "#32904"
-msgid "In seconds."
-msgstr "以秒为单位。"
-
-#: 
-msgctxt "#32905"
-msgid "Cancel post-play timer by pressing OK/SELECT"
-msgstr "按确认/选择键取消播放完毕后的倒计时"
 
 #: 
 msgctxt "#32906"
@@ -2706,11 +2691,6 @@ msgstr "plex.direct：遵循 plex.tv 的 publicAddressMatches 标志（DNS）"
 msgctxt "#33648"
 msgid "Only handle plex.direct hosts when the server's attributes publicAddressMatches=1. Might not work in certain situations. Disable if you have connection issues. Default: On"
 msgstr "仅当服务器属性 publicAddressMatches=1 时处理 plex.direct 主机。在某些情况下可能不起作用。如果出现连接问题，请禁用此选项。默认：启用"
-
-#: 
-msgctxt "#32101"
-msgid "If enabled, when playback ends and there is a 'Next Up' item available, it will be automatically be played after a {} second delay."
-msgstr "如果启用，当播放结束且有 “下一个” 项目可用时，它将在 {} 秒延迟后自动播放。"
 
 #: 
 msgctxt "#33651"

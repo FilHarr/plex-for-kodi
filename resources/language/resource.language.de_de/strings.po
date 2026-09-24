@@ -305,11 +305,6 @@ msgid "Skip user selection and pin entry on startup."
 msgstr "Benutzerauswahl und Pin-Eingabe beim Start überspringen."
 
 #: 
-msgctxt "#32101"
-msgid "If enabled, when playback ends and there is a 'Next Up' item available, it will be automatically be played after a {} second delay."
-msgstr "Falls die Option aktiviert und ein weiterer Titel verfügbar ist, wird dieser {} Sekunden nach der aktuellen Wiedergabe gestartet."
-
-#: 
 msgctxt "#32102"
 msgid "Enable this if your hardware can handle 4K playback. Disable it to force transcoding."
 msgstr "Aktiviert 4K-Wiedergabe per Hardware. Deaktivierung erzwingt Transcodierung."
@@ -1061,7 +1056,7 @@ msgstr "Vorheriger Titel"
 
 #: 
 msgctxt "#32439"
-msgid "Playing Next"
+msgid "Playing next"
 msgstr "Nächster Titel"
 
 #: 
@@ -1300,11 +1295,6 @@ msgstr "Intro überspringen"
 msgctxt "#32496"
 msgid "Skip credits"
 msgstr "Abspann überspringen"
-
-#: 
-msgctxt "#32500"
-msgid "Always show post-play screen (even for short videos)"
-msgstr "Immer den Nach-Wiedergabe-Bildschirm anzeigen (auch bei kurzen Videos)"
 
 #: 
 msgctxt "#32501"
@@ -1804,16 +1794,6 @@ msgstr "Kodi besitzt seine eigenen Sprungeinstellungen. Versuche diese zu verwen
 msgctxt "#32903"
 msgid "Use the above for seeking on the timeline as well."
 msgstr "Benutze die obige Einstellung auch für die Zeitleiste."
-
-#: 
-msgctxt "#32904"
-msgid "In seconds."
-msgstr "In Sekunden."
-
-#: 
-msgctxt "#32905"
-msgid "Cancel post-play timer by pressing OK/SELECT"
-msgstr "Post-Play-Timer durch OK/AUSWAHL abbrechen"
 
 #: 
 msgctxt "#32906"

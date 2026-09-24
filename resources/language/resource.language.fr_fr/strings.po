@@ -975,7 +975,7 @@ msgstr "Précédent"
 
 #: 
 msgctxt "#32439"
-msgid "Playing Next"
+msgid "Playing next"
 msgstr "À suivre"
 
 #: 
@@ -1209,11 +1209,6 @@ msgstr "Passer l'intro"
 msgctxt "#32496"
 msgid "Skip credits"
 msgstr "Passer le générique"
-
-#: 
-msgctxt "#32500"
-msgid "Always show post-play screen (even for short videos)"
-msgstr "Toujours afficher l'écran post-lecture (même pour les vidéos courtes)"
 
 #: 
 msgctxt "#32501"
@@ -1668,16 +1663,6 @@ msgstr ""
 #: 
 msgctxt "#32903"
 msgid "Use the above for seeking on the timeline as well."
-msgstr ""
-
-#: 
-msgctxt "#32904"
-msgid "In seconds."
-msgstr "En secondes."
-
-#: 
-msgctxt "#32905"
-msgid "Cancel post-play timer by pressing OK/SELECT"
 msgstr ""
 
 #: 
@@ -2713,11 +2698,6 @@ msgstr "plex.direct : Respecte le marqueur publicAddressMatches (DNS) de plex.tv
 msgctxt "#33648"
 msgid "Only handle plex.direct hosts when the server's attributes publicAddressMatches=1. Might not work in certain situations. Disable if you have connection issues. Default: On"
 msgstr "Gérer les hôtes plex.direct seulement si l'attribut du serveur publicAddressMatches=1. Peut échouer dans certains cas. Désactivez si vous avez des problèmes de connexion. Défaut : Activé"
-
-#: 
-msgctxt "#32101"
-msgid "If enabled, when playback ends and there is a 'Next Up' item available, it will be automatically be played after a {} second delay."
-msgstr "Si activé, quand la lecture se termine et qu'un média 'Suivant' est disponible, celui-ci sera joué automatiquement après {} secondes."
 
 #: 
 msgctxt "#33651"

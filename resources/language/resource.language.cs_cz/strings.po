@@ -230,10 +230,6 @@ msgctxt "#32100"
 msgid "Skip user selection and pin entry on startup."
 msgstr "Při spuštění přeskočit výběr uživatele a zadávání pinu."
 
-msgctxt "#32101"
-msgid "If enabled, when playback ends and there is a 'Next Up' item available, it will be automatically be played after a 15 second delay."
-msgstr "Pokud povolíte, po zkončení přehrávání se automaticky přehraje položka ze seznamu 'Následující' po prodlevě 15 sekund."
-
 msgctxt "#32102"
 msgid "Enable this if your hardware can handle 4K playback. Disable it to force transcoding."
 msgstr "Povolte pokud váš hardware zvládne přehrávat 4K videa. Zakázáním vynutíte překódování."
@@ -851,7 +847,7 @@ msgid "Previous"
 msgstr "Předchozí"
 
 msgctxt "#32439"
-msgid "Playing Next"
+msgid "Playing next"
 msgstr "Přehrávám další"
 
 msgctxt "#32440"

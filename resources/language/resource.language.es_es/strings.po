@@ -974,7 +974,7 @@ msgstr "Anterior"
 
 #: 
 msgctxt "#32439"
-msgid "Playing Next"
+msgid "Playing next"
 msgstr "Reproducir el Siguiente"
 
 #: 
@@ -1208,11 +1208,6 @@ msgstr "Saltar introducción"
 msgctxt "#32496"
 msgid "Skip credits"
 msgstr "Saltar créditos"
-
-#: 
-msgctxt "#32500"
-msgid "Always show post-play screen (even for short videos)"
-msgstr "Mostrar siempre la pantalla posterior a la reproducción (incluso para videos cortos)"
 
 #: 
 msgctxt "#32501"
@@ -1661,16 +1656,6 @@ msgstr "Kodi tiene sus propios ajustes para saltar pasos. Intenta usarlos si est
 msgctxt "#32903"
 msgid "Use the above for seeking on the timeline as well."
 msgstr "Utilice lo anterior también para buscar en la línea de tiempo."
-
-#: 
-msgctxt "#32904"
-msgid "In seconds."
-msgstr "En segundos."
-
-#: 
-msgctxt "#32905"
-msgid "Cancel post-play timer by pressing OK/SELECT"
-msgstr "Cancelar el temporizador post-play pulsando OK/SELECCIONAR"
 
 #: 
 msgctxt "#32906"
@@ -2708,11 +2693,6 @@ msgstr "plex.direct: Respete la bandera publicAddressMatches de plex.tv (DNS)"
 msgctxt "#33648"
 msgid "Only handle plex.direct hosts when the server's attributes publicAddressMatches=1. Might not work in certain situations. Disable if you have connection issues. Default: On"
 msgstr "Sólo maneja hosts plex.direct cuando los atributos publicAddressMatches=1 del servidor. Puede no funcionar en ciertas situaciones. Desactivar si tiene problemas de conexión. Por defecto: En"
-
-#: 
-msgctxt "#32101"
-msgid "If enabled, when playback ends and there is a 'Next Up' item available, it will be automatically be played after a {} second delay."
-msgstr "Si está activada, cuando finalice la reproducción y haya un elemento 'Siguiente' disponible, éste se reproducirá automáticamente tras un retardo de {} segundos."
 
 #: 
 msgctxt "#33651"

@@ -919,16 +919,28 @@ class Settings(object):
                     T(32949, 'When transcoding/DirectStreaming, allow auto-skip functionality.')
                 ),
                 BoolUserSetting(
-                    'post_play_auto', T(32039, 'Post Play Auto Play'), True
-                ).description(
-                    T(
-                        32101,
-                        "If enabled, when playback ends and there is a 'Next Up' item available, it will be automatical"
-                        "ly be played after a {} second delay."
-                    ).format(util.addonSettings.postplayTimeout)
-                ),
-                BoolUserSetting(
                     'post_play_never', T(33652, 'Never show Post Play'), False
+                ),
+                # the rest of post-play's options only apply while it's shown at all
+                BoolUserSetting(
+                    'post_play_auto', T(32039, 'Post Play Auto Play'), True,
+                    show_cb=lambda: not util.getUserSetting('post_play_never', False)
+                ).description(
+                    T(35098, "When playback ends and a 'Next Up' item is available, play it automatically once the "
+                             "post-play countdown finishes.")
+                ),
+                OptionsSetting(
+                    'postplay_timeout', T(32501, 'Time-to-wait between videos on post-play'),
+                    10,
+                    [(a, T(33091).format(sec_or_ms=a, unit_s_or_ms="s")) for a in range(2, 61)],
+                    show_cb=lambda: not util.getUserSetting('post_play_never', False)
+                ),
+                BoolSetting(
+                    'postplay_always', T(35096, 'Show post-play for short videos'), False,
+                    show_cb=lambda: not util.getUserSetting('post_play_never', False)
+                ).description(
+                    T(35097, 'Post-play is normally skipped when a video of 5 minutes or less ends. Turn this on to '
+                             'show it for those too.')
                 ),
                 BoolUserSetting(
                     'binge_mode', T(33618, 'TV binge-viewing mode'), False

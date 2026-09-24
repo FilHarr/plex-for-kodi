@@ -974,7 +974,7 @@ msgstr "Poprzednie"
 
 #: 
 msgctxt "#32439"
-msgid "Playing Next"
+msgid "Playing next"
 msgstr "Odtwarzanie następnego"
 
 #: 
@@ -1205,11 +1205,6 @@ msgstr "Pomiń wstęp"
 #: 
 msgctxt "#32496"
 msgid "Skip credits"
-msgstr ""
-
-#: 
-msgctxt "#32500"
-msgid "Always show post-play screen (even for short videos)"
 msgstr ""
 
 #: 
@@ -1654,16 +1649,6 @@ msgstr ""
 #: 
 msgctxt "#32903"
 msgid "Use the above for seeking on the timeline as well."
-msgstr ""
-
-#: 
-msgctxt "#32904"
-msgid "In seconds."
-msgstr ""
-
-#: 
-msgctxt "#32905"
-msgid "Cancel post-play timer by pressing OK/SELECT"
 msgstr ""
 
 #: 
@@ -2695,11 +2680,6 @@ msgstr ""
 #: 
 msgctxt "#33648"
 msgid "Only handle plex.direct hosts when the server's attributes publicAddressMatches=1. Might not work in certain situations. Disable if you have connection issues. Default: On"
-msgstr ""
-
-#: 
-msgctxt "#32101"
-msgid "If enabled, when playback ends and there is a 'Next Up' item available, it will be automatically be played after a {} second delay."
 msgstr ""
 
 #: 

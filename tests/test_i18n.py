@@ -45,7 +45,7 @@ EN_GB = "resource.language.en_gb"
 # Counted with msgids() below, where a duplicated id resolves to its last block
 # (the KNOWN_DUPLICATE_IDS entries therefore contribute at most once).
 KNOWN_MSGID_DRIFT = {
-    "resource.language.cs_cz": 17,
+    "resource.language.cs_cz": 16,
     "resource.language.de_de": 0,
     "resource.language.es_es": 4,
     "resource.language.fr_fr": 4,

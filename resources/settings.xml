@@ -352,11 +352,6 @@
                     <default>true</default>
                     <control type="toggle"/>
                 </setting>
-                <setting id="postplay_always" type="boolean" label="32500">
-                    <level>0</level>
-                    <default>false</default>
-                    <control type="toggle"/>
-                </setting>
                 <setting id="dynamic_backgrounds" type="boolean" label="32468">
                     <level>0</level>
                     <default>true</default>
@@ -449,23 +444,6 @@
                 <setting id="playlist_visit_media" type="boolean" label="32505">
                     <level>0</level>
                     <default>false</default>
-                    <control type="toggle"/>
-                </setting>
-                <setting id="postplay_timeout" type="integer" label="32501" help="32904">
-                    <level>0</level>
-                    <default>16</default>
-                    <constraints>
-                        <minimum>2</minimum>
-                        <step>1</step>
-                        <maximum>60</maximum>
-                    </constraints>
-                    <control type="slider" format="integer">
-                        <popup>false</popup>
-                    </control>
-                </setting>
-                <setting id="postplay_cancel" type="boolean" label="32905">
-                    <level>0</level>
-                    <default>true</default>
                     <control type="toggle"/>
                 </setting>
                 <setting id="theme_music_fade" type="boolean" label="34046">

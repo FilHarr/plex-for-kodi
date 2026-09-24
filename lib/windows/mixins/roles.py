@@ -33,8 +33,8 @@ class RolesMixin(object):
         section: host windows resolve entrySectionId to their own real section only when they're
         themselves a genesis point (opened from the sidebar/Home/Search/Watchlist), and otherwise
         inherit it from whatever they were drilled in from - so this stays correct across an
-        arbitrary-depth drill chain, not just one hop. Default is None (VideoPlayerWindow has no
-        sidebar, so it has nothing to thread through).
+        arbitrary-depth drill chain, not just one hop. Default is None, for a host with no
+        sidebar and so nothing to thread through.
         """
         return getattr(self, 'entrySectionId', None)
 

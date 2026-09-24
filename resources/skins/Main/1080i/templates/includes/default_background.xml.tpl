@@ -172,8 +172,9 @@
              Recommended tab while nothing is bound yet (fresh entry before the hubs land, or a
              section with no hubs), rather than showing the previous section's art. Not a
              per-item-type gate any more - once a hub item is focused the box shows for every
-             type. Empty/unset for every other window, so this only ever actively hides anything
-             on the Recommended tab.
+             type. Also set by VideoPlayerWindow while post-play is up
+             (setPostPlayBackground, videoplayer.py): that screen's background is the colour
+             panel alone. Empty/unset for every other window.
              hero.no_art (LibraryWindow.setHeroInfo, HERO_NO_ART_TYPES; also
              CollectionWindow.setup() for a collection with no art): keeps the info overlay on
              the left but not this art box. Same condition on both art layers below. -->

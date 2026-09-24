@@ -436,8 +436,8 @@ class SeekPlayerHandler(BasePlayerHandler):
         if not (self.stoppedManually or self.endedManually) and self.skipPostPlay:
             return False
 
-        if (not util.addonSettings.postplayAlways and self._lastDuration <= FIVE_MINUTES_MILLIS)\
-                or util.addonSettings.postplayTimeout <= 0:
+        if (not util.getSetting('postplay_always', False) and self._lastDuration <= FIVE_MINUTES_MILLIS)\
+                or util.getSetting('postplay_timeout', 10) <= 0:
             return False
 
         return True

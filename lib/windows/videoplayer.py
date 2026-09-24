@@ -16,14 +16,11 @@ from lib import util
 from lib.util import T
 from plexnet.serverdecision import DecisionFailure
 from . import busy
-from . import dropdown
 from . import kodigui
 from . import opener
 from . import pagination
-from . import search
 from . import windowutils
 from .mixins.spoilers import SpoilersMixin
-from .mixins.roles import RolesMixin
 
 PASSOUT_PROTECTION_DURATION_SECONDS = 7200
 PASSOUT_LAST_VIDEO_DURATION_MILLIS = 1200000
@@ -35,6 +32,15 @@ class RelatedPaginator(pagination.BaseRelatedPaginator):
 
     def getData(self, offset, amount):
         return (self.parentWindow.prev or self.parentWindow.next).getRelated(offset=offset, limit=amount)
+
+    def prepareListItem(self, data, mli):
+        super(RelatedPaginator, self).prepareListItem(data, mli)
+        # the poster grid's second caption line: the year, plus the runtime for movies in
+        # pre-play/episodes' short form, bullet-separated
+        parts = [data.get('year', '')]
+        if data.type == 'movie' and data.duration:
+            parts.append(util.durationToShortText(data.duration.asInt(), noSpaces=True))
+        mli.setProperty('subtitle', u' \u2022 '.join(part for part in parts if part))
 
 
 class OnDeckPaginator(pagination.MCLPaginator):
@@ -51,22 +57,30 @@ class OnDeckPaginator(pagination.MCLPaginator):
         mli.setProperty('unwatched', not mli.dataSource.isWatched and '1' or '')
         mli.setProperty('watched', mli.dataSource.isFullyWatched and '1' or '')
 
-        if data.type in 'episode':
-            mli.setLabel2(
-                u'{0} \u2022 {1}'.format(T(32310, 'S').format(data.parentIndex), T(32311, 'E').format(data.index)))
-        else:
+        # episodes get both caption lines in createListItem(), which knows whether the title is hidden
+        if data.type != 'episode':
             mli.setLabel2(data.year)
 
     def createListItem(self, ondeck):
         title = ondeck.grandparentTitle or ondeck.title
+        label2 = ''
         if ondeck.type == 'episode':
             hide_spoilers = self.parentWindow.hideSpoilers(ondeck, use_cache=False)
             thumb_opts = self.parentWindow.getThumbnailOpts(ondeck, hide_spoilers=hide_spoilers)
             thumb = ondeck.thumb.asTranscodedImageURL(*self.parentWindow.ONDECK_DIM, **thumb_opts)
+            # second line: show, S/E code, runtime (pre-play/episodes' short form), bullet-separated
+            parts = [self.parentWindow.episodeCode(ondeck),
+                     ondeck.duration and util.durationToShortText(ondeck.duration.asInt(), noSpaces=True)]
+            # when spoiler settings hide the episode title, the show's name stands in for it on the
+            # first line instead, so it isn't repeated on the second
+            if not (hide_spoilers and self.parentWindow.noTitles):
+                title = ondeck.title
+                parts.insert(0, ondeck.grandparentTitle)
+            label2 = u' \u2022 '.join(part for part in parts if part)
         else:
             thumb = ondeck.defaultArt.asTranscodedImageURL(*self.parentWindow.ONDECK_DIM)
 
-        mli = kodigui.ManagedListItem(title or '', thumbnailImage=thumb, data_source=ondeck)
+        mli = kodigui.ManagedListItem(title or '', label2, thumbnailImage=thumb, data_source=ondeck)
         if mli:
             return mli
 
@@ -82,7 +96,7 @@ class OnDeckPaginator(pagination.MCLPaginator):
         return data
 
 
-class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMixin, SpoilersMixin):
+class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, SpoilersMixin):
     xmlFile = 'script-plex-video_player.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -90,23 +104,16 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
     width = 1920
     height = 1080
 
-    NEXT_DIM = util.scaleResolution(537, 303)
-    PREV_DIM = util.scaleResolution(462, 259)
-    ONDECK_DIM = util.scaleResolution(329, 185)
+    NEXT_DIM = util.scaleResolution(619, 348)
+    PREV_DIM = util.scaleResolution(619, 348)
+    ONDECK_DIM = util.scaleResolution(619, 348)
     RELATED_DIM = util.scaleResolution(268, 402)
-    ROLES_DIM = util.scaleResolution(334, 334)
-
-    OPTIONS_GROUP_ID = 200
 
     PREV_BUTTON_ID = 101
     NEXT_BUTTON_ID = 102
 
     ONDECK_LIST_ID = 400
     RELATED_LIST_ID = 401
-    ROLES_LIST_ID = 403
-
-    HOME_BUTTON_ID = 201
-    SEARCH_BUTTON_ID = 202
 
     PLAYER_STATUS_BUTTON_ID = 204
 
@@ -135,7 +142,6 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
         self.relatedPaginator = None
         self.onDeckPaginator = None
         self.lastFocusID = None
-        self.lastNonOptionsFocusID = None
         self.playBackStarted = False
         self.handleBGM = kwargs.get('bgm')
         self.lastItem = None
@@ -177,7 +183,6 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
 
         self.onDeckListControl = kodigui.ManagedControlList(self, self.ONDECK_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
-        self.rolesListControl = kodigui.ManagedControlList(self, self.ROLES_LIST_ID, 5)
 
         util.DEBUG_LOG('VideoPlayerWindow: Starting session (ID: {0})', self.sessionID)
         self.resetPassoutProtection()
@@ -207,18 +212,8 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
                 self.resetPassoutProtection()
                 # user input means someone's actually watching
                 util.MONITOR.tv_standby = False
-                if action in(xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_CONTEXT_MENU):
-                    if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
-                        if not util.addonSettings.fastBack or action == xbmcgui.ACTION_CONTEXT_MENU:
-                            self.lastNonOptionsFocusID = self.lastFocusID
-                            self.setFocusId(self.OPTIONS_GROUP_ID)
-                            return
-                    else:
-                        if self.lastNonOptionsFocusID and action == xbmcgui.ACTION_CONTEXT_MENU:
-                            self.setFocusId(self.lastNonOptionsFocusID)
-                            self.lastNonOptionsFocusID = None
-                            return
-
+                # Back always closes: the header has no buttons to step back to (Home/Search are
+                # gone, and the audio widget is hidden - play() stopped any audio)
                 if action in(xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                     self.doClose()
                     return
@@ -278,29 +273,20 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
         if not self.postPlayMode:
             return
 
-        timeoutCanceled = False
-        if util.addonSettings.postplayCancel:
-            timeoutCanceled = bool(self.timeout)
-            self.cancelTimer()
+        # stop the countdown before anything a click opens: onAction(), which would otherwise stop
+        # it, only runs after this returns, and the timer's SendClick() lands on the top window
+        self.cancelTimer()
 
-        if controlID == self.HOME_BUTTON_ID:
-            self.goHome()
-        elif controlID == self.ONDECK_LIST_ID:
+        if controlID == self.ONDECK_LIST_ID:
             self.openItem(self.onDeckListControl)
         elif controlID == self.RELATED_LIST_ID:
             self.openItem(self.relatedListControl)
-        elif controlID == self.ROLES_LIST_ID:
-            if not self.roleClicked():
-                return
         elif controlID == self.PREV_BUTTON_ID:
             self.playVideo(prev=True)
         elif controlID == self.NEXT_BUTTON_ID:
-            if not timeoutCanceled:
-                self.playVideo()
+            self.playVideo()
         elif controlID == self.PLAYER_STATUS_BUTTON_ID:
             self.showAudioPlayer()
-        elif controlID == self.SEARCH_BUTTON_ID:
-            self.searchButtonClicked()
 
     def onFocus(self, controlID):
         if not self.postPlayMode:
@@ -316,25 +302,9 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
         if xbmc.getCondVisibility('Control.HasFocus(101) | Control.HasFocus(102) | ControlGroup(200).HasFocus(0)'):
             self.setProperty('on.extras', '')
         elif xbmc.getCondVisibility('ControlGroup(60).HasFocus(0)'):
-            self.setProperty('on.extras', '1')
-
-    def searchButtonClicked(self):
-        self.processCommand(search.dialog(self, section_id=self.prev.getLibrarySectionId() or None))
-
-    def getRoleItemDDPosition(self, *args, **kwargs):
-        y = 1000
-        if xbmc.getCondVisibility('Control.IsVisible(500)'):
-            y += 360
-        if xbmc.getCondVisibility('Control.IsVisible(501)'):
-            y += 520
-        if xbmc.getCondVisibility('!String.IsEmpty(Window.Property(on.extras))'):
-            y -= 300
-        if xbmc.getCondVisibility('Integer.IsGreater(Window.Property(hub.focus),0) + Control.IsVisible(500)'):
-            y -= 500
-        if xbmc.getCondVisibility('Integer.IsGreater(Window.Property(hub.focus),1) + Control.IsVisible(501)'):
-            y -= 500
-
-        return super(VideoPlayerWindow, self).getRoleItemDDPosition(y=y, container_id="403")
+            # only On Deck + Related need the screen to scroll; a lone Related row (movies) fits
+            # below the top band as it is
+            self.setProperty('on.extras', xbmc.getCondVisibility('Control.IsVisible(500)') and '1' or '')
 
     def setBackground(self):
         video = self.video if self.video else self.playQueue.current()
@@ -450,8 +420,9 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
     def hidePostPlay(self):
         self.postPlayMode = False
         self.setProperty('post.play', '')
+        self.setProperty('no_hero_art', '')
+        self._setPanelCorners({})
         self.setProperties((
-            'post.play.background',
             'info.title',
             'info.duration',
             'info.summary',
@@ -468,7 +439,6 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
 
         self.onDeckListControl.reset()
         self.relatedListControl.reset()
-        self.rolesListControl.reset()
 
     @busy.dialog()
     def postPlay(self, video=None, playlist=None, handler=None, stoppedManually=False, **kwargs):
@@ -477,6 +447,7 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
         self.prev = video
         self.playlist = playlist
         self.handler = handler
+        self.setPostPlayBackground()
 
         self.getHubs()
 
@@ -492,16 +463,17 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
                                                  leaf_count=int((self.prev or self.next).relatedCount),
                                                  parent_window=self)
 
+        # movies only get Related
+        self.onDeckPaginator = None
         vid = self.prev or self.next
-        if vid.sectionOnDeckCount:
+        if self.prev.type != 'movie' and vid.sectionOnDeckCount:
             self.onDeckPaginator = OnDeckPaginator(self.onDeckListControl,
-                                                   leaf_count=int(vid.sectionOnDeckCount) - 1 if self.next else 0,
+                                                   leaf_count=int(vid.sectionOnDeckCount) - (1 if self.next else 0),
                                                    parent_window=self)
 
         self.setInfo()
         self.fillOnDeck()
-        hasPrev = self.fillRelated()
-        self.fillRoles(hasPrev)
+        self.fillRelated()
 
         if not stoppedManually:
             self.startTimer()
@@ -511,6 +483,17 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
         else:
             self.setFocusId(self.PREV_BUTTON_ID)
         self.postPlayInitialized = True
+
+    def setPostPlayBackground(self):
+        # Post-play's background is only the shared 4-corner colour panel
+        # (includes/default_background.xml.tpl), tinted from the item that just played; the
+        # hero-art box stays hidden while post-play is up. hidePostPlay() restores both for the
+        # next item's start-up.
+        self.setProperty('no_hero_art', '1')
+        if util.addonSettings.dynamicBackgrounds:
+            self._setPanelCorners(util.backgroundPanelCorners(
+                getattr(self.prev, 'ultraBlurColors', None),
+                seed=self.prev.get('ratingKey') or self.prev.get('title')))
 
     def resetPassoutProtection(self):
         self.passoutProtection = time.time() + PASSOUT_PROTECTION_DURATION_SECONDS
@@ -535,7 +518,7 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
             util.DEBUG_LOG('Post play auto-play: Passout protection in {0}',
                            lambda: util.durationToShortText(millis))
 
-        self.timeout = time.time() + abs(util.addonSettings.postplayTimeout)
+        self.timeout = time.time() + abs(util.getSetting('postplay_timeout', 10))
         util.DEBUG_LOG('Starting post-play timer until: %i' % self.timeout)
         threading.Thread(target=self.countdown).start()
 
@@ -547,6 +530,7 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
         self.setProperty('countdown', '')
 
     def countdown(self):
+        shown = None
         while self.timeout and not util.MONITOR.waitForAbort(0.1):
             if util.MONITOR.tv_standby:
                 util.DEBUG_LOG('Post-play timer canceled: TV in standby')
@@ -564,9 +548,11 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
                 # self.playVideo()
                 break
             elif self.timeout is not None:
-                cd = min(abs(util.addonSettings.postplayTimeout - 1), int((self.timeout or now) - now))
-                base = 15 / float(util.addonSettings.postplayTimeout - 1)
-                self.setProperty('countdown', str(15 - int(math.ceil(base*cd))))
+                # whole seconds left, only written when it changes
+                text = T(35095, 'in {0}s').format(int(math.ceil(self.timeout - now)))
+                if text != shown:
+                    self.setProperty('countdown', text)
+                    shown = text
 
     def getHubs(self):
         try:
@@ -593,10 +579,6 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
         if self.next and self.next.type == "episode":
             hide_spoilers = self.hideSpoilers(self.next, fully_watched=False, watched=False, use_cache=False)
         if self.next:
-            self.setProperty(
-                'post.play.background',
-                util.backgroundFromArt(self.next.art, width=self.width, height=self.height)
-            )
             if self.next.type == "episode" and hide_spoilers:
                 if self.noTitles:
                     self.setProperty('info.title',
@@ -610,15 +592,6 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
                 self.setProperty('info.summary', util.widenParagraphBreaks(self.next.summary))
             self.setProperty('info.duration', util.durationToText(self.next.duration.asInt()))
 
-        if self.prev:
-            self.setProperty(
-                'post.play.background',
-                util.backgroundFromArt(self.prev.art, width=self.width, height=self.height)
-            )
-            self.setProperty('prev.info.title', self.prev.title)
-            self.setProperty('prev.info.duration', util.durationToText(self.prev.duration.asInt()))
-            self.setProperty('prev.info.summary', util.widenParagraphBreaks(self.prev.summary))
-
         if self.prev.type == 'episode':
             self.setProperty('related.header', T(32306, 'Related Shows'))
             if self.next:
@@ -629,20 +602,14 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
                 self.setProperty('info.date',
                                  util.cleanLeadingZeros(self.next.originallyAvailableAt.asDatetime('%B %d, %Y')))
 
-                self.setProperty('next.title', self.next.grandparentTitle)
-                self.setProperty(
-                    'next.subtitle',
-                    u'{0} \u2022 {1}'.format(T(32303, 'Season').format(self.next.parentIndex),
-                                             T(32304, 'Episode').format(self.next.index))
-                )
+                # the show's name stands in when spoiler settings hide unwatched episode titles
+                self.setProperty('next.title', self.next.grandparentTitle if hide_spoilers and self.noTitles
+                                 else self.next.title)
+                self.setProperty('next.subtitle', self.episodeCode(self.next))
             if self.prev:
                 self.setProperty('prev.thumb', self.prev.thumb.asTranscodedImageURL(*self.PREV_DIM))
-                self.setProperty('prev.title', self.prev.grandparentTitle)
-                self.setProperty(
-                    'prev.subtitle', u'{0} \u2022 {1}'.format(T(32303, 'Season').format(self.prev.parentIndex),
-                                                              T(32304, 'Episode').format(self.prev.index))
-                )
-                self.setProperty('prev.info.date', util.cleanLeadingZeros(self.prev.originallyAvailableAt.asDatetime('%B %d, %Y')))
+                self.setProperty('prev.title', self.prev.title)
+                self.setProperty('prev.subtitle', self.episodeCode(self.prev))
         elif self.prev.type == 'movie':
             self.setProperty('related.header', T(32404, 'Related Movies'))
             if self.next:
@@ -654,8 +621,11 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
             if self.prev:
                 self.setProperty('prev.thumb', self.prev.defaultArt.asTranscodedImageURL(*self.PREV_DIM))
                 self.setProperty('prev.title', self.prev.title)
-                self.setProperty('prev.subtitle', self.prev.year)
-                self.setProperty('prev.info.date', self.prev.year)
+
+    @staticmethod
+    def episodeCode(ep):
+        # e.g. "S1 - E2" with a bullet, as the On Deck row's second caption line
+        return u'{0} \u2022 {1}'.format(T(32310, 'S').format(ep.parentIndex), T(32311, 'E').format(ep.index))
 
     def fillOnDeck(self):
         if not self.onDeckPaginator:
@@ -683,32 +653,12 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
             return False
         return True
 
-    def fillRoles(self, has_prev=False):
-        items = []
-        idx = 0
-
-        video = self.next if self.next else self.prev
-
-        if not video.roles:
-            self.rolesListControl.reset()
-            return False
-
-        for role in video.roles():
-            mli = kodigui.ManagedListItem(role.tag, role.role, thumbnailImage=role.thumb.asTranscodedImageURL(*self.ROLES_DIM), data_source=role)
-            mli.setProperty('index', str(idx))
-            items.append(mli)
-            idx += 1
-
-        if not items:
-            return False
-
-        self.rolesListControl.reset()
-        self.rolesListControl.addItems(items)
-        return True
-
     def playVideo(self, prev=False):
         self.cancelTimer()
-        resume = False
+        # the resume request the window opened with was for its first video only; everything played
+        # from post-play starts at the beginning - including an in-progress Playing next, as fits
+        # watching through a series
+        self.resume = False
         try:
             if not self.next and self.playlist:
                 if prev:
@@ -728,30 +678,10 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, RolesMi
                     self.video = None
                     return
 
-                if not prev:
-                    if video.viewOffset.asInt():
-                        choice = dropdown.showDropdown(
-                            options=[
-                                {'key': 'resume', 'display': T(32429, 'Resume from {0}').format(
-                                    util.timeDisplay(video.viewOffset.asInt()).lstrip('0').lstrip(':'))},
-                                {'key': 'play', 'display': T(32317, 'Play from beginning')}
-                            ],
-                            pos=(660, "middle"),
-                            close_direction='none',
-                            set_dropdown_prop=False,
-                            header=T(32314, 'In Progress'),
-                        )
-
-                        if not choice:
-                            return
-
-                        if choice['key'] == 'resume':
-                            resume = True
-
                 self.playQueue = None
                 self.video = video
 
-            self.play(handler=self.handler, resume=resume)
+            self.play(handler=self.handler)
         except:
             util.ERROR()
 
