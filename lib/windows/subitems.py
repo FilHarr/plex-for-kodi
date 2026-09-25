@@ -549,6 +549,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         kodigui.ControlledWindow.onAction(self, action)
 
     def onClick(self, controlID):
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        if self.ignoresInput():
+            return
         if self.handleSidebarDropdownClick(controlID):
             return
         if controlID == self.SECTION_LIST_ID:
@@ -601,6 +604,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.optionsButtonClicked()
 
     def onFocus(self, controlID):
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        if self.ignoresInput():
+            return
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
@@ -1318,6 +1324,9 @@ class ArtistWindow(ShowWindow):
         return rows
 
     def onFocus(self, controlID):
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        if self.ignoresInput():
+            return
         # Full override, not ShowWindow.onFocus()'s shared version - that one exempts
         # SUB_ITEM_LIST_ID (400) from on.extras on the theory it's "the season row", which already
         # gets its own dedicated tier-1 slide separate from the general -300 (true for Seasons, whose

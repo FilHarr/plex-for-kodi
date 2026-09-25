@@ -257,6 +257,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         return False
 
     def onClick(self, controlID):
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        if self.ignoresInput():
+            return
         if self.handleSidebarDropdownClick(controlID):
             return
         if controlID == self.SECTION_LIST_ID:
@@ -271,6 +274,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             self.openDiscoverItem(controlID)
 
     def onFocus(self, controlID):
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        if self.ignoresInput():
+            return
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 

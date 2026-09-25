@@ -48,12 +48,17 @@ class FakeHost(object):
     def onFocus(self, controlID):
         self.calls.append(('focus', controlID))
 
+    def postNav(self, name, fn, args=(), kwargs=None, stack=False):
+        self.calls.append(('postNav', name, fn, args, stack))
+
 
 class FakeWindowBase(object):
     """Stands in for ControlledWindow: the view's own default onAction()."""
     _hostRef = None
+    started = True
     hostedBy = kodigui.BaseWindow.hostedBy
     routeActionToHost = kodigui.BaseWindow.routeActionToHost
+    ignoresInput = kodigui.BaseWindow.ignoresInput
 
     def __init__(self):
         self.defaultActions = []
@@ -171,6 +176,77 @@ class HostedShellsRouteFirstTest(KodiTestCase):
             code = [l.strip() for l in body if l.strip() and not l.strip().startswith('#')]
             self.assertEqual('if self.routeActionToHost(action):', code[0], cls.__name__)
             self.assertEqual('return', code[1], cls.__name__)
+
+    def test_clicks_and_focus_start_by_dropping_stale_calls(self):
+        """The host frees a swapped-out shell's controls, but Kodi can still deliver its queued
+        onClick/onFocus (kodigui.BaseWindow.ignoresInput())."""
+        for cls in self.SHELLS:
+            for name in ('onClick', 'onFocus'):
+                body = inspect.getsource(getattr(cls, name)).split('\n')[1:]
+                code = [l.strip() for l in body if l.strip() and not l.strip().startswith('#')]
+                self.assertEqual('if self.ignoresInput():', code[0], '{0}.{1}'.format(cls.__name__, name))
+                self.assertEqual('return', code[1], '{0}.{1}'.format(cls.__name__, name))
+
+
+class IgnoresInputTest(KodiTestCase):
+    class Host(object):
+        pass
+
+    def _window(self):
+        window = kodigui.BaseWindow.__new__(kodigui.BaseWindow)
+        window.started = True
+        return window
+
+    def test_a_window_never_hosted_is_never_stale(self):
+        self.assertFalse(self._window().ignoresInput())
+
+    def test_the_hosts_current_window_is_live(self):
+        host, window = self.Host(), self._window()
+        host._current = window
+        window._hostRef = weakref.ref(host)
+        self.assertFalse(window.ignoresInput())
+
+    def test_a_swapped_out_window_is_stale(self):
+        host, window = self.Host(), self._window()
+        host._current = self._window()
+        window._hostRef = weakref.ref(host)
+        self.assertTrue(window.ignoresInput())
+
+    def test_a_current_window_that_has_not_started_init_ignores_input(self):
+        """The host's shared lists still wrap the previous view's freed controls until then."""
+        host, window = self.Host(), self._window()
+        host._current = window
+        window._hostRef = weakref.ref(host)
+        window.started = False
+        self.assertTrue(window.ignoresInput())
+
+
+class EarlyInputTest(KodiTestCase):
+    """Input on a view that hasn't started its first init: focus, clicks and most actions are
+    dropped; Back is posted to run once the view is ready."""
+
+    def test_focus_click_and_moves_are_dropped(self):
+        host = FakeHost()
+        view = hosted(FakeThinView(), host)
+        view.started = False
+        view.onFocus(9000)
+        view.onClick(9000)
+        view.onAction('up')
+        self.assertEqual([], host.calls)
+        self.assertEqual([], view.defaultActions)
+
+    def test_back_is_posted_for_when_the_view_is_ready(self):
+        host = FakeHost()
+        view = hosted(FakeThinView(), host)
+        view.started = False
+        back = library.xbmcgui.ACTION_NAV_BACK
+        view.onAction(back)
+        self.assertEqual(1, len(host.calls))
+        kind, _name, fn, args, stack = host.calls[0]
+        self.assertEqual(('postNav', view.onAction, (back,), True), (kind, fn, args, stack))
+        view.started = True
+        fn(*args)
+        self.assertEqual(('action', back), host.calls[-1])
 
 
 class ChainHostIsWeakTest(KodiTestCase):

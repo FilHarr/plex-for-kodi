@@ -264,6 +264,26 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             return host
         return None
 
+    def ignoresInput(self):
+        """True for a hosted window that isn't live on its host: swapped out, or not started its
+        first init yet. Called first thing in onClick()/onFocus() by every window a host can show
+        (routeActionToHost() does the same for onAction()).
+
+        Swapped out: the host closes the outgoing window natively, which frees its controls, but
+        Kodi still delivers callbacks it had queued for it - live-caught 2026-09-25 as a crash on
+        the PC: fast mouse tab clicks left Categories with queued onFocus calls, delivered during
+        the host's wait after the close, and the handler read the freed sidebar list.
+
+        Not started: Kodi queues a new window's first onFocus before its onInit, and input can
+        arrive before it too. Until onFirstInit() rebinds them, the lists the host shares with each
+        view (the sidebar, the grid) still wrap the previous view's controls, freed with it -
+        live-caught 2026-09-25 as a use-after-free crash on the PC during fast sidebar switching.
+        started (set just before onFirstInit()) rather than finishedInit, so a view whose
+        onFirstInit() raised doesn't ignore input for good."""
+        if self._hostRef is None:
+            return False
+        return self.hostedBy() is None or not self.started
+
     def routeActionToHost(self, action):
         """Called first thing in onAction() by every window a host can show. A hosted window's
         actions go through the host's routeAction() first (sidebar popups, the server and user
@@ -277,6 +297,13 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             return False
         host = self.hostedBy()
         if host is None:
+            return True
+        if not self.started:
+            # Too early to handle (ignoresInput()). Back isn't lost: it's delivered again once the
+            # view is ready - the navigation queue holds it until then (runPendingNav()).
+            if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
+                host.postNav('Back (pressed as the screen opened)', self.onAction, args=(action,),
+                             stack=True)
             return True
         return host.routeAction(action)
 
@@ -1345,8 +1372,8 @@ class MultiWindowView(object):
     """A view that only ever exists as a MultiWindow's current window (LibraryWindow's grid and
     Recommended views): the host owns all its input, so every callback goes straight to the host's
     handler of the same name, and onAction() through the host's routeAction(). List it before
-    ControlledWindow in the bases. A late callback on a view the host has already swapped out is
-    dropped (see BaseWindow.hostedBy())."""
+    ControlledWindow in the bases. Input on a view the host has swapped out, or that hasn't started
+    its first init, is dropped (see BaseWindow.ignoresInput())."""
 
     def onFirstInit(self):
         host = self.hostedBy()
@@ -1359,14 +1386,12 @@ class MultiWindowView(object):
             host.onReInit()
 
     def onClick(self, controlID):
-        host = self.hostedBy()
-        if host is not None:
-            host.onClick(controlID)
+        if not self.ignoresInput():
+            self.hostedBy().onClick(controlID)
 
     def onFocus(self, controlID):
-        host = self.hostedBy()
-        if host is not None:
-            host.onFocus(controlID)
+        if not self.ignoresInput():
+            self.hostedBy().onFocus(controlID)
 
     def onAction(self, action):
         if self.routeActionToHost(action):

@@ -199,6 +199,9 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         kodigui.ControlledWindow.onAction(self, action)
 
     def onClick(self, controlID):
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        if self.ignoresInput():
+            return
         if self.handleSidebarDropdownClick(controlID):
             return
         if controlID == self.GRID_ID:
@@ -209,6 +212,9 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
             self.sectionClicked()
 
     def onFocus(self, controlID):
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        if self.ignoresInput():
+            return
         # reselectActiveSection() (SidebarMixin) snaps the highlight to the section actually on
         # screen (is.active in buildSectionList()) instead of leaving it wherever the list's
         # internal cursor last was - index 0 (Search) on a window's first focus event, which is

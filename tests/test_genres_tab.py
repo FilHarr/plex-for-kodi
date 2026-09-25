@@ -413,6 +413,9 @@ class GenresOnClickDelegationTest(KodiTestCase):
         GENRE_PANEL_ID = 3
         TAB_LIST_ID = 320
 
+        def ignoresInput(self):
+            return False
+
         def __init__(self, selected_mode, chain_host):
             self.tabList = FakeTabListContainer(selected_mode)
             self._chainHost = chain_host

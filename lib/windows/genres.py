@@ -94,6 +94,9 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         kodigui.ControlledWindow.doClose(self)
 
     def onClick(self, controlID):
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        if self.ignoresInput():
+            return
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
         elif controlID == self.PLAYER_STATUS_BUTTON_ID:
@@ -123,6 +126,9 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         kodigui.ControlledWindow.onAction(self, action)
 
     def onFocus(self, controlID):
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        if self.ignoresInput():
+            return
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
