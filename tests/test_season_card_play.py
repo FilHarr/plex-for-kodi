@@ -112,6 +112,11 @@ class FakeEpisodesWindow(episodes.EpisodesWindow):
         self.focusId = 0
         self.focusHistory = []
 
+    def postpone_simple(self, func, *args, **kwargs):
+        # Inline: the real one queues a BGThreader task, and the assertions raced its worker -
+        # test_nothing_to_play_clears_the_label failed about one run in six.
+        func(*args, **kwargs)
+
     def setProperty(self, key, value):
         self.wprops[key] = value
 
