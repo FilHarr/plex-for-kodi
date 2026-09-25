@@ -1001,6 +1001,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self._realShellHostCount = getattr(self, '_realShellHostCount', 0) + 1
         self._isHostedShell = True
+        # The grid or Recommended view this may be replacing is gone once _current moves on, but
+        # swapTo() changes neither section nor tab, so nothing else told in-flight list work it's
+        # stale. Live-caught 2026-09-25 (AM6B crash log): a grid chunk fetched just before an item
+        # opened from that grid wrote into its freed list items - a segfault in
+        # CGUIListItem::SetProperty on the worker. Under self.lock, which _chunkCallback() checks the
+        # generation under too, so a chunk either finishes before this or sees it and stops.
+        with self.lock:
+            self._listGeneration += 1
         self._current = cls(cls.xmlFile, cls.path, cls.theme, cls.res, **self._nextKwargs)
         self._currentKwargs = self._nextKwargs
         # Both weak (see the top of this method): _hostRef routes the shell's routeAction() through
@@ -5220,15 +5228,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         return callback
 
     def _chunkCallback(self, items, start, generation=None):
-        if generation is not None and generation != self._listGeneration:
-            util.DEBUG_LOG("Library: _chunkCallback() declined - stale generation ({0} != {1})",
-                           generation, self._listGeneration)
-            return
-
         if not self.showPanelControl or not items or self.closing:
             return
 
         with self.lock:
+            # Checked under the lock: _setupCurrent() bumps the generation under it before replacing
+            # the view these items belong to (see there).
+            if generation is not None and generation != self._listGeneration:
+                util.DEBUG_LOG("Library: _chunkCallback() declined - stale generation ({0} != {1})",
+                               generation, self._listGeneration)
+                return
+
             pos = start
             self.setBackground(items, pos, randomize=not util.addonSettings.dynamicBackgrounds)
 

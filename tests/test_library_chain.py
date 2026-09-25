@@ -328,6 +328,22 @@ class SetupCurrentTest(KodiTestCase):
         self.assertIs(host, shell._hostRef())
         self.assertFalse(hasattr(host, '_currentOnAction'))
 
+    def test_swapping_to_a_real_shell_makes_in_flight_list_work_stale(self):
+        """swapTo() changes neither section nor tab, so the grid a hosted screen replaces relied on
+        nothing to tell its in-flight chunks they're stale - live-caught 2026-09-25 as a segfault in
+        CGUIListItem::SetProperty when a chunk wrote into the freed grid (AM6B crash log)."""
+        host = FakeHostWindow()
+        before = host._listGeneration
+        _setupCurrent(host, FakeShell)
+        self.assertEqual(before + 1, host._listGeneration)
+
+    def test_swapping_between_thin_views_keeps_the_generation(self):
+        """A view-type swap reuses the grid's list; its chunks must still land."""
+        host = FakeHostWindow()
+        before = host._listGeneration
+        _setupCurrent(host, FakeThinProxy)
+        self.assertEqual(before, host._listGeneration)
+
     def test_swapping_out_a_real_shell_closes_its_native_window(self):
         """doClose() only flags a hosted shell; closing it natively was left to the forced gc
         disposing it, which a task still running for it prevents - Kodi then re-activated it over
