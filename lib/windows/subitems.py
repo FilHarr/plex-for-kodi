@@ -186,6 +186,13 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
         self.setup()
         self.initialized = True
+        # Now that setup() has decided Play or Resume and made the button row visible (the
+        # initialized property), focus the one that's showing. setPlayButtonState() can't during
+        # setup(): the row is still hidden then, so Kodi refused focus on Resume, then hid Play,
+        # which had it - leaving nothing focused, only Back working (live-caught 2026-09-25 on
+        # part-watched shows on the AM6B, where the queued focus request beat the property).
+        if not self.fromWatchlist and self.getFocusId() in (0, self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
+            self.focusPlayButton(wait_visible=True)
         self.themeMusicInit(self.mediaItem)
 
         # focusPlayButton() above gives the window something focused immediately, before setup() has
@@ -296,8 +303,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.sizePlayButtonLabel()
             # onFirstInit() focuses Play before any of this is known, so the button it focused may
             # be the one that just went invisible.
-            if self.getFocusId() in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
-                self.focusPlayButton()
+            if self.initialized and self.getFocusId() in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
+                self.focusPlayButton(wait_visible=True)
         else:
             self.applyPlayButtonEpisode(pick)
 
@@ -343,8 +350,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.setProperty('resume.timeleft', in_progress and T(33615, "{time} left").format(
             time=util.remainingTimeToShortText(duration - view_offset)) or '')
         self.sizePlayButtonLabel()
-        if self.getFocusId() in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
-            self.focusPlayButton()
+        # Not during onFirstInit()'s setup(), which focuses once it's done (see there).
+        if self.initialized and self.getFocusId() in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
+            self.focusPlayButton(wait_visible=True)
 
     def sizePlayButtonLabel(self):
         """Shrink whichever focus-pill overlay is live to fit the label it's actually showing.
@@ -433,17 +441,22 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             deselect_subtitles=getNativeLanguages(util.getSetting("disable_subtitle_languages") or []))
         self.setProperty('subtitles', sss and sss.getTitle() or 'None')
 
-    def focusPlayButton(self, extended=False):
+    def focusPlayButton(self, extended=False, wait_visible=False):
         if extended:
             self.setFocusId(self.wl_play_button_id)
             return
         # Whichever of the pair is actually rendered - the other one's <visible> is false, and
         # focusing a hidden control drops focus somewhere unrelated. onFirstInit() calls this before
-        # setup() has decided, so it lands on Play and setPlayButtonState() moves it if need be.
+        # setup() has decided, so it lands on Play, and again once setup() has decided.
         if self.getProperty('play.in.progress'):
             button_id = self.RESUME_BUTTON_ID
         else:
             button_id = self.PLAY_BUTTON_ID
+        if wait_visible:
+            # After play.in.progress changed, the button it names only becomes visible once Kodi
+            # next evaluates the pair's <visible>, and setFocusId() is only queued - a focus request
+            # that gets there first is refused. Capped, as waitForVisibility() is.
+            kodigui.waitForVisibility(button_id, amount=1)
         try:
             if not self.getFocusId() == button_id:
                 self.setFocusId(button_id)
@@ -1084,7 +1097,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 self.setBoolProperty("initialized", False)
                 self.setup()
                 self.initialized = True
-                self.setFocusId(self.PLAY_BUTTON_ID)
+                self.focusPlayButton(wait_visible=True)
         elif choice['key'] == 'refresh':
             item.refresh()
             self.updateItems()
