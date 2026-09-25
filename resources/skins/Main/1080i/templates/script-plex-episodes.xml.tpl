@@ -169,6 +169,7 @@
              (Container(400).ListItem.Property). Genre is new here, between date and content rating,
              formatted the same way Pre-play's own genres.short is (first 2 genres, comma-joined - see
              EpisodesWindow.updateProperties()/setItemInfo(), episodes.py). -->
+        <!-- Unavailable replaces the row, as in includes/pp_meta_row.xml.tpl (see there). -->
         <control type="grouplist">
             <posx>53</posx>
             <posy>{{ vscale(155) }}</posy>
@@ -185,10 +186,11 @@
                 <align>left</align>
                 <textcolor>FFD2CCCE</textcolor>
                 <shadowcolor>66000000</shadowcolor>
+                <visible>String.IsEmpty(Container(400).ListItem.Property(unavailable))</visible>
                 <label>$INFO[Container(400).ListItem.Property(duration)]$INFO[Container(400).ListItem.Property(date), &#8226; ]$INFO[Container(400).ListItem.Property(genres.short), &#8226; ]$INFO[Container(400).ListItem.Property(content.rating), &#8226; ]</label>
             </control>
             <control type="button">
-                <visible>!String.IsEmpty(Container(400).ListItem.Property(remainingTime))</visible>
+                <visible>!String.IsEmpty(Container(400).ListItem.Property(remainingTime)) + String.IsEmpty(Container(400).ListItem.Property(unavailable))</visible>
                 <posx>10</posx>
                 <width>auto</width>
                 <height>{{ vscale(30) }}</height>
@@ -204,7 +206,7 @@
             </control>
             <control type="button">
                 <visible>!String.IsEmpty(Container(400).ListItem.Property(unavailable))</visible>
-                <posx>10</posx>
+                <posx>0</posx>
                 <width>auto</width>
                 <height>{{ vscale(30) }}</height>
                 <font>font10</font>

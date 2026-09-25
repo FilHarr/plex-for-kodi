@@ -20,6 +20,10 @@
          meta_originallyAvailableAt()/shortDF locale format - video.py) when ds.type == 'episode'. Single
          control, not duplicated: with the poster-shown layout removed there's only one position to tune
          any more. -->
+    <!-- Unavailable replaces the whole row (on request, 2026-09-25): with it set, the text and the
+         time-left pill are hidden and the red pill shows alone, flush left (posx 0, not the 10px gap it
+         keeps from the text otherwise). Everything together overflowed the row's 708px - the
+         unavailable pill was cut in half - and the rest isn't much use for an item that can't play. -->
     <control type="grouplist">
         <!-- 61, not the old 60: reaches absolute x=113 (host group's own posx=52 + this 61), matching
              the shared baseline every includer (Seasons/Pre-play/Recommended) and Episodes' own inline
@@ -39,10 +43,11 @@
             <align>left</align>
             <textcolor>FFD2CCCE</textcolor>
             <shadowcolor>66000000</shadowcolor>
+            <visible>String.IsEmpty(Window.Property(unavailable))</visible>
             <label>$INFO[Window.Property(episode.code)]$INFO[Window.Property(duration)]$INFO[Window.Property(date), &#8226; ]$INFO[Window.Property(genres.short), &#8226; ]$INFO[Window.Property(content.rating), &#8226; ]</label>
         </control>
         <control type="button">
-            <visible>!String.IsEmpty(Window.Property(remainingTime))</visible>
+            <visible>!String.IsEmpty(Window.Property(remainingTime)) + String.IsEmpty(Window.Property(unavailable))</visible>
             <posx>10</posx>
             <width>auto</width>
             <height>{{ vscale(30) }}</height>
@@ -58,7 +63,7 @@
         </control>
         <control type="button">
             <visible>!String.IsEmpty(Window.Property(unavailable))</visible>
-            <posx>10</posx>
+            <posx>0</posx>
             <width>auto</width>
             <height>{{ vscale(30) }}</height>
             <font>font10</font>
