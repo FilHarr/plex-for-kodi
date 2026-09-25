@@ -130,6 +130,16 @@ class BaseFunctions(object):
 
 LAST_BG_URL = None
 BG_NA = "script.plex/home/background-fallback_black.png"
+NAV_HIDDEN = False
+
+
+def setNavHidden(hidden):
+    """Hide every default.xml.tpl screen's content (nav_hidden) - post-play's hand-over to an item
+    it opens. Tracked here too, so the next window's first init clears it without a GUI call on
+    every other window open."""
+    global NAV_HIDDEN
+    NAV_HIDDEN = hidden
+    util.setGlobalProperty('nav_hidden', hidden and '1' or '')
 
 
 class XMLBase(object):
@@ -283,7 +293,6 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self.doClose(force=True)
 
     def _onInit(self):
-        global LAST_BG_URL
         self._winID = xbmcgui.getCurrentWindowId()
         BaseFunctions.lastWinID = self._winID
         self.setProperty('use_solid_background', util.useSolidBackground and '1' or '')
@@ -324,12 +333,15 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
                     self.onReInit()
             else:
                 self.started = True
-                if LAST_BG_URL:
-                    self.windowSetBackground(LAST_BG_URL)
+                self.paintInitialBackground()
 
                 from . import windowutils
                 if self is not windowutils.HOME and self.__class__.__name__ != "BackgroundWindow":
                     plexapp.util.APP.on('close.windows', self.onCloseSignal)
+
+                # the screen replacing post-play's starting screen is showing: see setNavHidden()
+                if NAV_HIDDEN:
+                    setNavHidden(False)
 
                 if hasattr(self, "onFirstInit"):
                     self.onFirstInit()
@@ -399,6 +411,49 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         if self.getFocusId() != focus:
             self.setFocusId(focus)
 
+    def backgroundItem(self):
+        """The item whose art this window's hero shows, if it knows it before onFirstInit()."""
+        return None
+
+    def paintInitialBackground(self):
+        """A new window's first hero-art paint. Its own item's art where it knows the item
+        (backgroundItem()) - the same URL its own updateBackgroundFrom() paints later, so that's a
+        no-op, and Show -> Episodes still keeps the show's art up throughout. Otherwise the last
+        background shown anywhere, which for a screen that knows its item was the previous item's
+        (the library grid's first item, or the movie/show a Related click came from)."""
+        ds = self.backgroundItem() if util.addonSettings.dynamicBackgrounds else None
+        url = ds is not None and self.backgroundURLFor(ds)
+        if url:
+            self.windowSetBackground(url)
+        elif LAST_BG_URL:
+            self.windowSetBackground(LAST_BG_URL)
+
+    def backgroundURLFor(self, ds):
+        """The hero-art URL updateBackgroundFrom() paints for ds, or None if it has no art."""
+        # First non-empty of the three, checked one at a time. The old nested
+        # ds.get('art', ds.get('parentArt', ds.get('grandparentArt', None))) form was wrong at
+        # the end of the chain: PlexObject.get() wraps a missing key's default in a PlexValue,
+        # and PlexValue(None) is the *string* "None" - truthy - so an item with no art at all
+        # (live: the artist "Scott Bond" in the Recently Played row) produced a transcode URL
+        # ending in "...127.0.0.1:32400None" that Kodi's texture loader then failed on
+        # (CCurlFile::Open errors in kodi.log) every time the item was focused, instead of the
+        # no-art path below.
+        art = None
+        for key in ('art', 'parentArt', 'grandparentArt'):
+            candidate = ds.get(key)
+            if candidate:
+                art = candidate
+                break
+        # opacity=100: this art is now a focal, vivid box next to its own color panel, not a
+        # full-bleed wash with text floating on top anywhere - backgroundArtOpacityAmount2's
+        # server-side dimming was designed for that older look and just reads as muddy here.
+        # Always a plain 16:9 transcode. The zoom inside the hero-art box is done entirely in
+        # the skin (default_background.xml.tpl, hero_zoom_pad): PMS's minSize=1 does NOT crop to
+        # the requested aspect, it returns the whole image scaled until both dimensions are
+        # >= what was asked (verified live: 1920x1440 requested -> 2560x1440 returned), so asking
+        # for a non-16:9 size here only wastes bandwidth and texture memory.
+        return util.backgroundFromArt(art, width=self.width, height=self.height, opacity=100)
+
     def updateBackgroundFrom(self, ds):
         # `ds is not None`, not truthiness: an unopened Playlist is falsy (BasePlaylist.__len__()
         # is its item count, empty until opened) - see LibraryWindow.setHeroInfo(). Playlists
@@ -406,20 +461,6 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         # background art - the hero art box is hidden for them via hero.no_art) but still get
         # their seeded panel corners below.
         if util.addonSettings.dynamicBackgrounds and ds is not None:
-            # First non-empty of the three, checked one at a time. The old nested
-            # ds.get('art', ds.get('parentArt', ds.get('grandparentArt', None))) form was wrong at
-            # the end of the chain: PlexObject.get() wraps a missing key's default in a PlexValue,
-            # and PlexValue(None) is the *string* "None" - truthy - so an item with no art at all
-            # (live: the artist "Scott Bond" in the Recently Played row) produced a transcode URL
-            # ending in "...127.0.0.1:32400None" that Kodi's texture loader then failed on
-            # (CCurlFile::Open errors in kodi.log) every time the item was focused, instead of the
-            # no-art path below.
-            art = None
-            for key in ('art', 'parentArt', 'grandparentArt'):
-                candidate = ds.get(key)
-                if candidate:
-                    art = candidate
-                    break
             # 4-corner tinted-panel colors, Phase 1 approximation of official Plex's native
             # per-corner art color extraction - see docs/notes/hero-art-background-status.md.
             # getattr, not ds.get(): ultraBlurColors is a plain instance attribute only present on
@@ -432,15 +473,7 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             corners = util.backgroundPanelCorners(getattr(ds, 'ultraBlurColors', None),
                                                   seed=ds.get('ratingKey') or ds.get('title'))
             self._setPanelCorners(corners)
-            # opacity=100: this art is now a focal, vivid box next to its own color panel, not a
-            # full-bleed wash with text floating on top anywhere - backgroundArtOpacityAmount2's
-            # server-side dimming was designed for that older look and just reads as muddy here.
-            # Always a plain 16:9 transcode. The zoom inside the hero-art box is done entirely in
-            # the skin (default_background.xml.tpl, hero_zoom_pad): PMS's minSize=1 does NOT crop to
-            # the requested aspect, it returns the whole image scaled until both dimensions are
-            # >= what was asked (verified live: 1920x1440 requested -> 2560x1440 returned), so asking
-            # for a non-16:9 size here only wastes bandwidth and texture memory.
-            return self.windowSetBackground(util.backgroundFromArt(art, width=self.width, height=self.height, opacity=100))
+            return self.windowSetBackground(self.backgroundURLFor(ds))
 
     PANEL_CORNER_PROPS = (('background_panel_tl', 'topLeft'), ('background_panel_tr', 'topRight'),
                            ('background_panel_bl', 'bottomLeft'), ('background_panel_br', 'bottomRight'))

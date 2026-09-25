@@ -38,7 +38,7 @@ def open(obj, context=None, **kwargs):
                 return handleOpen(photos.PhotoWindow, play_queue=obj, **kwargs)
             else:
                 from . import videoplayer
-                videoplayer.play(play_queue=obj, **kwargs)
+                videoplayer.play(play_queue=obj, context=context, **kwargs)
                 return ''
     elif isinstance(obj, six.string_types):
         key = obj
@@ -72,7 +72,7 @@ def open(obj, context=None, **kwargs):
         return playlistClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('clip'):
         from . import videoplayer
-        return videoplayer.play(video=obj)
+        return videoplayer.play(video=obj, context=context)
     elif obj.TYPE in ('collection'):
         return collectionClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('Genre'):

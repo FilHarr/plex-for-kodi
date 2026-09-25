@@ -3,6 +3,13 @@
     {% block background %}
         {% include "includes/default_background.xml.tpl" %}
     {% endblock %}
+    {# Everything but the background, hidden while post-play hands over to an item opened from its
+       rows (nav_hidden, videoplayer.py's openItem()): the screen that started playback shows for a
+       moment between post-play closing and the item's screen replacing it. Cleared as the next
+       window first initialises (kodigui.BaseWindow._onInit()). A global property, not a window
+       one, since Kodi hands a reused window id's properties on to the next window. #}
+    <control type="group">
+    <visible>String.IsEmpty(Window(10000).Property(script.plex.nav_hidden))</visible>
     <!-- block content -->
     {% block content %}{% endblock %}
 
@@ -173,4 +180,5 @@
         </control>
     </control>
     {% endblock header %}
+    </control>
 {% endblock controls %}

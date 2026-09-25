@@ -134,6 +134,12 @@ class FakeThinProxy(object):
         self.closed = True
 
 
+class FakeSection(object):
+    """Just the library key swapTo()'s chain_root matching compares."""
+    def __init__(self, key):
+        self.key = key
+
+
 class FakeHostWindow(object):
     """A hand-built double carrying only the attributes LibraryWindow's real, bound
     swapTo/popBack/_setupCurrent/onAction methods (imported directly off library.LibraryWindow
@@ -151,6 +157,7 @@ class FakeHostWindow(object):
     popBack = library.LibraryWindow.popBack
     swapToSection = library.LibraryWindow.swapToSection
     _deferOpenSection = library.LibraryWindow._deferOpenSection
+    _chainRootEntry = library.LibraryWindow._chainRootEntry
 
     def _captureRootRestoreState(self):
         # Real LibraryWindow._captureRootRestoreState() reads contentMode/showPanelControl/
@@ -425,6 +432,68 @@ class SwapToAndBackStackTest(KodiTestCase):
         swapTo(host, OtherFakeShell, push=False, video='the-movie')
 
         self.assertEqual([], host._backStack)
+
+    # chain_root: post-play's opens (videoplayer.play()) - Back from what opens goes to the item's
+    # own section, never back through the chain that started playback.
+
+    def test_a_chain_root_in_another_section_replaces_the_chain_with_that_section_fresh(self):
+        movies, shows = FakeSection('1'), FakeSection('2')
+        host = FakeHostWindow()
+        host._backStack = [(None, {'section': movies, 'filter_': None, '_restoreHubId': 'movie.ondeck'}),
+                           (FakeShell, {'video': 'earlier'})]
+        host._hubReselectPositions = {'hub': ('1', 3)}
+        _setupCurrent(host, FakeShell)
+        currentShell = host._current
+
+        swapTo(host, OtherFakeShell, chain_root=shows, video='the-show')
+
+        self.assertEqual([(None, {'section': shows, 'filter_': None})], host._backStack)
+        self.assertEqual({}, host._hubReselectPositions)
+        self.assertEqual(OtherFakeShell, host._next)
+        self.assertEqual({'video': 'the-show'}, host._nextKwargs)
+        self.assertTrue(currentShell.closed)
+
+    def test_a_chain_root_in_the_starting_section_collapses_to_that_section_as_it_was_left(self):
+        """Same section, unfiltered: keep the chain's own root entry (its row/grid position) and
+        the per-row positions, rather than opening the section fresh. Matched by key - post-play
+        finds its section object separately from the one the chain started with."""
+        root = (None, {'section': FakeSection('2'), 'filter_': None, '_restoreHubId': 'tv.ondeck'})
+        host = FakeHostWindow()
+        host._backStack = [root, (FakeShell, {'video': 'earlier'})]
+        host._hubReselectPositions = {'tv.ondeck': ('1', 3)}
+        _setupCurrent(host, FakeShell)
+
+        swapTo(host, OtherFakeShell, chain_root=FakeSection('2'), video='the-episode')
+
+        self.assertEqual([root], host._backStack)
+        self.assertEqual({'tv.ondeck': ('1', 3)}, host._hubReselectPositions)
+
+    def test_a_chain_root_from_the_hosts_own_section_view_roots_at_it_as_it_is(self):
+        """No chain yet (e.g. Play All from the section's grid): the root is what a genesis swap
+        would push now - the host's current section and its restore state."""
+        shows = FakeSection('2')
+        host = FakeHostWindow()
+        host.section, host.filter = shows, None
+        host._current = FakeThinProxy(FakeThinProxy.xmlFile, FakeThinProxy.path, FakeThinProxy.theme, FakeThinProxy.res)
+        host._isHostedShell = False
+        host._hubReselectPositions = {'tv.ondeck': ('1', 3)}
+
+        swapTo(host, OtherFakeShell, chain_root=FakeSection('2'), video='the-episode')
+
+        self.assertEqual([(None, {'section': shows, 'filter_': None})], host._backStack)
+        self.assertEqual({'tv.ondeck': ('1', 3)}, host._hubReselectPositions)
+
+    def test_a_chain_root_in_the_starting_section_but_filtered_opens_it_fresh(self):
+        shows = FakeSection('2')
+        host = FakeHostWindow()
+        host._backStack = [(None, {'section': FakeSection('2'), 'filter_': 'genre=drama'})]
+        host._hubReselectPositions = {'hub': ('1', 3)}
+        _setupCurrent(host, FakeShell)
+
+        swapTo(host, OtherFakeShell, chain_root=shows, video='the-show')
+
+        self.assertEqual([(None, {'section': shows, 'filter_': None})], host._backStack)
+        self.assertEqual({}, host._hubReselectPositions)
 
     def test_pop_back_on_a_shell_reconstruction_entry_swaps_without_pushing_again(self):
         host = FakeHostWindow()

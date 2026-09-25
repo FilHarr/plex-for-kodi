@@ -347,7 +347,7 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                     if self.playlist.leafCount.asInt() <= util.addonSettings.playlistMaxSize:
                         self.playlist.setShuffle(shuffle)
                         self.playlist.setCurrent(mli and mli.pos() or 0)
-                        videoplayer.play(play_queue=self.playlist, resume=resume)
+                        videoplayer.play(play_queue=self.playlist, resume=resume, context=self)
                     else:
                         args = {'shuffle': shuffle}
                         if mli:

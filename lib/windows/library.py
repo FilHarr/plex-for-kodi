@@ -1163,13 +1163,30 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 return {'_restoreItemPos': offset + relative}
         return {}
 
-    def swapTo(self, cls, push=True, **kwargs):
+    def swapTo(self, cls, push=True, chain_root=None, **kwargs):
         """Swap this already-open, already-hosting LibraryWindow to one of the seven real
         descendant shell types in place - same construct-fresh-via-_open()'s-loop pattern
         openSection()/switchTab() already use, just targeting a real shell class instead of one
         of LibraryWindow's own thin view-type proxies. See _backStack's own comment (__init__)
-        for the two entry shapes pushed here."""
-        if push and self._current is not None:
+        for the two entry shapes pushed here.
+
+        chain_root: a section that replaces the whole chain as the only way back, instead of
+        pushing the current screen - post-play's opens (videoplayer.play()), so Back from what
+        they open lands on that section's own view. If the chain started from that same section,
+        unfiltered, it collapses to that start, so Back finds the section as it was left (row or
+        grid position, and each row's item); otherwise the section opens fresh, like a sidebar
+        click, and the old chain's remembered hub positions are dropped."""
+        if chain_root is not None:
+            root = self._chainRootEntry()
+            rootKwargs = root[1] if root else {}
+            section = rootKwargs.get('section')
+            if (section is not None and not rootKwargs.get('filter_')
+                    and getattr(section, 'key', None) == chain_root.key):
+                self._backStack = [root]
+            else:
+                self._backStack = [(None, {'section': chain_root, 'filter_': None})]
+                self._hubReselectPositions = {}
+        elif push and self._current is not None:
             if self._isHostedShell:
                 entryKwargs = dict(self._currentKwargs)
                 entryKwargs.update(self._captureHostedShellRestoreState())
@@ -1185,6 +1202,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._next = cls
         self._nextKwargs = kwargs
         self._current.doClose()
+
+    def _chainRootEntry(self):
+        """The root-restore entry this chain would unwind to: the stack's first entry, or - with
+        no chain yet, the host showing its own section - the one a genesis swap would push now."""
+        if self._backStack:
+            entry = self._backStack[0]
+            return entry if entry[0] is None else None
+        if self._current is not None and not self._isHostedShell:
+            entryKwargs = {'section': self.section, 'filter_': self.filter}
+            entryKwargs.update(self._captureRootRestoreState())
+            return None, entryKwargs
+        return None
 
     def popBack(self):
         entry = self._backStack.pop()

@@ -14,6 +14,7 @@ from lib import kodijsonrpc
 from lib import player
 from lib import util
 from lib.util import T
+from plexnet import plexapp
 from plexnet.serverdecision import DecisionFailure
 from . import busy
 from . import kodigui
@@ -148,6 +149,7 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
         self.earlyAbortRequested = False
         self.sessionID = None
         self.playbackFailed = False
+        self.openAfterClose = None
 
     def doClose(self, force=False):
         util.DEBUG_LOG('VideoPlayerWindow: Closing')
@@ -411,7 +413,12 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
                 return
             item = mli.dataSource
 
-        self.processCommand(opener.open(item, came_from="postplay"))
+        # not opened on top of post-play: it closes, and play() has the screen that started playback
+        # open the item, so Back from it goes there rather than back here
+        self.openAfterClose = item
+        # keep that screen's content hidden for the moment it shows before the item replaces it
+        kodigui.setNavHidden(True)
+        self.doClose()
 
     def showPostPlay(self):
         self.postPlayMode = True
@@ -686,15 +693,28 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
             util.ERROR()
 
 
-def play(video=None, play_queue=None, resume=False, bgm=False, **kwargs):
+def librarySectionOf(item):
+    section_id = str(item.getLibrarySectionId())
+    for section in plexapp.SERVERMANAGER.selectedServer.library.sections():
+        if str(section.key) == section_id:
+            return section
+    return None
+
+
+def play(video=None, play_queue=None, resume=False, bgm=False, context=None, **kwargs):
+    """context: the calling window, which opens anything picked from post-play's rows once the
+    player has closed (see opener.open()'s own context)."""
     w = None
     try:
         w = VideoPlayerWindow.open(video=video, play_queue=play_queue, resume=resume, bgm=bgm, aggressive=True)
     except util.NoDataException:
         raise
     finally:
-        # codec teardown might show a spinner, wait a short while
-        util.MONITOR.waitFor(0.5)
+        # codec teardown might show a spinner, wait a short while - not when post-play is closing
+        # to open an item: playback ended long before, and the wait only kept the screen that
+        # started playback on show before the item replaced it
+        if not (w and w.openAfterClose is not None):
+            util.MONITOR.waitFor(0.5)
         util.DEBUG_LOG("VideoPlayer Window exit")
         if w.playbackFailed:
             util.DEBUG_LOG("VideoPlayer: Playback failed, checking and waiting for open dialogs to close")
@@ -718,7 +738,30 @@ def play(video=None, play_queue=None, resume=False, bgm=False, **kwargs):
 
     if w:
         command = w.exitCommand
+        item = w.openAfterClose
         del w
         util.garbageCollect()
+        if item is not None:
+            # In a chain, Back from what opens goes to the item's own library section rather than
+            # the screen that started playback (chain_root, LibraryWindow.swapTo()); outside one
+            # it opens on top of that screen. came_from="postplay" keeps an opened show's theme
+            # music off, as before.
+            openKwargs = {}
+            host = context._liveChainHost() if context is not None and hasattr(context, '_liveChainHost') else None
+            section = host is not None and librarySectionOf(item)
+            if section:
+                openKwargs['chain_root'] = section
+            try:
+                result = opener.open(item, context=context, came_from="postplay", **openKwargs)
+            except Exception:
+                kodigui.setNavHidden(False)
+                raise
+            if host is not None:
+                # the swap completes on the host's own loop, where the new screen's first init
+                # clears nav_hidden; this only covers it never getting there
+                threading.Timer(5, kodigui.setNavHidden, args=(False,)).start()
+            else:
+                kodigui.setNavHidden(False)
+            return result
         return command
     return

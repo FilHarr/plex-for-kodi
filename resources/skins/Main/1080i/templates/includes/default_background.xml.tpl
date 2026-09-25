@@ -177,8 +177,9 @@
              panel alone. Empty/unset for every other window.
              hero.no_art (LibraryWindow.setHeroInfo, HERO_NO_ART_TYPES; also
              CollectionWindow.setup() for a collection with no art): keeps the info overlay on
-             the left but not this art box. Same condition on both art layers below. -->
-        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art)) + String.IsEmpty(Window.Property(hero.no_art))</visible>
+             the left but not this art box. Same condition on both art layers below.
+             nav_hidden (global): post-play's hand-over to an item it opens - see default.xml.tpl. -->
+        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art)) + String.IsEmpty(Window.Property(hero.no_art)) + String.IsEmpty(Window(10000).Property(script.plex.nav_hidden))</visible>
         <posx>{{ 691 - hero_zoom_pad }}</posx>
         <posy>0</posy>
         <width>{{ 1229 + hero_zoom_pad }}</width>
@@ -210,7 +211,7 @@
         <aspectratio align="center" aligny="top" scalediffuse="false">scale</aspectratio>
     </control>
     <control type="image">
-        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art)) + String.IsEmpty(Window.Property(hero.no_art))</visible>
+        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art)) + String.IsEmpty(Window.Property(hero.no_art)) + String.IsEmpty(Window(10000).Property(script.plex.nav_hidden))</visible>
         <posx>{{ 691 - hero_zoom_pad }}</posx>
         <posy>0</posy>
         <width>{{ 1229 + hero_zoom_pad }}</width>

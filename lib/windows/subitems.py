@@ -164,6 +164,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         kodigui.ControlledWindow.doClose(self)
         TasksMixin.doClose(self)
 
+    def backgroundItem(self):
+        return self.mediaItem
+
     def onFirstInit(self):
         self.focusPlayButton()
         self.subItemListControl = kodigui.ManagedControlList(self, self.SUB_ITEM_LIST_ID, 5)
@@ -983,7 +986,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
         self.playBtnClicked = True
         pl.shuffle(shuffle, first=True)
-        videoplayer.play(play_queue=pl, resume=resume, bgm=self.useBGM)
+        videoplayer.play(play_queue=pl, resume=resume, bgm=self.useBGM, context=self)
 
     def shuffleButtonClicked(self):
         self.playButtonClicked(shuffle=True)

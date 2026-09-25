@@ -317,6 +317,8 @@ class UtilMixin(GoHomeMixin):
         if host is not None:
             host.swapTo(window_class, **kwargs)
             return
+        # only a chain host has a back stack to root (LibraryWindow.swapTo())
+        kwargs.pop('chain_root', None)
         self.processCommand(opener.handleOpen(window_class, **kwargs))
 
     def processCommand(self, command):

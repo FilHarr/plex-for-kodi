@@ -865,6 +865,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.openedWithAutoPlay = True
         return self.playButtonClicked(force_episode=self.initialEpisode, from_auto_play=True, start_over=self.startOver)
 
+    def backgroundItem(self):
+        # what updateProperties() paints once it runs - see kodigui's paintInitialBackground()
+        return self.season or self.show_
+
     def onFirstInit(self):
         self._onFirstInit()
 
@@ -1753,7 +1757,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         pl = playlist.LocalPlaylist(items, seasonOrShow.getServer())
 
         pl.shuffle(True, first=True)
-        videoplayer.play(play_queue=pl)
+        videoplayer.play(play_queue=pl, context=self)
         return True
 
     def settingsButtonClicked(self):
@@ -1926,11 +1930,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                     ep._show = self.show_
 
                 pl.setCurrent(episode)
-                self.processCommand(videoplayer.play(play_queue=pl, resume=resume, bgm=self.useBGM))
+                self.processCommand(videoplayer.play(play_queue=pl, resume=resume, bgm=self.useBGM, context=self))
                 self.playBtnClicked = False
                 return True
 
-            self.processCommand(videoplayer.play(video=episode, resume=resume, bgm=self.useBGM))
+            self.processCommand(videoplayer.play(video=episode, resume=resume, bgm=self.useBGM, context=self))
             self.playBtnClicked = False
             return True
         except util.NoDataException:

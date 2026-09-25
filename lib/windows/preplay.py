@@ -205,6 +205,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         TasksMixin.doClose(self)
         kodigui.ControlledWindow.doClose(self)
 
+    def backgroundItem(self):
+        return self.video
+
     def onFirstInit(self):
         if not self.fromWatchlist:
             # pre_play-wl.xml replaces this whole block with wl_availability.xml.tpl's own controls -
@@ -860,10 +863,10 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
                 pl = playlist.LocalPlaylist(items, self.video.getServer())
                 self.processCommand(
-                    videoplayer.play(play_queue=pl, bgm=self.useBGM))
+                    videoplayer.play(play_queue=pl, bgm=self.useBGM, context=self))
                 return True
 
-        self.processCommand(videoplayer.play(video=self.video, resume=resume, bgm=self.useBGM))
+        self.processCommand(videoplayer.play(video=self.video, resume=resume, bgm=self.useBGM, context=self))
         return True
 
     def openItem(self, control=None, item=None, inherit_from_watchlist=True, server=None, is_watchlisted=False, **kw):
