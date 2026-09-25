@@ -2254,7 +2254,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 )
             else:
                 # newControlEmpty(), not newControl(): this section's hub content is about to
-                # be replaced wholesale by hubsTask.run() below anyway, so repainting whatever
+                # be replaced wholesale by the hub bind below anyway, so repainting whatever
                 # the *previous* section's Recommended tab last left in these items (newControl()'s
                 # normal behavior - correct for tabList/sectionList/userList/serverList just
                 # above, whose content genuinely carries over unchanged across a section swap)
@@ -2267,7 +2267,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
             # Same stale-content problem as the hub tiles above, for the hero overlay (art box
             # top-right, title/summary/etc. panel left) - updateHeroFrom()/setHeroInfo() only run
-            # once hubsTask.run() below actually lands, so without this, whatever the *previous*
+            # once the hub bind below actually lands, so without this, whatever the *previous*
             # section's Recommended tab last set title/clear.logo/summary/background/etc. to just
             # sits there, fully visible, for that same gap. no_hero_art is exactly this signal:
             # the hero-art box (default_background.xml.tpl) and the info overlay (script-plex-
@@ -2297,67 +2297,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # Playlists entries also in this list.
             section_keys = [mli.dataSource.key for mli in self.sectionList
                             if mli.dataSource and mli.dataSource.key and mli.dataSource.key.isdigit()]
-            hubsTask = home.SectionHubsTask().setup(self.section, self._recommendedHubsCallbackFor(generation),
-                                                     section_keys)
-            # Run inline (main thread), not dispatched to BGThreader: _recommendedHubsCallback()
-            # (below) does real Control geometry mutation (getControl().setPosition()/setHeight()
-            # via _setRoleGeometry()), not just ListItem property updates like _chunkCallback()'s
-            # own background-thread work elsewhere in this file - live-confirmed as a native
-            # access violation (heap/vtable corruption - EXCEPTION_ACCESS_VIOLATION with a DEP/
-            # execute-noncanonical-address signature, not a simple bad read) after a small handful
-            # of switchTab() round trips into and back out of 'recommended', with the deferred-
-            # close fix (onClick(), TAB_LIST_ID) already in place and no hub-to-hub navigation
-            # involved at all - narrowing it to this one-time bind, the only remaining background-
-            # thread Control mutation Stage D2 added. HomeWindow's own _bindAllHubSlots() (home.py)
-            # does the identical thing from its own SectionHubsTask callback and has apparently
-            # gotten away with it, but HomeWindow is a persistent window that's realistically never
-            # rebound this many times in a short span the way switchTab() cycling does - if this is
-            # a rare, cumulative heap-corruption bug rather than an immediate one, infrequent reuse
-            # would explain why it's never surfaced there. Blocking here costs whatever the fetch
-            # itself takes (~100-200ms observed) before the window finishes initializing - the
-            # hubs were never rendered before this returned anyway (this is still the *first* bind,
-            # not a background refresh), so nothing that used to be visible earlier is lost, just
-            # shifted before the window shows instead of popping in after.
-            hubsTask.run()
-
-            # Explicitly (re-)assert focus on the anchor hub row - ported from
-            # HomeWindow.applyInitialHubFocus() (home.py), which only ever did this once, the very
-            # first hubs draw of a whole session (self._initialHubFocusApplied, guarded on
-            # self.getFocusId() == self.SECTION_LIST_ID, the native default this window
-            # construction starts with) - broadened 2026-09-04 (live-reported) to run
-            # unconditionally, every fresh 'recommended' entry, not just the first ever: this whole
-            # branch only ever runs once per freshly-constructed RecommendedWindow shell (see this
-            # method's own docstring), so there's no live user interaction between hubsTask.run()
-            # returning and here for a later entry to have raced past the way HomeWindow's own
-            # background-thread version could. A restored hub/item position
-            # (_captureHostedShellRestoreState()'s chain, or _bindHubToControl()'s own
-            # self._hubReselectPositions) gets selected via plain Python selectItem() calls, all
-            # before this window has ever painted - live-confirmed Kodi doesn't reliably render a
-            # focus ring for a pre-selected item from that alone, only once the control's focus is
-            # genuinely (re-)asserted like this does; needing an unrelated input (Kodi's own
-            # cursor-move on the very next repaint that follows) before the ring appeared was the
-            # visible symptom. Harmless when nothing needed restoring - the anchor control was
-            # already going to end up focused by native <defaultcontrol> in the common case, this
-            # just makes it explicit/unconditional instead of leaving it to chance.
-            if self.visibleHubs:
-                # Live-confirmed regression from the setFocusId() call itself (2026-09-04): it
-                # triggers a real onFocus(<hub control>) callback the same as any other focus
-                # move, and onFocus()'s own _hubJustEnteredFromOutside detector (see its own
-                # docstring) can't tell this deliberate, one-time initial focus apart from a
-                # genuine native cross-container arrow move (sidebar/tabs -> hub row) - it read
-                # self.lastFocusID as still outside the hub range (None, or wherever native
-                # default control focus happened to leave it) and set the flag exactly as if a
-                # real duplicate native replay were coming to swallow. None ever arrives after a
-                # programmatic setFocusId(), so the flag just sat there and silently ate the
-                # user's very next real navigation press instead - symptoms ranged from a dead
-                # first move (hero/reselect-position not updating) to a dead first "load more"
-                # trigger, both self-correcting on a second press. Pre-seeding lastFocusID to the
-                # anchor control itself - true in spirit, there's no real prior focus to speak of
-                # on a window that has never painted - makes onFocus()'s own was_outside_hub read
-                # False regardless of exactly when its callback actually runs relative to this
-                # line, rather than trying to race a reset against it afterward.
-                self.lastFocusID = self._anchorControlId()
-                self.setFocusId(self._anchorControlId())
+            # Fetched on a worker (3d / E2 in the navigation review: inline, a server that stopped
+            # answering froze everything, Back included, for 20 s or more), and the bind posted
+            # back to this thread (_bindFetchedHubs()) - the bind changes control geometry
+            # (_setRoleGeometry()), which stays on the main thread. The window shows its sidebar
+            # and tabs meanwhile, with the hero hidden (no_hero_art, above). A hub cache was tried
+            # too and dropped (the user's choice, 2026-09-26): it saved ~230 ms per Back on the
+            # AM6B, not enough to be felt, against up to 5 minutes of staleness.
+            callback = self._recommendedHubsFetchedFor(generation)
+            task = home.SectionHubsTask().setup(self.section, callback, section_keys)
+            self.tasks.add(task)
+            backgroundthread.BGThreader.addTasksToFront([task])
 
             self.setBoolProperty("initialized", True)
         elif self.showPanelControl and not self.refill:
@@ -6733,8 +6683,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # The overlay is unconditional - shown for every focused hub item, whatever its type (the old
     # HERO_ART_TYPES / _typeHasHeroArt() movie-and-TV-only gate is gone, and with it the
     # two-position row layout it drove - see GROUP51_BASELINE_OFFSET above) - so no_hero_art is
-    # only ever True while nothing is bound at all: a fresh 'recommended' entry before hubsTask
-    # lands (onFirstInit(), hiding the previous section's stale overlay) and a section with no
+    # only ever True while nothing is bound at all: a fresh 'recommended' entry before its hubs
+    # land (onFirstInit(), hiding the previous section's stale overlay) and a section with no
     # hubs (_bindAllHubSlots()'s empty branch). Pure visibility now, no layout effect.
     # CLEAR_LOGO_DIM: the clearlogo image's own render bounds. CLEAR_LOGO_DIM_EPISODE: smaller
     # variant used when the focused hub item is an episode or a rolled-up season (setHeroInfo()'s
@@ -7634,41 +7584,67 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if items:
             control.selectItem(selected)
 
-    def _recommendedHubsCallbackFor(self, generation):
-        """Wraps _recommendedHubsCallback() with the _listGeneration snapshot taken when the
-        hub fetch was scheduled (onFirstInit(), 'recommended' branch), so a fetch that finishes
-        after a swap away (switchTab()/openSection() bump _listGeneration immediately, but
-        self.tasks.kill() can't preempt a fetch already past its own isCanceled() check) gets
-        recognized as stale and discarded instead of writing into a window that's moved on -
-        same idiom as _chunkCallbackFor() above.
-        """
+    def _recommendedHubsFetchedFor(self, generation):
+        """SectionHubsTask's callback for a fetch on a worker (onFirstInit()'s 'recommended'
+        branch): posts the bind to the main thread (MultiWindow.postUI()), where it runs once this
+        view has finished initialising."""
         def callback(section, hubs, reselect_pos_dict=None):
-            self._recommendedHubsCallback(section, hubs, generation)
+            self.postUI('bind hubs', self._bindFetchedHubs, args=(section, hubs, generation))
         return callback
 
-    def _recommendedHubsCallback(self, section, hubs, generation):
-        """SectionHubsTask's callback. Called synchronously, inline, on the main thread -
-        onFirstInit()'s 'recommended' branch calls hubsTask.run() directly rather than dispatching
-        it to BGThreader. This was tried as a fix for a native crash entering/leaving
-        'recommended' (heap/vtable corruption, not a simple bad read), on the theory that the
-        Control geometry mutation below (getControl(), _setRoleGeometry()'s setPosition()/
-        setHeight() calls) running off the main thread was the cause - live-tested and ruled out
-        (the crash persisted, at the exact same faulting address, even with all of this loop's
-        geometry mutation skipped entirely in a separate diagnostic pass). The real cause turned
-        out to be upstream: xbmc/xbmc#27552/#27239, a confirmed Kodi core bug where
-        CGUIWindow::OnAction() crashes if a skin/window reload happens nested underneath the same
-        OnAction() call that triggered it - see windowutils.SKIN_RELOAD_DEFER_SECONDS for the full
-        diagnosis and the actual fix (deferring switchTab()/openSection() itself, not anything in
-        here). Left running inline on the main thread anyway now that it's already this shape -
-        no reason to revert a harmless simplification just because it wasn't the fix, and it still
-        avoids background-thread Control mutation as a matter of general caution.
+    def _bindFetchedHubs(self, section, hubs, generation):
+        self._recommendedHubsCallback(section, hubs, generation)
+        if (generation == self._listGeneration and not self.closing
+                and self.contentMode == 'recommended'):
+            self._focusAnchorHub()
 
-        Historical note: this used to run on a genuine background thread (BGThreader), same shape
-        HomeWindow's own SectionHubsTask callback (_bindAllHubSlots(), home.py) still uses safely -
-        that always was fine, since it was never the actual bug. The self.lock/double-stale-check
-        shape below predates this change and is no longer strictly load-bearing (nothing else can
-        run between scheduling and this call any more, since it's synchronous) but is kept as
-        cheap, harmless defensiveness rather than removed.
+    def _focusAnchorHub(self):
+        """After a fresh bind (_recommendedHubsCallback()), focus the anchor row."""
+        # Explicitly (re-)assert focus on the anchor hub row - ported from
+        # HomeWindow.applyInitialHubFocus() (home.py), which only ever did this once, the very
+        # first hubs draw of a whole session - broadened 2026-09-04 (live-reported) to run on
+        # every fresh 'recommended' entry. Since 3d the bind lands after the window is up (the
+        # fetch runs on a worker), and focus still goes to the anchor then, wherever it is: the
+        # sidebar click that opened the section expects to land in the content. A restored
+        # hub/item position (_captureHostedShellRestoreState()'s chain, or _bindHubToControl()'s own
+        # self._hubReselectPositions) gets selected via plain Python selectItem() calls, all
+        # before this window has ever painted - live-confirmed Kodi doesn't reliably render a
+        # focus ring for a pre-selected item from that alone, only once the control's focus is
+        # genuinely (re-)asserted like this does; needing an unrelated input (Kodi's own
+        # cursor-move on the very next repaint that follows) before the ring appeared was the
+        # visible symptom. Harmless when nothing needed restoring - the anchor control was
+        # already going to end up focused by native <defaultcontrol> in the common case, this
+        # just makes it explicit/unconditional instead of leaving it to chance.
+        if self.visibleHubs:
+            # Live-confirmed regression from the setFocusId() call itself (2026-09-04): it
+            # triggers a real onFocus(<hub control>) callback the same as any other focus
+            # move, and onFocus()'s own _hubJustEnteredFromOutside detector (see its own
+            # docstring) can't tell this deliberate, one-time initial focus apart from a
+            # genuine native cross-container arrow move (sidebar/tabs -> hub row) - it read
+            # self.lastFocusID as still outside the hub range (None, or wherever native
+            # default control focus happened to leave it) and set the flag exactly as if a
+            # real duplicate native replay were coming to swallow. None ever arrives after a
+            # programmatic setFocusId(), so the flag just sat there and silently ate the
+            # user's very next real navigation press instead - symptoms ranged from a dead
+            # first move (hero/reselect-position not updating) to a dead first "load more"
+            # trigger, both self-correcting on a second press. Pre-seeding lastFocusID to the
+            # anchor control itself - true in spirit, there's no real prior focus to speak of
+            # on a window that has never painted - makes onFocus()'s own was_outside_hub read
+            # False regardless of exactly when its callback actually runs relative to this
+            # line, rather than trying to race a reset against it afterward.
+            self.lastFocusID = self._anchorControlId()
+            self.setFocusId(self._anchorControlId())
+
+    def _recommendedHubsCallback(self, section, hubs, generation):
+        """Bind a section's hub rows into the Recommended view, on the main thread: posted by
+        _recommendedHubsFetchedFor() once a worker has fetched them (3d in the navigation
+        review). generation is _listGeneration when the
+        fetch was scheduled; a swap since then makes the bind stale, and it's dropped.
+
+        The bind changes control geometry (getControl(), _setRoleGeometry()'s setPosition()/
+        setHeight()), so it stays on the main thread. Doing it on a worker was once blamed for a
+        native crash entering/leaving 'recommended'; that turned out to be xbmc/xbmc#27239 (see
+        windowutils.SKIN_RELOAD_DEFER_SECONDS), but the rule stays as general caution.
 
         Builds self.hubControls itself only on the main thread (onFirstInit(), see there) rather
         than here - constructing a ManagedControlList calls getControl(), a Kodi native call, and
@@ -7917,7 +7893,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._listGeneration
         (bumped synchronously by switchTab()/openSection() before they close anything) is the
         correct, non-delegated signal for "a swap happened out from under this", same idiom
-        _chunkCallbackFor()/_recommendedHubsCallbackFor() already use.
+        _chunkCallbackFor()/_recommendedHubsFetchedFor() already use.
         """
         if not self.visibleHubs:
             return
