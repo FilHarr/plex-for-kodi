@@ -732,7 +732,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self.reset()
 
-        self.lock = threading.Lock()
+        # Reentrant: serverRefresh() holds it while it calls openSection(), which takes it to
+        # invalidate the list (_listGeneration).
+        self.lock = threading.RLock()
         # Placeholder chunks for a keyed (title-sort) grid must land in order; each waits on this
         # for its turn instead of spinning on the lock (see _defaultItemsCallback()).
         self._defaultItemsTurn = threading.Condition(self.lock)
@@ -1001,10 +1003,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # swapTo() changes neither section nor tab, so nothing else told in-flight list work it's
         # stale. Live-caught 2026-09-25 (AM6B crash log): a grid chunk fetched just before an item
         # opened from that grid wrote into its freed list items - a segfault in
-        # CGUIListItem::SetProperty on the worker. Under self.lock, which _chunkCallback() checks the
-        # generation under too, so a chunk either finishes before this or sees it and stops.
-        with self.lock:
-            self._listGeneration += 1
+        # CGUIListItem::SetProperty on the worker. See _retireListItems().
+        self._retireListItems()
         self._current = cls(cls.xmlFile, cls.path, cls.theme, cls.res, **self._nextKwargs)
         self._currentKwargs = self._nextKwargs
         # Both weak (see the top of this method): _hostRef routes the shell's routeAction() through
@@ -1106,6 +1106,21 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         util.MONITOR.waitFor(windowutils.SKIN_RELOAD_DEFER_SECONDS)
         util.DEBUG_LOG("Library: _setupCurrent({0}) forced gc.collect() after real-shell teardown, "
                         "collected={1}", cls, collected)
+
+    def _retireListItems(self):
+        """Mark the list items in-flight work is writing into as stale (_listGeneration), and wait
+        for the one item being written right now. Call before anything that frees them: a view
+        swap, a section or tab switch, a grid rebuild.
+
+        Live-caught 2026-09-25 (AM6B crash logs): a grid chunk still being written when the view
+        was replaced - an item opened from the grid, then a sidebar switch from a loading Music
+        grid - segfaulted in CGUIListItem::SetProperty on the worker. _chunkCallback() checks the
+        generation before every item, under self.lock, so bumping first and then taking the lock
+        waits for at most one item. Taking the lock first waited for the whole chunk, up to a
+        second on the AM6B."""
+        self._listGeneration += 1
+        with self.lock:
+            pass
 
     def _captureRootRestoreState(self):
         """Extra entries merged into the (None, {...}) root-restore _backStack entry (swapTo()/
@@ -1340,7 +1355,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # existing. Live-confirmed as a native invalid-pointer-read crash otherwise. Harmless
         # no-op when contentMode isn't 'recommended' (self._hubSliding is only ever True there).
         self._settleHubSlide()
-        self._listGeneration += 1
+        self._retireListItems()
         # A tab switch is a fresh entry - see _hubReselectPositions' own comment (__init__).
         self._hubReselectPositions = {}
         self.contentMode = mode
@@ -1456,7 +1471,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Bumped here, not just inside doRefill(), so a suspended call elsewhere that captured
         # showPanelControl/mli.dataSource before this swap can detect the invalidation the moment
         # it actually happens, not only once _open()'s loop gets back around to rebuilding.
-        self._listGeneration += 1
+        self._retireListItems()
 
         self.section = section
         # Force a fresh live Collections probe for the section we're now entering, rather than
@@ -2373,7 +2388,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._pendingRestoreHubId = None
         # The previous panel's ListItems are about to be freed and replaced; bump the
         # generation so any caller holding a stale ListItem reference can detect it.
-        self._listGeneration += 1
+        self._retireListItems()
         self.showPanelControl = kodigui.ManagedControlList(self, self.POSTERS_PANEL_ID, 5)
 
         # 'playlists' deliberately excluded (unlike photodirectory/collection): it still needs the
@@ -5214,8 +5229,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return
 
         with self.lock:
-            # Checked under the lock: _setupCurrent() bumps the generation under it before replacing
-            # the view these items belong to (see there).
+            # Checked here and before every item, under the lock (see _retireListItems()).
             if generation is not None and generation != self._listGeneration:
                 util.DEBUG_LOG("Library: _chunkCallback() declined - stale generation ({0} != {1})",
                                generation, self._listGeneration)
@@ -5232,6 +5246,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
             if ITEM_TYPE == 'episode':
                 for offset, obj in enumerate(items):
+                    if generation is not None and generation != self._listGeneration:
+                        util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
+                        return
                     mli = self.showPanelControl[pos]
                     if obj:
                         mli.dataSource = obj
@@ -5267,6 +5284,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
             elif ITEM_TYPE == 'album':
                 for offset, obj in enumerate(items):
+                    if generation is not None and generation != self._listGeneration:
+                        util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
+                        return
                     mli = self.showPanelControl[pos]
                     if obj:
                         mli.dataSource = obj
@@ -5289,6 +5309,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     pos += 1
             else:
                 for offset, obj in enumerate(items):
+                    if generation is not None and generation != self._listGeneration:
+                        util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
+                        return
 
                     try:
                         mli = self.showPanelControl[pos]

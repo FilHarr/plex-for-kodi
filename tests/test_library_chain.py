@@ -136,6 +136,7 @@ class FakeHostWindow(object):
     _isRealShell = staticmethod(library.LibraryWindow._isRealShell)
     _setupCurrent = library.LibraryWindow._setupCurrent
     _forceCollectOutgoing = library.LibraryWindow._forceCollectOutgoing
+    _retireListItems = library.LibraryWindow._retireListItems
     swapTo = library.LibraryWindow.swapTo
     popBack = library.LibraryWindow.popBack
     swapToSection = library.LibraryWindow.swapToSection
@@ -931,6 +932,8 @@ class FakeSwitchTabHost(object):
     directly off library.LibraryWindow above) actually touches - not a real LibraryWindow
     instance. See module docstring."""
 
+    _retireListItems = library.LibraryWindow._retireListItems
+
     def __init__(self):
         self.is_current_window = True
         self._isHostedShell = False
@@ -938,6 +941,7 @@ class FakeSwitchTabHost(object):
         self.tasks = FakeTasks()
         self.hubSlideSettled = False
         self._listGeneration = 0
+        self.lock = library.threading.RLock()
         self._backStack = []
         self.librarySettings = FakeLibrarySettings()
         self.resetCalled = False
@@ -1864,3 +1868,63 @@ class OnFocusHubEntryRedirectTest(KodiTestCase):
         onFocus(host, 402)
 
         self.assertEqual([], host.focusCalls)
+
+
+class ChunkCallbackStopsMidChunkTest(KodiTestCase):
+    """_retireListItems() only waits for the item being written: _chunkCallback() checks the list
+    generation before every item, so a swap during a chunk stops the rest of it."""
+
+    class Thumb(object):
+        def asTranscodedImageURL(self, *dim):
+            return 'thumb'
+
+    class Album(object):
+        title = parentTitle = summary = year = 'x'
+
+        def __init__(self):
+            self.defaultThumb = ChunkCallbackStopsMidChunkTest.Thumb()
+
+    class Item(object):
+        def __init__(self, onWrite=None):
+            self.written = False
+            self.onWrite = onWrite
+
+        def setProperty(self, *a):
+            pass
+
+        def setLabel(self, label):
+            self.written = True
+            if self.onWrite:
+                self.onWrite()
+
+        setThumbnailImage = setLabel2 = setProperty
+
+    class Host(object):
+        _chunkCallback = library.LibraryWindow._chunkCallback
+        _retireListItems = library.LibraryWindow._retireListItems
+        closing = False
+
+        def __init__(self):
+            self.lock = library.threading.RLock()
+            self._listGeneration = 1
+            self.section = type('S', (), {'type': 'artist'})()
+
+        def setBackground(self, *a, **k):
+            pass
+
+        def setBoolProperty(self, *a):
+            pass
+
+    def test_a_swap_during_a_chunk_stops_the_rest(self):
+        host = self.Host()
+        first = self.Item(onWrite=lambda: host._retireListItems())
+        second = self.Item()
+        host.showPanelControl = [first, second]
+        original = library.ITEM_TYPE
+        library.ITEM_TYPE = 'album'
+        try:
+            host._chunkCallback([self.Album(), self.Album()], 0, generation=1)
+        finally:
+            library.ITEM_TYPE = original
+        self.assertTrue(first.written)
+        self.assertFalse(second.written, 'written after the list was retired')
