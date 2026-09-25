@@ -697,14 +697,17 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # passes one, but the parameter's existed since before this) wins next - a caller with a
         # specific reason to land on a particular tab should get it, not the user's last choice.
         # Otherwise, restore this section's own persisted choice (item 0's own "sticky per-section,
-        # same as sort/filter/item-type" design point, not built until now) - falling back to the
-        # 'library' default set above if this section has never had a tab choice saved yet.
+        # same as sort/filter/item-type" design point, not built until now) - falling back to
+        # Recommended if this section has never had a tab choice saved yet (the user's choice,
+        # 2026-09-25; Playlists keeps its grid - see openSection()).
         if self.section and self.section.TYPE == 'mixed':
             self.contentMode = 'recommended'
         elif kwargs.get('content_mode'):
             self.contentMode = kwargs['content_mode']
+        elif self.section and self.section.TYPE == 'playlists':
+            self.contentMode = 'library'
         else:
-            self.contentMode = self.librarySettings.getContentMode() or self.contentMode
+            self.contentMode = self.librarySettings.getContentMode() or 'recommended'
 
         # Session-lifecycle surface (quiet-orbiting-heron.md's Cold Start + windowutils.HOME
         # migration plan) - ported from HomeWindow, which owns all of this today. closeOption is
@@ -1535,12 +1538,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             # Ordinary sections (real library-grid content): restore this section's own last tab
             # choice, the same "sticky per-section" treatment sort/filter/item-type already get
-            # (LibrarySettings.getItemType() and friends) - falling back to whatever contentMode
-            # currently is (the previous section's tab) if this one's never had a choice saved,
-            # matching this method's original carry-over behavior for that specific case.
-            persisted = self.librarySettings.getContentMode()
-            if persisted:
-                self.contentMode = persisted
+            # (LibrarySettings.getItemType() and friends). With none saved, Recommended - not the
+            # previous section's tab, which it used to carry over, so a section opened on
+            # whichever tab the section before it happened to be on (the user's choice,
+            # 2026-09-25).
+            self.contentMode = self.librarySettings.getContentMode() or 'recommended'
 
         self.reset()
         self.refill = True
