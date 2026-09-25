@@ -7975,6 +7975,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self._hubSlideMovers = movers
 
+        # Native focus moves to the destination row now, not when the slide finishes: Kodi hands a
+        # Left/Right to whichever row has focus before any of this code sees it, so a Right pressed
+        # mid-slide scrolled the row being left, and focus only then landed on the new row
+        # (live-reported 2026-09-26). _finishHubSlide() still corrects focus if it's elsewhere.
+        if 399 < self.getFocusId() < 500:
+            self.setFocusId(self._anchorControlId())
+
         if self.closing or self._listGeneration != list_gen:
             # No animation thread will run to land these at end_y - snap directly, matching what
             # the loop's own tail does, so nothing is left mid-transition. self.closing (not
