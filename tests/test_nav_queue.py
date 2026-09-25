@@ -342,3 +342,34 @@ class ServerListItemReachabilityTest(KodiTestCase):
             self.assertEqual([{}], updates)
         finally:
             windowutils.HOME = original
+
+
+class OpenWindowTest(KodiTestCase):
+    """I2 in the navigation review: an item open (UtilMixin.openWindow()) is posted to the chain's
+    host like every other swap, not run inside the click."""
+
+    def _shell(self, host):
+        from lib.windows import windowutils
+        shell = windowutils.UtilMixin()
+        shell._chainHost = host
+        return shell
+
+    def test_posts_the_swap_to_the_host(self):
+        host = Host()
+        swaps = []
+        host.swapTo = lambda cls, **kw: swaps.append((cls, kw))
+        self._shell(host).openWindow(View, video='v')
+        self.assertEqual([], swaps, 'the swap may not run inside the click')
+        host.runPendingNav(View())
+        self.assertEqual([(View, {'video': 'v'})], swaps)
+
+    def test_a_double_click_opens_once(self):
+        host = Host()
+        swaps = []
+        host.swapTo = lambda cls, **kw: swaps.append(cls)
+        shell = self._shell(host)
+        shell.openWindow(View)
+        shell.openWindow(View)
+        host.runPendingNav(View())
+        host.runPendingNav(View())
+        self.assertEqual([View], swaps)

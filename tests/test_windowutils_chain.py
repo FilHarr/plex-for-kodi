@@ -54,6 +54,7 @@ class FakeChainHost(object):
         self.goHomeCalls = []
         self.processCommandCalls = []
         self.swapToCalls = []
+        self.postNavCalls = []
 
     def goHome(self, section=None, with_root=False, force=False):
         self.goHomeCalls.append((section, with_root, force))
@@ -63,6 +64,11 @@ class FakeChainHost(object):
 
     def swapTo(self, window_class, **kwargs):
         self.swapToCalls.append((window_class, kwargs))
+
+    def postNav(self, name, fn, args=(), kwargs=None, stack=False):
+        # Run at once: the queue itself is covered by tests/test_nav_queue.py.
+        self.postNavCalls.append(name)
+        fn(*args, **(kwargs or {}))
 
 
 class FakeChainedShell(windowutils.UtilMixin):
@@ -166,6 +172,7 @@ class ChainAwareOpenWindowTest(KodiTestCase):
 
         shell.openWindow(FakeChainedShell, media_item="the-show")
 
+        self.assertEqual(["open FakeChainedShell"], host.postNavCalls)
         self.assertEqual([(FakeChainedShell, {"media_item": "the-show"})], host.swapToCalls)
 
 

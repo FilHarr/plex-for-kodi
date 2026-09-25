@@ -1469,8 +1469,8 @@ class MultiWindow(object):
         self._current.doClose()
         return self._next
 
-    # Delay before a posted navigation request runs. LibraryWindow sets its own (see
-    # windowutils.SKIN_RELOAD_DEFER_SECONDS).
+    # Delay before a posted navigation request runs. None needed (I2 in the navigation review, see
+    # windowutils.SKIN_RELOAD_DEFER_SECONDS); kept so a delay can be tried again in one place.
     NAV_DEFER_SECONDS = 0.0
     # How long a due request waits for the current view to finish initialising (finishedInit)
     # before running anyway - a view whose onFirstInit() raised never sets it.
@@ -1564,7 +1564,8 @@ class MultiWindow(object):
                 # declined (live-caught 2026-09-24 as a lost Back).
                 return
             self._navPending.pop(0)
-        util.DEBUG_LOG("MultiWindow: running nav request {0}{1}", name,
+        util.DEBUG_LOG("MultiWindow: running nav request {0}, {1:.0f} ms after posting{2}", name,
+                       (now - due + self.NAV_DEFER_SECONDS) * 1000,
                        '' if getattr(view, 'finishedInit', False) else ' (view never finished init)')
         try:
             fn(*args, **kwargs)

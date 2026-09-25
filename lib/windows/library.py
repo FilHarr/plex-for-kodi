@@ -578,10 +578,6 @@ class _CatalogHub(object):
 
 class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin, windowutils.SidebarMixin, CommonMixin):
     bgXML = 'script-plex-blank.xml'
-    # Every posted navigation request (MultiWindow.postNav()) waits this long before running -
-    # the delay each of them used to get from its own threading.Timer. Whether it's still needed
-    # now that they run between waits on the main thread is I2 in the navigation review.
-    NAV_DEFER_SECONDS = windowutils.SKIN_RELOAD_DEFER_SECONDS
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
     res = '1080i'
@@ -4519,11 +4515,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         sectionType = self.section.TYPE
 
-        updateUnwatchedAndProgress = False
-        # Remember the panel generation before we open any (modal) child window. If the
-        # panel gets rebuilt while we're away (e.g. a watchlist item auto-removed on full
-        # watch triggers doRefill via onReInit), `mli` below is backed by a freed ListItem
-        # and must not be touched - doing so hard-crashes Kodi (SIGSEGV in
+        # Remember the panel generation before the photo viewer (still a blocking, standalone
+        # open) runs. If the panel gets rebuilt while it's up, `mli` below is backed by a freed
+        # ListItem and must not be touched - doing so hard-crashes Kodi (SIGSEGV in
         # CGUIListItem::SetProperty).
         listGeneration = self._listGeneration
 
@@ -4568,8 +4562,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # same context.openWindow(subitems.ShowWindow, media_item=show, **kwargs) this used
                 # to do directly.
                 self.openItem(mli.dataSource, parent_list=self.showPanelControl, **extra_kwargs)
-            if mli.dataSource.TYPE != 'season': # NOTE: A collection with Seasons doesn't have the leafCount/viewedLeafCount until you actually go into the season so we can't update the unwatched count here
-                updateUnwatchedAndProgress = True
         elif self.section.TYPE == 'movie' or mli.dataSource.TYPE == 'movie':
             datasource = mli.dataSource
             if datasource.isDirectory():
@@ -4593,7 +4585,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # hosting a shell - only self._current, the native window, is).
                 self.openWindow(preplay.PrePlayWindow if not sectionType == 'movies_shows' else preplay.PrePlayWindowWL,
                                  video=datasource, parent_list=self.showPanelControl, **extra_kwargs)
-                updateUnwatchedAndProgress = True
         elif self.section.TYPE == 'artist' or mli.dataSource.TYPE == 'artist' or mli.dataSource.TYPE == 'album' or mli.dataSource.TYPE == 'track':
             if ITEM_TYPE == 'album' or mli.dataSource.TYPE == 'album' or mli.dataSource.TYPE == 'track':
                 self.openItem(mli.dataSource, entry_section_id=self.entrySectionId)
@@ -4604,28 +4595,19 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                                  entry_section_id=self.entrySectionId, entry_from_watchlist=self.entryFromWatchlist)
         elif self.section.TYPE in ('photo', 'photodirectory'):
             self.showPhoto(mli.dataSource)
+            # Every other branch only posts a swap (openWindow()), so there's nothing to refresh
+            # after them: the watched/progress refresh and existence check that used to follow
+            # were for opens that blocked until the child closed, and held up each open by two
+            # server round trips (I2 in the navigation review). Back rebuilds the grid anyway.
+            # A photo still opens the blocking viewer.
+            if self._closeSignalled or self._listGeneration != listGeneration:
+                return
+            if mli.dataSource and not mli.dataSource.exists():
+                self.showPanelControl.removeItem(mli.pos())
         elif self.section.TYPE == 'playlists':
             # Mirrors the 'collection' branch above - opener.open()'s playlist-TYPE branch now
             # swaps in place via context=self, same as every other migrated shell.
             self.processCommand(opener.open(mli.dataSource, context=self))
-
-        if self._closeSignalled:
-            return
-
-        if not mli:
-            return
-
-        if self._listGeneration != listGeneration:
-            # Panel was rebuilt while the child window was open; `mli` is stale. The fresh
-            # panel already reflects current watched/progress state, so nothing to do.
-            return
-
-        if mli.dataSource and not mli.dataSource.exists():
-            self.showPanelControl.removeItem(mli.pos())
-            return
-
-        if updateUnwatchedAndProgress:
-            self.updateUnwatchedAndProgress(mli)
 
     def showPhoto(self, photo):
         self.subOptionCache = {}

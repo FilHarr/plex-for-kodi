@@ -189,14 +189,12 @@ def showClicked(show, context=None, **kwargs):
                 # selectServer(), all deferred the same way, each documented as "a cheap, low-risk
                 # mitigation, not a proven fix" for a Kodi-side timing/reentrancy issue - same
                 # status here, not a guaranteed fix, just the same trusted mitigation shape.
-                # Posted through the chain's host where there is one (MultiWindow.postNav()), so
-                # it runs on the main thread like every other swap; a standalone context keeps
-                # the timer.
+                # With a chain host, openWindow() posts the swap (MultiWindow.postNav()), so it
+                # already runs after this click, from the view's wait loop; a standalone context
+                # keeps the timer.
                 host = context._liveChainHost() if hasattr(context, '_liveChainHost') else None
                 if host is not None:
-                    host.postNav('seasonClicked', seasonClicked, args=(season,),
-                                 kwargs=dict(context=context, **kwargs))
-                    return ''
+                    return seasonClicked(season, context=context, **kwargs)
                 from . import windowutils
                 threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, seasonClicked,
                                 args=(season,), kwargs=dict(context=context, **kwargs)).start()

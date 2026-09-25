@@ -35,8 +35,13 @@ HOME = None
 #
 # Since S1 (navigation review), swaps no longer start their own timers: they're posted to the host
 # (kodigui.MultiWindow.postNav()) and run on the main thread from the current view's wait loop,
-# still this long after the request (LibraryWindow.NAV_DEFER_SECONDS). Whether the delay is still
-# needed there is I2.
+# after the callback that asked has returned. Without any delay (I2, settled 2026-09-25): tab,
+# sidebar, Back and item-open stress tests at 0 and 150 ms on the PC and the AM6B found no crash
+# tied to the delay - the ones they did find were races the delay neither caused nor prevented.
+# The swap was already only a close flag when this went in (74b775cb), and that commit changed
+# the hub bind and the hub-slide thread too, so the delay may never have been what fixed the
+# crash. Still used by the waits that aren't navigation (_forceCollectOutgoing(), opener.py's
+# standalone season open).
 SKIN_RELOAD_DEFER_SECONDS = 0.15
 
 
@@ -269,8 +274,8 @@ class SidebarMixin():
 
         Two cases, split on whether self is the true root (windowutils.HOME):
 
-        - self IS HOME: in-place swap (library.py's LibraryWindow.openSection()), deferred by
-          SKIN_RELOAD_DEFER_SECONDS via _deferOpenSection() - see that constant's own comment.
+        - self IS HOME: in-place swap (library.py's LibraryWindow.openSection()),
+          posted through the navigation queue by _deferOpenSection().
 
         - self is a descendant - a real hosted shell's own onClick() lands here (ShowWindow,
           PrePlayWindow, EpisodesWindow...), since a real shell's onClick is not redirected to the
@@ -319,7 +324,11 @@ class UtilMixin(GoHomeMixin):
         # LibraryWindow host rather than a second MultiWindow.
         host = self._liveChainHost()
         if host is not None:
-            host.swapTo(window_class, **kwargs)
+            # Posted like every other swap (MultiWindow.postNav()), not run inside the click (I2 in
+            # the navigation review). Also coalesces a double click into one open: inline, the
+            # second click's swapTo() pushed the still-showing screen onto the back stack twice.
+            host.postNav('open ' + window_class.__name__, host.swapTo, args=(window_class,),
+                         kwargs=kwargs)
             return
         # only a chain host has a back stack to root (LibraryWindow.swapTo())
         kwargs.pop('chain_root', None)
