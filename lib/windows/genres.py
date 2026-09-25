@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 
 import json
-import threading
 
 from plexnet import plexapp, plexobjects
 
@@ -114,9 +113,8 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
                     # needs to reset it back to this section's own native type too - same as
                     # library.py's own TAB_LIST_ID branch (see that method's own comment).
                     item_type = self._chainHost._libraryTabItemType() if mode == 'library' else None
-                    threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS,
-                                    self._chainHost.switchTab, args=(mode,),
-                                    kwargs={'item_type': item_type}).start()
+                    self._chainHost.postNav('switchTab', self._chainHost.switchTab, args=(mode,),
+                                            kwargs={'item_type': item_type})
 
     def onAction(self, action):
         # Hosted: the host sees the action first (kodigui.BaseWindow.routeActionToHost()).

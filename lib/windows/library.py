@@ -578,6 +578,10 @@ class _CatalogHub(object):
 
 class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin, windowutils.SidebarMixin, CommonMixin):
     bgXML = 'script-plex-blank.xml'
+    # Every posted navigation request (MultiWindow.postNav()) waits this long before running -
+    # the delay each of them used to get from its own threading.Timer. Whether it's still needed
+    # now that they run between waits on the main thread is I2 in the navigation review.
+    NAV_DEFER_SECONDS = windowutils.SKIN_RELOAD_DEFER_SECONDS
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
     res = '1080i'
@@ -653,10 +657,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # goHome()/goHomeRoot()/processCommand() below for the self-referential-delegation
         # hazard this creates and how it's avoided (windowutils.py's _goHomeDirect() etc.).
         self._chainHost = self
-        # Live-confirmed reentrancy hazard (kodi.log: 7 concurrent openSection() calls, on 7
-        # different threads, all racing to tear down/reconstruct self._current at the same
-        # instant) - see _deferOpenSection()'s own comment below.
-        self._pendingSectionTimer = None
         # 'library' (poster/grid, default) or 'recommended' (hubs) - a second swap dimension
         # alongside view-type (panel/panel2/.../list), not a replacement for it. See
         # quiet-orbiting-heron.md's Stage A/B/C/D breakdown for Recommended-tab sharing. Real
@@ -1215,6 +1215,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return None, entryKwargs
         return None
 
+    def _popBackIfChained(self):
+        """A posted Back (routeAction()): the chain can have emptied since it was posted - a
+        section switch, or an earlier Back that was the last one - so check at run time."""
+        if self._backStack:
+            self.popBack()
+        else:
+            util.DEBUG_LOG("Library: posted Back found no chain left, ignored")
+
     def popBack(self):
         entry = self._backStack.pop()
         cls, kwargs = entry
@@ -1650,8 +1658,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # openSection() caller in this bubble/dispatch family (popBack(), _deferOpenSection())
                 # that already skips its own no-op guard once it's decided a real reconstruction is
                 # needed; pendingForce is what decided that above when pending == self.section.
-                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection, args=(pending,),
-                                 kwargs={'force': True}).start()
+                self.postNav('openSection', self.openSection, args=(pending,), kwargs={'force': True})
             return
         if command and command.startswith('HOME'):
             # self is guaranteed not to be windowutils.HOME here (ruled out above) - go straight
@@ -1898,19 +1905,37 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         still works (selectServer() below operates on whichever self opened it), it just doesn't
         live-update while open, and doesn't drive its own refresh - see selectServer()'s own
         comment for why only windowutils.HOME reacting to the actual switch is correct.
+
+        Each handler is posted to the main thread (MultiWindow.postUI()) rather than run where
+        the signal fires: plexnet raises these on its own threads (e.g. the deferred reachability
+        update's timer), and every one of them touches controls. Live-caught 2026-09-24 as a
+        native crash during a server switch - see postUI(). change:selectedServer is raised on
+        the main thread, inside selectServer()'s busy context; posting it too moves the refresh
+        and its section swap out of that context, onto a clean tick of their own.
         """
-        plexapp.SERVERMANAGER.on('new:server', self.onNewServer)
-        plexapp.SERVERMANAGER.on('remove:server', self.onRemoveServer)
-        plexapp.SERVERMANAGER.on('reachable:server', self.onReachableServer)
-        plexapp.SERVERMANAGER.on('reachable:server', self.displayServerAndUser)
-        plexapp.util.APP.on('change:selectedServer', self.onSelectedServerChange)
+        self._serverSignalHandlers = (
+            (plexapp.SERVERMANAGER, 'new:server', self._postedHandler('onNewServer', self.onNewServer)),
+            (plexapp.SERVERMANAGER, 'remove:server', self._postedHandler('onRemoveServer', self.onRemoveServer)),
+            (plexapp.SERVERMANAGER, 'reachable:server',
+             self._postedHandler('onReachableServer', self.onReachableServer)),
+            (plexapp.SERVERMANAGER, 'reachable:server',
+             self._postedHandler('displayServerAndUser', self.displayServerAndUser)),
+            (plexapp.util.APP, 'change:selectedServer',
+             self._postedHandler('onSelectedServerChange', self.onSelectedServerChange)),
+        )
+        for emitter, signal, handler in self._serverSignalHandlers:
+            emitter.on(signal, handler)
+
+    def _postedHandler(self, name, fn):
+        """A signal handler that posts fn, with the signal's arguments, to the main thread."""
+        def handler(*args, **kwargs):
+            self.postUI(name, fn, args=args, kwargs=kwargs)
+        return handler
 
     def unhookSignals(self):
-        plexapp.SERVERMANAGER.off('new:server', self.onNewServer)
-        plexapp.SERVERMANAGER.off('remove:server', self.onRemoveServer)
-        plexapp.SERVERMANAGER.off('reachable:server', self.onReachableServer)
-        plexapp.SERVERMANAGER.off('reachable:server', self.displayServerAndUser)
-        plexapp.util.APP.off('change:selectedServer', self.onSelectedServerChange)
+        for emitter, signal, handler in getattr(self, '_serverSignalHandlers', ()):
+            emitter.off(signal, handler)
+        self._serverSignalHandlers = ()
 
     def showServers(self, from_refresh=False, mouse=False):
         """Ported from HomeWindow.showServers() (home.py) - see quiet-orbiting-heron.md's Cold
@@ -2400,48 +2425,23 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.setFocusId(self.POSTERS_PANEL_ID)
 
     def _deferOpenSection(self, section, force=False):
-        """Single-flight defer for the "self is HOME, safe in-place swap" case both this class's
-        own goHome() and windowutils.py's SidebarMixin._dispatchSectionOpen() use (both only ever
-        call this when self is windowutils.HOME). Both used to construct their own bare
-        threading.Timer(SKIN_RELOAD_DEFER_SECONDS, self.openSection, ...) independently, with no
-        coordination between repeated calls.
+        """Open section in place, as a posted navigation request (MultiWindow.postNav()), for the
+        "self is HOME" case both this class's own goHome() and windowutils.py's
+        SidebarMixin._dispatchSectionOpen() use.
 
         force=True (threaded through from an explicit sidebar click on the already-active section,
         SidebarMixin.sectionClicked()) is passed straight through to openSection() - otherwise its
         own `section == self.section` no-op would swallow a click that's meant to reset the section
         in place, the same case serverRefresh() already carries force=True through for.
 
-        Live-confirmed reentrancy hazard without this: kodi.log showed 7 concurrent
-        openSection() calls, on 7 different threads, all racing to mutate
-        self.section/self._current/self._backStack/etc. at the same instant - triggered by
-        something firing goHome()/_dispatchSectionOpen() repeatedly in quick succession (a
-        Home-button remote auto-repeating while held is the prime suspect, now reachable from a
-        hosted shell too via routeAction()'s _isHostedShell branch -> _dispatchNativeAction() ->
-        base MultiWindow.routeAction()'s goHomeAction() check; the immediate-click and settled-
-        focus-debounce paths both firing for the same section-list navigation is a second,
-        independent way to get two overlapping triggers). This is exactly the "openSection()/
-        switchTab() triggered a second time before _open()'s loop caught up and reassigned
-        self._current" native-crash shape ControlledWindow.doClose()'s own _closing guard
-        (kodigui.py) already documents - that guard stops a second doClose() call on the same
-        already-closing shell, but does nothing about N-way-concurrent openSection() calls each
-        independently mutating this object's other state before/after it.
-
-        A fresh call cancels whatever's already pending and replaces it - only the most recent
-        target matters, and there is never more than one Timer in flight. cancel() only prevents
-        a Timer that hasn't fired yet; it can't un-fire one already mid-run - this reduces the
-        race to a much narrower window rather than proving it impossible, the same "cheap,
-        low-risk mitigation, not a proven fix" status every other SKIN_RELOAD_DEFER_SECONDS use
-        in this codebase already carries.
+        Used to be a single-flight threading.Timer, after a live-confirmed kodi.log showed 7
+        concurrent openSection() calls on 7 different threads racing to mutate
+        self.section/self._current/self._backStack (a held-down Home button the prime suspect).
+        cancel() couldn't stop a timer already mid-run, so that only narrowed the race. Posted
+        requests all run one at a time on the main thread, and a newer one replaces any still
+        pending.
         """
-        if self._pendingSectionTimer is not None:
-            self._pendingSectionTimer.cancel()
-
-        def _fire():
-            self._pendingSectionTimer = None
-            self.openSection(section, force=force)
-
-        self._pendingSectionTimer = threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, _fire)
-        self._pendingSectionTimer.start()
+        self.postNav('openSection', self.openSection, args=(section,), kwargs={'force': force})
 
     def goHome(self, section=None, with_root=False, force=False):
         """GoHomeMixin.goHome() (windowutils.py) assumes self is some OTHER (descendant) window
@@ -2466,11 +2466,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         SidebarMixin.handleSidebarDropdownClick()'s own comment).
         """
         if self is windowutils.HOME:
+            # Posted, like every other swap (MultiWindow.postNav()): this is reached from a held
+            # Home button, the screensaver's back-to-Home event and signal handlers as well as
+            # clicks. A section wins over with_root - no caller asks for both, and a root reset
+            # would just be replaced by the section's own fresh open.
             if section and (section != self.section or force):
                 self._deferOpenSection(section, force=force)
-            if with_root:
-                self.go_root = True
-                self.show()
+            elif with_root:
+                self.postNav('goHomeRoot', self._goRootNow)
             return
         # _goHomeDirect(), not the chain-checking goHome() wrapper: this LibraryWindow instance
         # always points its own _chainHost at itself (__init__), so the wrapper would resolve
@@ -2481,10 +2484,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def goHomeRoot(self, *args, **kwargs):
         if self is windowutils.HOME:
-            self.go_root = True
-            self.show()
+            # Also the "library.back_home" listener (the screensaver, monitor.py), which used to
+            # reach show() on its own timer thread.
+            self.postNav('goHomeRoot', self._goRootNow)
             return
         windowutils.GoHomeMixin._goHomeRootDirect(self)
+
+    def _goRootNow(self):
+        """The posted half of goHome(with_root=True)/goHomeRoot(): go to Home's root, first row,
+        item 0 - rebuilt if a section or chain is showing, reset in place if Home already is (see
+        show()/onReInit())."""
+        self.go_root = True
+        self.show()
 
     def _needsRootReconstruct(self):
         """True if reaching go_root's true root (home_section, no chain in progress) requires a
@@ -2547,8 +2558,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 #
                 # The rebuilt Home view lands on the first row, item 0 by itself: openSection() is
                 # fresh by default, and onFirstInit() focuses the anchor row.
-                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.openSection,
-                                 args=(home.home_section,), kwargs={'force': True}).start()
+                self.postNav('openSection', self.openSection, args=(home.home_section,), kwargs={'force': True})
             else:
                 # Already showing Home: reset it in place to the first row, item 0 (the Home
                 # rule), then have onFocus() ignore the stray focus event this window's
@@ -2679,28 +2689,14 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # shell's own onAction() - every real shell sets dismissOnClose = True, so a fallthrough
         # would double-process the same NAV_BACK.
         #
-        # Deferred via SKIN_RELOAD_DEFER_SECONDS, not called inline: popBack()/swapTo() end in the
-        # exact same doClose()-based reconstruct openSection()/switchTab() use, and this is that
-        # reload triggered synchronously from inside routeAction() itself - precisely the shape
-        # hashed-orbiting-pizza.md's Phase 3 flagged as a live open risk (the documented Kodi core
-        # OnAction() reentrancy bug this constant exists for). Live-confirmed crash during Phase 4
-        # testing on a related path (a stale _backStack entry left behind by a sidebar section
-        # switch mid-chain, since fixed in openSection() - see its own comment); deferring this
-        # call is the same cheap, low-risk mitigation every other routeAction()-triggered reload in
-        # this class already uses, not a proven fix for that specific bug.
+        # Posted, not called inline (MultiWindow.postNav()): popBack()/swapTo() end in the same
+        # doClose()-based reconstruct openSection()/switchTab() use, and running that from inside
+        # routeAction() itself is the shape hashed-orbiting-pizza.md's Phase 3 flagged as a live
+        # open risk (the documented Kodi core OnAction() reentrancy bug SKIN_RELOAD_DEFER_SECONDS
+        # exists for). stack=True: two quick Backs go up two levels, each once the previous one's
+        # new view is ready.
         if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and self._backStack:
-            def _popBack():
-                try:
-                    self.popBack()
-                except:
-                    # threading.Timer callbacks aren't covered by this addon's normal routeAction()-level
-                    # error handling - an uncaught exception here (e.g. popBack()'s own _backStack.pop()
-                    # live-suspected as a contributor to an intermittent unresponsive-black-screen hang
-                    # after Back) would otherwise vanish completely: no traceback anywhere, the outgoing
-                    # window already closed, the next one never opens. Purely diagnostic - doesn't change
-                    # behavior on the success path.
-                    util.ERROR()
-            threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, _popBack).start()
+            self.postNav('popBack', self._popBackIfChained, stack=True)
             return True
 
         try:
@@ -2741,7 +2737,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 elif action == xbmcgui.ACTION_CONTEXT_MENU and util.getUserSetting('previous_server', None):
                     uuid = util.getUserSetting('previous_server', None)
                     if uuid != plexapp.SERVERMANAGER.selectedServer.uuid:
-                        threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.selectServer, args=(uuid,)).start()
+                        self.postNav('selectServer', self.selectServer, args=(uuid,))
                     return True
                 elif action == xbmcgui.ACTION_MOUSE_LEFT_CLICK:
                     self.showServers(mouse=True)
@@ -3004,24 +3000,21 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                     self._applyItemTypeChoice(mli.getProperty('item.type'))
                     return
 
-                # Not a direct switchTab() call: confirmed as xbmc/xbmc#27552/#27239, an upstream
-                # Kodi core bug, not anything specific to this control - CGUIWindow::OnAction()'s
+                # Posted (MultiWindow.postNav()), not a direct switchTab() call: confirmed as
+                # xbmc/xbmc#27552/#27239, an upstream Kodi core bug - CGUIWindow::OnAction()'s
                 # focused-control parent walk crashes if the window/skin gets reloaded nested
                 # underneath the very OnAction()/onClick() call that triggered it. switchTab()'s
                 # doClose() is exactly that kind of reload, so it must never run synchronously,
                 # inline, from this callback - see windowutils.SKIN_RELOAD_DEFER_SECONDS' own
-                # comment for the full diagnosis and why a real time delay (not just a different
-                # thread with no delay - live-confirmed as insufficient on its own) is what
-                # actually avoids it.
+                # comment for the full diagnosis.
                 mode = mli.getProperty('content.mode')
                 if mode == 'categories':
-                    threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.browseGenres).start()
+                    self.postNav('browseGenres', self.browseGenres)
                 elif mode == 'collections':
-                    threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.switchToCollections).start()
+                    self.postNav('switchToCollections', self.switchToCollections)
                 else:
                     item_type = self._libraryTabItemType() if mode == 'library' else None
-                    threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.switchTab,
-                                    args=(mode,), kwargs={'item_type': item_type}).start()
+                    self.postNav('switchTab', self.switchTab, args=(mode,), kwargs={'item_type': item_type})
             return
 
         if controlID == self.USER_LIST_ID:
@@ -3040,7 +3033,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # not called inline - see the SERVER_BUTTON_ID routeAction() branch's own comment for why
             # selectServer() can't run synchronously from a native callback.
             self.setBoolProperty('show.servers', False)
-            threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.selectServer).start()
+            self.postNav('selectServer', self.selectServer)
             return
 
         if self.contentMode == 'recommended':
@@ -3945,7 +3938,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             ordered = shuffle.pick(pool, len(pool))
 
         pl = playlist.LocalPlaylist(ordered, self.section.getServer())
-        self.processCommand(videoplayer.play(play_queue=pl))
+        self.processCommand(videoplayer.play(play_queue=pl, context=self))
 
     def shuffleModeSelected(self):
         options = [
@@ -4012,7 +4005,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         pl = playlist.LocalPlaylist(items, section.getServer())
         pl.setCurrent(items[start_index])
-        self.processCommand(videoplayer.play(play_queue=pl))
+        self.processCommand(videoplayer.play(play_queue=pl, context=self))
 
     def optionsButtonClicked(self):
         # Only ever "Go to <section>" now, and the button (303) is only shown for photodirectory

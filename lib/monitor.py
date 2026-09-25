@@ -1,5 +1,4 @@
 # coding=utf-8
-import threading
 
 from kodi_six import xbmc
 from .settings_util import getSetting
@@ -29,17 +28,13 @@ class UtilityMonitor(xbmc.Monitor, signalsmixin.SignalsMixin):
 
     def actionHome(self):
         from plexnet import plexapp
-        from .windows import kodigui, windowutils
+        from .windows import windowutils
         plexapp.util.APP.trigger('close.windows')
         plexapp.util.APP.trigger('close.dialogs')
-        windowutils.HOME.go_root = True
-        # wait for sub-windows to actually close before showing HOME
-        ct = 0
-        home_wid = windowutils.HOME._winID
-        while home_wid and kodigui.xbmcgui.getCurrentWindowId() != home_wid and ct < self.waitAmount(2):
-            self.waitFor()
-            ct += 1
-        windowutils.HOME.show()
+        # Posted (MultiWindow.postNav()): runs on the main thread from Home's own view once the
+        # sub-windows closed above are gone - that view's wait loop can't run until they are -
+        # instead of this monitor thread show()ing Home itself after polling for them.
+        windowutils.HOME.goHomeRoot()
 
     def actionQuit(self):
         LOG('OnSleep: Exit Kodi')
@@ -195,8 +190,10 @@ class UtilityMonitor(xbmc.Monitor, signalsmixin.SignalsMixin):
             # swap - library.py's _chunkCallback()). Keeping this deferred anyway: it's a real
             # instance of the same reentrancy shape regardless of whether it's THE cause of that
             # bug, and deferring costs nothing.
-            from .windows import windowutils
-            threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, self.trigger, args=('library.back_home',)).start()
+            # The listener (LibraryWindow.goHomeRoot()) now only posts a navigation request, run
+            # later on the main thread (MultiWindow.postNav()), so this no longer needs its own
+            # timer to stay out of the callback.
+            self.trigger('library.back_home')
 
         # we've stopped playback during an onScreensaverActivated event, which deactivates the screensaver. Reactivate.
         if self.ignore_ssevent:

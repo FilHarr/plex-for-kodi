@@ -48,22 +48,22 @@ from lib.windows import genres  # noqa: E402
 from .base import KodiTestCase  # noqa: E402
 
 
-class FakeTimer(object):
-    """Stand-in for threading.Timer - records construction/start instead of actually deferring,
-    same shape test_library_chain.py's own FakeTimer uses (kept local here rather than shared,
-    per this file's self-contained-fakes convention)."""
-    instances = []
+class FakePost(object):
+    """One MultiWindow.postNav() call, recorded by NavRecorder instead of queued."""
 
-    def __init__(self, interval, function, args=None, kwargs=None):
-        self.interval = interval
+    def __init__(self, name, function, args, kwargs, stack):
+        self.name = name
         self.function = function
-        self.args = args or ()
-        self.kwargs = kwargs or {}
-        self.started = False
-        FakeTimer.instances.append(self)
+        self.args = tuple(args)
+        self.kwargs = dict(kwargs or {})
+        self.stack = stack
 
-    def start(self):
-        self.started = True
+
+class NavRecorder(object):
+    """Mix into a fake host: postNav() records what would be queued."""
+
+    def postNav(self, name, fn, args=(), kwargs=None, stack=False):
+        self.__dict__.setdefault('posts', []).append(FakePost(name, fn, args, kwargs, stack))
 
 
 class FakeSection(object):
@@ -324,7 +324,7 @@ class BuildTabListCollectionsGatingTest(KodiTestCase):
 
 
 class LibraryOnClickTabDispatchTest(KodiTestCase):
-    class FakeHost(object):
+    class FakeHost(NavRecorder):
         SECTION_LIST_ID = 1  # distinct from TAB_LIST_ID, never matched in these tests
         TAB_LIST_ID = 320
 
@@ -333,6 +333,7 @@ class LibraryOnClickTabDispatchTest(KodiTestCase):
             self._tabListIsPlaylists = is_playlists
             self.movingSection = False
             self._library_tab_item_type = library_tab_item_type
+            self.posts = []
 
         def browseGenres(self):
             pass
@@ -346,44 +347,34 @@ class LibraryOnClickTabDispatchTest(KodiTestCase):
         def _libraryTabItemType(self):
             return self._library_tab_item_type
 
-    def setUp(self):
-        FakeTimer.instances = []
-        self._originalTimer = library.threading.Timer
-        library.threading.Timer = FakeTimer
-
-    def tearDown(self):
-        library.threading.Timer = self._originalTimer
-
     def test_categories_click_defers_to_browseGenres(self):
         host = self.FakeHost('categories')
 
         libraryOnClick(host, host.TAB_LIST_ID)
 
-        self.assertEqual(1, len(FakeTimer.instances))
-        timer = FakeTimer.instances[0]
-        self.assertEqual(host.browseGenres, timer.function)
-        self.assertTrue(timer.started)
+        self.assertEqual(1, len(host.posts))
+        post = host.posts[0]
+        self.assertEqual(host.browseGenres, post.function)
 
     def test_collections_click_defers_to_switchToCollections(self):
         host = self.FakeHost('collections')
 
         libraryOnClick(host, host.TAB_LIST_ID)
 
-        self.assertEqual(1, len(FakeTimer.instances))
-        timer = FakeTimer.instances[0]
-        self.assertEqual(host.switchToCollections, timer.function)
-        self.assertTrue(timer.started)
+        self.assertEqual(1, len(host.posts))
+        post = host.posts[0]
+        self.assertEqual(host.switchToCollections, post.function)
 
     def test_library_click_defers_to_switchTab_unchanged(self):
         host = self.FakeHost('library')
 
         libraryOnClick(host, host.TAB_LIST_ID)
 
-        self.assertEqual(1, len(FakeTimer.instances))
-        timer = FakeTimer.instances[0]
-        self.assertEqual(host.switchTab, timer.function)
-        self.assertEqual(('library',), timer.args)
-        self.assertEqual({'item_type': None}, timer.kwargs)
+        self.assertEqual(1, len(host.posts))
+        post = host.posts[0]
+        self.assertEqual(host.switchTab, post.function)
+        self.assertEqual(('library',), post.args)
+        self.assertEqual({'item_type': None}, post.kwargs)
 
     def test_library_click_threads_the_item_type_reset(self):
         """A Library click while ITEM_TYPE is stuck on 'collection' (left over from Collections)
@@ -392,19 +383,20 @@ class LibraryOnClickTabDispatchTest(KodiTestCase):
 
         libraryOnClick(host, host.TAB_LIST_ID)
 
-        self.assertEqual({'item_type': 'movie'}, FakeTimer.instances[0].kwargs)
+        self.assertEqual({'item_type': 'movie'}, host.posts[0].kwargs)
 
     def test_recommended_click_never_passes_an_item_type(self):
         host = self.FakeHost('recommended', library_tab_item_type='movie')
 
         libraryOnClick(host, host.TAB_LIST_ID)
 
-        self.assertEqual({'item_type': None}, FakeTimer.instances[0].kwargs)
+        self.assertEqual({'item_type': None}, host.posts[0].kwargs)
 
 
 class GenresOnClickDelegationTest(KodiTestCase):
-    class FakeChainHost(object):
+    class FakeChainHost(NavRecorder):
         def __init__(self, library_tab_item_type=None):
+            self.posts = []
             self.switchTab = self._switchTab
             self.switchTabCalls = []
             self._library_tab_item_type = library_tab_item_type
@@ -425,26 +417,17 @@ class GenresOnClickDelegationTest(KodiTestCase):
             self.tabList = FakeTabListContainer(selected_mode)
             self._chainHost = chain_host
 
-    def setUp(self):
-        FakeTimer.instances = []
-        self._originalTimer = genres.threading.Timer
-        genres.threading.Timer = FakeTimer
-
-    def tearDown(self):
-        genres.threading.Timer = self._originalTimer
-
     def test_library_click_delegates_to_the_hosts_switchTab(self):
         chainHost = self.FakeChainHost()
         host = self.FakeGenresHost('library', chainHost)
 
         genresOnClick(host, host.TAB_LIST_ID)
 
-        self.assertEqual(1, len(FakeTimer.instances))
-        timer = FakeTimer.instances[0]
-        self.assertEqual(chainHost.switchTab, timer.function)
-        self.assertEqual(('library',), timer.args)
-        self.assertEqual({'item_type': None}, timer.kwargs)
-        self.assertTrue(timer.started)
+        self.assertEqual(1, len(chainHost.posts))
+        post = chainHost.posts[0]
+        self.assertEqual(chainHost.switchTab, post.function)
+        self.assertEqual(('library',), post.args)
+        self.assertEqual({'item_type': None}, post.kwargs)
 
     def test_library_click_threads_the_hosts_item_type_reset(self):
         """If ITEM_TYPE was left stuck on 'collection' from before Categories was entered, a
@@ -455,7 +438,7 @@ class GenresOnClickDelegationTest(KodiTestCase):
 
         genresOnClick(host, host.TAB_LIST_ID)
 
-        self.assertEqual({'item_type': 'movie'}, FakeTimer.instances[0].kwargs)
+        self.assertEqual({'item_type': 'movie'}, chainHost.posts[0].kwargs)
 
     def test_recommended_click_delegates_to_the_hosts_switchTab(self):
         chainHost = self.FakeChainHost(library_tab_item_type='movie')
@@ -463,9 +446,9 @@ class GenresOnClickDelegationTest(KodiTestCase):
 
         genresOnClick(host, host.TAB_LIST_ID)
 
-        self.assertEqual(('recommended',), FakeTimer.instances[0].args)
+        self.assertEqual(('recommended',), chainHost.posts[0].args)
         # Recommended never touches item type, even if Library's own reset would have fired.
-        self.assertEqual({'item_type': None}, FakeTimer.instances[0].kwargs)
+        self.assertEqual({'item_type': None}, chainHost.posts[0].kwargs)
 
     def test_categories_click_is_a_noop_already_showing_it(self):
         chainHost = self.FakeChainHost()
@@ -473,7 +456,7 @@ class GenresOnClickDelegationTest(KodiTestCase):
 
         genresOnClick(host, host.TAB_LIST_ID)
 
-        self.assertEqual([], FakeTimer.instances)
+        self.assertEqual([], getattr(host._chainHost, "posts", []))
 
     def test_without_a_live_chain_host_does_nothing(self):
         """Defensive - browseGenres() always goes through a self-hosting LibraryWindow in
@@ -483,4 +466,4 @@ class GenresOnClickDelegationTest(KodiTestCase):
 
         genresOnClick(host, host.TAB_LIST_ID)
 
-        self.assertEqual([], FakeTimer.instances)
+        self.assertEqual([], getattr(host._chainHost, "posts", []))

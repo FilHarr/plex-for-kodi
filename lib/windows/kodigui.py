@@ -696,8 +696,16 @@ class ControlledBase:
         self.wait()
 
     def wait(self):
-        while not self._closing and not MONITOR.waitFor():
-            pass
+        # A hosted view's wait loop is also where its host runs queued navigation (S1 in the
+        # navigation review, MultiWindow.postNav()): between waits, on this - the main - thread,
+        # which is the only thread Kodi hands this view's callbacks to, and only while it's inside
+        # waitFor(). So a swap run here can never interleave with this view's input handling.
+        while not self._closing:
+            host = self.hostedBy() if isinstance(self, BaseWindow) else None
+            if MONITOR.waitFor(host.navWaitInterval() if host is not None else None):
+                break
+            if host is not None and not self._closing:
+                host.runPendingNav(self)
 
     def close(self):
         self._closing = True
@@ -1381,6 +1389,12 @@ class MultiWindow(object):
         # callers - see open()/_open() below. None means no caller asked for the check.
         self._openBaseWinID = None
         self._openFailed = False
+        # Navigation requests (postNav()), oldest first, run by runPendingNav() from the current
+        # view's wait loop. Guarded by _navLock: requests arrive from any thread.
+        self._navLock = threading.Lock()
+        self._navPending = []
+        # UI updates from other threads (postUI()), oldest first, run before navigation.
+        self._uiPending = []
 
     def __getattr__(self, name):
         # dict lookup, not bare self._current - once _open()'s real teardown del's _current,
@@ -1454,6 +1468,108 @@ class MultiWindow(object):
         self._next = window
         self._current.doClose()
         return self._next
+
+    # Delay before a posted navigation request runs. LibraryWindow sets its own (see
+    # windowutils.SKIN_RELOAD_DEFER_SECONDS).
+    NAV_DEFER_SECONDS = 0.0
+    # How long a due request waits for the current view to finish initialising (finishedInit)
+    # before running anyway - a view whose onFirstInit() raised never sets it.
+    NAV_INIT_HOLD_MAX_SECONDS = 3.0
+
+    def postNav(self, name, fn, args=(), kwargs=None, stack=False):
+        """Queue a navigation step (a section open, tab switch, Back, server change, go Home) to
+        run on the main thread from the current view's wait loop (ControlledBase.wait()), once
+        it's NAV_DEFER_SECONDS old and the current view has finished initialising - never on the
+        thread that asked. Safe to call from any thread.
+
+        Replaces the threading.Timer each of these used to start, which ran the swap on its own
+        thread, mutating this window's state while the main thread went on handling input, and
+        let different swaps interleave (S1 in the navigation review).
+
+        A new request replaces everything still pending (the user changed their mind; also
+        coalesces a held-down Home button), unless stack=True: Back requests queue behind each
+        other so two quick presses go up two levels, each after the previous swap's new view is
+        ready."""
+        request = (name, fn, tuple(args), dict(kwargs or {}), time.time() + self.NAV_DEFER_SECONDS)
+        with self._navLock:
+            if not stack and self._navPending:
+                util.DEBUG_LOG("MultiWindow: nav request {0} replaces pending {1}", name,
+                               [r[0] for r in self._navPending])
+                del self._navPending[:]
+            self._navPending.append(request)
+        util.DEBUG_LOG("MultiWindow: nav request {0} posted", name)
+
+    def postUI(self, name, fn, args=(), kwargs=None):
+        """Queue a UI update to run on the main thread from the current view's wait loop, once the
+        view has finished initialising - for code reached on some other thread (plexnet signal
+        handlers, timers) that touches controls. Unlike postNav() nothing is delayed, replaced or
+        dropped: every update runs, in order, ahead of any navigation due on the same tick.
+
+        Live-caught 2026-09-24 (crash dump): plexnet's deferred reachability update fired
+        'reachable:server' on its own timer thread just as a server switch showed the new Home
+        view, and LibraryWindow's handler updated the server list from that thread - a null read
+        inside Kodi while the main thread was in show()."""
+        with self._navLock:
+            self._uiPending.append((name, fn, tuple(args), dict(kwargs or {}), time.time()))
+
+    def navWaitInterval(self):
+        """How long the current view's wait loop should wait next: until the oldest request is
+        due, if that's sooner than the usual interval, so the delay stays NAV_DEFER_SECONDS. A
+        pending UI update is due at once."""
+        with self._navLock:
+            if self._uiPending:
+                return 0.02
+            if not self._navPending:
+                return None
+            remaining = self._navPending[0][4] - time.time()
+        return min(getattr(MONITOR, 'wait_interval', 0.1), max(0.02, remaining))
+
+    def _runPendingUI(self, view, now):
+        """Run every queued UI update (postUI()), if the view is ready for them."""
+        with self._navLock:
+            if not self._uiPending:
+                return
+            posted = self._uiPending[0][4]
+            if not getattr(view, 'finishedInit', False) and now - posted < self.NAV_INIT_HOLD_MAX_SECONDS:
+                return
+            updates = self._uiPending[:]
+            del self._uiPending[:]
+        for name, fn, args, kwargs, _posted in updates:
+            util.DEBUG_LOG("MultiWindow: running UI update {0}", name)
+            try:
+                fn(*args, **kwargs)
+            except Exception:
+                util.ERROR()
+
+    def runPendingNav(self, view):
+        """Run queued UI updates (postUI()), then the oldest due navigation request (postNav()).
+        Called from view's wait loop, between waits."""
+        now = time.time()
+        if self._allClosed:
+            return
+        self._runPendingUI(view, now)
+        if getattr(view, '_closing', False):
+            # An update started a swap (e.g. serverRefresh()'s openSection()); navigation waits
+            # for the new view.
+            return
+        with self._navLock:
+            if not self._navPending or self._allClosed:
+                return
+            name, fn, args, kwargs, due = self._navPending[0]
+            if due > now:
+                return
+            if not getattr(view, 'finishedInit', False) and now - due < self.NAV_INIT_HOLD_MAX_SECONDS:
+                # Still opening: e.g. Back pressed as a screen appears, before its onInit() has
+                # made it Kodi's current window - run it once that's done instead of letting it be
+                # declined (live-caught 2026-09-24 as a lost Back).
+                return
+            self._navPending.pop(0)
+        util.DEBUG_LOG("MultiWindow: running nav request {0}{1}", name,
+                       '' if getattr(view, 'finishedInit', False) else ' (view never finished init)')
+        try:
+            fn(*args, **kwargs)
+        except Exception:
+            util.ERROR()
 
     def _setupCurrent(self, cls):
         # cls is a MultiWindowView: its own class methods forward every callback here.

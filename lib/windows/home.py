@@ -643,6 +643,17 @@ class ServerListItem(kodigui.ManagedListItem):
 
     def onReachability(self, **kwargs):
         plexapp.util.APP.trigger('sli:reachability:received')
+        # plexnet raises this on its own threads, and onUpdate() sets list item properties and
+        # labels, so it's posted to the main thread (MultiWindow.postUI()) rather than run here.
+        # Live-caught 2026-09-24 (crash dump): the plex.tv resource refresh started by opening the
+        # server popup checked reachability just as a server switch showed the new Home view, and
+        # this updated a row of the outgoing view's server list from that thread - a null read
+        # inside Kodi. Only when there's no live host (e.g. at shutdown) does it run in place.
+        from . import windowutils
+        host = windowutils.HOME
+        if host is not None and not host._allClosed:
+            host.postUI('ServerListItem.onUpdate', self.onUpdate, kwargs=kwargs)
+            return
         return self.onUpdate(**kwargs)
 
     def onUpdate(self, **kwargs):

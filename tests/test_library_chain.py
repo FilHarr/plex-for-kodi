@@ -49,28 +49,6 @@ class FakeAction(object):
         return self.action_id
 
 
-class FakeTimer(object):
-    """Stand-in for threading.Timer - records construction/start instead of actually deferring,
-    so a test can assert a call was scheduled (right target, actually started) without waiting on
-    or synchronously invoking a real timer thread."""
-    instances = []
-
-    def __init__(self, interval, function, args=None, kwargs=None):
-        self.interval = interval
-        self.function = function
-        self.args = args or ()
-        self.kwargs = kwargs or {}
-        self.started = False
-        self.cancelled = False
-        FakeTimer.instances.append(self)
-
-    def start(self):
-        self.started = True
-
-    def cancel(self):
-        self.cancelled = True
-
-
 class FakeShell(object):
     xmlFile = 'script-plex-fake.xml'
     path = '/fake/path'
@@ -134,6 +112,11 @@ class FakeThinProxy(object):
         self.closed = True
 
 
+class ReadyView(object):
+    """A view that has finished initialising, for running queued navigation."""
+    finishedInit = True
+
+
 class FakeSection(object):
     """Just the library key swapTo()'s chain_root matching compares."""
     def __init__(self, key):
@@ -157,7 +140,16 @@ class FakeHostWindow(object):
     popBack = library.LibraryWindow.popBack
     swapToSection = library.LibraryWindow.swapToSection
     _deferOpenSection = library.LibraryWindow._deferOpenSection
+    _popBackIfChained = library.LibraryWindow._popBackIfChained
     _chainRootEntry = library.LibraryWindow._chainRootEntry
+    # The real navigation queue (kodigui.MultiWindow), with no delay so requests are due at once.
+    postNav = library.kodigui.MultiWindow.postNav
+    runPendingNav = library.kodigui.MultiWindow.runPendingNav
+    navWaitInterval = library.kodigui.MultiWindow.navWaitInterval
+    postUI = library.kodigui.MultiWindow.postUI
+    _runPendingUI = library.kodigui.MultiWindow._runPendingUI
+    NAV_DEFER_SECONDS = 0.0
+    NAV_INIT_HOLD_MAX_SECONDS = library.kodigui.MultiWindow.NAV_INIT_HOLD_MAX_SECONDS
 
     def _captureRootRestoreState(self):
         # Real LibraryWindow._captureRootRestoreState() reads contentMode/showPanelControl/
@@ -191,13 +183,27 @@ class FakeHostWindow(object):
         self.openSectionCalls = []
         self.onCloseSignalCalls = []
         self.onActionCalls = []
-        self._pendingSectionTimer = None
+        self.lock = library.threading.Lock()
+        self._listGeneration = 0
+        self._navLock = library.threading.Lock()
+        self._navPending = []
+        self._uiPending = []
+        self._allClosed = False
         # A real LibraryWindow.openSection() returns True/False; configurable here per-test.
         self.openSectionReturnValue = False
 
     def openSection(self, *args, **kwargs):
         self.openSectionCalls.append((args, kwargs))
         return self.openSectionReturnValue
+
+    def navNames(self):
+        return [r[0] for r in self._navPending]
+
+    def runNav(self):
+        """Run every queued request, as the current view's wait loop would once it's ready."""
+        view = ReadyView()
+        while self._navPending:
+            self.runPendingNav(view)
 
     def doClose(self, **kw):
         pass
@@ -1147,63 +1153,26 @@ class LibrarySettingsPersistenceTest(KodiTestCase):
 
 
 class DeferOpenSectionTest(KodiTestCase):
-    """hashed-orbiting-pizza.md's live-confirmed reentrancy hazard: kodi.log showed 7 concurrent
-    openSection() calls, on 7 different threads, racing to mutate the same LibraryWindow's state
-    at once - traced to goHome()/_dispatchSectionOpen() each scheduling their own uncoordinated
-    threading.Timer per trigger, with no single-flight protection. _deferOpenSection() (bound
-    directly off library.LibraryWindow, real code under test) is the shared fix both call
-    through now. Monkeypatches library.threading.Timer with FakeTimer (test_library_chain.py's
-    own fake, also used by OnActionTest below) rather than waiting on/invoking a real one."""
+    """_deferOpenSection() posts openSection() to the navigation queue (S1). It used to start a
+    single-flight threading.Timer, after kodi.log showed 7 concurrent openSection() calls on 7
+    threads; a newer request now replaces a pending one, and all run on the main thread."""
 
-    def _patchedTimer(self):
-        FakeTimer.instances = []
-        originalTimer = library.threading.Timer
-        library.threading.Timer = FakeTimer
-        return originalTimer
-
-    def test_first_call_schedules_and_starts_a_timer(self):
+    def test_posts_open_section_instead_of_calling_it(self):
         host = FakeHostWindow()
-        original = self._patchedTimer()
-        try:
-            host._deferOpenSection('the-section')
-        finally:
-            library.threading.Timer = original
+        host._deferOpenSection('the-section', force=True)
 
-        self.assertEqual(1, len(FakeTimer.instances))
-        timer = FakeTimer.instances[0]
-        self.assertTrue(timer.started)
-        self.assertIs(host._pendingSectionTimer, timer)
+        self.assertEqual([], host.openSectionCalls)
+        self.assertEqual(['openSection'], host.navNames())
+        host.runNav()
+        self.assertEqual([(('the-section',), {'force': True})], host.openSectionCalls)
 
-    def test_a_second_call_cancels_the_first_pending_timer_instead_of_stacking(self):
+    def test_a_second_call_replaces_the_first(self):
         host = FakeHostWindow()
-        original = self._patchedTimer()
-        try:
-            host._deferOpenSection('the-section')
-            firstTimer = host._pendingSectionTimer
-            host._deferOpenSection('a-different-section')
-        finally:
-            library.threading.Timer = original
+        host._deferOpenSection('the-section')
+        host._deferOpenSection('a-different-section')
 
-        self.assertTrue(firstTimer.cancelled)
-        self.assertEqual(2, len(FakeTimer.instances))
-        secondTimer = FakeTimer.instances[1]
-        self.assertFalse(secondTimer.cancelled)
-        self.assertIs(host._pendingSectionTimer, secondTimer)
-
-    def test_firing_the_timer_calls_openSection(self):
-        host = FakeHostWindow()
-        host.openSectionReturnValue = True
-        original = self._patchedTimer()
-        try:
-            host._deferOpenSection('the-section')
-            timer = host._pendingSectionTimer
-        finally:
-            library.threading.Timer = original
-
-        timer.function()  # simulates the timer actually firing
-
-        self.assertEqual([(('the-section',), {'force': False})], host.openSectionCalls)
-        self.assertIsNone(host._pendingSectionTimer, "must clear itself once fired, or a later call could cancel a dead timer for nothing")
+        host.runNav()
+        self.assertEqual([(('a-different-section',), {'force': False})], host.openSectionCalls)
 
 
 class OnActionTest(KodiTestCase):
@@ -1211,14 +1180,12 @@ class OnActionTest(KodiTestCase):
     self.contentMode/self.movingSection etc., so if either early-return below fell through instead
     of returning, the real routeAction() body would raise AttributeError trying to reach them."""
 
-    def test_navback_defers_popBack_via_a_timer_instead_of_calling_it_inline(self):
+    def test_navback_posts_popBack_instead_of_calling_it_inline(self):
         """hashed-orbiting-pizza.md Phase 3's still-open OnAction()-reentrancy risk: popBack()
         must not run synchronously from inside routeAction() - the same shape the documented Kodi
         core OnAction() reentrancy bug (SKIN_RELOAD_DEFER_SECONDS's own comment) is suspected
-        unsafe for. Deferred the same way every other routeAction()-triggered reload in this class
-        already is. Monkeypatches library.threading.Timer rather than waiting on/invoking a real
-        one - proving the defer was scheduled (right target, actually started), not that popBack()
-        eventually runs (that's swapTo()/popBack()'s own coverage above)."""
+        unsafe for. Posted to the navigation queue like every other swap (MultiWindow.postNav()),
+        then run through the real queue here."""
         host = FakeHostWindow()
         host._shuttingDown = False
         host._goRootAwaitFocus = None
@@ -1231,24 +1198,42 @@ class OnActionTest(KodiTestCase):
         popCalls = []
         host.popBack = lambda: popCalls.append(True)
 
-        FakeTimer.instances = []
-        originalTimer = library.threading.Timer
-        library.threading.Timer = FakeTimer
-        try:
-            routeAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
-        finally:
-            library.threading.Timer = originalTimer
+        self.assertTrue(routeAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK)))
 
-        self.assertEqual([], popCalls, "popBack() must not run inline, only once the timer fires")
-        self.assertEqual(1, len(FakeTimer.instances))
-        timer = FakeTimer.instances[0]
-        self.assertTrue(timer.started)
-        # Not host.popBack directly - routeAction() wraps it in its own try/except closure
-        # (_popBack(), see its comment there) so a timer callback exception doesn't vanish
-        # silently. Calling the real captured function proves it still actually reaches
-        # host.popBack(), same intent the old direct-identity check had.
-        timer.function()
+        self.assertEqual([], popCalls, "popBack() must not run inline, only from the queue")
+        self.assertEqual(['popBack'], host.navNames())
+        host.runNav()
         self.assertEqual([True], popCalls)
+
+    def test_two_quick_backs_stack_rather_than_replace(self):
+        host = FakeHostWindow()
+        host._shuttingDown = False
+        host._goRootAwaitFocus = None
+        host.contentMode = 'recommended'
+        host._backStack = [(FakeShell, {}), (FakeShell, {})]
+        popCalls = []
+
+        def popBack():
+            popCalls.append(True)
+            host._backStack.pop()
+        host.popBack = popBack
+
+        routeAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
+        routeAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
+        self.assertEqual(['popBack', 'popBack'], host.navNames())
+        host.runNav()
+        self.assertEqual([True, True], popCalls)
+
+    def test_a_posted_back_with_no_chain_left_does_nothing(self):
+        """E.g. a section switch ran first and cleared the chain."""
+        host = FakeHostWindow()
+        host._backStack = []
+        popCalls = []
+        host.popBack = lambda: popCalls.append(True)
+
+        host.postNav('popBack', host._popBackIfChained, stack=True)
+        host.runNav()
+        self.assertEqual([], popCalls)
 
     def test_navback_with_a_hosted_shell_does_not_touch_grid_specific_attributes(self):
         """Regression guard for a real live bug (2026-09-03): the grid "snap to item 0 first"
@@ -1271,18 +1256,12 @@ class OnActionTest(KodiTestCase):
         popCalls = []
         host.popBack = lambda: popCalls.append(True)
 
-        FakeTimer.instances = []
-        originalTimer = library.threading.Timer
-        library.threading.Timer = FakeTimer
-        try:
-            routeAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
-        finally:
-            library.threading.Timer = originalTimer
+        routeAction(host, FakeAction(xbmcgui.ACTION_NAV_BACK))
 
-        # Same expected outcome as the test above (defers to popBack() via a timer) - what this
-        # test actually guards is that the grid check above it didn't raise first.
+        # Same expected outcome as the test above (posts popBack()) - what this test actually
+        # guards is that the grid check above it didn't raise first.
         self.assertEqual([], popCalls)
-        self.assertEqual(1, len(FakeTimer.instances))
+        self.assertEqual(['popBack'], host.navNames())
 
 
 class OnActionHandleBackTest(KodiTestCase):
@@ -1299,33 +1278,27 @@ class OnActionHandleBackTest(KodiTestCase):
         return host
 
     def _press(self, host, action_id):
-        FakeTimer.instances = []
-        originalTimer = library.threading.Timer
-        library.threading.Timer = FakeTimer
-        try:
-            routeAction(host, FakeAction(action_id))
-        finally:
-            library.threading.Timer = originalTimer
-        return FakeTimer.instances
+        routeAction(host, FakeAction(action_id))
+        return host.navNames()
 
     def test_screen_that_uses_back_keeps_the_chain(self):
         host = self._host(handleBackResult=True)
-        timers = self._press(host, xbmcgui.ACTION_NAV_BACK)
+        posted = self._press(host, xbmcgui.ACTION_NAV_BACK)
         self.assertEqual(1, host._current.handleBackCalls)
-        self.assertEqual([], timers, "the chain must not pop when the screen used the press")
+        self.assertEqual([], posted, "the chain must not pop when the screen used the press")
 
     def test_screen_that_declines_back_pops_the_chain(self):
         host = self._host(handleBackResult=False)
-        timers = self._press(host, xbmcgui.ACTION_NAV_BACK)
+        posted = self._press(host, xbmcgui.ACTION_NAV_BACK)
         self.assertEqual(1, host._current.handleBackCalls)
-        self.assertEqual(1, len(timers))
+        self.assertEqual(1, len(posted))
 
     def test_previous_menu_skips_the_screen_and_pops(self):
         """The screens' standalone onAction() only runs these steps for NAV_BACK."""
         host = self._host(handleBackResult=True)
-        timers = self._press(host, xbmcgui.ACTION_PREVIOUS_MENU)
+        posted = self._press(host, xbmcgui.ACTION_PREVIOUS_MENU)
         self.assertEqual(0, host._current.handleBackCalls)
-        self.assertEqual(1, len(timers))
+        self.assertEqual(1, len(posted))
 
     def test_an_error_in_the_screen_still_pops(self):
         host = self._host()
@@ -1336,19 +1309,19 @@ class OnActionHandleBackTest(KodiTestCase):
         originalError = library.util.ERROR
         library.util.ERROR = lambda *a, **k: None
         try:
-            timers = self._press(host, xbmcgui.ACTION_NAV_BACK)
+            posted = self._press(host, xbmcgui.ACTION_NAV_BACK)
         finally:
             library.util.ERROR = originalError
-        self.assertEqual(1, len(timers))
+        self.assertEqual(1, len(posted))
 
     def test_unhosted_host_never_asks_its_current_view(self):
         """A grid/Recommended view isn't a hosted screen; its Back steps stay on the host."""
         host = self._host(handleBackResult=True)
         host._isHostedShell = False
         host.contentMode = 'recommended'
-        timers = self._press(host, xbmcgui.ACTION_NAV_BACK)
+        posted = self._press(host, xbmcgui.ACTION_NAV_BACK)
         self.assertEqual(0, host._current.handleBackCalls)
-        self.assertEqual(1, len(timers))
+        self.assertEqual(1, len(posted))
 
     def test_navback_with_an_empty_backstack_falls_through_unmodified(self):
         """Regression guard for the "empty stack means never chained" contract: swapTo() always

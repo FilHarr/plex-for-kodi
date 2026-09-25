@@ -1,6 +1,5 @@
 from __future__ import absolute_import
 
-import threading
 import weakref
 
 import six
@@ -33,6 +32,11 @@ HOME = None
 # Used by the click dispatch paths (sectionClicked(), library.py's tab-list onClick()) that had no
 # delay at all before this was diagnosed. Short enough to feel instant to a user, long enough (many
 # frames at any realistic refresh rate) to be a real safety margin, not a token gesture.
+#
+# Since S1 (navigation review), swaps no longer start their own timers: they're posted to the host
+# (kodigui.MultiWindow.postNav()) and run on the main thread from the current view's wait loop,
+# still this long after the request (LibraryWindow.NAV_DEFER_SECONDS). Whether the delay is still
+# needed there is I2.
 SKIN_RELOAD_DEFER_SECONDS = 0.15
 
 
@@ -185,7 +189,7 @@ class SidebarMixin():
             host = self._liveChainHost()
             if host is not None:
                 self.setBoolProperty('show.servers', False)
-                threading.Timer(SKIN_RELOAD_DEFER_SECONDS, host.selectServer).start()
+                host.postNav('selectServer', host.selectServer)
             return True
         return False
 
