@@ -197,6 +197,12 @@ class FakeHostWindow(object):
         self.openSectionCalls.append((args, kwargs))
         return self.openSectionReturnValue
 
+    # The section the sidebar marks active; None until something moves the marker.
+    activeMarker = None
+
+    def updateActiveSectionMarker(self, section):
+        self.activeMarker = section
+
     def navNames(self):
         return [r[0] for r in self._navPending]
 
@@ -475,6 +481,7 @@ class SwapToAndBackStackTest(KodiTestCase):
         self.assertEqual(OtherFakeShell, host._next)
         self.assertEqual({'video': 'the-show'}, host._nextKwargs)
         self.assertTrue(currentShell.closed)
+        self.assertIs(shows, host.activeMarker, 'the sidebar marks the section Back now goes to')
 
     def test_a_chain_root_in_the_starting_section_collapses_to_that_section_as_it_was_left(self):
         """Same section, unfiltered: keep the chain's own root entry (its row/grid position) and
@@ -490,6 +497,7 @@ class SwapToAndBackStackTest(KodiTestCase):
 
         self.assertEqual([root], host._backStack)
         self.assertEqual({'tv.ondeck': ('1', 3)}, host._hubReselectPositions)
+        self.assertIsNone(host.activeMarker, 'already the marked section')
 
     def test_a_chain_root_from_the_hosts_own_section_view_roots_at_it_as_it_is(self):
         """No chain yet (e.g. Play All from the section's grid): the root is what a genesis swap

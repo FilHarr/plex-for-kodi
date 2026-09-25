@@ -1208,6 +1208,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             else:
                 self._backStack = [(None, {'section': chain_root, 'filter_': None})]
                 self._hubReselectPositions = {}
+                # The sidebar marks the section Back now goes to, not the one playback started
+                # from (F4 in the navigation review).
+                self.updateActiveSectionMarker(chain_root)
         elif push and self._current is not None:
             if self._isHostedShell:
                 entryKwargs = dict(self._currentKwargs)
