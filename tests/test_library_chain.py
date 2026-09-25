@@ -924,6 +924,8 @@ class FakeTasks(object):
 
 
 class FakeLibrarySettings(object):
+    itemType = None
+
     def __init__(self):
         self.contentModeCalls = []
         self.itemTypeCalls = []
@@ -933,6 +935,7 @@ class FakeLibrarySettings(object):
 
     def setItemType(self, item_type):
         self.itemTypeCalls.append(item_type)
+        self.itemType = item_type
 
 
 class FakeSwitchTabHost(object):
@@ -941,6 +944,7 @@ class FakeSwitchTabHost(object):
     instance. See module docstring."""
 
     _retireListItems = library.LibraryWindow._retireListItems
+    itemType = library.LibraryWindow.itemType
 
     def __init__(self):
         self.is_current_window = True
@@ -1026,10 +1030,8 @@ class SwitchTabTest(KodiTestCase):
         self.assertEqual([], host.librarySettings.itemTypeCalls)
 
     def test_item_type_persists_when_provided(self):
-        original = library.ITEM_TYPE
-        library.ITEM_TYPE = 'movie'
-        self.addCleanup(lambda: setattr(library, 'ITEM_TYPE', original))
         host = FakeSwitchTabHost()
+        host.librarySettings.itemType = 'movie'
 
         switchTab(host, 'library', item_type='collection')
 
@@ -1039,10 +1041,8 @@ class SwitchTabTest(KodiTestCase):
         """The Collections-follow-up bug this guards against: Library-tab-from-Collections never
         changes contentMode (it was 'library' throughout), so the ordinary mode-comparison no-op
         guard alone would wrongly swallow the click and leave ITEM_TYPE stuck on 'collection'."""
-        original = library.ITEM_TYPE
-        library.ITEM_TYPE = 'collection'
-        self.addCleanup(lambda: setattr(library, 'ITEM_TYPE', original))
         host = FakeSwitchTabHost()
+        host.librarySettings.itemType = 'collection'
         host.contentMode = 'library'
 
         result = switchTab(host, 'library', item_type='movie')
@@ -1054,10 +1054,8 @@ class SwitchTabTest(KodiTestCase):
     def test_item_type_equal_to_current_does_not_bypass_the_no_op_guard(self):
         """item_type matching the already-active ITEM_TYPE isn't a real change - must not
         artificially defeat the no-op guard."""
-        original = library.ITEM_TYPE
-        library.ITEM_TYPE = 'movie'
-        self.addCleanup(lambda: setattr(library, 'ITEM_TYPE', original))
         host = FakeSwitchTabHost()
+        host.librarySettings.itemType = 'movie'
         host.contentMode = 'library'
 
         result = switchTab(host, 'library', item_type='movie')
@@ -1928,11 +1926,7 @@ class ChunkCallbackStopsMidChunkTest(KodiTestCase):
         first = self.Item(onWrite=lambda: host._retireListItems())
         second = self.Item()
         host.showPanelControl = [first, second]
-        original = library.ITEM_TYPE
-        library.ITEM_TYPE = 'album'
-        try:
-            host._chunkCallback([self.Album(), self.Album()], 0, generation=1)
-        finally:
-            library.ITEM_TYPE = original
+        host.itemType = 'album'
+        host._chunkCallback([self.Album(), self.Album()], 0, generation=1)
         self.assertTrue(first.written)
         self.assertFalse(second.written, 'written after the list was retired')

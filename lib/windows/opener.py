@@ -287,7 +287,6 @@ def sectionClicked(section, filter_=None, context=None, **kwargs):
         if host is not None:
             host.swapToSection(section, filter_=filter_)
             return ''
-    library.ITEM_TYPE = section.TYPE
     key = section.key
     if not key or not key.isdigit():
         key = section.getLibrarySectionId()

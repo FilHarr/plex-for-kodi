@@ -245,8 +245,6 @@ LEGACY_SORT_KEYS = {
 }
 
 
-ITEM_TYPE = None
-
 # Maps a server filter key -> (string id, fallback) for localized labels. Unknown filter
 # keys fall back to the server-provided title (hybrid labels).
 FILTER_LABELS = {
@@ -284,7 +282,7 @@ FILTER_LABELS = {
 # Music sections pin their view type to the item type rather than honouring the per-section
 # viewtype.<uuid>.<key> setting every other section type toggles: Artists, Albums and the
 # Collections tab are always the grid, Tracks is always the list (a track is a row, not a card).
-# Keyed by ITEM_TYPE; a type absent from here - or any section that isn't music - keeps the
+# Keyed by item type (LibrarySettings.itemType); a type absent from here - or any section that isn't music - keeps the
 # ordinary stored-setting behaviour. Values are VIEWS_SQUARE keys, not window classes, because
 # those classes are defined far below this point in the module.
 MUSIC_VIEWTYPE_BY_ITEM_TYPE = {
@@ -295,14 +293,8 @@ MUSIC_VIEWTYPE_BY_ITEM_TYPE = {
 }
 
 
-def setItemType(type_=None):
-    assert type_ is not None, "Invalid type: None"
-    global ITEM_TYPE
-    ITEM_TYPE = type_
-    util.setGlobalProperty('item.type', str(ITEM_TYPE))
-
-def getQueryItemType(section, fallback_to_section_type=False, force_include_collections=False):
-    base_type = ITEM_TYPE
+def getQueryItemType(section, item_type, fallback_to_section_type=False, force_include_collections=False):
+    base_type = item_type
 
     if fallback_to_section_type and not base_type:
         base_type = section.TYPE
@@ -397,8 +389,11 @@ class CreateDefaultItemsTask(backgroundthread.Task):
         self.callback(items, self.key, firstMli)
 
 class ChunkRequestTask(backgroundthread.Task):
-    def setup(self, section, start, size, callback, filter_=None, sort=None, subDir=False, bool_filters=None):
+    def setup(self, section, start, size, callback, filter_=None, sort=None, subDir=False, bool_filters=None,
+              item_type=None):
         self.section = section
+        # Passed in, not read from the window: this runs on a worker (3e in the navigation review).
+        self.itemType = item_type
         self.start = start
         self.size = size
         self.callback = callback
@@ -416,9 +411,9 @@ class ChunkRequestTask(backgroundthread.Task):
             return
 
         try:
-            type_ = getQueryItemType(self.section)
+            type_ = getQueryItemType(self.section, self.itemType)
 
-            if ITEM_TYPE == 'folder':
+            if self.itemType == 'folder':
                 items = self.section.folder(self.start, self.size, self.subDir)
             else:
                 # supplying this type kills all results (bug: 2025/10/21)
@@ -454,6 +449,11 @@ class PhotoPropertiesTask(backgroundthread.Task):
 class LibrarySettings(object):
     def __init__(self, section_or_server_id):
         self.sectionType = None
+        # The section's current item type ('movie', 'episode', 'album', 'collection', 'audio'...):
+        # this section's saved choice, or its own type. Owned here, per section and per window -
+        # it used to be the module global library.ITEM_TYPE, which every window and worker shared
+        # (3e in the navigation review). Keys getSetting()/setSetting()'s per-type settings.
+        self.itemType = None
         if isinstance(section_or_server_id, six.string_types):
             self.serverID = section_or_server_id
             self.sectionID = None
@@ -484,7 +484,8 @@ class LibrarySettings(object):
         # type, set in __init__) is the correct fallback for a never-configured section; the
         # bare ITEM_TYPE global is now only reached for the string-serverID construction (no real
         # section to derive a type from at all).
-        setItemType(self.getItemType() or self.sectionType or ITEM_TYPE)
+        self.itemType = self.getItemType() or self.sectionType
+        util.setGlobalProperty('item.type', str(self.itemType))
 
     def getItemType(self):
         if not self._settings or self.sectionID not in self._settings:
@@ -493,15 +494,16 @@ class LibrarySettings(object):
         return self._settings[self.sectionID].get('ITEM_TYPE')
 
     def setItemType(self, item_type):
-        setItemType(item_type)
+        assert item_type is not None, "Invalid type: None"
+        self.itemType = item_type
+        util.setGlobalProperty('item.type', str(item_type))
         self._mutate(lambda entry: entry.update({'ITEM_TYPE': item_type}))
 
     def getContentMode(self):
         """Persisted per-section tab choice ('library'/'recommended', quiet-orbiting-heron.md plan
         item 0/"Same reasoning applies one level down" - tab selection sticky per-section, the same
-        way sort/filter/item-type already are). Unlike ITEM_TYPE, there's no module-level global to
-        keep in sync - contentMode only ever lives as a plain instance attribute
-        (LibraryWindow.contentMode) - so this is a straight read, no free-function call needed."""
+        way sort/filter/item-type already are). A straight read: the live value is
+        LibraryWindow.contentMode."""
         if not self._settings or self.sectionID not in self._settings:
             return None
 
@@ -556,14 +558,14 @@ class LibrarySettings(object):
         if not self._settings or self.sectionID not in self._settings:
             return default
 
-        if ITEM_TYPE not in self._settings[self.sectionID]:
+        if self.itemType not in self._settings[self.sectionID]:
             return default
 
-        return self._settings[self.sectionID][ITEM_TYPE].get(setting, default)
+        return self._settings[self.sectionID][self.itemType].get(setting, default)
 
     def setSetting(self, setting, value):
         def apply_(entry):
-            entry.setdefault(ITEM_TYPE, {})[setting] = value
+            entry.setdefault(self.itemType, {})[setting] = value
 
         self._mutate(apply_)
 
@@ -872,6 +874,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """The view map for a square-tiled section: the music one, or the shared default."""
         return VIEWS_SQUARE_MUSIC if self.section.TYPE == 'artist' else VIEWS_SQUARE
 
+    @property
+    def itemType(self):
+        """This section's current item type (LibrarySettings.itemType); None before the first
+        section loads, and on Home, which has none."""
+        settings = self.__dict__.get('librarySettings')
+        return settings.itemType if settings is not None else None
+
     def forcedViewWindow(self):
         """The window class this section/item-type combination is pinned to, or None to honour
         the stored viewtype setting.
@@ -883,7 +892,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if self.section.TYPE != 'artist':
             return None
 
-        viewtype = MUSIC_VIEWTYPE_BY_ITEM_TYPE.get(ITEM_TYPE or self.section.TYPE)
+        viewtype = MUSIC_VIEWTYPE_BY_ITEM_TYPE.get(self.itemType or self.section.TYPE)
         return self.squareViews().get(viewtype) if viewtype else None
 
     def reset(self):
@@ -891,7 +900,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         util.setGlobalProperty('sort', '')
         util.setGlobalProperty('sort.alpha', '')
 
-        if self.section.TYPE == 'playlists' and ITEM_TYPE not in ('audio', 'video'):
+        if self.section.TYPE == 'playlists' and self.itemType not in ('audio', 'video'):
             # LibrarySettings._loadSettings() only corrects ITEM_TYPE from persisted state - on a
             # genuine first-ever visit (nothing persisted yet) it falls back to the bare module
             # global, which is whatever the *previously* open section (e.g.
@@ -1342,7 +1351,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             util.DEBUG_LOG("Library: switchTab() declined - {0} not current window (descendant open, or closing)", self)
             return False
 
-        itemTypeChanging = item_type is not None and item_type != ITEM_TYPE
+        itemTypeChanging = item_type is not None and item_type != self.itemType
 
         # self._isHostedShell: a real shell (Categories) can be fronting the *same* contentMode
         # string the user is now clicking - e.g. they left from 'library', contentMode is still
@@ -1394,7 +1403,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         ITEM_TYPE values for their own section, same values the item-type dropdown used to offer
         directly) if that's where Collections left ITEM_TYPE, otherwise None so switchTab() leaves
         whatever finer-grained choice (e.g. 'folder' for movies, 'episode' for shows) untouched."""
-        return self.section.TYPE if ITEM_TYPE == 'collection' else None
+        return self.section.TYPE if self.itemType == 'collection' else None
 
     def switchToCollections(self):
         """Collections tab (buildTabList()): an ITEM_TYPE='collection' selection presented as a
@@ -2367,8 +2376,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.setProperty('sort.display', display)
             self.updateSortIcon()
-        self.setProperty('media.itemType', ITEM_TYPE or self.section.TYPE)
-        self.setProperty('media.type', TYPE_PLURAL.get(ITEM_TYPE or self.section.TYPE, self.section.TYPE))
+        self.setProperty('media.itemType', self.itemType or self.section.TYPE)
+        self.setProperty('media.type', TYPE_PLURAL.get(self.itemType or self.section.TYPE, self.section.TYPE))
         self.setProperty('media', self.section.TYPE)
         self.setProperty('hide.filteroptions', hideFilterOptions and '1' or '')
         # Library grid screens never want the sharp top-right hero-art box
@@ -3477,7 +3486,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # doRefill() keeps querying type=collection underneath it - an empty grid masquerading as
         # the section having no content at all. Same reset _libraryTabItemType() already does for
         # an explicit Library-tab click, just triggered here by the probe instead of a click.
-        if not has_collections and ITEM_TYPE == 'collection':
+        if not has_collections and self.itemType == 'collection':
             self.librarySettings.setItemType(section.TYPE)
         needsRebuild = (is_playlists != self._tabListIsPlaylists
                          or has_categories != self._tabListHasCategories
@@ -3561,12 +3570,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return
 
         if self._tabListIsPlaylists:
-            key, active = 'item.type', ITEM_TYPE
+            key, active = 'item.type', self.itemType
         else:
             key = 'content.mode'
             if active_override:
                 active = active_override
-            elif self._tabListHasCollections and self.contentMode == 'library' and ITEM_TYPE == 'collection':
+            elif self._tabListHasCollections and self.contentMode == 'library' and self.itemType == 'collection':
                 active = 'collections'
             else:
                 active = self.contentMode
@@ -4001,7 +4010,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # section.TYPE, not ITEM_TYPE), but none of the branches below ever offer a
         # 'collection' option to select - same no-op-click treatment 'playlists' already
         # gets further down for a type with no dropdown options at all.
-        if ITEM_TYPE == 'collection':
+        if self.itemType == 'collection':
             return
 
         options = []
@@ -4060,7 +4069,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         path here does (live-confirmed otherwise: Library -> Collections left focus sitting on the
         tab row, with no poster showing as focused at all, unlike every other tab-swap direction,
         which all go through switchTab()'s full reconstruction and land on the grid naturally)."""
-        if choice == ITEM_TYPE:
+        if choice == self.itemType:
             return
 
         with self.lock:
@@ -4112,7 +4121,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Passing a class still short-circuits to None when it's the one already showing, so the
         # ordinary in-place refill below is unaffected for every other section type.
         if not self.nextWindow(self.forcedViewWindow() or False):
-            self.setProperty('media.type', TYPE_PLURAL.get(ITEM_TYPE or self.section.TYPE, self.section.TYPE))
+            self.setProperty('media.type', TYPE_PLURAL.get(self.itemType or self.section.TYPE, self.section.TYPE))
             display = self.sortDisplay()
             if display is None:
                 # stored sort isn't valid for this item type
@@ -4148,7 +4157,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             searchTypes = ['titleSort', 'year', 'originallyAvailableAt', 'rating', 'audienceRating', 'userRating',
                            'contentRating', 'duration', 'viewOffset', 'viewCount', 'addedAt', 'lastViewedAt',
                            'mediaHeight', 'mediaBitrate', 'random']
-            if ITEM_TYPE == 'collection':
+            if self.itemType == 'collection':
                 searchTypes = ['titleSort', 'addedAt', 'contentRating']
 
             for stype in searchTypes:
@@ -4161,10 +4170,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             searchTypes = ['titleSort', 'year', 'originallyAvailableAt', 'rating', 'audienceRating', 'userRating',
                            'contentRating', 'unviewedLeafCount', 'episode.addedAt',
                            'addedAt', 'lastViewedAt', 'random']
-            if ITEM_TYPE == 'episode':
+            if self.itemType == 'episode':
                 searchTypes = ['titleSort', 'show.titleSort', 'addedAt', 'originallyAvailableAt', 'lastViewedAt',
                                'rating', 'audienceRating', 'userRating', 'mediaBitrate', 'random']
-            elif ITEM_TYPE == 'collection':
+            elif self.itemType == 'collection':
                 searchTypes = ['titleSort', 'addedAt']
 
             for stype in searchTypes:
@@ -4177,12 +4186,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 options.append(option)
         elif self.section.TYPE == 'artist':
             searchTypes = ['titleSort', 'userRating', 'addedAt', 'lastViewedAt', 'viewCount', 'random']
-            if ITEM_TYPE == 'album':
+            if self.itemType == 'album':
                 searchTypes = ['titleSort', 'artist.titleSort', 'addedAt', 'lastViewedAt', 'viewCount',
                                'originallyAvailableAt', 'rating', 'random']
-            elif ITEM_TYPE == 'collection':
+            elif self.itemType == 'collection':
                 searchTypes = ['titleSort', 'addedAt']
-            elif ITEM_TYPE == 'track':
+            elif self.itemType == 'track':
                 searchTypes = ['titleSort', 'addedAt', 'lastViewedAt', 'viewCount']
 
             for stype in searchTypes:
@@ -4519,7 +4528,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # Phase 4.
             self.openWindow(collection.CollectionWindow, collection=mli.dataSource, **extra_kwargs)
         elif self.section.TYPE == 'show' or mli.dataSource.TYPE == 'show' or mli.dataSource.TYPE == 'season' or mli.dataSource.TYPE == 'episode':
-            if ITEM_TYPE == 'episode' or mli.dataSource.TYPE == 'episode' or mli.dataSource.TYPE == 'season':
+            if self.itemType == 'episode' or mli.dataSource.TYPE == 'episode' or mli.dataSource.TYPE == 'season':
                 self.openItem(mli.dataSource, **extra_kwargs)
             else:
                 # self.openItem() (opener.open() -> opener.showClicked(), context=self), not a
@@ -4556,7 +4565,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self.openWindow(preplay.PrePlayWindow if not sectionType == 'movies_shows' else preplay.PrePlayWindowWL,
                                  video=datasource, parent_list=self.showPanelControl, **extra_kwargs)
         elif self.section.TYPE == 'artist' or mli.dataSource.TYPE == 'artist' or mli.dataSource.TYPE == 'album' or mli.dataSource.TYPE == 'track':
-            if ITEM_TYPE == 'album' or mli.dataSource.TYPE == 'album' or mli.dataSource.TYPE == 'track':
+            if self.itemType == 'album' or mli.dataSource.TYPE == 'album' or mli.dataSource.TYPE == 'track':
                 self.openItem(mli.dataSource, entry_section_id=self.entrySectionId)
             else:
                 # hashed-orbiting-pizza.md Phase 4 item 3: self.openWindow(), not
@@ -4764,7 +4773,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.alreadyFetchedChunkList = set()
         self.finalChunkPosition = 0
 
-        type_ = getQueryItemType(self.section)
+        type_ = getQueryItemType(self.section, self.itemType)
         # supplying this type kills all results (bug: 2025/10/21)
         if type_ == plexobjects.SEARCHTYPES["photo"]:
             type_ = None
@@ -4785,8 +4794,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # type PMS 1.43.4 answers it correctly for both (buckets checked against the sorted
         # list) and flags the sort with firstCharacterKey itself. A server that still can't
         # just fails the request, which jumpList() turns into None and the plain scrollbar.
-        if isAlphaSort(self.sort) and ITEM_TYPE != 'folder' \
-                and (ITEM_TYPE != 'episode' or self.sort == 'show.titleSort') \
+        if isAlphaSort(self.sort) and self.itemType != 'folder' \
+                and (self.itemType != 'episode' or self.sort == 'show.titleSort') \
                 and not self.subDir and self.section.TYPE not in ("collection", "movies_shows"):
             # find library collection mode setting, as we need to force-feed the collection type to the jumpList,
             # if collection_mode is 2, otherwise the returned item count differs from /all with the same parameters
@@ -4800,7 +4809,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # what makes the server 500 on the artist-joined Album Artist sort.
             if self.section.TYPE != 'artist' and collection_mode == 2 \
                     and not (self.filter or self.boolFilters.get('unwatched')):
-                jl_type = getQueryItemType(self.section, fallback_to_section_type=True, force_include_collections=True)
+                jl_type = getQueryItemType(self.section, self.itemType, fallback_to_section_type=True,
+                                           force_include_collections=True)
 
             jumpList = self.section.jumpList(filter_=self.getFilterOpts(), sort=self.getSortOpts(),
                                              type_=jl_type, bool_filters=bool_filters)
@@ -4808,7 +4818,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 # Endpoint doesn't support this sort/type combo (or errored) - fall back to
                 # a regular fetch below rather than reporting the section as empty.
                 util.DEBUG_LOG('jumpList() unavailable for sort {0}/type {1}, falling back to all()',
-                               self.sort, ITEM_TYPE)
+                               self.sort, self.itemType)
 
         if jumpList:
             idx = 0
@@ -4829,7 +4839,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
             util.setGlobalProperty('key', jumpList[0].key)
         else:
-            if ITEM_TYPE == 'folder':
+            if self.itemType == 'folder':
                 sectionAll = self.section.folder(0, 0, self.subDir)
             else:
                 sectionAll = self.section.all(0, 0, filter_=self.getFilterOpts(), sort=self.getSortOpts(),
@@ -4881,7 +4891,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             tasks.append(
                 ChunkRequestTask().setup(
                     self.section, startChunkPosition, self.CHUNK_SIZE, self._chunkCallbackFor(generation),
-                    filter_=self.getFilterOpts(), sort=self.getSortOpts(), subDir=self.subDir, bool_filters=bool_filters
+                    filter_=self.getFilterOpts(), sort=self.getSortOpts(), subDir=self.subDir, bool_filters=bool_filters,
+                    item_type=self.itemType
                 )
             )
 
@@ -5027,7 +5038,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.setBoolProperty('content.filling', True)
 
         playlists = [pl for pl in plexapp.SERVERMANAGER.selectedServer.playlists()
-                    if pl.playlistType == ITEM_TYPE]
+                    if pl.playlistType == self.itemType]
 
         self.showPanelControl.reset()
         self.keyListControl.reset()
@@ -5199,7 +5210,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             if not self.showPanelControl:
                 return
 
-            if ITEM_TYPE == 'episode':
+            if self.itemType == 'episode':
                 for offset, obj in enumerate(items):
                     if generation is not None and generation != self._listGeneration:
                         util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
@@ -5237,7 +5248,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
                     pos += 1
 
-            elif ITEM_TYPE == 'album':
+            elif self.itemType == 'album':
                 for offset, obj in enumerate(items):
                     if generation is not None and generation != self._listGeneration:
                         util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
@@ -5372,7 +5383,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.alreadyFetchedChunkList.add(startChunkPosition)
             task = ChunkRequestTask().setup(self.section, startChunkPosition, self.CHUNK_SIZE,
                                             self._chunkCallbackFor(self._listGeneration), filter_=self.getFilterOpts(),
-                                            sort=self.getSortOpts(), subDir=self.subDir, bool_filters=self.boolFilters)
+                                            sort=self.getSortOpts(), subDir=self.subDir, bool_filters=self.boolFilters,
+                                            item_type=self.itemType)
 
             self.tasks.add(task)
             backgroundthread.BGThreader.addTasksToFront([task])

@@ -106,11 +106,14 @@ class FakeLibrarySettings(object):
     than shared, per this file's self-contained-fakes convention) - only setItemType() is ever
     touched by _tabListNeedsRebuild()'s new reset-on-vanish path."""
 
+    itemType = None
+
     def __init__(self):
         self.itemTypeCalls = []
 
     def setItemType(self, item_type):
         self.itemTypeCalls.append(item_type)
+        self.itemType = item_type
         return ''
 
 
@@ -143,6 +146,8 @@ class TabListNeedsRebuildTest(KodiTestCase):
     tab list happened to be built for first."""
 
     class FakeHost(object):
+        itemType = library.LibraryWindow.itemType
+
         def __init__(self):
             self._tabListIsPlaylists = False
             self._tabListHasCategories = False
@@ -153,9 +158,9 @@ class TabListNeedsRebuildTest(KodiTestCase):
         patchSectionHasCollections(self, return_value=False)
 
     def _setItemType(self, value):
-        original = library.ITEM_TYPE
-        library.ITEM_TYPE = value
-        self.addCleanup(lambda: setattr(library, 'ITEM_TYPE', original))
+        """The item type every FakeHost built afterwards starts with."""
+        FakeLibrarySettings.itemType = value
+        self.addCleanup(lambda: setattr(FakeLibrarySettings, 'itemType', None))
 
     def test_show_to_movie_does_not_need_a_rebuild(self):
         """Both get Categories - crosses neither boundary."""
