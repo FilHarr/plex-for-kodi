@@ -355,6 +355,10 @@ def _invalidateSectionHasCollectionsCache(section):
     half of."""
     _sectionHasCollectionsCache.pop((section.server.uuid, section.key), None)
 
+# Roughly a screenful of grid items: the first chunk's timing line says when this many were written.
+CHUNK_SCREENFUL = 30
+
+
 class ChunkRequestTask(backgroundthread.Task):
     def setup(self, section, start, size, callback, filter_=None, sort=None, subDir=False, bool_filters=None,
               item_type=None):
@@ -5141,12 +5145,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self._chunkCallback(items, start, generation)
                 return
             self._firstChunkTiming = None
+            marks = self._firstChunkMarks = {}
             started = time.time()
-            self._chunkCallback(items, start, generation)
+            try:
+                self._chunkCallback(items, start, generation)
+            finally:
+                self._firstChunkMarks = None
             requested = firstChunk[2]
-            util.DEBUG_LOG("Library: first chunk ({0} items) bound in {1} ms, {2} ms after the placeholders,"
-                           " {3} ms after the request", len(items), int((time.time() - started) * 1000),
-                           int((started - firstChunk[1]) * 1000),
+
+            def since(key):
+                return int((marks[key] - started) * 1000) if key in marks else '-'
+            util.DEBUG_LOG("Library: first chunk ({0} items) bound in {1} ms (background {2}, first {3} items {4}),"
+                           " {5} ms after the placeholders, {6} ms after the request", len(items),
+                           int((time.time() - started) * 1000), since('background'), CHUNK_SCREENFUL,
+                           since('screenful'), int((started - firstChunk[1]) * 1000),
                            int((time.time() - requested) * 1000) if requested else '?')
         return callback
 
@@ -5163,6 +5175,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
             pos = start
             self.setBackground(items, pos, randomize=not util.addonSettings.dynamicBackgrounds)
+            # the first chunk's timing line (_chunkCallbackFor())
+            marks = self.__dict__.get('_firstChunkMarks')
+            if marks is not None:
+                marks['background'] = time.time()
 
             thumbDim = TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['thumb_dim']
             artDim = TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie']).get('art_dim', (256, 256))
@@ -5207,6 +5223,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                             mli.setProperty('index', '')
 
                     pos += 1
+                    if marks is not None and pos - start == CHUNK_SCREENFUL:
+                        marks['screenful'] = time.time()
 
             elif self.itemType == 'album':
                 for offset, obj in enumerate(items):
@@ -5233,6 +5251,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                             mli.setProperty('index', '')
 
                     pos += 1
+                    if marks is not None and pos - start == CHUNK_SCREENFUL:
+                        marks['screenful'] = time.time()
             else:
                 for offset, obj in enumerate(items):
                     if generation is not None and generation != self._listGeneration:
@@ -5318,6 +5338,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                             mli.setProperty('index', '')
 
                     pos += 1
+                    if marks is not None and pos - start == CHUNK_SCREENFUL:
+                        marks['screenful'] = time.time()
 
         self.setBoolProperty('content.filling', False)
 
