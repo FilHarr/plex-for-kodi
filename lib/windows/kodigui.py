@@ -1554,10 +1554,18 @@ if _logGcPause not in gc.callbacks:
 # swap (both 3b crashes). A handler still connected after its window closed keeps the window alive
 # and acts on a dead screen. Each case is logged once per handler, signal and reason.
 _signalAuditSeen = set()
+# The script's own thread, which imports this module. Python sees it as a dummy thread, not
+# threading.main_thread().
+_MAIN_THREAD_IDENT = threading.get_ident()
+
+
+def _threadName():
+    # HTTP threads are named after their request URL, token included.
+    return threading.current_thread().name.split(':http', 1)[0]
 
 
 def _auditSignal(emitter, signalName, slots):
-    offMain = threading.current_thread() is not threading.main_thread()
+    offMain = threading.get_ident() != _MAIN_THREAD_IDENT
     for slot in slots:
         owner = getattr(slot, '__self__', None)
         if isinstance(owner, MultiWindow):
@@ -1568,11 +1576,11 @@ def _auditSignal(emitter, signalName, slots):
             continue
         reasons = []
         if offMain:
-            reasons.append('on thread ' + threading.current_thread().name)
+            reasons.append('on thread ' + _threadName())
         if closed:
             reasons.append('after its window closed')
         for reason in reasons:
-            key = (type(owner).__name__, slot.__func__.__name__, signalName, reason.split(' ')[0])
+            key = (type(owner).__name__, slot.__func__.__name__, signalName, reason)
             if key in _signalAuditSeen:
                 continue
             _signalAuditSeen.add(key)
@@ -2078,6 +2086,7 @@ class PropertyTimer():
         self._closeWin = None
         self._closed = False
         self._callback = callback
+        self._generation = 0
 
     def _onTimeout(self):
         self._endTime = 0
@@ -2089,12 +2098,12 @@ class PropertyTimer():
         if self._callback:
             self._callback()
 
-    def _wait(self):
-        while not MONITOR.abortRequested() and time.time() < self._endTime:
+    def _wait(self, generation):
+        while not MONITOR.abortRequested() and time.time() < self._endTime and generation == self._generation:
             xbmc.sleep(100)
         if MONITOR.abortRequested():
             return
-        if self._endTime == 0:
+        if self._endTime == 0 or generation != self._generation:
             return
         self._onTimeout()
 
@@ -2106,7 +2115,8 @@ class PropertyTimer():
 
     def _start(self):
         self.init(self._initValue)
-        self._thread = threading.Thread(target=self._wait)
+        self._generation += 1
+        self._thread = threading.Thread(target=self._wait, args=(self._generation,))
         self._thread.start()
 
     def stop(self, trigger=False):
@@ -2117,6 +2127,9 @@ class PropertyTimer():
     def close(self):
         self._closed = True
         self.stop()
+        # The callback is the owning window's: kept, it kept a closed photo screen alive.
+        self._callback = None
+        self._closeWin = None
 
     def init(self, val):
         if val is False:
@@ -2140,8 +2153,10 @@ class PropertyTimer():
         self._closeWin = close_win
         self._reset()
 
-        if self._stopped:
-            self._start()
+        # Every reset starts a thread, as it always has (this tested the method itself, always
+        # true), but only the newest may fire: the others used to fire too, once each. Reusing a
+        # running thread instead would lose a reset landing while it times out.
+        self._start()
 
 
 class WindowProperty():

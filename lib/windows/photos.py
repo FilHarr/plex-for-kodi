@@ -496,6 +496,13 @@ class PhotoWindow(kodigui.BaseWindow):
 
     def doClose(self, **kw):
         self.pause()
+        # The play queue and the OSD timer both outlive this screen, and held it alive through
+        # their callbacks (E4/F3 in the navigation review).
+        if self.playQueue:
+            self.playQueue.off('items.changed', self.fillPqueueList)
+            self.playQueue.off('change', self.updateProperties)
+        if self.osdTimer:
+            self.osdTimer.close()
         shutil.rmtree(self.tempFolder, ignore_errors=True)
 
         kodigui.BaseWindow.doClose(self)

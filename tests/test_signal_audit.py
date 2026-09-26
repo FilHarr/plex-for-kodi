@@ -65,3 +65,34 @@ class SignalAuditTest(KodiTestCase):
         logged = self._logged(fromThread)
         self.assertEqual(1, len(logged))
         self.assertEqual('on thread PLAYER:MONITOR', logged[0][5])
+
+
+class PropertyTimerTest(KodiTestCase):
+    """PropertyTimer.reset() tested the _stopped method itself (always true), so every reset
+    started a thread that fired on its own. Only the newest may fire now."""
+
+    def setUp(self):
+        super(PropertyTimerTest, self).setUp()
+        monitor = mock.Mock()
+        monitor.abortRequested.return_value = False
+        patcher = mock.patch.object(kodigui, 'MONITOR', monitor)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.fired = []
+
+    def _timer(self):
+        return kodigui.PropertyTimer(13001, 0.05, 'OSD', '', init_value=False,
+                                     callback=lambda: self.fired.append(1))
+
+    def test_several_resets_fire_once(self):
+        timer = self._timer()
+        for _ in range(4):
+            timer.reset(init=False)
+        timer._thread.join()
+        self.assertEqual([1], self.fired)
+
+    def test_close_drops_the_callback(self):
+        timer = self._timer()
+        timer.reset(init=False)
+        timer.close()
+        self.assertIsNone(timer._callback)
