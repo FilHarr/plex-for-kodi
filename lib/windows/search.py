@@ -438,7 +438,9 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         self.parentWindow.setProperty('search.dialog.hasresults', on and '1' or '')
 
     def wait(self):
-        while self.isActive and not util.MONITOR.waitForAbort(0.1):
+        # short slices: Kodi only runs this dialog's queued callbacks (each key typed) between them
+        # - see kodigui.WAIT_SLICE_SECONDS
+        while self.isActive and not util.MONITOR.waitForAbort(kodigui.WAIT_SLICE_SECONDS):
             pass
 
 

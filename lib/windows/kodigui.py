@@ -321,6 +321,11 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self.doClose(force=True)
 
     def _onInit(self):
+        # 'show' ends as Kodi hands over onInit, before this window's own first GUI calls.
+        host = self.hostedBy() if not self.started else None
+        timing = host.__dict__.get('_swapTiming') if host is not None else None
+        if timing is not None:
+            timing.mark('show')
         self._winID = xbmcgui.getCurrentWindowId()
         BaseFunctions.lastWinID = self._winID
         self.setProperty('use_solid_background', util.useSolidBackground and '1' or '')
@@ -361,10 +366,6 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
                     self.onReInit()
             else:
                 self.started = True
-                host = self.hostedBy()
-                timing = host.__dict__.get('_swapTiming') if host is not None else None
-                if timing is not None:
-                    timing.mark('show')
                 self.paintInitialBackground()
 
                 from . import windowutils
@@ -723,6 +724,16 @@ class BaseDialog(XMLBase, xbmcgui.WindowXMLDialog, BaseFunctions):
         pass
 
 
+# How long a window's wait loop waits at a time. Kodi runs a script's queued callbacks - onInit,
+# onAction, onClick, onFocus - only between these waits: Monitor.waitForAbort() waits out its whole
+# slice on the abort event and calls MakePendingCalls() after it (Omega's Monitor.cpp), unlike
+# Kodi's own doModal(), which wakes on each action. At 0.1 s every remote press waited up to 100 ms
+# (50 on average) before the addon saw it, and every screen's onInit a full 100 ms after Kodi had
+# built the window (step 4 in the navigation review: a posters window took 45 ms to build in a
+# plain Kodi window on the AM6B, 139 ms to reach onInit in the addon).
+WAIT_SLICE_SECONDS = 0.02
+
+
 class ControlledBase:
     def doModal(self, aggressive=False):
         self.show(aggressive=aggressive)
@@ -735,7 +746,8 @@ class ControlledBase:
         # waitFor(). So a swap run here can never interleave with this view's input handling.
         while not self._closing:
             host = self.hostedBy() if isinstance(self, BaseWindow) else None
-            if MONITOR.waitFor(host.navWaitInterval() if host is not None else None):
+            interval = host.navWaitInterval() if host is not None else None
+            if MONITOR.waitFor(min(interval, WAIT_SLICE_SECONDS) if interval else WAIT_SLICE_SECONDS):
                 break
             if host is not None and not self._closing:
                 host.runPendingNav(self)

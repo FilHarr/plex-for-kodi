@@ -251,10 +251,21 @@ class WaitLoopTest(KodiTestCase):
         self.assertEqual(1, len(host.ran))
 
     def test_a_view_that_is_not_hosted_just_waits(self):
+        # in short slices: Kodi only runs queued callbacks between them (WAIT_SLICE_SECONDS)
         view = self._view()
         kodigui.MONITOR = FakeMonitor(view, ticks=2)
         view.wait()
-        self.assertEqual([None, None], kodigui.MONITOR.intervals)
+        self.assertEqual([kodigui.WAIT_SLICE_SECONDS] * 2, kodigui.MONITOR.intervals)
+
+    def test_a_pending_request_can_shorten_the_slice_but_never_lengthen_it(self):
+        host = Host()
+        view = self._view()
+        view._hostRef = weakref.ref(host)
+        host._current = view
+        host.navWaitInterval = lambda: 0.1
+        kodigui.MONITOR = FakeMonitor(view, ticks=1)
+        view.wait()
+        self.assertEqual([kodigui.WAIT_SLICE_SECONDS], kodigui.MONITOR.intervals)
 
 
 class FakeEmitter(object):
