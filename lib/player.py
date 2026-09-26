@@ -600,18 +600,21 @@ class SeekPlayerHandler(BasePlayerHandler):
             util.DEBUG_LOG('SeekHandler: Setting volume to 1.')
             self.setVolume(1)
 
-    def stop_blackout(self):
+    def liftBlackout(self):
         if self.blackoutShown:
             if self.prePlayVolume is not None:
                 util.DEBUG_LOG('SeekHandler: Setting volume back to {}.', self.prePlayVolume)
                 self.setVolume(self.prePlayVolume)
 
-            if self.blackoutDialog.isOpen:
+            if self.blackoutDialog and self.blackoutDialog.isOpen:
                 util.DEBUG_LOG('SeekHandler: Disabling Blackout')
                 self.blackoutDialog.doClose()
 
             self.blackout = False
             self.blackoutShown = False
+
+    def stop_blackout(self):
+        self.liftBlackout()
 
         # double check for correct volume
         self.ensureCorrectVolume()
@@ -1883,6 +1886,10 @@ class SeekPlayerHandler(BasePlayerHandler):
             self.useAlternateSeek = True
             self.player._originalAlternateSeek = False
 
+        # The seek-on-start normally lifts the blackout; a session ended before it (Back pressed
+        # as playback starts) left it up, and Kodi then refused to bring back the screen
+        # underneath while that dialog was open: a black screen (live on the AM6B, 2026-09-26).
+        self.liftBlackout()
         self.player.trigger('session.ended', session_id=self.sessionID)
         self.hideOSD(delete=True)
 
@@ -3071,6 +3078,12 @@ class PlexPlayer(xbmc.Player, signalsmixin.SignalsMixin):
 
         self.isExternal = self.isExternalPlayer()
         self.trigger('av.started')
+        if not self.sessionID:
+            # An av.started handler ended the session: the video player window closing on a Back
+            # pressed before playback started (playerPlaybackStarted()). The handler would go on
+            # to seek and set up subtitles for a video that's already stopped.
+            util.DEBUG_LOG('Player - AVStarted: session ended by an av.started handler')
+            return
         self.started = True
         if not self.handler:
             return

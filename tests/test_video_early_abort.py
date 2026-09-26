@@ -57,3 +57,42 @@ class EarlyAbortTest(KodiTestCase):
         with mock.patch.object(self.window, 'doClose') as doClose:
             self.window.playerPlaybackStarted()
         doClose.assert_called_once_with()
+
+
+class AbortedSessionTeardownTest(KodiTestCase):
+    """Closing on av.started ran inside PlexPlayer.onAVStarted(), which then went on to the
+    handler's onAVStarted() for the stopped video, and the playback-start blackout was left up:
+    Kodi wouldn't bring back the screen underneath while its dialog was open."""
+
+    def test_on_av_started_stops_when_a_handler_ended_the_session(self):
+        handler = mock.Mock()
+        p = player.PLAYER
+
+        def endSession(**kwargs):
+            p.sessionID = None
+
+        with mock.patch.object(p, 'sessionID', 'abc'), mock.patch.object(p, 'handler', handler), \
+                mock.patch.object(p, 'pauseAfterPlaybackStarted', False), \
+                mock.patch.object(p, 'isExternalPlayer', return_value=False, create=True), \
+                mock.patch.object(p, 'isPlayingVideo', return_value=True), \
+                mock.patch.object(p, 'getTime', return_value=0.0):
+            p.on('av.started', endSession)
+            try:
+                p.onAVStarted()
+            finally:
+                p.off('av.started', endSession)
+        self.assertFalse(handler.onAVStarted.called)
+
+    def test_ending_a_session_lifts_the_blackout(self):
+        h = player.SeekPlayerHandler.__new__(player.SeekPlayerHandler)
+        h.player = mock.Mock(lavSettingControl=None, _originalAlternateSeek=False)
+        h.ended = False
+        h.sessionID = 'abc'
+        h.blackoutShown = True
+        h.blackout = True
+        h.prePlayVolume = None
+        h.blackoutDialog = mock.Mock(isOpen=True)
+        with mock.patch.object(h, 'ensureCorrectVolume'), mock.patch.object(h, 'hideOSD'):
+            h.sessionEnded()
+        h.blackoutDialog.doClose.assert_called_once_with()
+        self.assertFalse(h.blackoutShown)
