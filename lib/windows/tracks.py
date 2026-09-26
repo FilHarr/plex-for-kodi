@@ -411,7 +411,8 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         elif choice['key'] == 'to_artist':
             self.artistButtonClicked()
         elif choice['key'] == 'to_section':
-            self.goHome(self.album.getLibrarySectionId())
+            # force: the section's start, as a sidebar click - it's usually the section showing.
+            self.goHome(self.album.getLibrarySectionId(), force=True)
 
     def summaryButtonClicked(self):
         # The same popup the Seasons/Artist screens' own summary targets open

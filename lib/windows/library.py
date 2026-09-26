@@ -3916,7 +3916,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return
 
         if choice['key'] == 'to_section':
-            self.goHome(self.section.getLibrarySectionId())
+            # force: the section's start, as a sidebar click - it's usually the section showing.
+            self.goHome(self.section.getLibrarySectionId(), force=True)
 
     def itemTypeButtonClicked(self):
         # Button stays visible on the Collections tab (its own visibility only checks

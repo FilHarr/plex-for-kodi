@@ -461,7 +461,9 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         elif choice['key'] == 'to_artist':
             self.processCommand(opener.open(track.grandparentRatingKey))
         elif choice['key'] == 'to_section':
-            self.goHome(track.getLibrarySectionId())
+            # force: the section's start, even when it's the one showing under the player - Home
+            # otherwise counted Music as already showing and left the Artist screen up.
+            self.goHome(track.getLibrarySectionId(), force=True)
 
     def stopButtonClicked(self):
         xbmc.executebuiltin('Action(Back, {})'.format(self.musicPlayerWinID))
