@@ -475,6 +475,14 @@ class RepeatingCounterTimer(Timer):
         self.ticks += 1
         self._function(*self.args, **self.kwargs)
 
+    def stop(self):
+        """Cancel, wait for the thread, and drop the callback. The timer refers to itself (its
+        function is self.count), so a stopped one lingers until a full collection, and kept the
+        callback's owner - a closed seek dialog - alive with it."""
+        self.cancel()
+        self.join()
+        self._function = None
+
     def reset(self):
         super(RepeatingCounterTimer, self).reset()
         self.ticks = 0

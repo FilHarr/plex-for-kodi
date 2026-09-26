@@ -2409,8 +2409,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
     def killTimeKeeper(self):
         if self.timeKeeper:
             try:
-                self.timeKeeper.cancel()
-                self.timeKeeper.join()
+                self.timeKeeper.stop()
                 self.timeKeeper = None
             except:
                 util.ERROR("Couldn't stop timeKeeper")

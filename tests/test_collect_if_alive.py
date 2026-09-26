@@ -109,3 +109,23 @@ class DialogSignalTest(KodiTestCase):
             self.assertFalse(player.PLAYER.has_signal('session.ended', dialog.playbackSessionEnded))
         finally:
             player.PLAYER.off('session.ended', dialog.playbackSessionEnded)
+
+
+class TimerStopTest(KodiTestCase):
+    def test_a_stopped_counter_timer_no_longer_holds_its_callbacks_owner(self):
+        """The timer's function is its own count(), so it's garbage only a full collection frees;
+        the seek dialog it called back stayed alive with it."""
+        from plexnet import plexapp
+
+        class Owner(object):
+            def tick(self, **kwargs):
+                pass
+
+        owner = Owner()
+        timer = plexapp.util.RepeatingCounterTimer(60, owner.tick)
+        timer.start()
+        timer.stop()
+        self.assertFalse(timer.is_alive())
+        ref = util.windowRef(owner)
+        del owner
+        self.assertIsNone(ref())
