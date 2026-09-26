@@ -2194,8 +2194,22 @@ class GlobalProperty():
         xbmcgui.Window(10000).setProperty('script.plex.{}'.format(self.prop), self.end or self.old)
 
 
+def sleepForGui(seconds):
+    """Wait for something Kodi's GUI thread applies - a list selection, a control becoming
+    visible - without handing this thread its queued callbacks. MONITOR.waitFor() runs them inside
+    the wait, so a click queued meanwhile ran in the middle of the caller's own setup (F6 in the
+    navigation review, the mechanism behind the 52 s grid refill). Kodi applies these on its own
+    thread whatever this one is doing, so a plain sleep sees them just as soon."""
+    time.sleep(seconds)
+
+
+VISIBILITY_POLL_SECONDS = 0.02
+
+
 def waitForVisibility(control, amount=5):
-    tries = 0
-    while not xbmc.getCondVisibility('Control.IsVisible({0})'.format(control)) and tries < util.MONITOR.waitAmount(amount):
-        util.MONITOR.waitFor()
-        tries += 1
+    # Polled every 20 ms, about a frame, against a deadline of amount seconds; it used to be
+    # 100 ms, so a button could get focus up to 100 ms after it appeared.
+    deadline = time.time() + amount
+    while not xbmc.getCondVisibility('Control.IsVisible({0})'.format(control)) and time.time() < deadline \
+            and not util.MONITOR.abortRequested():
+        sleepForGui(VISIBILITY_POLL_SECONDS)

@@ -324,7 +324,7 @@ class EpisodesPaginator(pagination.MCLPaginator):
                     # control a chance to catch up on its own.
                     tries = 0
                     while self.control.getSelectedPos() != 0 and tries < util.MONITOR.waitAmount(4, interval=0.05):
-                        util.MONITOR.waitFor(0.05)
+                        kodigui.sleepForGui(0.05)
                         self.control.setSelectedItemByPos(0)
                         tries += 1
             return finalItems
@@ -424,7 +424,8 @@ def close_safe(func):
 # selectItem() only queues the change for Kodi's GUI thread, so selectEpisode() polls until it has
 # landed: this often, not every 50 ms, so it's seen within about a frame (step 4 in the navigation
 # review - the 50 ms steps and a fixed 50 ms wait after them were most of the ~165 ms selectEpisode()
-# took per Episodes open on the AM6B).
+# took per Episodes open on the AM6B). They sleep (kodigui.sleepForGui()) rather than wait, so a click
+# queued meanwhile can't run in the middle of the selection (F6).
 SELECT_POLL_SECONDS = 0.01
 
 VIDEO_PROGRESS = OrderedDict()
@@ -1187,7 +1188,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
                     tries = 0
                     while self.episodeListControl.getSelectedPos() != mli.pos() and tries < util.MONITOR.waitAmount(4, interval=SELECT_POLL_SECONDS):
-                        util.MONITOR.waitFor(SELECT_POLL_SECONDS)
+                        kodigui.sleepForGui(SELECT_POLL_SECONDS)
                         self.episodeListControl.selectItem(mli.pos())
                         tries += 1
 
@@ -1210,7 +1211,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
             tries = 0
             while self.episodeListControl.getSelectedPos() != mli.pos() and tries < util.MONITOR.waitAmount(4, interval=SELECT_POLL_SECONDS):
-                util.MONITOR.waitFor(SELECT_POLL_SECONDS)
+                kodigui.sleepForGui(SELECT_POLL_SECONDS)
                 self.episodeListControl.selectItem(mli.pos())
                 tries += 1
 
