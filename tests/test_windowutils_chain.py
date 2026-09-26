@@ -362,3 +362,20 @@ class LibraryNavigateTest(KodiTestCase):
         nested.processCommand(intent)
         self.assertEqual([('doClose',)], nested.calls)
         self.assertIs(intent, nested.exitCommand)
+
+
+class PhotoGoHomeTest(HomeTestCase):
+    """The photo viewer isn't a GoHomeMixin window; its Home used to only close it, back to the
+    Photos section."""
+
+    def test_home_from_the_photo_viewer_goes_home(self):
+        from lib.windows import photos
+        viewer = photos.PhotoWindow.__new__(photos.PhotoWindow)
+        closed = []
+        viewer.doClose = lambda **kw: closed.append(True)
+
+        viewer.goHome(with_root=True)
+
+        self.assertEqual([True], closed)
+        self.assertEqual([('home', None, True, False)], [intentFields(i) for i in self.home.returned])
+        self.assertIs(self.home.returned[0], viewer.exitCommand)

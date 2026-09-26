@@ -227,6 +227,11 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
                 elif action == xbmcgui.ACTION_STOP:
                     self.doClose()
 
+                if self._closing:
+                    # A click on a row item already opened it and closed this window (openItem()),
+                    # which cleared the paginators below; OK arrives here too.
+                    return
+
                 if controlID == self.RELATED_LIST_ID:
                     if self.relatedPaginator.boundaryHit:
                         self.relatedPaginator.paginate()

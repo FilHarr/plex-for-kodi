@@ -145,8 +145,16 @@ class PhotoWindow(kodigui.BaseWindow):
 
         kodigui.BaseWindow.onAction(self, action)
 
-    def goHome(self, *args, **kwargs):
+    def goHome(self, section=None, with_root=False, force=False):
+        """Leave for Home as GoHomeMixin.leaveFor() does (windowutils.py): Home takes the NavIntent
+        at once, and this viewer closes with it as its exitCommand. It used to only close, so the
+        Home button from a photo went back to the Photos section."""
+        from . import navintent, windowutils
+        intent = navintent.home(section=section, root=with_root, force=force)
+        util.DEBUG_LOG('Navigate: {0} from PhotoWindow, outside the chain: to Home, closing', intent)
+        self.exitCommand = intent
         self.doClose()
+        windowutils.HOME.returnHere(intent)
 
     def checkPqueueListChanged(self):
         item = self.pqueueList.getSelectedItem()
