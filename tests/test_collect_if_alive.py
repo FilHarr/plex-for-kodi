@@ -61,3 +61,36 @@ class CollectIfAliveTest(KodiTestCase):
         with mock.patch.object(util.gc, 'collect') as collect:
             util.collectIfAlive(None)
         collect.assert_called_once_with(2)
+
+
+class DialogSignalTest(KodiTestCase):
+    """Back closes a dialog through Kodi's own onAction(), never doClose(), so the close.dialogs
+    connection made in _onInit() has to go when modal() returns."""
+
+    def test_modal_disconnects_a_dialog_closed_without_doClose(self):
+        from plexnet import plexapp
+        from lib.windows import kodigui
+        dialog = kodigui.BaseDialog.__new__(kodigui.BaseDialog)
+        dialog.doModal = lambda **kw: plexapp.util.APP.on('close.dialogs', dialog.onCloseSignal)
+        dialog.onClosed = lambda: None
+        try:
+            dialog.modal()
+            self.assertFalse(plexapp.util.APP.has_signal('close.dialogs', dialog.onCloseSignal))
+        finally:
+            plexapp.util.APP.off('close.dialogs', dialog.onCloseSignal)
+
+    def test_a_signal_held_window_is_named_in_the_log(self):
+        from plexnet import plexapp
+
+        class Held(object):
+            def onCloseSignal(self, **kwargs):
+                pass
+
+        window = Held()
+        plexapp.util.APP.on('close.dialogs', window.onCloseSignal)
+        try:
+            ref = util.windowRef(window)
+            del window
+            self.assertIn('Held.onCloseSignal (held by list)', util._describeReferrers(ref))
+        finally:
+            plexapp.util.APP.off('close.dialogs', ref().onCloseSignal)

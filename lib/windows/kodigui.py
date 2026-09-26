@@ -678,6 +678,15 @@ class BaseDialog(XMLBase, xbmcgui.WindowXMLDialog, BaseFunctions):
         self._closeSignalled = True
         self.doClose()
 
+    def modal(self, aggressive=False):
+        try:
+            BaseFunctions.modal(self, aggressive=aggressive)
+        finally:
+            # doClose() disconnects this too, but Back closes a dialog through Kodi's own
+            # onAction(), which never calls it: the signal then kept every such dialog alive for
+            # the rest of the session (E4 in the navigation review).
+            plexapp.util.APP.off('close.dialogs', self.onCloseSignal)
+
     def _onInit(self):
         self._winID = xbmcgui.getCurrentWindowDialogId()
         BaseFunctions.lastDialogID = self._winID

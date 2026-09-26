@@ -1168,7 +1168,47 @@ def collectIfAlive(ref):
     DEBUG_LOG("Closed {0} still referenced, collecting", name)
     gc.collect(2)
     if ref is not None and ref() is not None:
-        DEBUG_LOG("Closed {0} still referenced after collecting", name)
+        DEBUG_LOG("Closed {0} still referenced after collecting, by: {1}", name, _describeReferrers(ref))
+
+
+def _describeReferrers(ref):
+    """What still refers to a closed window, for collectIfAlive()'s log: each referrer's type, a
+    bound method's name and what holds it, an instance attribute's owner and name."""
+    import sys
+    window = ref()
+    here = sys._getframe()
+    out = []
+    # Plain loops: a comprehension naming window would hold it in a closure cell on older Pythons,
+    # which would then show up as a referrer.
+    referrers = gc.get_referrers(window)
+    for r in referrers:
+        if r is here:
+            continue
+        kind = type(r).__name__
+        if kind == 'method':
+            holders = []
+            for h in gc.get_referrers(r):
+                if h is not here and h is not referrers:
+                    holders.append(type(h).__name__)
+            out.append('{0}.{1} (held by {2})'.format(type(window).__name__, r.__func__.__name__,
+                                                     ', '.join(holders) or 'nothing'))
+        elif isinstance(r, dict):
+            owner = 'dict'
+            for o in gc.get_referrers(r):
+                if getattr(o, '__dict__', None) is r:
+                    owner = type(o).__name__
+                    break
+            keys = []
+            for k, v in r.items():
+                if v is window:
+                    keys.append(str(k))
+            out.append('{0}.{1}'.format(owner, '/'.join(keys[:3])))
+        else:
+            out.append(kind)
+    del referrers
+    out.append('refcount {0}'.format(sys.getrefcount(window) - 2))
+    del window
+    return '; '.join(out)
 
 
 def cleanupCacheFolder():
