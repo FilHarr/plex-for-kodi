@@ -1141,18 +1141,22 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         # The id on a movie's <Collection> tag is a tag ID, not a metadata ratingKey,
         # so we can't use it directly — match by title instead.
         col_key_map = {}  # title → key (e.g. "/library/metadata/12345/children")
-        try:
-            col_items = plexobjects.listItems(
-                self.video.server,
-                '/library/sections/{0}/collections'.format(section_id)
-            )
-            for col_item in col_items:
-                title = str(col_item.title)
-                key = str(col_item.key)
-                if title and key:
-                    col_key_map[title] = key
-        except Exception:
-            util.ERROR()
+        # Only when there's something to look up: most movies are in no collection, and a
+        # watchlist (discover) item has no library section - '/library/sections//collections'
+        # 404'd on every one of those.
+        if collections and section_id:
+            try:
+                col_items = plexobjects.listItems(
+                    self.video.server,
+                    '/library/sections/{0}/collections'.format(section_id)
+                )
+                for col_item in col_items:
+                    title = str(col_item.title)
+                    key = str(col_item.key)
+                    if title and key:
+                        col_key_map[title] = key
+            except Exception:
+                util.ERROR()
 
         for i, list_control in enumerate(self.collectionListControls):
             if i >= len(collections):
