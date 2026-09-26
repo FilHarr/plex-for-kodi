@@ -544,14 +544,17 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.sectionList = None
 
     def reset(self, episode, season=None, show=None):
+        timing = kodigui.StepTiming('Episodes reset')
         self.episode = episode
         self.initialEpisode = episode
         self.season = season if season is not None else self.episode.season()
+        timing.mark('season')
         try:
             self.show_ = show or (self.episode or self.season).show().reload(includeExtras=1, includeExtrasCount=10,
                                                                              includeOnDeck=1)
         except IndexError:
             raise util.NoDataException
+        timing.mark('show')
 
         # skipChildren (set on the Show, not the Season - the "Seasons" library option set to Hide for
         # single-season shows) is Plex's own signal that this show's single season shouldn't be treated
@@ -581,6 +584,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             # treats it as "the episode we were explicitly asked to open with", which this auto-pick
             # isn't.
             self.episode = self._defaultEpisode()
+        timing.mark('default episode')
+        timing.log()
 
         self.initialized = False
         self.closing = False
@@ -832,6 +837,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     @busy.dialog(delay_time=2.5)
     def _onFirstInit(self):
+        timing = kodigui.StepTiming('Episodes open')
         self.episodeListControl = kodigui.ManagedControlList(self, self.EPISODE_LIST_ID, 5)
         self.initMediaInfoPillControls()
 
@@ -858,9 +864,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 (not self.cameFrom or self.cameFrom not in (self.show_.ratingKey, "postplay")) and \
                 not self.openedWithAutoPlay:
             self.themeMusicInit(self.show_)
+        timing.mark('controls')
 
-        self._setup()
+        self._setup(timing=timing)
         self.postSetup(select_play_button=False)
+        timing.mark('post setup')
+        timing.log()
 
     def doAutoPlay(self, blind=False):
         # First reload the video to get all the other info
@@ -1016,8 +1025,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         player.PLAYER.on('new.video', self.onNewVideo)
         player.PLAYER.on('video.progress', self.onVideoProgress)
 
-    def _setup(self, from_redirect=False):
+    def _setup(self, from_redirect=False, timing=None):
         (self.season or self.show_).reload(checkFiles=1, **VIDEO_RELOAD_KW)
+        kodigui.markStep(timing, 'reload')
 
         if not self.episodesPaginator:
             self.episodesPaginator = EpisodesPaginator(self.episodeListControl,
@@ -1025,9 +1035,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                                                        parent_window=self)
 
         self.watchlist_setup(self.show_)
+        kodigui.markStep(timing, 'watchlist')
         self.updateProperties()
         self.setBoolProperty("initialized", True)
-        self.fillEpisodes(from_redirect=from_redirect)
+        kodigui.markStep(timing, 'properties')
+        self.fillEpisodes(from_redirect=from_redirect, timing=timing)
 
         # postpone less important tasks
         self.batch_simple([
@@ -2543,13 +2555,16 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             mli.setProperty('unwatched', '1')
         return mli
 
-    def fillEpisodes(self, update=False, from_redirect=False):
+    def fillEpisodes(self, update=False, from_redirect=False, timing=None):
         items = self.episodesPaginator.paginate()
+        kodigui.markStep(timing, 'episode list')
         if from_redirect:
             self.episodeListControl.setSelectedItemByPos(0)
         if not update:
             self.selectEpisode()
+        kodigui.markStep(timing, 'select episode')
         self.reloadItems(items, with_progress=True)
+        kodigui.markStep(timing, 'queue reloads')
 
     @close_safe
     def reloadItems(self, items, with_progress=False, skip_progress_for=None, set_item_info=False):

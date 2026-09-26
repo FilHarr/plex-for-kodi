@@ -1464,11 +1464,10 @@ class MultiWindowView(object):
         super(MultiWindowView, self).onAction(action)
 
 
-class SwapTiming(object):
-    """How long one screen change on a MultiWindow took, step by step, logged as one DEBUG line
-    once the new view has finished its first init (step 4 in the navigation review). Started when
-    a navigation request runs (runPendingNav()); mark() records the time since the previous mark,
-    add() a duration measured inside a step."""
+class StepTiming(object):
+    """How long something took, step by step, logged as one DEBUG line (step 4 in the navigation
+    review). mark() records the time since the previous mark, add() a duration measured inside a
+    step."""
 
     def __init__(self, name):
         self.name = name
@@ -1486,11 +1485,27 @@ class SwapTiming(object):
     def elapsedMs(self):
         return (time.time() - self.started) * 1000
 
+    def stepsText(self):
+        return ', '.join('{0} {1}'.format(label, int(ms)) for label, ms in self.steps)
+
+    def log(self):
+        """A screen's own setup steps, which the Swap timing line only shows as one onFirstInit."""
+        util.DEBUG_LOG("Screen timing: {0}: {1} ms ({2})", self.name, int(self.elapsedMs()), self.stepsText())
+
+
+def markStep(timing, label):
+    if timing is not None:
+        timing.mark(label)
+
+
+class SwapTiming(StepTiming):
+    """One screen change on a MultiWindow, logged once the new view has finished its first init.
+    Started when a navigation request runs (runPendingNav())."""
+
     def report(self, view):
         self.mark('onFirstInit')
         util.DEBUG_LOG("Swap timing: {0} -> {1}: {2} ms ({3})", self.name, view.__class__.__name__,
-                       int(self.elapsedMs()),
-                       ', '.join('{0} {1}'.format(label, int(ms)) for label, ms in self.steps))
+                       int(self.elapsedMs()), self.stepsText())
 
 
 class MultiWindow(object):

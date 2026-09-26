@@ -168,6 +168,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         return self.mediaItem
 
     def onFirstInit(self):
+        timing = kodigui.StepTiming('Show open')
         self.focusPlayButton()
         self.subItemListControl = kodigui.ManagedControlList(self, self.SUB_ITEM_LIST_ID, 5)
         self.rolesListControl = kodigui.ManagedControlList(self, self.ROLES_LIST_ID, 5)
@@ -183,8 +184,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.sectionList.newControl(self)
         self._selectActiveSection()
         self.displayServerAndUser()
+        timing.mark('controls')
 
-        self.setup()
+        self.setup(timing)
         self.initialized = True
         # Now that setup() has decided Play or Resume and made the button row visible (the
         # initialized property), focus the one that's showing. setPlayButtonState() can't during
@@ -193,7 +195,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         # part-watched shows on the AM6B, where the queued focus request beat the property).
         if not self.fromWatchlist and self.getFocusId() in (0, self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
             self.focusPlayButton(wait_visible=True)
+        timing.mark('focus')
         self.themeMusicInit(self.mediaItem)
+        timing.mark('theme music')
+        timing.log()
 
         # focusPlayButton() above gives the window something focused immediately, before setup() has
         # populated the season row - the screen now opens on the play button instead of jumping focus
@@ -207,13 +212,15 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.checkIsWatchlisted(self.mediaItem)
         self.themeMusicReinit(self.mediaItem)
 
-    def setup(self):
+    def setup(self, timing=None):
         if self.isExternal:
             # fixme, multiple? choice?
             self.mediaItem.related_source = "more-from-credits"
         self.mediaItem.reload(includeExtras=1, includeExtrasCount=10, includeOnDeck=1)
+        kodigui.markStep(timing, 'reload')
         self.relatedPaginator = RelatedPaginator(self.relatedListControl, leaf_count=int(self.mediaItem.relatedCount),
                                                  parent_window=self)
+        kodigui.markStep(timing, 'related count')
 
         self.watchlist_setup(self.mediaItem)
         if self.fromWatchlist:
@@ -222,14 +229,16 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.checkIsWatchlisted(self.mediaItem)
         else:
             self.setBoolProperty("is_watchlisted", self.is_watchlisted)
+        kodigui.markStep(timing, 'watchlist')
 
         self.updateProperties()
         self.setBoolProperty("initialized", True)
+        kodigui.markStep(timing, 'properties')
         # fill() (the season row) runs synchronously, unlike the rest below - it's this screen's primary
         # content (same treatment episodes.py's _setup() gives fillEpisodes()), and onFirstInit() needs it
         # populated before it can focus the season row as the screen's default control. The rest are
         # secondary content, postponed to background threads same as before.
-        self.fill()
+        self.fill(timing=timing)
         self.batch_simple([(self.fillExtras, None, None),
                            (self.fillRelated, None, None),
                            (self.fillRoles, None, None)])
@@ -1141,9 +1150,11 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         return mli
 
     @busy.dialog()
-    def fill(self, update=False):
+    def fill(self, update=False, timing=None):
         self.fillSeasons(self.mediaItem, update=update, do_focus=not self.manuallySelectedSeason)
+        kodigui.markStep(timing, 'seasons')
         self.fillSeasonTabs(update=update)
+        kodigui.markStep(timing, 'season tabs')
 
     def fillSeasonTabs(self, update=False):
         # Header season-tab row (script-plex-seasons.xml.tpl, header_middle_add block) - a separate,
