@@ -254,6 +254,17 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
                         self.lastItem = mli
             else:
                 if action in(xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_STOP):
+                    if not self.earlyAbortRequested and not player.PLAYER.isPlayingVideo():
+                        # Playback is asked for but hasn't started (Kodi opens the file after
+                        # play() returns, and reports video about a second later). Closing now
+                        # can't stop it - doClose() only stops a playing video - so Kodi went on
+                        # to play it behind the addon's black screen, with the session already
+                        # ended (live on the AM6B, 2026-09-26). playerPlaybackStarted() closes
+                        # once it starts, which stops it; a second press still closes at once.
+                        util.DEBUG_LOG('VideoPlayerWindow: Abort requested before playback started, '
+                                       'closing once it starts')
+                        self.earlyAbortRequested = True
+                        return
                     util.DEBUG_LOG('VideoPlayerWindow: Abort requested, setting flag')
                     self.earlyAbortRequested = True
         except:
