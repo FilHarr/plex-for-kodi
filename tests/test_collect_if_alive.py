@@ -9,9 +9,11 @@ from __future__ import absolute_import
 
 import gc
 
-from kodienv import ENV  # noqa: F401
+from kodienv import ENV
 
-from lib import util
+# lib.player starts its monitor thread on import otherwise.
+ENV.abort_requested = True
+from lib import util  # noqa: E402
 
 from .base import KodiTestCase
 
@@ -94,3 +96,16 @@ class DialogSignalTest(KodiTestCase):
             self.assertIn('Held.onCloseSignal (held by list)', util._describeReferrers(ref))
         finally:
             plexapp.util.APP.off('close.dialogs', ref().onCloseSignal)
+
+    def test_an_osd_dropdown_closed_with_back_leaves_the_player_signal(self):
+        from lib import player
+        from lib.windows import dropdown
+        dialog = dropdown.DropdownDialog.__new__(dropdown.DropdownDialog)
+        dialog.closeOnPlaybackEnded = True
+        dialog.doModal = lambda **kw: player.PLAYER.on('session.ended', dialog.playbackSessionEnded)
+        dialog.onClosed = lambda: None
+        try:
+            dialog.modal()
+            self.assertFalse(player.PLAYER.has_signal('session.ended', dialog.playbackSessionEnded))
+        finally:
+            player.PLAYER.off('session.ended', dialog.playbackSessionEnded)

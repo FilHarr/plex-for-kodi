@@ -319,6 +319,17 @@ class DropdownDialog(kodigui.BaseDialog):
     def playbackSessionEnded(self, **kwargs):
         self.doClose()
 
+    def modal(self, aggressive=False):
+        try:
+            kodigui.BaseDialog.modal(self, aggressive=aggressive)
+        finally:
+            # doClose() disconnects this too, but Back closes the dropdown without it, and the
+            # player's signal then kept every OSD dropdown alive for the session (see
+            # BaseDialog.modal()).
+            if self.closeOnPlaybackEnded:
+                from lib import player
+                player.PLAYER.off('session.ended', self.playbackSessionEnded)
+
     def doClose(self, **kw):
         if self.closeOnPlaybackEnded:
             from lib import player
