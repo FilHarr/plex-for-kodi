@@ -408,6 +408,12 @@ def close_safe(func):
     return inner
 
 
+# selectItem() only queues the change for Kodi's GUI thread, so selectEpisode() polls until it has
+# landed: this often, not every 50 ms, so it's seen within about a frame (step 4 in the navigation
+# review - the 50 ms steps and a fixed 50 ms wait after them were most of the ~165 ms selectEpisode()
+# took per Episodes open on the AM6B).
+SELECT_POLL_SECONDS = 0.01
+
 VIDEO_PROGRESS = OrderedDict()
 
 class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, SeasonsMixin,
@@ -1155,8 +1161,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                     self.episodeListControl.selectItem(mli.pos())
 
                     tries = 0
-                    while self.episodeListControl.getSelectedPos() != mli.pos() and tries < util.MONITOR.waitAmount(4, interval=0.05):
-                        util.MONITOR.waitFor(0.05)
+                    while self.episodeListControl.getSelectedPos() != mli.pos() and tries < util.MONITOR.waitAmount(4, interval=SELECT_POLL_SECONDS):
+                        util.MONITOR.waitFor(SELECT_POLL_SECONDS)
                         self.episodeListControl.selectItem(mli.pos())
                         tries += 1
 
@@ -1178,8 +1184,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.episodeListControl.selectItem(mli.pos())
 
             tries = 0
-            while self.episodeListControl.getSelectedPos() != mli.pos() and tries < util.MONITOR.waitAmount(4, interval=0.05):
-                util.MONITOR.waitFor(0.05)
+            while self.episodeListControl.getSelectedPos() != mli.pos() and tries < util.MONITOR.waitAmount(4, interval=SELECT_POLL_SECONDS):
+                util.MONITOR.waitFor(SELECT_POLL_SECONDS)
                 self.episodeListControl.selectItem(mli.pos())
                 tries += 1
 
@@ -1212,7 +1218,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.lastFocusID = None
             if not from_reinit:
                 self.currentItemLoaded = False
-            util.MONITOR.waitFor(0.05)
+            # No fixed wait here any more: it stood in for "until the new selection has landed",
+            # which the poll above already waits for (step 4 in the navigation review - it cost
+            # 50 ms of every Episodes open on the AM6B).
 
         self.episode = None
 
