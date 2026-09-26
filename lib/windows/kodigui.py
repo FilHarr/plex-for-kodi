@@ -870,7 +870,10 @@ class ManagedListItem(object):
     def __init__(self, label='', label2='', iconImage='', thumbnailImage='', path='', data_source=None,
                  properties=None):
         self._listItem = xbmcgui.ListItem(label, label2, path=path)
-        self._listItem.setArt({"thumb": thumbnailImage, "icon": iconImage})
+        # Every ListItem call takes Kodi's GUI lock, so skip the one that would set nothing: a
+        # grid's placeholder items have neither (library.py's _placeholderItems()).
+        if thumbnailImage or iconImage:
+            self._listItem.setArt({"thumb": thumbnailImage, "icon": iconImage})
         self.dataSource = data_source
         self.properties = {}
         self.label = label
@@ -913,14 +916,12 @@ class ManagedListItem(object):
     def _takeListItem(self, manager, lid):
         self._manager = manager
         self._ID = lid
-        self._listItem.setProperty('__ID__', lid)
         li = self._listItem
         self._listItem = None
         self._manager._properties.update(self.properties)
         return li
 
     def _updateListItem(self):
-        self.listItem.setProperty('__ID__', self._ID)
         self.listItem.setLabel(self.label)
         self.listItem.setLabel2(self.label2)
         self.listItem.setArt({"thumb": self.thumbnailImage, "icon": self.iconImage})

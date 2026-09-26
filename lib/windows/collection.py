@@ -39,7 +39,7 @@ CLEAR_LOGO_DIM = util.scaleResolution(722, 162)
 class BoundedGridPaginator(pagination.MCLPaginator):
     """Shared paginator shape for BoundedGridWindow's grid - one bounded fetch (getData() returns
     a real, already-populated page from the server, no chunk-cache/placeholder-then-hydrate split
-    the way LibraryWindow's ChunkRequestTask/CreateDefaultItemsTask need - see hashed-orbiting-
+    the way LibraryWindow's placeholder items and ChunkRequestTask need - see hashed-orbiting-
     pizza.md's Phase 4). CollectionWindow/SubDirWindow each just override getData()."""
     initialPageSize = 60
     pageSize = 60
@@ -102,7 +102,7 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
     (CollectionWindow), or a folder browsed within a movie section (SubDirWindow, not yet built).
 
     Deliberately NOT shaped like library.py's LibraryWindow - no LibrarySettings, no sort/filter,
-    no view-type toggle, no chunk-cache/CreateDefaultItemsTask. Shaped instead like episodes.py's
+    no view-type toggle, no chunk-cache/placeholder items. Shaped instead like episodes.py's
     EpisodesWindow: a plain bounded content view with sidebar chrome and nothing else. See
     hashed-orbiting-pizza.md's Phase 4 for the full reasoning - this class exists because a
     collection/subDir view leans on very little of LibraryWindow beyond "show items in a grid",

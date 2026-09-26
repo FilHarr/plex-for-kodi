@@ -355,39 +355,6 @@ def _invalidateSectionHasCollectionsCache(section):
     half of."""
     _sectionHasCollectionsCache.pop((section.server.uuid, section.key), None)
 
-class CreateDefaultItemsTask(backgroundthread.Task):
-    def setup(self, startPos, count, totalSize, fallback, callback, key=None):
-        self.startPos = startPos
-        self.count = count
-        self.totalSize = totalSize
-        self.endPos = self.startPos + self.count
-        if self.endPos > self.totalSize:
-            self.endPos = self.totalSize
-        self.fallback = fallback
-        self.callback = callback
-        self.key = key
-        return self
-
-    def contains(self, pos):
-        return self.startPos <= pos < self.endPos
-
-    def run(self):
-        if self.isCanceled():
-            return
-
-        items = []
-        firstMli = None
-        for x in range(self.startPos, self.endPos):
-            mli = kodigui.ManagedListItem('')
-            mli.setProperty('thumb.fallback', self.fallback)
-            mli.setProperty('index', str(x))
-            if self.key:
-                mli.setProperty('key', self.key)
-                if x == self.startPos:  # i.e. first item
-                    firstMli = mli
-            items.append(mli)
-        self.callback(items, self.key, firstMli)
-
 class ChunkRequestTask(backgroundthread.Task):
     def setup(self, section, start, size, callback, filter_=None, sort=None, subDir=False, bool_filters=None,
               item_type=None):
@@ -588,8 +555,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     # so that we fill an entire row
     CHUNK_SIZE = 240
     CHUNK_OVERCOMMIT = 6
-    DEFAULT_ITEMS_CHUNK_SIZE = 250
-    DEFAULT_ITEMS_CHUNK_SIZE_BIG = 500
 
     # Plan item 0 (quiet-orbiting-heron.md): section-tabs row control id (includes/
     # section_tabs.xml.tpl). Defined directly on LibraryWindow (the outer, persisting object),
@@ -740,9 +705,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Reentrant: serverRefresh() holds it while it calls openSection(), which takes it to
         # invalidate the list (_listGeneration).
         self.lock = threading.RLock()
-        # Placeholder chunks for a keyed (title-sort) grid must land in order; each waits on this
-        # for its turn instead of spinning on the lock (see _defaultItemsCallback()).
-        self._defaultItemsTurn = threading.Condition(self.lock)
 
         # Stage C (quiet-orbiting-heron.md, Recommended-tab sharing): minimal state so the ported
         # isHubHidden()/sortHubsByUserOrder()/getEnabledHubsForSection() below don't AttributeError
@@ -2117,6 +2079,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return True
 
     def onFirstInit(self):
+        timing = kodigui.StepTiming('Grid open')
         if self._openBaseWinID is not None and not self._coldStartSignaled:
             # Cold start (main.py) - the first real content is now confirmed showing (this native
             # onInit() callback only fires once Kodi has actually activated the window), so this is
@@ -2173,6 +2136,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 self.hookSignals()
         else:
             self.serverList.newControl(self)
+        timing.mark('controls')
 
         if self.contentMode == 'recommended':
             # quiet-orbiting-heron.md Stage B: RecommendedWindow has none of the poster-grid
@@ -2290,7 +2254,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.setFocusId(self.VIEWTYPE_BUTTON_ID)
             self.setBoolProperty("initialized", True)
         else:
-            self.doRefill()
+            self._gridTiming = timing
+            try:
+                self.doRefill()
+            finally:
+                self._gridTiming = None
+            timing.log()
 
     def _consumeRestoreItemPos(self, count):
         """One-shot: the grid position popBack() asked to land back on (_captureRootRestoreState()/
@@ -2364,6 +2333,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self.setTitle()
         self.setBoolProperty("initialized", True)
+        kodigui.markStep(self.__dict__.get('_gridTiming'), 'refill setup')
         self.fill()
         self.refill = False
         if self.getProperty('no.content') or self.getProperty('no.content.filtered'):
@@ -4717,8 +4687,20 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         return None
 
 
-    def getDefChunkSize(self, size):
-        return self.DEFAULT_ITEMS_CHUNK_SIZE if size < 1000 else self.DEFAULT_ITEMS_CHUNK_SIZE_BIG
+    def _placeholderItems(self, start, count, key=None):
+        """Empty grid items for positions start..start+count-1, which the chunk fetches fill in.
+        Three GUI calls each (the thumb fallback, index and, for a title sort, the letter key):
+        every Python ListItem call takes Kodi's GUI lock."""
+        fallback = self.thumb_fallback
+        items = []
+        for x in range(start, start + count):
+            mli = kodigui.ManagedListItem('')
+            mli.setProperty('thumb.fallback', fallback)
+            mli.setProperty('index', str(x))
+            if key:
+                mli.setProperty('key', key)
+            items.append(mli)
+        return items
 
     @property
     def thumb_fallback(self):
@@ -4726,6 +4708,22 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     @busy.dialog()
     def fillShows(self, keep_focus=False):
+        if self.__dict__.get('_gridTiming') is not None:
+            # part of a grid open's own timing line (onFirstInit())
+            self._fillShows(keep_focus)
+            return
+        # A sort, filter or item-type change refilling the grid in place gets a line of its own.
+        timing = self._gridTiming = kodigui.StepTiming('Grid refill')
+        try:
+            self._fillShows(keep_focus)
+        finally:
+            self._gridTiming = None
+        timing.log()
+
+    def _fillShows(self, keep_focus=False):
+        # A sort, filter or item-type change refills the grid in place without a swap, so chunks
+        # still in flight from the previous fill have to be marked stale here too.
+        self._retireListItems()
         self.setBoolProperty('no.content', False)
         self.setBoolProperty('no.content.filtered', False)
         self.setBoolProperty('content.filling', True)
@@ -4742,7 +4740,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if type_ == plexobjects.SEARCHTYPES["photo"]:
             type_ = None
 
-        tasks = []
+        # Built here, on this thread, in one go. They used to be built on workers while this
+        # thread waited, polling: the GUI lock serialised the workers anyway, and each poll handed
+        # queued clicks to Python, so a sort-menu click ran inside the refill it was about to
+        # replace (live-caught on the AM6B, 2026-09-26: a refill stuck for 52 s behind the menu).
+        placeholders = []
 
         # boolean filters (hdr/dovi/unwatched/inProgress/...) flow through as a dict
         bool_filters = self.boolFilters
@@ -4781,6 +4783,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
             jumpList = self.section.jumpList(filter_=self.getFilterOpts(), sort=self.getSortOpts(),
                                              type_=jl_type, bool_filters=bool_filters)
+            kodigui.markStep(self.__dict__.get('_gridTiming'), 'jump list')
             if jumpList is None:
                 # Endpoint doesn't support this sort/type combo (or errored) - fall back to
                 # a regular fetch below rather than reporting the section as empty.
@@ -4799,7 +4802,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 jitems.append(mli)
                 totalSize += ji_size
 
-                tasks.append(CreateDefaultItemsTask().setup(idx, ji.size.asInt(), totalSize, self.thumb_fallback, self._defaultItemsCallbackFor(self._listGeneration), key=ji.key))
+                keyed = self._placeholderItems(idx, ji_size, key=ji.key)
+                if keyed:
+                    self.firstOfKeyItems[ji.key] = keyed[0]
+                placeholders += keyed
                 idx += ji_size
 
             util.DEBUG_LOG('JumpList item size: {}', totalSize)
@@ -4813,6 +4819,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                                               type_=type_, bool_filters=bool_filters)
 
             totalSize = sectionAll.totalSize.asInt()
+            kodigui.markStep(self.__dict__.get('_gridTiming'), 'count')
 
             if not totalSize:
                 self.showPanelControl.reset()
@@ -4826,24 +4833,26 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
                 return
             else:
-                for startPosition in range(0, totalSize, self.getDefChunkSize(totalSize)):
-                    tasks.append(CreateDefaultItemsTask().setup(startPosition, self.getDefChunkSize(totalSize), totalSize, self.thumb_fallback, self._defaultItemsCallbackFor(self._listGeneration)))
+                placeholders = self._placeholderItems(0, totalSize)
 
         self.setProperty("items.count", str(totalSize))
 
         self.showPanelControl.reset()
         self.keyListControl.reset()
-
-        # Start the background tasks to create the default items
-        self.tasks.add(tasks)
-        backgroundthread.BGThreader.addTasksToFront(tasks)
-
-        # Wait for the default items to be created
-        while backgroundthread.BGThreader.working() and not util.MONITOR.abortRequested():
-            util.MONITOR.waitFor()
+        self.showPanelControl.addItems(placeholders)
+        timing = self.__dict__.get('_gridTiming')
+        if timing is not None:
+            timing.mark('placeholders')
+            timing.add('items', totalSize)
+            timing.add('keys', len(jitems))
+            # for the first chunk's own timing line (_chunkCallbackFor()): a grid open counts from
+            # the navigation request, a refill from its own start
+            requested = self.__dict__.get('_lastSwapStarted') if timing.name == 'Grid open' else timing.started
+            self._firstChunkTiming = (self._listGeneration, time.time(), requested)
 
         if jitems:
             self.keyListControl.addItems(jitems)
+        kodigui.markStep(timing, 'key list')
 
         util.setGlobalProperty('sort.alpha', jitems and '1' or '')
 
@@ -4874,6 +4883,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         self.tasks.add(tasks)
         backgroundthread.BGThreader.addTasksToFront(tasks)
+        kodigui.markStep(timing, 'select + queue chunks')
 
         if restorePos:
             # Real art/metadata only exists for whichever chunk(s) have actually been fetched -
@@ -5114,34 +5124,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if keys:
             util.setGlobalProperty('key', keys[0])
 
-    def _defaultItemsCallbackFor(self, generation):
-        """Same staleness snapshot as _chunkCallbackFor() below."""
-        def callback(items, key, firstMli):
-            self._defaultItemsCallback(items, key, firstMli, generation)
-        return callback
-
-    def _defaultItemsCallback(self, items, key, firstMli, generation=None):
-        if not items:
-            return
-
-        with self._defaultItemsTurn:
-            # When creating the default items for the title sort we need to add them to the list
-            # in order. So we look at the first index of the incoming items to see if it's the
-            # next batch of items to add, and if not, wait for the batch before it. Used to spin on
-            # the lock with a 1 ms sleep, forever if an earlier batch was cancelled - which also
-            # hung the old joining Tasks.kill(). A swap (_listGeneration) or close ends the wait.
-            if key and firstMli:
-                while int(firstMli.getProperty('index')) != self.showPanelControl.size():
-                    if (generation is not None and generation != self._listGeneration) or self.closing:
-                        util.DEBUG_LOG("Library: _defaultItemsCallback() declined - list moved on")
-                        return
-                    self._defaultItemsTurn.wait(0.25)
-
-                self.firstOfKeyItems[key] = firstMli
-
-            self.showPanelControl.addItems(items)
-            self._defaultItemsTurn.notify_all()
-
     def _chunkCallbackFor(self, generation):
         """Wraps _chunkCallback() with the _listGeneration snapshot taken when the chunk fetch
         was scheduled, so a chunk that finishes after an openSection()/switchTab() in-place swap
@@ -5154,7 +5136,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         swap - this is the missing check for that case specifically.
         """
         def callback(items, start):
+            firstChunk = self.__dict__.get('_firstChunkTiming')
+            if not firstChunk or firstChunk[0] != generation:
+                self._chunkCallback(items, start, generation)
+                return
+            self._firstChunkTiming = None
+            started = time.time()
             self._chunkCallback(items, start, generation)
+            requested = firstChunk[2]
+            util.DEBUG_LOG("Library: first chunk ({0} items) bound in {1} ms, {2} ms after the placeholders,"
+                           " {3} ms after the request", len(items), int((time.time() - started) * 1000),
+                           int((started - firstChunk[1]) * 1000),
+                           int((time.time() - requested) * 1000) if requested else '?')
         return callback
 
     def _chunkCallback(self, items, start, generation=None):
