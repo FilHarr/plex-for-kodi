@@ -1549,6 +1549,45 @@ if _logGcPause not in gc.callbacks:
     gc.callbacks.append(_logGcPause)
 
 
+# F3 in the navigation review: plexnet signals run their handlers on whichever thread triggers
+# them, and a window's handler that touches controls off the main thread can crash Kodi during a
+# swap (both 3b crashes). A handler still connected after its window closed keeps the window alive
+# and acts on a dead screen. Each case is logged once per handler, signal and reason.
+_signalAuditSeen = set()
+
+
+def _auditSignal(emitter, signalName, slots):
+    offMain = threading.current_thread() is not threading.main_thread()
+    for slot in slots:
+        owner = getattr(slot, '__self__', None)
+        if isinstance(owner, MultiWindow):
+            closed = getattr(owner, '_allClosed', False)
+        elif isinstance(owner, (BaseWindow, BaseDialog)):
+            closed = getattr(owner, '_closing', False)
+        else:
+            continue
+        reasons = []
+        if offMain:
+            reasons.append('on thread ' + threading.current_thread().name)
+        if closed:
+            reasons.append('after its window closed')
+        for reason in reasons:
+            key = (type(owner).__name__, slot.__func__.__name__, signalName, reason.split(' ')[0])
+            if key in _signalAuditSeen:
+                continue
+            _signalAuditSeen.add(key)
+            util.DEBUG_LOG("Signal audit: {0} from {1} reaches {2}.{3} {4}", signalName, type(emitter).__name__,
+                           type(owner).__name__, slot.__func__.__name__, reason)
+
+
+def _installSignalAudit():
+    from plexnet import signalsmixin
+    signalsmixin.AUDIT = _auditSignal
+
+
+_installSignalAudit()
+
+
 def applyCarriedProps(window, props):
     """Properties carried into a new window or dialog (window_props/dialog_props) go to it and to
     the window on screen underneath. That second write used to happen as a side effect of

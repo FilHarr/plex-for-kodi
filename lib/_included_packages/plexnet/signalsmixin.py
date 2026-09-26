@@ -1,6 +1,10 @@
 from __future__ import absolute_import
 from . import signalslot
 
+# Optional hook, called as AUDIT(emitter, signalName, slots) before each emit. The addon installs
+# one (kodigui) to log windows that get signals off the main thread or after they've closed.
+AUDIT = None
+
 
 class SignalsMixin(object):
     def __init__(self, *args, **kwargs):
@@ -47,4 +51,7 @@ class SignalsMixin(object):
         if signalName not in self._signals:
             return
 
-        self._signals[signalName].emit(**kwargs)
+        signal = self._signals[signalName]
+        if AUDIT is not None:
+            AUDIT(self, signalName, signal.slots)
+        signal.emit(**kwargs)
