@@ -6857,16 +6857,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         content_rating = getattr(ds, 'contentRating', None)
         self.setProperty('content.rating', content_rating and str(content_rating).split('/', 1)[-1] or '')
 
-        genres_attr = getattr(ds, 'genres', None)
-        genres = ''
-        try:
-            if genres_attr is not None and not isinstance(genres_attr, plexobjects.PlexValue):
-                genre_list = genres_attr()
-                if genre_list:
-                    genres = u' / '.join([g.tag for g in genre_list][:3])
-        except Exception:
-            util.DEBUG_LOG('setHeroInfo: genres failed for {}', ds)
-        self.setProperty('info', genres)
+        # No genres: the hero's meta row leaves them out, and nothing read the 'info' property
+        # this used to fill. Filling it cost a server round trip on the main thread on every hub
+        # move: genres() reloads a hub movie, and an episode's genres property fetches its show
+        # (20-50 ms each on the AM6B).
         # The rest of the shared meta row (CommonMixin.META_ROW_PROPERTIES) this hero has no
         # value for.
         self.blankMetaRow('genres.short', 'unavailable')
