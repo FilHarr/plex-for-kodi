@@ -2015,13 +2015,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             return
 
         changed = False
-        with busy.BusySignalContext(plexapp.util.APP, "change:selectedServer") as bc:
-            changed = plexapp.SERVERMANAGER.setSelectedServer(server, force=True)
-            if not changed:
-                bc.ignoreSignal = True
-                self.changingServer = False
-            else:
-                util.setSetting('previous_server.{}'.format(plexapp.ACCOUNT.ID), prevUUID)
+        try:
+            with busy.BusySignalContext(plexapp.util.APP, "change:selectedServer") as bc:
+                changed = plexapp.SERVERMANAGER.setSelectedServer(server, force=True)
+                if not changed:
+                    bc.ignoreSignal = True
+                    self.changingServer = False
+                else:
+                    util.setSetting('previous_server.{}'.format(plexapp.ACCOUNT.ID), prevUUID)
+        except Exception:
+            # Otherwise left set for the session. The navigation queue logs the exception.
+            self.changingServer = False
+            raise
 
         if changed and self is not windowutils.HOME:
             self.goHome(with_root=True)

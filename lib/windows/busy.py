@@ -131,8 +131,11 @@ class BusyContext(object):
         return self
 
     def __exit__(self, exc_type, exc_value, tb):
+        # The exception is passed on (False below), not swallowed: the caller used to carry on as
+        # if the block had succeeded (S3 in the navigation review). A site that should carry on
+        # catches it itself; whoever does gets the traceback, so this only notes it.
         if exc_type is not None:
-            util.ERROR()
+            util.DEBUG_LOG("Busy context: {0} raised inside, passing it on", exc_type.__name__)
 
         if self.timer and self.timer.is_alive():
             self.timer.cancel()
@@ -143,7 +146,7 @@ class BusyContext(object):
         del self.w
         self.w = None
         util.collectIfAlive(ref)
-        return True
+        return False
 
 
 class BusyMsgContext(BusyContext):
@@ -175,11 +178,9 @@ class BusySignalContext(BusyMsgContext):
         self.signalReceived = True
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is not None:
-            util.ERROR()
-
         try:
-            if not self.ignoreSignal:
+            # A block that raised won't bring its signal: don't wait up to waitMax for it.
+            if not self.ignoreSignal and exc_type is None:
                 tries = 0
                 while not self.signalReceived and tries < util.MONITOR.waitAmount(self.waitMax):
                     util.MONITOR.waitFor()

@@ -2237,21 +2237,26 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                     # this may be canceled by the usual actions;
                     # depending on who receives the cancel action, _abortBufferWait might be set by our onAction
                     # or by the busy window via the context manager
-                    while not self._abortBufferWait and not bc.shouldClose and waitedFor < waitMax and \
-                            (int(xbmc.getInfoLabel("Player.ProgressCache")) -
-                             int(xbmc.getInfoLabel("Player.Progress"))) < sensibleBufferPerc:
-                        curBuf = int(xbmc.getInfoLabel("Player.ProgressCache")) - \
-                                 int(xbmc.getInfoLabel("Player.Progress"))
+                    try:
+                        while not self._abortBufferWait and not bc.shouldClose and waitedFor < waitMax and \
+                                (int(xbmc.getInfoLabel("Player.ProgressCache")) -
+                                 int(xbmc.getInfoLabel("Player.Progress"))) < sensibleBufferPerc:
+                            curBuf = int(xbmc.getInfoLabel("Player.ProgressCache")) - \
+                                     int(xbmc.getInfoLabel("Player.Progress"))
 
-                        bc.setMessage("Buffer: {} %".format(int(curBuf / sensibleBufferPerc * 100)))
+                            bc.setMessage("Buffer: {} %".format(int(curBuf / sensibleBufferPerc * 100)))
 
-                        xbmc.sleep(200)
-                        waitedFor += 0.2
+                            xbmc.sleep(200)
+                            waitedFor += 0.2
 
-                        # report buffer state every 10 seconds
-                        if int(waitedFor) > 0 and int(waitedFor) % 10 == 0:
-                            util.DEBUG_LOG("SeekDialog.buffer: "
-                                           "Buffer filled {}/{}".format(curBuf, sensibleBufferPerc))
+                            # report buffer state every 10 seconds
+                            if int(waitedFor) > 0 and int(waitedFor) % 10 == 0:
+                                util.DEBUG_LOG("SeekDialog.buffer: "
+                                               "Buffer filled {}/{}".format(curBuf, sensibleBufferPerc))
+                    except Exception:
+                        # Caught here, not let out: what follows resumes playback, which a failed
+                        # wait (an empty progress label, say) would otherwise leave paused.
+                        util.ERROR('SeekDialog.buffer: waiting for the buffer failed')
 
                     # buffer wait canceled via busy window
                     if bc.shouldClose:
@@ -2289,11 +2294,17 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 wasPlaying = True
 
             with busy.BusyClosableMsgContext() as bc:
-                bc.setMessage("Buffering")
-                util.MONITOR.waitForAbort(wait)
-                self.waitingForBuffer = False
-                if self.player.playState == self.player.STATE_PAUSED and wasPlaying:
-                    self.player.pause()
+                try:
+                    bc.setMessage("Buffering")
+                    util.MONITOR.waitForAbort(wait)
+                except Exception:
+                    # Caught, as above: this runs from the player's tick.
+                    util.ERROR('SeekDialog.buffer: waiting failed')
+                finally:
+                    # Resume however the wait ended, or playback stays paused.
+                    self.waitingForBuffer = False
+                    if self.player.playState == self.player.STATE_PAUSED and wasPlaying:
+                        self.player.pause()
                 return True
 
     def seekBehind(self):

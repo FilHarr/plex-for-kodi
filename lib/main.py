@@ -371,9 +371,14 @@ def _main():
                                 uid = closeOption['fast_switch']
                                 util.DEBUG_LOG('Main: Fast-Switching users...: {}', uid)
                                 util.setSetting('previous_user', plexapp.ACCOUNT.ID)
-                                with busy.BusySignalContext(plexapp.util.APP, "account:response", wait_max=10):
-                                    if plexapp.ACCOUNT.switchHomeUser(uid, silent=True) and plexapp.ACCOUNT.switchUser:
-                                        util.DEBUG_LOG('Waiting for user change...')
+                                # Caught here: let out, a failed switch would end the addon via
+                                # main()'s outer handler. Home restarts as the current user instead.
+                                try:
+                                    with busy.BusySignalContext(plexapp.util.APP, "account:response", wait_max=10):
+                                        if plexapp.ACCOUNT.switchHomeUser(uid, silent=True) and plexapp.ACCOUNT.switchUser:
+                                            util.DEBUG_LOG('Waiting for user change...')
+                                except Exception:
+                                    util.ERROR('Fast user switch failed')
 
                         elif closeOption == 'recompile':
                             render_templates(force=True)

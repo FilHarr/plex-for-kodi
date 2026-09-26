@@ -50,9 +50,14 @@ class PlexSubtitleDownloadMixin(object):
 
         subs = None
         with busy.BusyBlockingContext(delay=True):
-            subs = video.findSubtitles(language=lang_code,
-                                       hearing_impaired=pnUtil.ACCOUNT.subtitlesSDH,
-                                       forced=pnUtil.ACCOUNT.subtitlesForced)
+            # Caught here: a failed search is reported as none found, as it always was, rather
+            # than let out into the player's click handlers.
+            try:
+                subs = video.findSubtitles(language=lang_code,
+                                           hearing_impaired=pnUtil.ACCOUNT.subtitlesSDH,
+                                           forced=pnUtil.ACCOUNT.subtitlesForced)
+            except Exception:
+                util.ERROR('Subtitle search failed')
 
         if subs:
             with kodigui.WindowProperty(self, 'settings.visible', '1'):
@@ -78,34 +83,39 @@ class PlexSubtitleDownloadMixin(object):
                     return False
 
                 with busy.BusyBlockingContext(delay=True):
-                    video.downloadSubtitles(sk_to_k[choice])
-                    tries = 0
-                    sub_downloaded = False
-                    util.DEBUG_LOG("Waiting for subtitle download: {}", choice)
-                    while tries < 20:
-                        for stream in video.findSubtitles(language=lang_code,
-                                                          hearing_impaired=pnUtil.ACCOUNT.subtitlesSDH,
-                                                          forced=pnUtil.ACCOUNT.subtitlesForced):
-                            if stream.downloaded.asBool() and stream.sourceKey == choice:
-                                util.DEBUG_LOG("Subtitle downloaded: {}", stream.extendedDisplayTitle)
-                                sub_downloaded = stream
+                    # Caught here, as the search above: a failed download is reported as no
+                    # subtitle, as it always was, rather than let out into the player.
+                    try:
+                        video.downloadSubtitles(sk_to_k[choice])
+                        tries = 0
+                        sub_downloaded = False
+                        util.DEBUG_LOG("Waiting for subtitle download: {}", choice)
+                        while tries < 20:
+                            for stream in video.findSubtitles(language=lang_code,
+                                                              hearing_impaired=pnUtil.ACCOUNT.subtitlesSDH,
+                                                              forced=pnUtil.ACCOUNT.subtitlesForced):
+                                if stream.downloaded.asBool() and stream.sourceKey == choice:
+                                    util.DEBUG_LOG("Subtitle downloaded: {}", stream.extendedDisplayTitle)
+                                    sub_downloaded = stream
+                                    break
+                            if sub_downloaded:
                                 break
-                        if sub_downloaded:
-                            break
-                        tries += 1
-                        util.MONITOR.waitForAbort(0.25)
-                    # stream will be auto selected
-                    video.clearCache()
-                    video.reload(includeExternalMedia=1, includeChapters=1, skipRefresh=1)
-                    # reselect fresh media
-                    media = [m for m in video.media() if m.ratingKey == video.mediaChoice.media.ratingKey][0]
-                    video.setMediaChoice(media=media, partIndex=video.mediaChoice.partIndex)
-                    # double reload is probably not necessary
-                    video.reload(fromMediaChoice=True, forceSubtitlesFromPlex=stream, skipRefresh=1)
-                    for stream in video.subtitleStreams:
-                        if stream.selected.asBool():
-                            util.DEBUG_LOG("Selecting subtitle: {}", stream.extendedDisplayTitle)
-                            return stream
+                            tries += 1
+                            util.MONITOR.waitForAbort(0.25)
+                        # stream will be auto selected
+                        video.clearCache()
+                        video.reload(includeExternalMedia=1, includeChapters=1, skipRefresh=1)
+                        # reselect fresh media
+                        media = [m for m in video.media() if m.ratingKey == video.mediaChoice.media.ratingKey][0]
+                        video.setMediaChoice(media=media, partIndex=video.mediaChoice.partIndex)
+                        # double reload is probably not necessary
+                        video.reload(fromMediaChoice=True, forceSubtitlesFromPlex=stream, skipRefresh=1)
+                        for stream in video.subtitleStreams:
+                            if stream.selected.asBool():
+                                util.DEBUG_LOG("Selecting subtitle: {}", stream.extendedDisplayTitle)
+                                return stream
+                    except Exception:
+                        util.ERROR('Subtitle download failed')
         else:
             util.showNotification(util.T(33696, "No Subtitles found."),
                                   time_ms=1500, header=util.T(32396, "Subtitles"))
