@@ -355,7 +355,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 self.updateBackgroundFrom(self.video)
 
             if controlID == self.RELATED_LIST_ID:
-                if self.relatedPaginator.boundaryHit:
+                if self.relatedPaginator and self.relatedPaginator.boundaryHit:
                     self.relatedPaginator.paginate()
                     return
 
@@ -918,12 +918,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         if self.isExternal:
             # fixme, multiple? choice?
             self.video.related_source = "more-from-credits"
+        self.paintClickedItem()
         self.video.reload(checkFiles=1, **VIDEO_RELOAD_KW)
-        try:
-            self.relatedPaginator = RelatedPaginator(self.relatedListControl, leaf_count=int(self.video.relatedCount),
-                                                     parent_window=self)
-        except ValueError:
-            raise util.NoDataException
 
         if self.fromWatchlist:
             self.watchlistItemAvailable(self.video, shortcut_watchlisted=self.directlyFromWatchlist)
@@ -943,6 +939,21 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                            (self.fillExtras, None, None),
                            (self.fillRelated, None, None),
                            (self.fillCollections, None, None)])
+
+    def paintClickedItem(self):
+        """Show what the clicked item already carries before the reload below blocks on the server
+        (P4 in the navigation review: 280-575 ms on the AM6B). Kodi keeps rendering while this
+        thread waits, so the title, logo and summary are up for that time instead of an empty
+        screen. Plain attributes only - a hub or grid item isn't a full object, and genres(), for
+        one, reloads it. setInfo() then writes everything from the full item; the buttons stay
+        hidden until then (initialized)."""
+        video = self.video
+        self.setProperty('title', video.defaultTitle)
+        self.setProperty('clear.logo', util.clearLogoFrom(video, *self.CLEAR_LOGO_DIM))
+        self.setProperty('summary', util.summaryForBox(video.summary))
+        self.setProperty('date', video.year)
+        self.setProperty('duration', video.duration and util.durationToShortText(video.duration.asInt(), noSpaces=True))
+        self.setProperty('content.rating', video.contentRating.split('/', 1)[-1])
 
     def setInfo(self, skip_bg=False):
         if not skip_bg:
@@ -1096,14 +1107,25 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         return True
 
     def fillRelated(self):
-        if self.relatedPaginator is None:
-            # closed (doClose() drops it) before this task ran
+        if self.tasks is None:
+            # closed before this task ran
             return False
-        if not self.relatedPaginator.leafCount:
+        if self.relatedPaginator is None:
+            # Built here, on the fill's worker, not in setup(): sizing it is a server query (the
+            # 'similar' count, ~250 ms on the AM6B) that held up every movie open (P4 in the
+            # navigation review).
+            try:
+                count = int(self.video.relatedCount)
+            except ValueError:
+                count = 0
+            self.relatedPaginator = RelatedPaginator(self.relatedListControl, leaf_count=count,
+                                                     parent_window=self)
+        paginator = self.relatedPaginator
+        if not paginator.leafCount:
             self.relatedListControl.reset()
             return False
 
-        items = self.relatedPaginator.paginate()
+        items = paginator.paginate()
 
         if not items:
             return False
