@@ -974,9 +974,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # independent captures) that only manifests after a real shell has been hosted more than
         # once before a section switch. Not proven. Shells now reach the host only through weak
         # references (_hostRef, _chainHost - windowutils.UtilMixin), so that cycle no longer
-        # exists; _forceCollectOutgoing() below still runs, since other cycles (plexobjects'
-        # item<->container) keep it collecting thousands of objects per swap - whether it can go
-        # needs E4's gc timing (navigation review).
+        # exists. The forced gc.collect() and 0.15 s sleep that used to follow every real-shell
+        # teardown (_forceCollectOutgoing()) are gone too: the step 4 baseline on the AM6B
+        # (2026-09-26) timed them at 260-430 ms of every Back, and without them Back to
+        # Recommended went from ~600 to ~250 ms to first init, with no freeze or crash in a
+        # rapid-Back stress run. Python's automatic gc still collects the cycles
+        # (plexobjects' item<->container), on its own schedule.
         #
         # _chainHost is still cleared on the outgoing shell: a call already in flight on another
         # thread from before this swap must find no chain host (_liveChainHost() -> None), not act
@@ -984,8 +987,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # callback on a window that's no longer current.
         #
         # Its native window is closed here too, while it's still Kodi's active window and before
-        # the next one is shown. doClose() only flags it, and closing used to be left to the forced
-        # collection below disposing it - which only happens if nothing else still references
+        # the next one is shown. doClose() only flags it, and closing used to be left to a forced
+        # collection disposing it - which only happens if nothing else still references
         # it. Tasks still running for it after Tasks.kill() stopped joining the workers do (e.g.
         # its watchlist checks), and live-caught 2026-09-24: Back on an Episodes screen still
         # loading swapped to Home, then Kodi re-activated the old Episodes window over it
@@ -1008,8 +1011,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             kodigui.MultiWindow._setupCurrent(self, cls)
             if issubclass(cls, RecommendedWindow):
                 self._hideStaleHero()
-            if outgoingWasRealShell:
-                self._forceCollectOutgoing(cls)
             util.DEBUG_LOG("Library: _setupCurrent({0}) thin-proxy branch complete", cls)
             return
 
@@ -1059,8 +1060,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # onClick/onFocus/onReInit aren't routed through the host for real shells - unlike
         # LibraryWindow's own thin view-type children (kodigui.MultiWindowView), these carry real
         # business logic of their own. Their onAction() calls routeActionToHost() first.
-        if outgoingWasRealShell:
-            self._forceCollectOutgoing(cls)
         # TEMPORARY diagnostic logging - see this method's own top.
         util.DEBUG_LOG("Library: _setupCurrent({0}) real-shell branch complete, real_shell_count={1}",
                         cls, self._realShellHostCount)
@@ -1083,45 +1082,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         the view), so nothing overwrites this before the bind."""
         util.DEBUG_LOG("Library: hiding the stale hero before show")
         xbmcgui.WindowXML.setProperty(self._current, 'no_hero_art', '1')
-
-    def _forceCollectOutgoing(self, cls):
-        """EXPERIMENTAL, see _setupCurrent()'s own comment on the hypothesis this tests. Called
-        only once self._current has already been reassigned away from the outgoing shell (whose
-        _chainHost was already cleared, and whose other reference to self is weak) - at
-        this point nothing in this object graph should still reference it, so a forced
-        collection should free it (and its native window resources) immediately rather than
-        waiting on Python's own GC scheduling.
-
-        Live-confirmed cosmetic cost of this being synchronous/inline: whatever's beneath the
-        addon's window stack (Kodi's own base skin) can flash through for the ~50-150ms this
-        blocks the next window's .modal() call - see plexobjects.py's PlexItemList/container
-        objects (item<->container is a genuine cycle only the collector, not refcounting, can
-        free) and this method's own git history for the investigation. Live-confirmed NOT
-        rescuable by moving this call to a background thread instead (tried and reverted): it
-        deadlocked Kodi outright, almost certainly because freeing the outgoing shell here
-        triggers native Kodi GUI-subsystem teardown, and doing that off-thread while the main
-        thread is simultaneously inside .modal()'s own native GUI code is a cross-thread
-        lock-order hazard. Must stay synchronous, before self._current's caller proceeds to the
-        next .modal() call - the flicker is the accepted tradeoff for not deadlocking.
-
-        EXPERIMENTAL mitigation, unproven (not the same standing as SKIN_RELOAD_DEFER_SECONDS's
-        confirmed-upstream-bug fix, windowutils.py - this is a hypothesis, not a diagnosed root
-        cause): the short sleep after gc.collect() below targets a live-reported, intermittent
-        unresponsive-black-screen freeze on Back, WinDbg-confirmed as the language-invoker thread
-        blocked inside a native call (SleepConditionVariableSRW) from deep within .modal() - i.e.
-        genuinely waiting on Kodi's own native side, not a Python-level bug, and not reproducible
-        with Kodi's own debug logging on (which slows native processing down, the same effect a
-        real sleep has). gc.collect() returning doesn't guarantee Kodi's own native teardown of
-        the outgoing shell's window - triggered by freeing it, per this method's own docstring
-        above - has actually finished settling before the next .modal() call starts; giving it a
-        little real wall-clock time here, same shape as every other SKIN_RELOAD_DEFER_SECONDS use
-        in this file, is a cheap, low-risk thing to try. Same accepted-flicker tradeoff as the
-        gc.collect() call itself, just a bit more of it."""
-        import gc
-        collected = gc.collect()
-        util.MONITOR.waitFor(windowutils.SKIN_RELOAD_DEFER_SECONDS)
-        util.DEBUG_LOG("Library: _setupCurrent({0}) forced gc.collect() after real-shell teardown, "
-                        "collected={1}", cls, collected)
 
     def _retireListItems(self):
         """Mark the list items in-flight work is writing into as stale (_listGeneration), and wait

@@ -135,7 +135,6 @@ class FakeHostWindow(object):
     # without needing a full LibraryWindow instance.
     _isRealShell = staticmethod(library.LibraryWindow._isRealShell)
     _setupCurrent = library.LibraryWindow._setupCurrent
-    _forceCollectOutgoing = library.LibraryWindow._forceCollectOutgoing
     _retireListItems = library.LibraryWindow._retireListItems
     swapTo = library.LibraryWindow.swapTo
     popBack = library.LibraryWindow.popBack
