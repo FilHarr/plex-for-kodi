@@ -209,6 +209,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         return self.video
 
     def onFirstInit(self):
+        timing = kodigui.StepTiming('Pre-play open')
         if not self.fromWatchlist:
             # pre_play-wl.xml replaces this whole block with wl_availability.xml.tpl's own controls -
             # these ids only exist on the non-watchlist streams block
@@ -228,12 +229,15 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.sectionList.newControl(self)
         self._selectActiveSection()
         self.displayServerAndUser()
+        timing.mark('controls')
 
-        self.setup()
+        self.setup(timing=timing)
         self.initialized = True
 
         if not util.getSetting("slow_connection") and not self.openedWithAutoPlay:
             self.themeMusicInit(self.video, locations=[os.path.dirname(s.part.file) for s in self.video.videoStreams])
+        timing.mark('theme music')
+        timing.log()
 
     def doAutoPlay(self, blind=False):
         # First reload the video to get all the other info
@@ -910,7 +914,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.setFocusId(button_id)
 
     @busy.dialog()
-    def setup(self):
+    def setup(self, timing=None):
         self.watchlist_setup(self.video)
 
         util.DEBUG_LOG('PrePlay: Showing video info: {0}', self.video)
@@ -919,21 +923,26 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             # fixme, multiple? choice?
             self.video.related_source = "more-from-credits"
         self.paintClickedItem()
+        kodigui.markStep(timing, 'paint clicked')
         self.video.reload(checkFiles=1, **VIDEO_RELOAD_KW)
+        kodigui.markStep(timing, 'reload')
 
         if self.fromWatchlist:
             self.watchlistItemAvailable(self.video, shortcut_watchlisted=self.directlyFromWatchlist)
         if not self.directlyFromWatchlist:
             self.checkIsWatchlisted(self.video)
+        kodigui.markStep(timing, 'watchlist')
 
         self.setInfo()
         self.setBoolProperty("initialized", True)
+        kodigui.markStep(timing, 'setInfo')
         # For watchlist items, PLAY_BUTTON_ID (302) is permanently hidden behind disable_playback
         # - watchlistItemAvailable() above already owns focusing the dynamic wl button (2302-2305)
         # once its availability check resolves, so waiting on 302 here would just block on a
         # control that's never going to show up.
         if not self.fromWatchlist:
             self.focusPlayButton()
+        kodigui.markStep(timing, 'focus')
         self.batch_simple([(self.fillRoles, None, None),
                            (self.fillReviews, None, None),
                            (self.fillExtras, None, None),
