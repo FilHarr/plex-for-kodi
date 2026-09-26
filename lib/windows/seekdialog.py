@@ -253,8 +253,12 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self.showItemEndsInfo = util.addonSettings.showMediaEndsInfo
         self.showItemEndsLabel = util.addonSettings.showMediaEndsLabel
 
-        self.player.video.server.on("np:timelineResponse", self.timelineResponseCallback)
-        self.player.video.server.on("np:streamTerminated", self.streamTerminatedCallback)
+        # Kept so doClose() can disconnect from the same server: the server outlives this dialog,
+        # and without that every closed seek dialog stayed alive and kept answering its signals,
+        # each one stopping playback again on a later stream's termination.
+        self._npServer = self.player.video.server
+        self._npServer.on("np:timelineResponse", self.timelineResponseCallback)
+        self._npServer.on("np:streamTerminated", self.streamTerminatedCallback)
 
         if util.kodiSkipSteps and util.addonSettings.kodiSkipStepping and not self.handler.useAlternateSeek:
             self.skipSteps = {"negative": [], "positive": []}
@@ -1126,6 +1130,10 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
     def doClose(self, delete=False, **kw):
         util.DEBUG_LOG("SeekDialog: Closing")
+        server = getattr(self, '_npServer', None)
+        if server is not None:
+            server.off("np:timelineResponse", self.timelineResponseCallback)
+            server.off("np:streamTerminated", self.streamTerminatedCallback)
         if self.handler.playlist:
             self.handler.playlist.off('change', self.updateProperties)
             self.handler.playlist.off('current.changed', self.updateProperties)

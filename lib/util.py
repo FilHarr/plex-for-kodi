@@ -1165,7 +1165,8 @@ def collectIfAlive(ref):
         return
     name = type(window).__name__ if ref is not None else 'window'
     del window
-    DEBUG_LOG("Closed {0} still referenced, collecting", name)
+    DEBUG_LOG("Closed {0} still referenced, collecting, by: {1}", name,
+              _describeReferrers(ref) if ref is not None else 'unknown')
     gc.collect(2)
     if ref is not None and ref() is not None:
         DEBUG_LOG("Closed {0} still referenced after collecting, by: {1}", name, _describeReferrers(ref))
