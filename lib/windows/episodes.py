@@ -109,6 +109,9 @@ class EpisodesPaginator(pagination.MCLPaginator):
     # Time spent in getData() and setItemInfo(), for fillEpisodes()'s Screen timing line.
     fetchMs = 0
     itemInfoMs = 0
+    # the same, in this thread's own CPU time: the gap to the wall time above is waiting (for
+    # Kodi's GUI lock, mostly), not work
+    itemInfoCpuMs = 0
 
     def reset(self):
         super(EpisodesPaginator, self).reset()
@@ -133,9 +136,10 @@ class EpisodesPaginator(pagination.MCLPaginator):
 
     def createListItem(self, data):
         mli = super(EpisodesPaginator, self).createListItem(data)
-        started = time.time()
+        started, cpuStarted = time.time(), time.thread_time()
         self.parentWindow.setItemInfo(data, mli)
         self.itemInfoMs += (time.time() - started) * 1000
+        self.itemInfoCpuMs += (time.thread_time() - cpuStarted) * 1000
         return mli
 
     def prepareListItem(self, data, mli):
@@ -2571,12 +2575,15 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     def fillEpisodes(self, update=False, from_redirect=False, timing=None):
         paginator = self.episodesPaginator
-        paginator.fetchMs = paginator.itemInfoMs = 0
+        paginator.fetchMs = paginator.itemInfoMs = paginator.itemInfoCpuMs = 0
+        cpuStarted = time.thread_time()
         items = paginator.paginate()
         kodigui.markStep(timing, 'episode list')
         if timing is not None:
             timing.add('of which fetch', paginator.fetchMs)
             timing.add('setItemInfo', paginator.itemInfoMs)
+            timing.add('of which CPU', paginator.itemInfoCpuMs)
+            timing.add('episode list CPU', (time.thread_time() - cpuStarted) * 1000)
             timing.add('items', len(items or ()))
         if from_redirect:
             self.episodeListControl.setSelectedItemByPos(0)
