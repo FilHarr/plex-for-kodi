@@ -2350,12 +2350,21 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.postNav('goHomeRoot', self._goRootNow)
 
     def returnHere(self, intent):
-        """Home, from a window outside the chain that's closing (GoHomeMixin.leaveFor()): come back
-        to the front, reset to the root if asked (show()/onReInit()), and open the section if one
-        was asked for. The open is posted, so it runs from this window's wait loop once the
-        closing windows are gone; force=True, as every reconstruction in this family, since
-        intent.force is what decided it when the section is already showing."""
-        util.DEBUG_LOG('Navigate: {0} returning Home', intent)
+        """Home, from a window outside the chain that's closing (GoHomeMixin.leaveFor()). Posted: the
+        queue runs from this window's own view once control has unwound back to it, so after every
+        window the intent still passes through has closed. Coming to the front at once, while those
+        were still open above it, left Kodi on the blank base window once they closed for real
+        (live on the AM6B, 2026-09-27: "Go to Music" from the current playlist over the music
+        player)."""
+        util.DEBUG_LOG('Navigate: {0} returning Home, once the closing windows are gone', intent)
+        self.postNav('returnHere', self._returnHereNow, args=(intent,))
+
+    def _returnHereNow(self, intent):
+        """The posted half of returnHere(): come back to the front, reset to the root if asked
+        (show()/onReInit()), and open the section if one was asked for - force=True, as every
+        reconstruction in this family, since intent.force is what decided it when the section is
+        already showing."""
+        util.DEBUG_LOG('Navigate: {0} back at Home', intent)
         section = self.resolveSection(intent.section)
         self.go_root = intent.root
         self.show()

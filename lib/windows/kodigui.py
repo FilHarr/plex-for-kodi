@@ -340,7 +340,12 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         if timing is not None:
             timing.mark('show')
         self._winID = xbmcgui.getCurrentWindowId()
-        BaseFunctions.lastWinID = self._winID
+        if not getattr(self, 'isBaseWindow', False):
+            # The screen a restore from minimised reactivates (monitor.py). Not the base window
+            # (BackgroundWindow), which re-inits whenever it's reactivated - ensureBaseWindow(), or
+            # Kodi falling back to it - and is blank: a restore then left a black screen (live on
+            # the AM6B, 2026-09-27).
+            BaseFunctions.lastWinID = self._winID
         self.setProperty('use_solid_background', util.useSolidBackground and '1' or '')
         if util.useSolidBackground:
             bgColour = util.addonSettings.backgroundColour if util.addonSettings.backgroundColour != "-" \

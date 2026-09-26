@@ -9,6 +9,9 @@ util.setGlobalProperty('background.splash', '')
 
 
 class BackgroundWindow(kodigui.BaseWindow):
+    # The window the session runs in, not a screen: never what a restore reactivates
+    # (BaseWindow._onInit()'s lastWinID).
+    isBaseWindow = True
     xmlFile = 'script-plex-background.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'

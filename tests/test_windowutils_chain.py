@@ -253,6 +253,7 @@ class FakeLibrary(windowutils.UtilMixin):
     that points its own _chainHost at itself as LibraryWindow does."""
     navigate = library.LibraryWindow.navigate
     returnHere = library.LibraryWindow.returnHere
+    _returnHereNow = library.LibraryWindow._returnHereNow
     resolveSection = library.LibraryWindow.resolveSection
     processCommand = library.LibraryWindow.processCommand
 
@@ -264,6 +265,7 @@ class FakeLibrary(windowutils.UtilMixin):
         self.closeOption = None
         self.go_root = False
         self.calls = []
+        self.posted = []
 
     def _deferOpenSection(self, section, force=False):
         self.calls.append(('openSection', section, force))
@@ -275,6 +277,8 @@ class FakeLibrary(windowutils.UtilMixin):
         self.calls.append(('openSection', section, force))
 
     def postNav(self, name, fn, args=(), kwargs=None, stack=False):
+        # Run at once: the queue itself is covered by tests/test_nav_queue.py.
+        self.posted.append(name)
         fn(*args, **(kwargs or {}))
 
     def show(self, **kwargs):
@@ -330,6 +334,13 @@ class LibraryNavigateTest(KodiTestCase):
         home = self._home()
         home.returnHere(navintent.home(section='42'))
         self.assertEqual([('show', False), ('openSection', SECTION, True)], home.calls)
+
+    def test_returning_home_waits_for_the_closing_windows(self):
+        """Posted: Home comes to the front from its own queue, once every window the intent passes
+        through has closed, not while they're still open above it (a black screen otherwise)."""
+        home = self._home()
+        home.returnHere(navintent.home(root=True))
+        self.assertEqual('returnHere', home.posted[0])
 
     def test_returning_home_to_the_root_shows_it_with_go_root(self):
         home = self._home()
