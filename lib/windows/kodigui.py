@@ -31,6 +31,8 @@ class BaseFunctions(object):
     usesGenerate = False
     lastWinID = None
     lastDialogID = None
+    # Set by a restore from minimised (monitor.py) for the screen it reactivates; see onRestored().
+    restoring = False
 
     def __init__(self):
         self.isOpen = True
@@ -41,6 +43,13 @@ class BaseFunctions(object):
 
     def onClosed(self):
         pass
+
+    def onRestored(self):
+        """The screen a restore from minimised reactivated (monitor.py). Nothing has happened to it
+        meanwhile; by default it re-inits as on any return (onReInit()). A screen whose re-init
+        reacts to where it's returning from (EpisodesWindow re-picks its episode) overrides this."""
+        if hasattr(self, "onReInit"):
+            self.onReInit()
 
     @classmethod
     def open(cls, **kwargs):
@@ -380,7 +389,12 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
 
         try:
             if self.started:
-                if hasattr(self, "onReInit"):
+                if BaseFunctions.restoring and not getattr(self, 'isBaseWindow', False):
+                    # Reactivated by a restore from minimised (monitor.py), not a return from
+                    # another screen: see onRestored().
+                    BaseFunctions.restoring = False
+                    self.onRestored()
+                elif hasattr(self, "onReInit"):
                     self.onReInit()
             else:
                 self.started = True

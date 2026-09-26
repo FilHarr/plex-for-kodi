@@ -904,6 +904,13 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.openedWithAutoPlay = False
 
     @busy.dialog()
+    def onRestored(self):
+        """Back from minimised (kodigui.BaseFunctions.onRestored()): keep the focused episode.
+        onReInit() re-picks one, for a return from playback or another screen where watch state
+        may have moved, and without an episode it picks the next to watch - a restore moved the
+        focus to that (live on the AM6B, 2026-09-27)."""
+        self.playBtnClicked = False
+
     def onReInit(self):
         self.playBtnClicked = False
 

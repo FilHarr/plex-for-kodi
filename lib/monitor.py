@@ -89,6 +89,7 @@ class UtilityMonitor(xbmc.Monitor, signalsmixin.SignalsMixin):
                 LOG("Trying to re-activate addon via window ID: {}".format(kodigui.BaseFunctions.lastWinID))
                 reInitAddon()
                 _setGlobalProperty('is_active', '1')
+                kodigui.BaseFunctions.restoring = True
                 xbmc.executebuiltin('ReplaceWindow({0})'.format(kodigui.BaseFunctions.lastWinID))
                 return
             else:
