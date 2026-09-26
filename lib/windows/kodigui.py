@@ -1897,6 +1897,12 @@ class MultiWindow(object):
             # TEMPORARY diagnostic logging (hashed-orbiting-pizza.md live-crash investigation) -
             # remove once the native-crash-on-second-hosting-cycle bug is understood/fixed.
             util.DEBUG_LOG("MultiWindow: _open() about to call .modal() on {0}", self._current)
+            # TEMPORARY diagnostic (Kodi visible between screens after playback, 2026-09-26): the
+            # window Kodi falls back to once the outgoing view is closed, before this one shows.
+            # Should be BackgroundWindow's (logged when it opens); anything else shows through.
+            util.DEBUG_LOG("Window stack: before {0}, Kodi shows window {1}, dialog {2}",
+                           type(self._current).__name__, xbmcgui.getCurrentWindowId(),
+                           xbmcgui.getCurrentWindowDialogId())
             timing = self.__dict__.get('_swapTiming')
             if timing is not None:
                 timing.mark('setup')

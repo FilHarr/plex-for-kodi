@@ -24,6 +24,8 @@ class BackgroundWindow(kodigui.BaseWindow):
         self.activate()
 
     def onFirstInit(self):
+        # TEMPORARY diagnostic (see MultiWindow._open()'s "Window stack" line).
+        util.DEBUG_LOG("Window stack: BackgroundWindow is window {0}", kodigui.xbmcgui.getCurrentWindowId())
         # try accessing our dummy control to trigger an error if our XML is broken
         util.MONITOR.on("background.activate", self._activate)
         self.function()

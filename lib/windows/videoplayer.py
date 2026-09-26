@@ -732,6 +732,9 @@ def play(video=None, play_queue=None, resume=False, bgm=False, context=None, **k
         if not (w and w.openAfterClose is not None):
             util.MONITOR.waitFor(0.5)
         util.DEBUG_LOG("VideoPlayer Window exit")
+        # TEMPORARY diagnostic (see MultiWindow._open()'s "Window stack" line).
+        util.DEBUG_LOG("Window stack: after the video player, Kodi shows window {0}, dialog {1}",
+                       xbmcgui.getCurrentWindowId(), xbmcgui.getCurrentWindowDialogId())
         if w.playbackFailed:
             util.DEBUG_LOG("VideoPlayer: Playback failed, checking and waiting for open dialogs to close")
             ct = 0
