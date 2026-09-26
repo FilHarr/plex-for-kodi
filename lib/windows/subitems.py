@@ -558,9 +558,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
     def onClick(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
-        if self.ignoresInput():
-            return
-        if self.handleSidebarDropdownClick(controlID):
+        # Hosted: the host handles the sidebar's clicks (kodigui.BaseWindow.routeClickToHost()).
+        if self.routeClickToHost(controlID):
             return
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
@@ -888,8 +887,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             # open), the season tab continues that same chain (host.swapTo()) instead of opening
             # EpisodesWindow as an unhosted standalone window - a real bug otherwise, live-
             # confirmed: the sidebar's user-menu popup silently does nothing inside an unhosted
-            # EpisodesWindow, since SidebarMixin.handleSidebarDropdownClick() only calls through on
-            # a live _liveChainHost(). entry_section_id/entry_from_watchlist/from_watchlist aren't
+            # EpisodesWindow, since the dropdowns are only handled by a live host
+            # (kodigui.BaseWindow.routeClickToHost()). entry_section_id/entry_from_watchlist/from_watchlist aren't
             # passed - openItem() below already fills those in from self.entrySectionId/
             # self.entryFromWatchlist/self.fromWatchlist itself; passing them here too would
             # collide as duplicate kwargs once it forwards to opener.open().

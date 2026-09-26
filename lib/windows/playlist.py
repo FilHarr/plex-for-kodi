@@ -161,9 +161,8 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     def onClick(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
-        if self.ignoresInput():
-            return
-        if self.handleSidebarDropdownClick(controlID):
+        # Hosted: the host handles the sidebar's clicks (kodigui.BaseWindow.routeClickToHost()).
+        if self.routeClickToHost(controlID):
             return
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()

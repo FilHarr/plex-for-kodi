@@ -177,15 +177,128 @@ class HostedShellsRouteFirstTest(KodiTestCase):
             self.assertEqual('if self.routeActionToHost(action):', code[0], cls.__name__)
             self.assertEqual('return', code[1], cls.__name__)
 
-    def test_clicks_and_focus_start_by_dropping_stale_calls(self):
+    def test_focus_starts_by_dropping_stale_calls(self):
         """The host frees a swapped-out shell's controls, but Kodi can still deliver its queued
-        onClick/onFocus (kodigui.BaseWindow.ignoresInput())."""
+        onFocus (kodigui.BaseWindow.ignoresInput())."""
         for cls in self.SHELLS:
-            for name in ('onClick', 'onFocus'):
-                body = inspect.getsource(getattr(cls, name)).split('\n')[1:]
-                code = [l.strip() for l in body if l.strip() and not l.strip().startswith('#')]
-                self.assertEqual('if self.ignoresInput():', code[0], '{0}.{1}'.format(cls.__name__, name))
-                self.assertEqual('return', code[1], '{0}.{1}'.format(cls.__name__, name))
+            body = inspect.getsource(cls.onFocus).split('\n')[1:]
+            code = [l.strip() for l in body if l.strip() and not l.strip().startswith('#')]
+            self.assertEqual('if self.ignoresInput():', code[0], cls.__name__)
+            self.assertEqual('return', code[1], cls.__name__)
+
+    def test_clicks_start_with_the_host(self):
+        """routeClickToHost() drops stale clicks as ignoresInput() does, and hands the sidebar's
+        clicks to the host (I3 in the navigation review)."""
+        for cls in self.SHELLS:
+            body = inspect.getsource(cls.onClick).split('\n')[1:]
+            code = [l.strip() for l in body if l.strip() and not l.strip().startswith('#')]
+            self.assertEqual('if self.routeClickToHost(controlID):', code[0], cls.__name__)
+            self.assertEqual('return', code[1], cls.__name__)
+
+
+class RouteClickToHostTest(KodiTestCase):
+    class Host(object):
+        def __init__(self, handles):
+            self.handles = handles
+            self.clicks = []
+
+        def routeClick(self, controlID):
+            self.clicks.append(controlID)
+            return self.handles
+
+    def _window(self, host=None, started=True):
+        window = kodigui.BaseWindow.__new__(kodigui.BaseWindow)
+        window._hostRef = None
+        window.started = started
+        if host is not None:
+            window._hostRef = weakref.ref(host)
+            host._current = window
+        return window
+
+    def test_an_unhosted_window_handles_its_own_clicks(self):
+        self.assertFalse(self._window().routeClickToHost(9001))
+
+    def test_the_host_sees_a_hosted_click_first(self):
+        host = self.Host(handles=True)
+        self.assertTrue(self._window(host).routeClickToHost(250))
+        self.assertEqual([250], host.clicks)
+
+    def test_a_click_the_host_passes_on_comes_back(self):
+        host = self.Host(handles=False)
+        self.assertFalse(self._window(host).routeClickToHost(101))
+
+    def test_a_click_before_the_window_started_is_dropped(self):
+        host = self.Host(handles=False)
+        self.assertTrue(self._window(host, started=False).routeClickToHost(101))
+        self.assertEqual([], host.clicks)
+
+
+class LibraryRouteClickTest(KodiTestCase):
+    """The sidebar's clicks, written once on the host for its own views and hosted screens."""
+
+    class Screen(object):
+        def __init__(self):
+            self.calls = []
+
+        def sectionClicked(self):
+            self.calls.append('sectionClicked')
+
+        def setBoolProperty(self, key, value):
+            self.calls.append((key, value))
+
+        def setFocusId(self, controlID):
+            self.calls.append(('focus', controlID))
+
+    class Host(object):
+        routeClick = library.LibraryWindow.routeClick
+        SECTION_LIST_ID = library.LibraryWindow.SECTION_LIST_ID
+        USER_LIST_ID = library.LibraryWindow.USER_LIST_ID
+        SERVER_LIST_ID = library.LibraryWindow.SERVER_LIST_ID
+        USER_BUTTON_ID = library.LibraryWindow.USER_BUTTON_ID
+
+        def __init__(self, screen, moving=None):
+            self.screen = screen
+            self.movingSection = moving
+            self.calls = []
+
+        def _sidebarTarget(self):
+            return self.screen
+
+        def doUserOption(self, target=None):
+            self.calls.append(('doUserOption', target))
+
+        def selectServer(self):
+            pass
+
+        def postNav(self, name, fn, **kwargs):
+            self.calls.append(('postNav', name))
+
+    def test_a_section_click_runs_the_showing_screens_own_handler(self):
+        screen = self.Screen()
+        self.assertTrue(self.Host(screen).routeClick(library.LibraryWindow.SECTION_LIST_ID))
+        self.assertEqual(['sectionClicked'], screen.calls)
+
+    def test_no_section_opens_while_one_is_being_moved(self):
+        screen = self.Screen()
+        self.assertTrue(self.Host(screen, moving=object()).routeClick(library.LibraryWindow.SECTION_LIST_ID))
+        self.assertEqual([], screen.calls)
+
+    def test_the_user_dropdown_acts_on_the_showing_screen(self):
+        screen = self.Screen()
+        host = self.Host(screen)
+        self.assertTrue(host.routeClick(library.LibraryWindow.USER_LIST_ID))
+        self.assertEqual([('doUserOption', screen)], host.calls)
+        self.assertEqual([('show.options', False), ('focus', library.LibraryWindow.USER_BUTTON_ID)], screen.calls)
+
+    def test_the_server_dropdown_posts_the_switch(self):
+        screen = self.Screen()
+        host = self.Host(screen)
+        self.assertTrue(host.routeClick(library.LibraryWindow.SERVER_LIST_ID))
+        self.assertEqual([('postNav', 'selectServer')], host.calls)
+        self.assertEqual([('show.servers', False)], screen.calls)
+
+    def test_other_clicks_go_back_to_the_screen(self):
+        self.assertFalse(self.Host(self.Screen()).routeClick(101))
 
 
 class IgnoresInputTest(KodiTestCase):

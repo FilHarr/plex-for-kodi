@@ -97,11 +97,10 @@ class GoHomeMixin():
         there's no other object to hand off to.
 
         force=True (threaded from a sidebar click's own force=True - _dispatchSectionOpen() below)
-        matters here specifically for a real hosted shell's own onClick() (a real shell's onClick
-        is NOT monkeypatched to the host's - see handleSidebarDropdownClick()'s own comment - so a
-        sidebar click made from inside one, e.g. EpisodesWindow, runs as this instance, never as
-        HOME itself, always reaching this bubble instead of library.py's own goHome() override
-        directly). Carried through to processCommand()'s pending-section handling (library.py) so
+        matters here specifically for a real hosted shell: the host's routeClick() runs the
+        shell's own sectionClicked() (library.py), so a sidebar click made from inside one, e.g.
+        EpisodesWindow, runs as this instance, never as HOME itself, always reaching this bubble
+        instead of library.py's own goHome() override directly). Carried through to processCommand()'s pending-section handling (library.py) so
         clicking the sidebar's already-active section from inside a hosted shell actually reopens
         it, instead of silently no-opping just because `pending == self.section` there."""
         HOME.go_root = with_root
@@ -168,41 +167,11 @@ class SidebarMixin():
     USER_MENU_BG_ID = 801
     USER_MENU_GROUP_ID = 901
 
-    def handleSidebarDropdownClick(self, controlID):
-        """USER_LIST_ID/SERVER_LIST_ID click handling for a real LibraryWindow-hosted shell's own
-        onClick() (PrePlayWindow, EpisodesWindow, etc.) - these two dropdowns are host-owned
-        (LibraryWindow.userList/serverList, doUserOption()/selectServer()), and the host's
-        showUserMenu()/showServers() (library.py) already know how to display them correctly on a
-        hosted shell's own screen (self._sidebarTarget()) - but unlike onAction(), a real shell's
-        own onClick is NOT delegated to the host (_setupCurrent()'s own comment on why, library.py)
-        - Kodi calls the shell's own onClick directly, and only the host has doUserOption()/
-        selectServer() to run. Call this at the top of a real shell's own onClick(controlID),
-        before anything else: returns True if it handled the click (caller should return
-        immediately), False otherwise (not this dropdown - keep checking normally). No-ops safely
-        (still returns True, just does nothing further) if this window was never actually chained -
-        _liveChainHost() is only non-None for a genuinely hosted shell, which is the only context
-        these two ids are ever wired to anything in the first place."""
-        if controlID == self.USER_LIST_ID:
-            host = self._liveChainHost()
-            if host is not None:
-                host.doUserOption(target=self)
-            self.setBoolProperty('show.options', False)
-            self.setFocusId(self.USER_BUTTON_ID)
-            return True
-        if controlID == self.SERVER_LIST_ID:
-            host = self._liveChainHost()
-            if host is not None:
-                self.setBoolProperty('show.servers', False)
-                host.postNav('selectServer', host.selectServer)
-            return True
-        return False
-
     def dismissSidebarPopupOnBack(self, target=None):
         """Call first, before any other NAV_BACK/PREVIOUS_MENU handling, in every SidebarMixin
-        window's own onAction() - not just LibraryWindow's (a real hosted shell's onAction IS
-        delegated to the host, unlike onClick - see handleSidebarDropdownClick()'s own comment on
-        that split - but an *unhosted* real shell still runs its own onAction, so this has to be
-        reachable from both). The user/server dropdowns (includes/sidebar_dropdowns.xml.tpl) are
+        window's own onAction() - not just LibraryWindow's (a real hosted shell's onAction goes
+        through the host first, kodigui.BaseWindow.routeActionToHost(), but an *unhosted* real
+        shell still runs its own onAction, so this has to be reachable from both). The user/server dropdowns (includes/sidebar_dropdowns.xml.tpl) are
         visible off Control.HasFocus(250/260) - remote/keyboard navigation onto the list - OR the
         show.options/show.servers Window properties (the mouse-click path, which doesn't move
         focus). Live-confirmed bug otherwise: pressing back while either was open fell through to
@@ -276,10 +245,10 @@ class SidebarMixin():
         - self IS HOME: in-place swap (library.py's LibraryWindow.openSection()),
           posted through the navigation queue by _deferOpenSection().
 
-        - self is a descendant - a real hosted shell's own onClick() lands here (ShowWindow,
-          PrePlayWindow, EpisodesWindow...), since a real shell's onClick is not redirected to the
-          host (see handleSidebarDropdownClick()'s own comment). goHome() bubbles the section up to
-          the host, carrying force so library.py's goHome() override doesn't no-op on the
+        - self is a descendant - a real hosted shell lands here (ShowWindow, PrePlayWindow,
+          EpisodesWindow...): the host's routeClick() runs the shell's own sectionClicked(), so
+          its Search entry stays scoped to its own item. goHome() bubbles the section up to the
+          host, carrying force so library.py's goHome() override doesn't no-op on the
           already-active section.
         """
         section = item.dataSource

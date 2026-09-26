@@ -1391,9 +1391,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     def onClick(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
-        if self.ignoresInput():
-            return
-        if self.handleSidebarDropdownClick(controlID):
+        # Hosted: the host handles the sidebar's clicks (kodigui.BaseWindow.routeClickToHost()).
+        if self.routeClickToHost(controlID):
             return
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
@@ -1614,8 +1613,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         was opened with season= rather than episode= - i.e. from a season click on the Seasons page
         itself (opener.py's seasonClicked()) - meaning that exact Seasons page is still sitting
         right underneath us. In that case just do what Back does (onAction(), not doClose()
-        directly, since a hosted shell's own onAction is monkeypatched to the host's - see
-        handleSidebarDropdownClick()'s comment on that split - so this correctly pops the
+        directly, since a hosted shell's onAction goes through the host first - see
+        kodigui.BaseWindow.routeActionToHost() - so this correctly pops the
         descendant chain when hosted, or closes outright when not) instead of opening a second copy
         of Seasons on top: switchSeason() never pushes a nav step per season-tab switch (see its own
         comment), so however many seasons were browsed this way before landing here, there's still

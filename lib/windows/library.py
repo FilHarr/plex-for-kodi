@@ -1023,9 +1023,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # to inherit the host's display-state cache the way a thin view is.
         plexapp.util.APP.on('close.windows', self.onCloseSignal)
 
-        # onClick/onFocus/onReInit aren't routed through the host for real shells - unlike
-        # LibraryWindow's own thin view-type children (kodigui.MultiWindowView), these carry real
-        # business logic of their own. Their onAction() calls routeActionToHost() first.
+        # onFocus/onReInit aren't routed through the host for real shells - unlike LibraryWindow's
+        # own thin view-type children (kodigui.MultiWindowView), these carry real business logic
+        # of their own. Their onAction() calls routeActionToHost() first, and their onClick()
+        # routeClickToHost(), which hands the sidebar's clicks to routeClick().
         # TEMPORARY diagnostic logging - see this method's own top.
         util.DEBUG_LOG("Library: _setupCurrent({0}) real-shell branch complete, real_shell_count={1}",
                         cls, self._realShellHostCount)
@@ -2385,11 +2386,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         force=True (threaded from a sidebar click - windowutils.py's SidebarMixin.sectionClicked()/
         _dispatchSectionOpen()) skips the "already on this section" no-op below, the same way
-        openSection()'s own force param does - needed here specifically because a real hosted
-        shell's own onClick() (EpisodesWindow etc.) always reaches this method through this exact
-        call, never library.py's other sidebar-click path (_deferOpenSection() directly), since a
-        real shell's onClick is never monkeypatched to the host's (see
-        SidebarMixin.handleSidebarDropdownClick()'s own comment).
+        openSection()'s own force param does - needed here specifically because a sidebar click
+        on a real hosted shell (EpisodesWindow etc.) always reaches this method through this exact
+        call, never library.py's other sidebar-click path (_deferOpenSection() directly): routeClick()
+        runs the shell's own sectionClicked(), which bubbles up through its goHome().
         """
         if self is windowutils.HOME:
             # Posted, like every other swap (MultiWindow.postNav()): this is reached from a held
@@ -2903,14 +2903,46 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
         return self._dispatchNativeAction(action)
 
-    def onClick(self, controlID):
+    def routeClick(self, controlID):
+        """The sidebar's clicks, for this window's own views (onClick() below) and for hosted
+        screens (kodigui.BaseWindow.routeClickToHost()): written once here instead of in every
+        screen (I3 in the navigation review). Control writes go to _sidebarTarget(), the hosted
+        screen while one is showing."""
         if controlID == self.SECTION_LIST_ID:
             # Ported from HomeWindow's identical guard (home.py's onClick()) - while
             # self.movingSection is set, sectionMover() owns ACTION_SELECT_ITEM itself (via
             # routeAction() above) to finalize the move; an ordinary click-dispatch here on the same
-            # press would otherwise also try to open whatever's now selected.
+            # press would otherwise also try to open whatever's now selected. Hosted screens
+            # lacked this guard. The screen's own sectionClicked() runs: its Search entry searches
+            # its own item's section, and a section click reaches this window through its goHome().
             if not self.movingSection:
-                self.sectionClicked()
+                self._sidebarTarget().sectionClicked()
+            return True
+
+        if controlID == self.USER_LIST_ID:
+            # Stage 3: shared across every content mode and hosted screen, checked before the
+            # contentMode=='recommended' bypass in onClick(). Ported from HomeWindow's identical
+            # USER_LIST_ID handling (home.py's onClick()) - minus self._skipNextAction,
+            # input-suppression state LibraryWindow doesn't have and only matters for the
+            # refresh_users/local_users options staying "open".
+            target = self._sidebarTarget()
+            self.doUserOption(target=target)
+            target.setBoolProperty('show.options', False)
+            target.setFocusId(self.USER_BUTTON_ID)
+            return True
+
+        if controlID == self.SERVER_LIST_ID:
+            # Stage 3: same as USER_LIST_ID above. Deferred, not called inline - see the
+            # SERVER_BUTTON_ID routeAction() branch's own comment for why selectServer() can't run
+            # synchronously from a native callback.
+            self._sidebarTarget().setBoolProperty('show.servers', False)
+            self.postNav('selectServer', self.selectServer)
+            return True
+
+        return False
+
+    def onClick(self, controlID):
+        if self.routeClick(controlID):
             return
 
         if controlID == self.TAB_LIST_ID:
@@ -2941,25 +2973,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 else:
                     item_type = self._libraryTabItemType() if mode == 'library' else None
                     self.postNav('switchTab', self.switchTab, args=(mode,), kwargs={'item_type': item_type})
-            return
-
-        if controlID == self.USER_LIST_ID:
-            # Stage 3: shared across every content mode, same reasoning as SECTION_LIST_ID/
-            # TAB_LIST_ID above - checked before the contentMode=='recommended' bypass below.
-            # Ported from HomeWindow's identical USER_LIST_ID handling (home.py's onClick()) -
-            # minus self._skipNextAction, input-suppression state LibraryWindow doesn't have and
-            # only matters for the refresh_users/local_users options staying "open".
-            self.doUserOption()
-            self.setBoolProperty('show.options', False)
-            self.setFocusId(self.USER_BUTTON_ID)
-            return
-
-        if controlID == self.SERVER_LIST_ID:
-            # Stage 3: same shared-across-content-modes reasoning as USER_LIST_ID above. Deferred,
-            # not called inline - see the SERVER_BUTTON_ID routeAction() branch's own comment for why
-            # selectServer() can't run synchronously from a native callback.
-            self.setBoolProperty('show.servers', False)
-            self.postNav('selectServer', self.selectServer)
             return
 
         if self.contentMode == 'recommended':

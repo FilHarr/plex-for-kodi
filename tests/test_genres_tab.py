@@ -330,6 +330,11 @@ class BuildTabListCollectionsGatingTest(KodiTestCase):
 
 class LibraryOnClickTabDispatchTest(KodiTestCase):
     class FakeHost(NavRecorder):
+        # onClick() starts with the sidebar's routeClick(), which a tab click falls through.
+        routeClick = library.LibraryWindow.routeClick
+        SECTION_LIST_ID = library.LibraryWindow.SECTION_LIST_ID
+        USER_LIST_ID = library.LibraryWindow.USER_LIST_ID
+        SERVER_LIST_ID = library.LibraryWindow.SERVER_LIST_ID
         SECTION_LIST_ID = 1  # distinct from TAB_LIST_ID, never matched in these tests
         TAB_LIST_ID = 320
 
@@ -418,7 +423,8 @@ class GenresOnClickDelegationTest(KodiTestCase):
         GENRE_PANEL_ID = 3
         TAB_LIST_ID = 320
 
-        def ignoresInput(self):
+        def routeClickToHost(self, controlID):
+            # Live, and not a sidebar click: the screen handles it.
             return False
 
         def __init__(self, selected_mode, chain_host):

@@ -94,8 +94,9 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         kodigui.ControlledWindow.doClose(self)
 
     def onClick(self, controlID):
-        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
-        if self.ignoresInput():
+        # Hosted: the host handles the sidebar's clicks (kodigui.BaseWindow.routeClickToHost()),
+        # the user and server dropdowns included, which this screen never handled.
+        if self.routeClickToHost(controlID):
             return
         if controlID == self.SECTION_LIST_ID:
             self.sectionClicked()

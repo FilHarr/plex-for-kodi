@@ -200,9 +200,8 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
 
     def onClick(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
-        if self.ignoresInput():
-            return
-        if self.handleSidebarDropdownClick(controlID):
+        # Hosted: the host handles the sidebar's clicks (kodigui.BaseWindow.routeClickToHost()).
+        if self.routeClickToHost(controlID):
             return
         if controlID == self.GRID_ID:
             self.itemClicked()

@@ -308,6 +308,19 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             return True
         return host.routeAction(action)
 
+    def routeClickToHost(self, controlID):
+        """Called first thing in onClick() by every window a host can show, beside
+        routeActionToHost(). The host's routeClick() handles the sidebar's own clicks - the section
+        list and the user and server dropdowns - for whichever screen is showing, so they're written
+        once instead of in every screen (I3 in the navigation review). True means onClick() should
+        stop there: the host used the click, or this window isn't live (ignoresInput()). False: not
+        hosted, or not a sidebar click - handle it here as usual."""
+        if self.ignoresInput():
+            return True
+        if self._hostRef is None:
+            return False
+        return self.hostedBy().routeClick(controlID)
+
     def handleBack(self):
         """This screen's own Back steps, the ones that keep it open (a scrolled row back to its
         first item, the extras rows back to the button row). Returns True when one of them used
@@ -1941,6 +1954,11 @@ class MultiWindow(object):
             self.doClose()
         elif self.goHomeAction(action):
             return True
+        return False
+
+    def routeClick(self, controlID):
+        """A hosted screen's clicks come here first (BaseWindow.routeClickToHost()). Returns True
+        when the click was used; False hands it back to the screen's own onClick()."""
         return False
 
     def onClick(self, controlID):
