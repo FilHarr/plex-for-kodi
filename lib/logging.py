@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 
 import sys
+import time
 import traceback
 import types
 import logging
@@ -55,11 +56,30 @@ def LOG(msg, *args, **kwargs):
     return log(msg, *args, **kwargs)
 
 
+# Kodi's own "Enable debug logging" (debug.showloginfo), cached: reading it is a GUI-locked call
+# (Kodi 21's getCondVisibility takes GuiLock), and with the addon's debug setting off every
+# DEBUG_LOG used to make one, feeding Kodi's frame throttle - plexnet logs at least twice per HTTP
+# request (P2 in the navigation review). Kodi doesn't tell addons when it's toggled, so it's read
+# again at most every KODI_DEBUG_RECHECK_SECONDS.
+KODI_DEBUG_RECHECK_SECONDS = 10.0
+_kodiDebug = (False, None)  # (value, time it was read)
+
+
+def _kodiDebugLogging():
+    global _kodiDebug
+    value, checked = _kodiDebug
+    now = time.time()
+    if checked is None or now - checked >= KODI_DEBUG_RECHECK_SECONDS:
+        value = bool(xbmc.getCondVisibility('System.GetBool(debug.showloginfo)'))
+        _kodiDebug = (value, now)
+    return value
+
+
 def DEBUG_LOG(msg, *args, **kwargs):
     if _SHUTDOWN:
         return
 
-    if not addonSettings.debug and not xbmc.getCondVisibility('System.GetBool(debug.showloginfo)'):
+    if not addonSettings.debug and not _kodiDebugLogging():
         return
 
     return log(msg, *args, **kwargs)

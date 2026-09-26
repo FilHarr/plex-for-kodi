@@ -132,9 +132,10 @@ if KODI_VERSION_MAJOR > 18:
 
 
 def getAdvancedSettings():
-    # yes, global, hang me!
-    global addonSettings
-    addonSettings = AddonSettings()
+    # Re-read in place, not rebound to a new AddonSettings(): logging.py and update_checker.py hold
+    # this same instance through their own `from ... import addonSettings`, and a new object left
+    # them reading the settings from before (e.g. the debug switch, P2 in the navigation review).
+    addonSettings.__init__()
 
 
 def reInitAddon():
