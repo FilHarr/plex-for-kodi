@@ -50,8 +50,6 @@ class PlaybackSettingsMixin(object):
             mli.dataSource["display"] = label
             del mli
 
-        # fixme: not sure if garbage collection is necessary here
-        util.garbageCollect()
         pbChoice = dropdown.showDropdown(pbOpts, pos, pos_is_bottom=bottom, close_direction='left',
                                          set_dropdown_prop=True,
                                          header="{}: {}".format(T(32925, 'Playback Settings'), show.defaultTitle),

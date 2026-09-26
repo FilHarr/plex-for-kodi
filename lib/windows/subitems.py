@@ -1,6 +1,5 @@
 from __future__ import absolute_import
 
-import gc
 import json
 
 from kodi_six import xbmc
@@ -951,8 +950,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         if not self.subItemListControl.size():
             if w is not None:
                 self.closeWithCommand(w.exitCommand)
+                ref = util.windowRef(w)
                 del w
-                gc.collect(2)
+                util.collectIfAlive(ref)
             return
 
         if update:
@@ -966,11 +966,12 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             # fallback path (see this method's own comment above) - the chained openItem() path
             # already ran its own processCommand() internally and left w as None, nothing further
             # to bubble here.
+            ref = util.windowRef(w)
             try:
                 self.processCommand(w.exitCommand)
             finally:
                 del w
-                gc.collect(2)
+                util.collectIfAlive(ref)
 
     def summaryButtonClicked(self):
         # Popup, not opener.handleOpen(info.InfoWindow, ...) any more - same change episodes.py's/

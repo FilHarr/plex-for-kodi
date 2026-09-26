@@ -561,7 +561,7 @@ def showDropdown(
             move_mode_callback=move_mode_callback,
         )
     choice = w.choice
-    w = None
+    ref = util.windowRef(w)
     del w
-    util.garbageCollect()
+    util.collectIfAlive(ref)
     return choice

@@ -739,8 +739,9 @@ def play(video=None, play_queue=None, resume=False, bgm=False, context=None, **k
     if w:
         command = w.exitCommand
         item = w.openAfterClose
+        ref = util.windowRef(w)
         del w
-        util.garbageCollect()
+        util.collectIfAlive(ref)
         if item is not None:
             # In a chain, Back from what opens goes to the item's own library section rather than
             # the screen that started playback (chain_root, LibraryWindow.swapTo()); outside one

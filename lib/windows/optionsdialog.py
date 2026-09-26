@@ -100,6 +100,7 @@ def show(header, info, button0=None, button1=None, button2=None, action_callback
                  action_callback=action_callback, dialog_props=dialog_props, delay_buttons=delay_buttons,
                  close_timeout=close_timeout)
     choice = w.buttonChoice
+    ref = util.windowRef(w)
     del w
-    util.garbageCollect()
+    util.collectIfAlive(ref)
     return choice

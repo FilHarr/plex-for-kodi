@@ -366,5 +366,6 @@ def showQualityDialog(video, non_playback=False, selected_idx=None):
 
 def showDialog(video, non_playback=False, via_osd=False, parent=None):
     w = VideoSettingsDialog.open(video=video, non_playback=non_playback, via_osd=via_osd, parent=parent)
+    ref = util.windowRef(w)
     del w
-    util.garbageCollect()
+    util.collectIfAlive(ref)

@@ -139,9 +139,10 @@ class BusyContext(object):
             self.timer.join()
 
         self.w.doClose()
+        ref = util.windowRef(self.w)
         del self.w
         self.w = None
-        util.garbageCollect()
+        util.collectIfAlive(ref)
         return True
 
 
@@ -217,10 +218,11 @@ class ProgressDialog(object):
         if exc_type is not None:
             util.ERROR()
 
+        # A plain Kodi dialog holds no Python references, so it can't be in a cycle and goes as soon
+        # as it's dropped: no collection needed (E4 in the navigation review).
         self.dialog.close()
         del self.dialog
         self.dialog = None
-        util.garbageCollect()
         if exc_type is not None and self.raise_hard:
             raise exc_value
         return True

@@ -16,6 +16,7 @@ import contextlib
 import subprocess
 import unicodedata
 import pprint
+import weakref
 
 import six.moves.urllib.request, six.moves.urllib.parse, six.moves.urllib.error
 import six
@@ -1136,6 +1137,38 @@ def dumpSettings():
 
 def garbageCollect():
     gc.collect(2)
+
+
+def windowRef(window):
+    """A weak reference to a window or dialog about to be closed and dropped, for
+    collectIfAlive(). None when it can't be weakly referenced, which collectIfAlive() treats as
+    still alive."""
+    try:
+        return weakref.ref(window)
+    except TypeError:
+        return None
+
+
+def collectIfAlive(ref):
+    """Collect only if a closed window or dialog outlived its caller's last reference.
+
+    Kodi destroys a Python window's native side only once the Python object is freed, and hands
+    Python windows a fixed range of IDs, so one caught in a reference cycle lingers until a full
+    collection, and Python rarely runs one on its own. Every close used to force one just in case:
+    100-300 ms on the AM6B, stopping every Python thread, in the middle of closing a menu (E4 in
+    the navigation review). Refcounting frees a window without cycles the moment its caller drops
+    it, so this only collects when the weak reference says that didn't happen, and logs which
+    window it was so the cycle can be found.
+    """
+    window = ref() if ref is not None else True
+    if window is None:
+        return
+    name = type(window).__name__ if ref is not None else 'window'
+    del window
+    DEBUG_LOG("Closed {0} still referenced, collecting", name)
+    gc.collect(2)
+    if ref is not None and ref() is not None:
+        DEBUG_LOG("Closed {0} still referenced after collecting", name)
 
 
 def cleanupCacheFolder():

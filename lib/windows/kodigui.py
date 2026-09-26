@@ -1516,8 +1516,9 @@ def markStep(timing, label):
         timing.mark(label)
 
 
-# Python's own collections, now that none are forced after a screen is torn down (63037c16): each
-# one stops every Python thread, so one landing mid-build shows up as a stall in the timing lines.
+# Python's own collections, now that none are forced after a screen is torn down (63037c16) and
+# a closed dialog is only collected when it outlives its caller (util.collectIfAlive()): each one
+# stops every Python thread, so one landing mid-build shows up as a stall in the timing lines.
 GC_PAUSE_LOG_MS = 10
 _gcStarted = {}
 
@@ -1800,9 +1801,10 @@ class MultiWindow(object):
         # navigation force-dismisses mw before opening the next window) - see MultiWindow.forceDismiss().
         mw._background = b
         b.modal()
+        ref = util.windowRef(b)
         del b
-        import gc
-        gc.collect(2)
+        mw._background = None
+        util.collectIfAlive(ref)
         return mw
 
     def _open(self):

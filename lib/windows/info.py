@@ -183,8 +183,9 @@ class MediaDetailsDialog(kodigui.BaseDialog):
 
 def showMediaDetails(video):
     w = MediaDetailsDialog.open(video=video)
+    ref = util.windowRef(w)
     del w
-    util.garbageCollect()
+    util.collectIfAlive(ref)
 
 
 class SummaryDialog(kodigui.BaseDialog):
@@ -235,5 +236,6 @@ class SummaryDialog(kodigui.BaseDialog):
 
 def showSummary(title, info, subtitle=None):
     w = SummaryDialog.open(title=title, subtitle=subtitle, info=info)
+    ref = util.windowRef(w)
     del w
-    util.garbageCollect()
+    util.collectIfAlive(ref)

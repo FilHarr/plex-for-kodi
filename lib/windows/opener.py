@@ -115,8 +115,10 @@ def handleOpen(winclass, **kwargs):
     except:
         util.ERROR()
     finally:
-        del w
-        util.garbageCollect()
+        if w is not None:
+            ref = util.windowRef(w)
+            del w
+            util.collectIfAlive(ref)
 
     return ''
 

@@ -541,8 +541,9 @@ class SeekPlayerHandler(BasePlayerHandler):
                 self.dialog = None
                 if d:
                     d.doClose(delete=delete)
+                    ref = util.windowRef(d)
                     del d
-                    util.garbageCollect()
+                    util.collectIfAlive(ref)
 
     def seek(self, offset, settings_changed=False, seeking=SEEK_IN_PROGRESS, skip_alt_seek_fix=False):
         util.DEBUG_LOG(
@@ -1857,8 +1858,9 @@ class SeekPlayerHandler(BasePlayerHandler):
                 d = self.blackoutDialog
                 self.blackoutDialog = None
                 d.doClose()
+                ref = util.windowRef(d)
                 del d
-                util.garbageCollect()
+                util.collectIfAlive(ref)
             except:
                 pass
 

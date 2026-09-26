@@ -1134,10 +1134,11 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             if self.playlistDialog:
                 self.playlistDialog.doClose()
                 if delete:
+                    ref = util.windowRef(self.playlistDialog)
                     del self.playlistDialog
                     self.playlistDialog = None
                     self.playlistDialogVisible = False
-                    util.garbageCollect()
+                    util.collectIfAlive(ref)
 
             self.killTimeKeeper()
         finally:

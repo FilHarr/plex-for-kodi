@@ -112,6 +112,7 @@ def showOptionsDialog(heading, options, non_playback=False, selected_idx=None, t
     w = SelectDialog.open(heading=heading, options=options, non_playback=non_playback, selected_idx=selected_idx,
                           trim=trim)
     choice = w.choice
+    ref = util.windowRef(w)
     del w
-    util.garbageCollect()
+    util.collectIfAlive(ref)
     return choice
