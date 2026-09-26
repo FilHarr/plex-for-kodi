@@ -281,6 +281,13 @@ class SeekPlayerHandler(BasePlayerHandler):
     MODE_ABSOLUTE = 0
     MODE_RELATIVE = 1
 
+    # The playback blackout lifts once the picture has run this long unbroken and Kodi isn't
+    # caching, or after the timeout whatever. A refresh-rate switch restarts the player's clock,
+    # so the picture only counts once it's past one (liftBlackoutWhenPlaying()).
+    BLACKOUT_SETTLE_SECONDS = 0.5
+    BLACKOUT_SETTLE_TIMEOUT = 5.0
+    BLACKOUT_SETTLE_POLL = 0.05
+
     def __init__(self, player, session_id=None):
         BasePlayerHandler.__init__(self, player, session_id)
         self.dialog = None
@@ -321,6 +328,9 @@ class SeekPlayerHandler(BasePlayerHandler):
         self.pbStartedRemoved = False
         self.blackoutDialog = None
         self.blackoutShown = False
+        # liftBlackoutWhenPlaying()'s thread and a session end can both lift it
+        self._blackoutLock = threading.RLock()
+        self._blackoutGen = 0
         self.skipFixForNextSeek = False
         self.reportedSeekPlayerTime = None
         self.pausedForSeek = False
@@ -594,6 +604,7 @@ class SeekPlayerHandler(BasePlayerHandler):
         if not self.blackoutShown:
             # set flag as early as possible as we might get called multiple times
             self.blackoutShown = True
+            self._blackoutGen += 1
             util.DEBUG_LOG('SeekHandler: Blackout')
             self.blackoutDialog.show()
 
@@ -601,17 +612,64 @@ class SeekPlayerHandler(BasePlayerHandler):
             self.setVolume(1)
 
     def liftBlackout(self):
-        if self.blackoutShown:
-            if self.prePlayVolume is not None:
-                util.DEBUG_LOG('SeekHandler: Setting volume back to {}.', self.prePlayVolume)
-                self.setVolume(self.prePlayVolume)
+        with self._blackoutLock:
+            if self.blackoutShown:
+                # a lift still waiting for the picture (liftBlackoutWhenPlaying()) has nothing left to do
+                self._blackoutGen += 1
+                if self.prePlayVolume is not None:
+                    util.DEBUG_LOG('SeekHandler: Setting volume back to {}.', self.prePlayVolume)
+                    self.setVolume(self.prePlayVolume)
 
-            if self.blackoutDialog and self.blackoutDialog.isOpen:
-                util.DEBUG_LOG('SeekHandler: Disabling Blackout')
-                self.blackoutDialog.doClose()
+                if self.blackoutDialog and self.blackoutDialog.isOpen:
+                    util.DEBUG_LOG('SeekHandler: Disabling Blackout')
+                    self.blackoutDialog.doClose()
 
-            self.blackout = False
-            self.blackoutShown = False
+                self.blackout = False
+                self.blackoutShown = False
+
+    def liftBlackoutWhenPlaying(self):
+        """Lift the blackout once the picture is actually playing, rather than as soon as the
+        seek-on-start lands. Kodi usually switches the display's refresh rate just after that
+        seek: the screen stays black for up to a second while it does, with the skin's buffering
+        circle over it (live on the AM6B, 2026-09-27). Waits on its own thread, so the player's
+        callbacks keep coming meanwhile; a session end lifts it at once (sessionEnded())."""
+        if not self.blackoutShown:
+            self.stop_blackout()
+            return
+        threading.Thread(target=self._liftBlackoutWhenPlaying, args=(self._blackoutGen,),
+                         daemon=True, name='blackout_lift').start()
+
+    def _liftBlackoutWhenPlaying(self, gen):
+        started = None
+        waited = 0.0
+        while waited < self.BLACKOUT_SETTLE_TIMEOUT:
+            if gen != self._blackoutGen:
+                # lifted meanwhile (session ended), or a new blackout is up
+                return
+            try:
+                now = self.player.getTime() if self.player.isPlayingVideo() else None
+            except RuntimeError:
+                now = None
+            if now is None:
+                util.DEBUG_LOG('SeekHandler: Blackout: video no longer playing, lifting')
+                break
+            if started is None or now < started:
+                # the first reading, or the clock went back: a refresh-rate switch restarted it
+                started = now
+            elif now - started >= self.BLACKOUT_SETTLE_SECONDS \
+                    and not xbmc.getCondVisibility('Player.Caching'):
+                util.DEBUG_LOG('SeekHandler: Blackout: picture playing ({:.2f}s from {:.2f}s) after {:.2f}s',
+                               now - started, started, waited)
+                break
+            if util.MONITOR.waitForAbort(self.BLACKOUT_SETTLE_POLL):
+                break
+            waited += self.BLACKOUT_SETTLE_POLL
+        else:
+            util.DEBUG_LOG('SeekHandler: Blackout: picture not settled after {}s, lifting anyway',
+                           self.BLACKOUT_SETTLE_TIMEOUT)
+        with self._blackoutLock:
+            if gen == self._blackoutGen:
+                self.stop_blackout()
 
     def stop_blackout(self):
         self.liftBlackout()
@@ -1457,13 +1515,13 @@ class SeekPlayerHandler(BasePlayerHandler):
             util.setGlobalProperty('playback_seeking', '', wait=True)
 
         if not self.seekBackTo:
-            if self.blackout:
-                util.DEBUG_LOG("Stopping Blackout in onSeekHandler end")
-                self.stop_blackout()
-
             if self.unPauseAfterSeek:
                 self.unPauseAfterSeek = False
                 self.player.control('play')
+
+            if self.blackout:
+                util.DEBUG_LOG("Stopping Blackout in onSeekHandler end, once the picture plays")
+                self.liftBlackoutWhenPlaying()
 
     @property
     def subtitleStreamOffset(self):
