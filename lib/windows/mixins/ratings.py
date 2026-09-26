@@ -42,13 +42,10 @@ class RatingsMixin(object):
         attribute at all - the old code below couldn't see the RT critic score, or any but one of
         the three audience scores, no matter what).
 
-        rating/rating.image and rating2/rating2.image - kept as plain aliases for ratings1's own
-        values (not a second independent read of video.rating/audienceRating - see below), purely
-        for backward compatibility with the one other consumer of this method that isn't the
-        multi-slot hero-info row: episodes.py's per-episode-tile rating badge (ListItem.Property,
-        script-plex-episodes.xml.tpl) shows one compact badge per row and was never designed to
-        grow into 4-6 - deliberately left on the single-first-rating behavior it already had,
-        rather than every episode tile suddenly sprouting a row of badges.
+        The rating/rating.image aliases for the first rating are gone: no template or code read
+        them (checked 2026-09-26 across every template and compiled window), and each write is a
+        GUI-locked call - per episode tile, while the Episodes window is being drawn (step 4 in the
+        navigation review).
         """
         def sanitize(src):
             return src.replace("themoviedb", "tmdb").replace('://', '/')
@@ -62,7 +59,7 @@ class RatingsMixin(object):
             return r.value
 
         setProperty = getattr(ref, "setProperty")
-        clear_keys = ['rating.stars', 'rating', 'rating.image', 'rating2', 'rating2.image']
+        clear_keys = ['rating.stars']
         for i in range(1, self.MAX_RATINGS + 1):
             clear_keys += ['rating{0}'.format(i), 'rating{0}.image'.format(i)]
         getattr(ref, "setProperties")(clear_keys, '')
@@ -87,12 +84,6 @@ class RatingsMixin(object):
             for i, r in enumerate(ratings[:self.MAX_RATINGS], start=1):
                 setProperty('rating{0}'.format(i), formatValue(r))
                 setProperty('rating{0}.image'.format(i), 'script.plex/ratings/{0}.png'.format(sanitize(r.image)))
-
-            setProperty('rating', formatValue(ratings[0]))
-            setProperty('rating.image', 'script.plex/ratings/{0}.png'.format(sanitize(ratings[0].image)))
-            if len(ratings) > 1:
-                setProperty('rating2', formatValue(ratings[1]))
-                setProperty('rating2.image', 'script.plex/ratings/{0}.png'.format(sanitize(ratings[1].image)))
             return
 
         # Fallback: no <Rating> list at all (older PMS, or an agent that only ever populated the
@@ -105,10 +96,8 @@ class RatingsMixin(object):
                 if video.ratingImage.startswith('rottentomatoes:'):
                     rating = '{0}%'.format(int(rating.asFloat() * 10))
 
-                setProperty('rating', rating)
                 setProperty('rating1', rating)
                 if video.ratingImage:
-                    setProperty('rating.image', 'script.plex/ratings/{0}.png'.format(sanitize(video.ratingImage)))
                     setProperty('rating1.image', 'script.plex/ratings/{0}.png'.format(sanitize(video.ratingImage)))
             if audienceRating:
                 if video.audienceRatingImage.startswith('rottentomatoes:'):
@@ -117,5 +106,3 @@ class RatingsMixin(object):
                 if video.audienceRatingImage:
                     setProperty('rating2.image',
                                 'script.plex/ratings/{0}.png'.format(sanitize(video.audienceRatingImage)))
-        else:
-            setProperty('rating', video.rating)

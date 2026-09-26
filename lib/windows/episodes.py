@@ -2384,7 +2384,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     def setItemInfo(self, video, mli):
         # video.reload(checkFiles=1)
-        mli.setProperty('background', util.backgroundFromArt(video.art, width=self.width, height=self.height))
+        # Only what the template or this file reads: every ListItem call takes Kodi's GUI lock, and
+        # this runs while the window is being drawn, when each one waits (step 4 in the navigation
+        # review). 'background', 'season', 'episode' and 'episode.duration' were written here and
+        # in createListItem() but read nowhere.
         mli.setProperty('show.title', video.grandparentTitle or (self.show_.title if self.show_ else ''))
         # noSpaces short form ("1h30m"), not durationToText's long form ("1 hr 30 mins") - matches
         # Seasons/PrePlay/Recommended's own header meta row duration format (setHeroInfo() -
@@ -2393,13 +2396,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         mli.setProperty('duration', util.durationToShortText(video.duration.asInt(), noSpaces=True))
         mli.setProperty('video.rendering', video.videoCodecRendering)
         self.setUserItemInfo(mli, video, types=("title", "summary"))
-
-        if video.index:
-            mli.setProperty('season', T(32303, 'Season').format(video.parentIndex))
-            mli.setProperty('episode', T(32304, 'Episode').format(video.index))
-        else:
-            mli.setProperty('season', '')
-            mli.setProperty('episode', '')
 
         # "1 Sep, 2026", not the old "September 1, 2026" - day/month order matches Recommended's own
         # hub-row air date format (HomeWindow.setHeroInfo(), library.py, '%d %b, %Y'), but with the
@@ -2481,7 +2477,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         )
         self.setUserItemInfo(mli, types=("title", "thumbnail"))
         mli.setProperty('episode.number', episode.index and T(32311, 'E').format(episode.index) or '')
-        mli.setProperty('episode.duration', util.durationToText(episode.duration.asInt()))
         mli.setProperty('unwatched', not episode.isWatched and '1' or '')
         mli.setProperty('watched', episode.isFullyWatched and '1' or '')
         # mli.setProperty('progress', util.getProgressImage(obj))
