@@ -218,9 +218,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.mediaItem.related_source = "more-from-credits"
         self.mediaItem.reload(includeExtras=1, includeExtrasCount=10, includeOnDeck=1)
         kodigui.markStep(timing, 'reload')
-        self.relatedPaginator = RelatedPaginator(self.relatedListControl, leaf_count=int(self.mediaItem.relatedCount),
-                                                 parent_window=self)
-        kodigui.markStep(timing, 'related count')
+        # Sized by fillRelated() on its worker, as on Pre-play (P4): the count is a server query
+        # that held up Show opens by 40-345 ms on the AM6B.
+        self.relatedPaginator = None
 
         self.watchlist_setup(self.mediaItem)
         if self.fromWatchlist:
@@ -926,6 +926,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                              parent_list=self.subItemListControl,
                              directly_from_watchlist=self.directlyFromWatchlist,
                              is_watchlisted=self.is_watchlisted)
+                # The open is only queued, and runs once this returns. Back rebuilds this screen,
+                # and its setup() reloads the show, so the refresh below would only hold the open
+                # up (137-244 ms on the AM6B).
+                return
             else:
                 w = episodes.EpisodesWindow.open(season=mli.dataSource, show=self.mediaItem,
                                                  parent_list=self.subItemListControl, from_watchlist=self.fromWatchlist,
@@ -1151,20 +1155,27 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
     @busy.dialog()
     def fill(self, update=False, timing=None):
-        self.fillSeasons(self.mediaItem, update=update, do_focus=not self.manuallySelectedSeason)
+        # One fetch for both rows: each used to call seasons() itself, a server request apiece.
+        try:
+            seasons = self.mediaItem.seasons()
+        except:
+            raise util.NoDataException
+        kodigui.markStep(timing, 'fetch seasons')
+        self.fillSeasons(self.mediaItem, update=update, do_focus=not self.manuallySelectedSeason, seasons=seasons)
         kodigui.markStep(timing, 'seasons')
-        self.fillSeasonTabs(update=update)
+        self.fillSeasonTabs(update=update, seasons=seasons)
         kodigui.markStep(timing, 'season tabs')
 
-    def fillSeasonTabs(self, update=False):
+    def fillSeasonTabs(self, update=False, seasons=None):
         # Header season-tab row (script-plex-seasons.xml.tpl, header_middle_add block) - a separate,
         # simpler list from the season row above (id=400): plain title only, no thumb/episode-count,
         # plus a pinned "Show" entry at the front (no dataSource, always 'current') representing this
         # screen itself, matching Episodes' own season-tab row's current-season underline treatment.
-        try:
-            seasons = self.mediaItem.seasons()
-        except:
-            seasons = []
+        if seasons is None:
+            try:
+                seasons = self.mediaItem.seasons()
+            except:
+                seasons = []
 
         items = [kodigui.ManagedListItem(T(35058, 'Show'))]
         items[0].setBoolProperty('current', True)
@@ -1219,11 +1230,22 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         return True
 
     def fillRelated(self):
-        if not self.relatedPaginator.leafCount:
+        if self.tasks is None:
+            # closed before this task ran
+            return False
+        if self.relatedPaginator is None:
+            try:
+                count = int(self.mediaItem.relatedCount)
+            except ValueError:
+                count = 0
+            self.relatedPaginator = RelatedPaginator(self.relatedListControl, leaf_count=count,
+                                                     parent_window=self)
+        paginator = self.relatedPaginator
+        if not paginator.leafCount:
             self.relatedListControl.reset()
             return
 
-        items = self.relatedPaginator.paginate()
+        items = paginator.paginate()
 
         if not items:
             return False

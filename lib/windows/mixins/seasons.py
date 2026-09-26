@@ -36,11 +36,12 @@ class SeasonsMixin(object):
         return mli
 
     def fillSeasons(self, show, update=False, seasonsFilter=None, selectSeason=None, do_focus=True,
-                     extraFirstItem=None, altControlAttr=None, altThreshold=6):
-        try:
-            seasons = show.seasons()
-        except:
-            raise util.NoDataException
+                     extraFirstItem=None, altControlAttr=None, altThreshold=6, seasons=None):
+        if seasons is None:
+            try:
+                seasons = show.seasons()
+            except:
+                raise util.NoDataException
 
         if not seasons or (seasonsFilter and not seasonsFilter(seasons)):
             return False
