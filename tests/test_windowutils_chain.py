@@ -160,6 +160,8 @@ class ChainAwareProcessCommandTest(HomeTestCase):
 
         shell.processCommand(intent)
 
+        # A real close: doClose() only flags a ControlledWindow closed.
+        self.assertTrue(shell.forceDismissCalled)
         self.assertTrue(shell.doCloseCalled)
         self.assertIs(intent, shell.exitCommand)
         # Home already has it, from where it was issued.
@@ -360,7 +362,7 @@ class LibraryNavigateTest(KodiTestCase):
         nested = FakeLibrary()
         intent = navintent.home()
         nested.processCommand(intent)
-        self.assertEqual([('doClose',)], nested.calls)
+        self.assertEqual([('forceDismiss',), ('doClose',)], nested.calls)
         self.assertIs(intent, nested.exitCommand)
 
 

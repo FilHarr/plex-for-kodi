@@ -1897,12 +1897,7 @@ class MultiWindow(object):
             # TEMPORARY diagnostic logging (hashed-orbiting-pizza.md live-crash investigation) -
             # remove once the native-crash-on-second-hosting-cycle bug is understood/fixed.
             util.DEBUG_LOG("MultiWindow: _open() about to call .modal() on {0}", self._current)
-            # TEMPORARY diagnostic (Kodi visible between screens after playback, 2026-09-26): the
-            # window Kodi falls back to once the outgoing view is closed, before this one shows.
-            # Should be BackgroundWindow's (logged when it opens); anything else shows through.
-            util.DEBUG_LOG("Window stack: before {0}, Kodi shows window {1}, dialog {2}",
-                           type(self._current).__name__, xbmcgui.getCurrentWindowId(),
-                           xbmcgui.getCurrentWindowDialogId())
+            ensureBaseWindow(type(self._current).__name__)
             timing = self.__dict__.get('_swapTiming')
             if timing is not None:
                 timing.mark('setup')
@@ -2216,6 +2211,31 @@ class GlobalProperty():
 
     def __exit__(self, exc_type, exc_value, traceback):
         xbmcgui.Window(10000).setProperty('script.plex.{}'.format(self.prop), self.end or self.old)
+
+
+# BackgroundWindow's (background.py): the window the whole session runs in, and what Kodi should
+# show for the moment between one screen closing and the next showing.
+BASE_WINDOW_ID = None
+
+
+def ensureBaseWindow(showing):
+    """Called just before a screen shows (MultiWindow._open()). A Kodi window remembers the window
+    that was active when it was shown, and goes back to it when it closes. Normally that's the base
+    window. But one screen shown while something else was active - Kodi's own home after a window
+    that no longer exists closed, or a window that was only flagged closed - remembers that
+    instead, and every screen after it did the same: Kodi showed through on each screen change for
+    the rest of the session (live on the AM6B, 2026-09-27, after Home from the music player and
+    then the photo viewer; seen now and then long before). Reactivating the base window here puts
+    it back: Kodi trims its history to it, and the screen about to show remembers it again.
+    Skipped while the addon is minimised, when Kodi's home is meant to be showing."""
+    if not BASE_WINDOW_ID or util.getGlobalProperty('is_active') != '1':
+        return
+    current = xbmcgui.getCurrentWindowId()
+    if current == BASE_WINDOW_ID:
+        return
+    util.LOG("Window stack: Kodi shows window {0} before {1}, not the base window {2}: reactivating it",
+             current, showing, BASE_WINDOW_ID)
+    xbmc.executebuiltin('ActivateWindow({0})'.format(BASE_WINDOW_ID), True)
 
 
 def sleepForGui(seconds):

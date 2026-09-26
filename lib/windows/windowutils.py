@@ -289,6 +289,10 @@ class UtilMixin(GoHomeMixin):
                 host.processCommand(command)
                 return
             util.DEBUG_LOG('Navigate: {0} passing through {1}, closing', command, type(self).__name__)
+            # A real close, as leaveFor() does for the window the intent started from: doClose()
+            # only flags a ControlledWindow (the music player, say) closed, and its Kodi window
+            # stayed open and active under the next screen (live on the AM6B, 2026-09-27).
+            self.forceDismiss()
             self.exitCommand = command
             self.doClose()
         elif command and command == "NODATA":
