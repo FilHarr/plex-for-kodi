@@ -2,11 +2,10 @@ from __future__ import absolute_import
 
 import weakref
 
-import six
-
 from lib import util
 from lib.util import T
 from . import dropdown
+from . import navintent
 from . import opener
 
 HOME = None
@@ -81,69 +80,46 @@ class GoHomeMixin():
         return host
 
     def goHome(self, section=None, with_root=False, force=False):
-        host = self._liveChainHost()
-        if host is not None:
-            host.goHome(section=section, with_root=with_root, force=force)
-            return
-        self._goHomeDirect(section=section, with_root=with_root, force=force)
-
-    def _goHomeDirect(self, section=None, with_root=False, force=False):
-        """The pre-chain-awareness goHome() body, factored out so a self-hosting LibraryWindow
-        instance (whose own goHome() override, library.py, falls through to this mixin once it's
-        decided "I'm not windowutils.HOME") can invoke it directly, without going back through
-        _liveChainHost() - which would just resolve to self again and recurse forever, since
-        LibraryWindow always points _chainHost at itself. Delegation only means something for a
-        genuinely distinct hosted shell; by the time a self-hosting caller's own override has run,
-        there's no other object to hand off to.
-
-        force=True (threaded from a sidebar click's own force=True - _dispatchSectionOpen() below)
-        matters here specifically for a real hosted shell: the host's routeClick() runs the
-        shell's own sectionClicked() (library.py), so a sidebar click made from inside one, e.g.
-        EpisodesWindow, runs as this instance, never as HOME itself, always reaching this bubble
-        instead of library.py's own goHome() override directly). Carried through to processCommand()'s pending-section handling (library.py) so
-        clicking the sidebar's already-active section from inside a hosted shell actually reopens
-        it, instead of silently no-opping just because `pending == self.section` there."""
-        HOME.go_root = with_root
-        # A bare section key (a str, or plexobjects.PlexValue - a str subclass - straight from
-        # getLibrarySectionId(): the music player's / Album screen's / photo directory's "Go to
-        # <section>") is resolved to the sidebar's own section object here. Before the pending-
-        # section stash below replaced the old 'HOME:<key>' exit command, that string carried a
-        # key by design and HomeWindow looked it up on arrival; those callers were never moved
-        # over, and openSection() on a bare key blew up on `section.server` (live, 2026-09-18).
-        if isinstance(section, six.string_types):
-            key, section = section, HOME.sectionByKey(section)
-            if section is None:
-                util.DEBUG_LOG('goHome: no sidebar section for key {0}, going to root', key)
-        # Stashed on the HOME singleton directly, not embedded in the exitCommand string below -
-        # HOME never gets discarded/recreated mid-session, so a live object reference survives the
-        # bubble just fine and needs no round-trip through a section-key lookup. processCommand()
-        # (library.py's LibraryWindow override) reads this back once the bubble actually reaches
-        # HOME - see that method's own comment (Home-ControlledWindow plan, item 4 - "dispatch/
-        # bubble generalization").
-        HOME._pendingSection = section
-        HOME._pendingSectionForce = force
-
-        # closeWithCommand()/doClose() below only flips a flag on windows using the doModal()-emulation
-        # pattern (ControlledWindow/MultiWindow) - forceDismiss() is the real Kodi-native dismiss, so
-        # HOME.show() below always lands on a clean stack instead of pushing on top of self. No-op on
-        # window classes that don't need it (see BaseFunctions.forceDismiss()).
-        self.forceDismiss()
-        self.closeWithCommand('HOME')
-        HOME.show()
+        self.navigate(navintent.home(section=section, root=with_root, force=force))
 
     def goHomeRoot(self, *args, **kwargs):
-        host = self._liveChainHost()
-        if host is not None:
-            host.goHome(with_root=True)
-            return
-        self._goHomeRootDirect()
+        self.navigate(navintent.home(root=True))
 
-    def _goHomeRootDirect(self):
-        """See _goHomeDirect()'s own comment - same self-hosting-recursion reason."""
-        HOME.go_root = True
+    def navigate(self, intent):
+        """Act on a NavIntent (navintent.py, I5 in the navigation review). A hosted screen hands it
+        to its host, which acts on it through its navigation queue; any other window leaves for
+        Home with it (leaveFor()). LibraryWindow overrides this as the host that acts.
+
+        A section may be a bare key (a str, or plexobjects.PlexValue, from getLibrarySectionId():
+        the music player's / Album screen's / photo directory's "Go to <section>"): Home resolves
+        it to the sidebar's own section object (LibraryWindow.resolveSection())."""
+        host = self._liveChainHost()
+        if host is not None and host is not self:
+            util.DEBUG_LOG('Navigate: {0} from hosted {1}, to its host', intent, type(self).__name__)
+            host.navigate(intent)
+            return
+        self.leaveFor(intent)
+
+    def leaveFor(self, intent):
+        """Outside the chain, and not Home: Home takes the intent at once (returnHere()), and this
+        window closes with it as its exitCommand, so each blocking window beneath it closes in turn
+        as it passes through their processCommand().
+
+        Home takes it now rather than when the bubble reaches it: its navigation queue only runs
+        from its own view's wait loop, once the closing windows are gone, and a caller that drops
+        the result (the hub menu's "Go to show", say) can't lose it. It used to be stashed on Home
+        (_pendingSection, go_root) until a 'HOME' exit command arrived, and a dropped one left a
+        section there for the next Home command to open.
+
+        forceDismiss() first: closeWithCommand()'s doClose() only flips a flag on windows using the
+        doModal()-emulation pattern (ControlledWindow/MultiWindow), so Home's show() lands on a
+        clean stack instead of pushing on top of this one. No-op on window classes that don't need
+        it (see BaseFunctions.forceDismiss())."""
+        util.DEBUG_LOG('Navigate: {0} from {1}, outside the chain: to Home, closing', intent,
+                       type(self).__name__)
         self.forceDismiss()
-        self.closeWithCommand('HOME')
-        HOME.show()
+        self.closeWithCommand(intent)
+        HOME.returnHere(intent)
 
 
 class SidebarMixin():
@@ -303,27 +279,20 @@ class UtilMixin(GoHomeMixin):
         self.processCommand(opener.handleOpen(window_class, **kwargs))
 
     def processCommand(self, command):
-        if command and command.startswith('HOME'):
+        """The result of a blocking open (opener.handleOpen()). A NavIntent passing through
+        (navintent.py) has already reached Home, which acts on it; this window closes too, passing
+        it on to whatever opened it - unless it's hosted, when its host decides (Home stays; a
+        nested library window hosting it closes)."""
+        if navintent.isNavIntent(command):
             host = self._liveChainHost()
-            if host is not None:
-                # Bubbling a HOME exit command up from a not-yet-migrated child window opened the
-                # old blocking way (opener.handleOpen()) directly on top of a chained shell - the
-                # same "operate on the host, not the shell that happened to receive this" fix
-                # goHome() needs, for the same reason. See GoHomeMixin's own comment.
+            if host is not None and host is not self:
                 host.processCommand(command)
                 return
-            self._processHomeCommandDirect(command)
+            util.DEBUG_LOG('Navigate: {0} passing through {1}, closing', command, type(self).__name__)
+            self.exitCommand = command
+            self.doClose()
         elif command and command == "NODATA":
             raise util.NoDataException
-
-    def _processHomeCommandDirect(self, command):
-        """See GoHomeMixin._goHomeDirect()'s own comment - same self-hosting-recursion reason.
-        LibraryWindow's own processCommand() override (library.py) falls through to this mixin's
-        processCommand() once it's decided "I'm not windowutils.HOME"; without this split, that
-        fallthrough would re-resolve _liveChainHost() back to self and recurse forever, since
-        LibraryWindow always points _chainHost at itself."""
-        self.exitCommand = command
-        self.doClose()
 
     def closeWithCommand(self, command):
         self.exitCommand = command

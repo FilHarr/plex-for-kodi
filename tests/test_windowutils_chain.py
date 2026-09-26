@@ -20,14 +20,13 @@ hypothetical. _allClosed is a real, never-del'd flag (unlike _current), so check
 tells a live host from a stale reference to an already-fully-closed one. ChainAwareStaleHostTest
 below locks in the fix.
 
-ChainAwareSelfHostingTest covers a second, distinct hazard: LibraryWindow points its own _chainHost
-at itself (unconditionally, so openWindow() can resolve a genesis click into swapTo() without a
-LibraryWindow-specific override) - which means the chain-checking goHome()/goHomeRoot()/
-processCommand() wrappers below would resolve _liveChainHost() back to the caller itself and
-recurse forever if a self-hosting caller ever invoked them directly. _goHomeDirect()/
-_goHomeRootDirect()/_processHomeCommandDirect() exist so a self-hosting override (LibraryWindow's
-own goHome()/goHomeRoot()/processCommand(), library.py) can bypass the wrapper and call straight
-through once it's already decided "I'm not delegating anywhere else."
+NavIntent (navintent.py, I5 in the navigation review) replaced the 'HOME' exit command and the
+section/go_root values stashed on Home: a hosted screen hands the intent to its host, anything
+else hands it to Home at once (returnHere()) and closes with it as its exitCommand, and each
+blocking window it passes through (processCommand()) closes too. LibraryWindow, which points its
+own _chainHost at itself, acts on it as Home or leaves like any other window - LibraryNavigateTest
+below runs its real navigate()/returnHere()/processCommand(), which check `self is HOME` rather than
+delegating to _liveChainHost() (that would resolve back to self and recurse forever).
 
 Importing lib.windows.windowutils starts lib.player's monitor thread unless abort_requested is set
 first - same guard the other lib.windows.* tests use for the same reason.
@@ -38,7 +37,7 @@ from __future__ import absolute_import
 from kodienv import ENV
 
 ENV.abort_requested = True
-from lib.windows import windowutils  # noqa: E402
+from lib.windows import library, navintent, windowutils  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
@@ -51,13 +50,13 @@ SECTION = type("FakeSection", (), {"key": "42"})()
 class FakeChainHost(object):
     def __init__(self, all_closed=False):
         self._allClosed = all_closed
-        self.goHomeCalls = []
+        self.navigateCalls = []
         self.processCommandCalls = []
         self.swapToCalls = []
         self.postNavCalls = []
 
-    def goHome(self, section=None, with_root=False, force=False):
-        self.goHomeCalls.append((section, with_root, force))
+    def navigate(self, intent):
+        self.navigateCalls.append(intent)
 
     def processCommand(self, command):
         self.processCommandCalls.append(command)
@@ -69,6 +68,14 @@ class FakeChainHost(object):
         # Run at once: the queue itself is covered by tests/test_nav_queue.py.
         self.postNavCalls.append(name)
         fn(*args, **(kwargs or {}))
+
+
+class FakeHome(object):
+    def __init__(self):
+        self.returned = []
+
+    def returnHere(self, intent):
+        self.returned.append(intent)
 
 
 class FakeChainedShell(windowutils.UtilMixin):
@@ -88,81 +95,80 @@ class FakeChainedShell(windowutils.UtilMixin):
         self.doCloseCalled = True
 
 
-class ChainAwareGoHomeTest(KodiTestCase):
-    def test_goHome_delegates_to_the_chain_host_instead_of_dismissing_itself(self):
+def intentFields(intent):
+    return (intent.kind, intent.section, intent.root, intent.force)
+
+
+class HomeTestCase(KodiTestCase):
+    def setUp(self):
+        super(HomeTestCase, self).setUp()
+        self.home = FakeHome()
+        windowutils.HOME = self.home
+        self.addCleanup(setattr, windowutils, 'HOME', None)
+
+
+class ChainAwareGoHomeTest(HomeTestCase):
+    def test_goHome_hands_the_intent_to_the_chain_host(self):
         host = FakeChainHost()
         shell = FakeChainedShell(host)
 
         shell.goHome(section=SECTION, with_root=True)
 
-        self.assertEqual([(SECTION, True, False)], host.goHomeCalls)
+        self.assertEqual([('home', SECTION, True, False)], [intentFields(i) for i in host.navigateCalls])
         # Not the shell's own dismiss/close - operating on self here would only ever close the
         # shell, leaving the host's poll loop to reconstruct and reopen it.
         self.assertFalse(shell.forceDismissCalled)
         self.assertFalse(shell.doCloseCalled)
+        self.assertEqual([], self.home.returned)
 
-    def test_goHomeRoot_delegates_to_the_chain_host_with_root_forced(self):
+    def test_goHomeRoot_asks_the_chain_host_for_the_root(self):
         host = FakeChainHost()
         shell = FakeChainedShell(host)
 
         shell.goHomeRoot()
 
-        self.assertEqual([(None, True, False)], host.goHomeCalls)
+        self.assertEqual([('home', None, True, False)], [intentFields(i) for i in host.navigateCalls])
         self.assertFalse(shell.forceDismissCalled)
 
-    def test_unchained_goHome_still_dismisses_itself_directly(self):
-        """Plain regression check on the pre-existing (unchanged) branch - _chainHost's class-
-        level default is None, so a window that was never inside a chain must behave exactly as
-        before."""
-        fakeHome = type("FakeHome", (), {"go_root": None, "_pendingSection": None, "show": lambda self: None})()
-        windowutils.HOME = fakeHome
-        try:
-            shell = FakeChainedShell(chain_host=None)
-            shell.goHome(section=SECTION)
-            self.assertTrue(shell.forceDismissCalled)
-            self.assertTrue(shell.doCloseCalled)
-            self.assertEqual(SECTION, fakeHome._pendingSection)
-        finally:
-            windowutils.HOME = None
+    def test_outside_the_chain_home_takes_it_and_the_window_closes_with_it(self):
+        shell = FakeChainedShell(chain_host=None)
 
-    def test_a_bare_section_key_is_resolved_through_home(self):
-        """getLibrarySectionId() callers (the music player's / Album screen's / photo directory's
-        "Go to <section>") hand goHome() a key, not a section - a str (PlexValue). It has to reach
-        openSection() as the sidebar's section object, via HOME.sectionByKey(); passing the key
-        through raw blew up there on `section.server` (live, 2026-09-18)."""
-        looked_up = []
-        fakeHome = type("FakeHome", (), {
-            "go_root": None, "_pendingSection": None, "show": lambda self: None,
-            "sectionByKey": lambda self, key: looked_up.append(key) or SECTION,
-        })()
-        windowutils.HOME = fakeHome
-        try:
-            shell = FakeChainedShell(chain_host=None)
-            shell.goHome(section="42")
-            self.assertEqual(["42"], looked_up)
-            self.assertIs(SECTION, fakeHome._pendingSection)
-        finally:
-            windowutils.HOME = None
+        shell.goHome(section=SECTION, force=True)
+
+        self.assertTrue(shell.forceDismissCalled)
+        self.assertTrue(shell.doCloseCalled)
+        self.assertEqual([('home', SECTION, False, True)], [intentFields(i) for i in self.home.returned])
+        # The same intent, so each blocking window beneath closes too.
+        self.assertIs(self.home.returned[0], shell.exitCommand)
 
 
-class ChainAwareProcessCommandTest(KodiTestCase):
-    def test_a_home_command_bubbles_to_the_chain_host(self):
+class ChainAwareProcessCommandTest(HomeTestCase):
+    def test_an_intent_passing_a_hosted_screen_goes_to_its_host(self):
         host = FakeChainHost()
         shell = FakeChainedShell(host)
+        intent = navintent.home()
 
-        shell.processCommand("HOME")
+        shell.processCommand(intent)
 
-        self.assertEqual(["HOME"], host.processCommandCalls)
+        self.assertEqual([intent], host.processCommandCalls)
         self.assertFalse(shell.doCloseCalled)
         self.assertIsNone(shell.exitCommand)
 
-    def test_unchained_home_command_still_closes_itself_directly(self):
+    def test_an_intent_passing_a_window_outside_the_chain_closes_it_too(self):
         shell = FakeChainedShell(chain_host=None)
+        intent = navintent.home()
 
-        shell.processCommand("HOME")
+        shell.processCommand(intent)
 
         self.assertTrue(shell.doCloseCalled)
-        self.assertEqual("HOME", shell.exitCommand)
+        self.assertIs(intent, shell.exitCommand)
+        # Home already has it, from where it was issued.
+        self.assertEqual([], self.home.returned)
+
+    def test_no_data_still_raises(self):
+        shell = FakeChainedShell(chain_host=None)
+        with self.assertRaises(windowutils.util.NoDataException):
+            shell.processCommand("NODATA")
 
 
 class ChainAwareOpenWindowTest(KodiTestCase):
@@ -201,47 +207,32 @@ class OpenItemPassesContextTest(KodiTestCase):
         self.assertEqual([("the-object", shell, {"extra": "kwarg"})], openCalls)
 
 
-class ChainAwareStaleHostTest(KodiTestCase):
+class ChainAwareStaleHostTest(HomeTestCase):
     """The bug this session's live testing actually caught: a shell's own settled-focus debounce
     thread firing after its host already fully closed. See the module docstring."""
 
-    def test_goHome_falls_back_to_dismissing_itself_once_the_host_has_closed(self):
-        host = FakeChainHost(all_closed=True)
-        fakeHome = type("FakeHome", (), {"go_root": None, "_pendingSection": None, "show": lambda self: None})()
-        windowutils.HOME = fakeHome
-        try:
-            shell = FakeChainedShell(host)
-            shell.goHome(section=SECTION)
-
-            # Not delegated to the dead host - that's the crash this guards against.
-            self.assertEqual([], host.goHomeCalls)
-            self.assertTrue(shell.forceDismissCalled)
-            self.assertTrue(shell.doCloseCalled)
-        finally:
-            windowutils.HOME = None
-
-    def test_goHomeRoot_falls_back_once_the_host_has_closed(self):
-        host = FakeChainHost(all_closed=True)
-        fakeHome = type("FakeHome", (), {"go_root": None, "_pendingSection": None, "show": lambda self: None})()
-        windowutils.HOME = fakeHome
-        try:
-            shell = FakeChainedShell(host)
-            shell.goHomeRoot()
-
-            self.assertEqual([], host.goHomeCalls)
-            self.assertTrue(shell.forceDismissCalled)
-        finally:
-            windowutils.HOME = None
-
-    def test_process_command_falls_back_once_the_host_has_closed(self):
+    def test_goHome_leaves_for_home_itself_once_the_host_has_closed(self):
         host = FakeChainHost(all_closed=True)
         shell = FakeChainedShell(host)
 
-        shell.processCommand("HOME")
+        shell.goHome(section=SECTION)
+
+        # Not handed to the dead host - that's the crash this guards against.
+        self.assertEqual([], host.navigateCalls)
+        self.assertTrue(shell.forceDismissCalled)
+        self.assertTrue(shell.doCloseCalled)
+        self.assertEqual(1, len(self.home.returned))
+
+    def test_process_command_closes_once_the_host_has_closed(self):
+        host = FakeChainHost(all_closed=True)
+        shell = FakeChainedShell(host)
+        intent = navintent.home()
+
+        shell.processCommand(intent)
 
         self.assertEqual([], host.processCommandCalls)
         self.assertTrue(shell.doCloseCalled)
-        self.assertEqual("HOME", shell.exitCommand)
+        self.assertIs(intent, shell.exitCommand)
 
     def test_a_live_host_is_still_used_normally(self):
         """Plain sanity check that all_closed=False (the default) doesn't itself break the
@@ -251,97 +242,123 @@ class ChainAwareStaleHostTest(KodiTestCase):
 
         shell.goHome(section=SECTION)
 
-        self.assertEqual([(SECTION, False, False)], host.goHomeCalls)
+        self.assertEqual([('home', SECTION, False, False)], [intentFields(i) for i in host.navigateCalls])
         self.assertFalse(shell.forceDismissCalled)
 
 
-class FakeSelfHostingWindow(windowutils.UtilMixin):
-    """Stands in for LibraryWindow: points its own _chainHost at itself (library.py's __init__),
-    and mirrors LibraryWindow's own goHome()/goHomeRoot()/processCommand() overrides - each of
-    which falls through, once it's decided "I'm not the true root," to the mixin's _...Direct()
-    variant rather than the chain-checking wrapper. See the module docstring."""
+class FakeLibrary(windowutils.UtilMixin):
+    """LibraryWindow's real navigate()/returnHere()/resolveSection()/processCommand(), on a stand-in
+    that points its own _chainHost at itself as LibraryWindow does."""
+    navigate = library.LibraryWindow.navigate
+    returnHere = library.LibraryWindow.returnHere
+    resolveSection = library.LibraryWindow.resolveSection
+    processCommand = library.LibraryWindow.processCommand
 
-    def __init__(self):
+    def __init__(self, section=None):
         windowutils.UtilMixin.__init__(self)
         self._chainHost = self
-        self.forceDismissCalled = False
-        self.doCloseCalled = False
-        self.isRoot = False
+        self._allClosed = False
+        self.section = section
+        self.closeOption = None
+        self.go_root = False
+        self.calls = []
+
+    def _deferOpenSection(self, section, force=False):
+        self.calls.append(('openSection', section, force))
+
+    def _goRootNow(self):
+        self.calls.append(('root',))
+
+    def openSection(self, section, force=False):
+        self.calls.append(('openSection', section, force))
+
+    def postNav(self, name, fn, args=(), kwargs=None, stack=False):
+        fn(*args, **(kwargs or {}))
+
+    def show(self, **kwargs):
+        self.calls.append(('show', self.go_root))
+
+    def sectionByKey(self, key):
+        return SECTION if key == '42' else None
 
     def forceDismiss(self):
-        self.forceDismissCalled = True
+        self.calls.append(('forceDismiss',))
 
     def doClose(self, **kw):
-        self.doCloseCalled = True
-
-    def goHome(self, section=None, with_root=False, force=False):
-        if self.isRoot:
-            return
-        windowutils.GoHomeMixin._goHomeDirect(self, section=section, with_root=with_root, force=force)
-
-    def goHomeRoot(self, *args, **kwargs):
-        if self.isRoot:
-            return
-        windowutils.GoHomeMixin._goHomeRootDirect(self)
-
-    def processCommand(self, command):
-        if command and command.startswith('HOME') and self.isRoot:
-            return
-        if command and command.startswith('HOME'):
-            windowutils.UtilMixin._processHomeCommandDirect(self, command)
-            return
-        windowutils.UtilMixin.processCommand(self, command)
+        self.calls.append(('doClose',))
 
 
-class ChainAwareSelfHostingTest(KodiTestCase):
-    """LibraryWindow's _chainHost points at itself unconditionally (needed so openWindow() can
-    resolve its own genesis clicks into swapTo() without a LibraryWindow-specific override) - which
-    means goHome()/goHomeRoot()/processCommand() must NOT go through the chain-checking wrapper
-    once a self-hosting override has already run: _liveChainHost() would resolve back to self,
-    and calling self.goHome()/self.processCommand() again would recurse forever, since Python
-    resolves that call straight back to the same override. Locks in the _...Direct() fix."""
+class LibraryNavigateTest(KodiTestCase):
+    def setUp(self):
+        super(LibraryNavigateTest, self).setUp()
+        self.addCleanup(setattr, windowutils, 'HOME', None)
 
-    def test_goHome_does_not_recurse_when_self_hosting(self):
-        fakeHome = type("FakeHome", (), {"go_root": None, "_pendingSection": None, "show": lambda self: None})()
-        windowutils.HOME = fakeHome
-        try:
-            window = FakeSelfHostingWindow()
-            window.goHome(section=SECTION)
+    def _home(self, section=None):
+        home = FakeLibrary(section)
+        windowutils.HOME = home
+        return home
 
-            self.assertTrue(window.forceDismissCalled)
-            self.assertTrue(window.doCloseCalled)
-            self.assertEqual(SECTION, fakeHome._pendingSection)
-        finally:
-            windowutils.HOME = None
+    def test_home_opens_a_section_it_is_not_showing(self):
+        home = self._home()
+        home.navigate(navintent.home(section=SECTION))
+        self.assertEqual([('openSection', SECTION, False)], home.calls)
 
-    def test_goHomeRoot_does_not_recurse_when_self_hosting(self):
-        fakeHome = type("FakeHome", (), {"go_root": None, "_pendingSection": None, "show": lambda self: None})()
-        windowutils.HOME = fakeHome
-        try:
-            window = FakeSelfHostingWindow()
-            window.goHomeRoot()
+    def test_home_ignores_the_section_it_is_showing_unless_forced(self):
+        home = self._home(SECTION)
+        home.navigate(navintent.home(section=SECTION))
+        self.assertEqual([], home.calls)
+        home.navigate(navintent.home(section=SECTION, force=True))
+        self.assertEqual([('openSection', SECTION, True)], home.calls)
 
-            self.assertTrue(window.forceDismissCalled)
-        finally:
-            windowutils.HOME = None
+    def test_home_goes_to_its_root(self):
+        home = self._home()
+        home.navigate(navintent.home(root=True))
+        self.assertEqual([('root',)], home.calls)
 
-    def test_process_command_does_not_recurse_when_self_hosting(self):
-        window = FakeSelfHostingWindow()
+    def test_a_section_key_is_resolved_through_the_sidebar(self):
+        """getLibrarySectionId() callers (the music player's / Album screen's / photo directory's
+        "Go to <section>") hand over a key, not a section - a str (PlexValue). It has to reach
+        openSection() as the sidebar's section object; passing the key through raw blew up there
+        on `section.server` (live, 2026-09-18)."""
+        home = self._home()
+        home.navigate(navintent.home(section='42'))
+        self.assertEqual([('openSection', SECTION, False)], home.calls)
 
-        window.processCommand("HOME")
+    def test_returning_home_shows_it_then_opens_the_section(self):
+        home = self._home()
+        home.returnHere(navintent.home(section='42'))
+        self.assertEqual([('show', False), ('openSection', SECTION, True)], home.calls)
 
-        self.assertTrue(window.doCloseCalled)
-        self.assertEqual("HOME", window.exitCommand)
+    def test_returning_home_to_the_root_shows_it_with_go_root(self):
+        home = self._home()
+        home.returnHere(navintent.home(root=True))
+        self.assertEqual([('show', True)], home.calls)
 
-    def test_root_instance_still_short_circuits_before_reaching_the_mixin(self):
-        """Sanity check that this fake's own "am I the true root" branch (mirroring LibraryWindow's
-        `self is windowutils.HOME` check) still wins over self-hosting delegation - the recursion
-        risk only exists for the non-root fallback path exercised above."""
-        window = FakeSelfHostingWindow()
-        window.isRoot = True
+    def test_a_nested_library_window_leaves_for_home_without_recursing(self):
+        home = self._home()
+        nested = FakeLibrary()
 
-        window.goHome(section=SECTION)
-        window.processCommand("HOME")
+        nested.navigate(navintent.home(section=SECTION))
 
-        self.assertFalse(window.forceDismissCalled)
-        self.assertFalse(window.doCloseCalled)
+        self.assertEqual([('forceDismiss',), ('doClose',)], nested.calls)
+        self.assertTrue(navintent.isNavIntent(nested.exitCommand))
+        self.assertEqual([('show', False), ('openSection', SECTION, True)], home.calls)
+
+    def test_an_intent_arriving_at_home_leaves_it_open(self):
+        home = self._home()
+        home.processCommand(navintent.home())
+        self.assertEqual([], home.calls)
+
+    def test_an_intent_arriving_at_home_with_a_session_end_closes_it(self):
+        home = self._home()
+        home.closeOption = 'exit'
+        home.processCommand(navintent.home())
+        self.assertEqual([('doClose',)], home.calls)
+
+    def test_an_intent_passing_a_nested_library_window_closes_it(self):
+        self._home()
+        nested = FakeLibrary()
+        intent = navintent.home()
+        nested.processCommand(intent)
+        self.assertEqual([('doClose',)], nested.calls)
+        self.assertIs(intent, nested.exitCommand)

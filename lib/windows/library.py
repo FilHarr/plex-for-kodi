@@ -41,6 +41,7 @@ from . import optionsdialog
 from . import preplay
 from . import search
 from . import subitems
+from . import navintent
 from . import windowutils
 from .mixins.playbackbtn import PlaybackBtnMixin
 from .mixins.watchlist import removeFromWatchlistBlind
@@ -578,11 +579,6 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         PlaybackBtnMixin.__init__(self)
         kodigui.MultiWindow.__init__(self, *args, **kwargs)
         windowutils.UtilMixin.__init__(self)
-        # Only ever read/written once this instance is windowutils.HOME - see processCommand()'s own
-        # comment (Home-ControlledWindow plan, item 4). Defined unconditionally here anyway, same as
-        # exitCommand above, so every instance (including nested ones that never become HOME) has it.
-        self._pendingSection = None
-        self._pendingSectionForce = False
         self.section = kwargs.get('section')
 
         # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
@@ -620,9 +616,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         # Resolve to self as chain host, unconditionally - windowutils.UtilMixin.openWindow()
         # checks self._liveChainHost() to decide whether a click should swapTo() in place or
         # fall back to opener.handleOpen(); pointing this at self lets LibraryWindow's own
-        # click-handlers reuse that exact generic path, same as every hosted shell. See
-        # goHome()/goHomeRoot()/processCommand() below for the self-referential-delegation
-        # hazard this creates and how it's avoided (windowutils.py's _goHomeDirect() etc.).
+        # click-handlers reuse that exact generic path, same as every hosted shell. navigate()
+        # and processCommand() below check `self is HOME` rather than delegating to
+        # _liveChainHost(), which would resolve back to self and recurse forever.
         self._chainHost = self
         # 'library' (poster/grid, default) or 'recommended' (hubs) - a second swap dimension
         # alongside view-type (panel/panel2/.../list), not a replacement for it. See
@@ -1519,8 +1515,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
 
     def sectionByKey(self, key):
         """The sidebar's section object for a library section key, or None. For callers that only
-        hold a key (getLibrarySectionId()) - GoHomeMixin._goHomeDirect() (windowutils.py) resolves
-        those through here, the way HomeWindow's old 'HOME:<key>' handler matched the same list."""
+        hold a key (getLibrarySectionId()) - resolveSection() resolves those through here, the
+        way HomeWindow's old 'HOME:<key>' handler matched the same list."""
         if not self.sectionList:
             return None
         key = str(key)
@@ -1580,65 +1576,26 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self.unhookSignals()
 
     def processCommand(self, command):
-        """UtilMixin.processCommand() (windowutils.py) - live-confirmed regression, fixed here.
-        Every real descendant a 'HOME' command bubbles through (ShowWindow, EpisodesWindow,
-        PrePlayWindow, a nested LibraryWindow instance, ... via openItem()/openWindow()) is meant to
-        close itself on the way back - that's the base class's own, still-correct behavior,
-        unchanged below. But once the bubble reaches back up to whichever ancestor opened the chain,
-        and that ancestor is US (the cold-start root, windowutils.HOME), the command has arrived,
-        not "left home too" - goHome()/goHomeRoot() (windowutils.py's GoHomeMixin/SidebarMixin)
-        already reset us via go_root/show() before the bubble even started. Falling into the base
-        class's self.doClose() here would tear down the whole session, since nothing sits underneath
-        this window anymore the way HomeWindow used to. Live-confirmed: pressing the Home button
-        from a descendant briefly flashed this window back up, then closed the whole addon, before
-        this.
+        """UtilMixin.processCommand() (windowutils.py), for the result of a blocking open. At Home, a
+        NavIntent (navintent.py) has arrived, not left: Home took it when it was issued, and closing
+        here, as the base class does for every window it passes through, would tear down the whole
+        session, since nothing sits underneath this window any more (live-confirmed: the Home
+        button from a descendant closed the addon, before this override).
 
-        One exception: _closeSessionWithOption() (below) primes self.closeOption directly before
-        starting this same bubble, for a nested LibraryWindow instance (e.g. a movie collection)
-        whose own user-options-menu close action needs to end the real session, not just itself -
-        live-confirmed regression, choosing Exit from within a collection only closed the
-        collection. closeOption already being set (still None on an ordinary "just go home"
-        bubble) is the signal this arrived HOME to actually close, not merely to reset root.
-
-        A second exception, live-tested: an ordinary sidebar section click/settle from any
-        descendant (windowutils.py's _dispatchSectionOpen()) goes through this exact same 'HOME'
-        bubble now too (Home-ControlledWindow plan, item 4), carrying the target section via
-        self._pendingSection (stashed directly on this object by GoHomeMixin.goHome() before the
-        bubble started, not embedded in the command string - HOME is a persistent singleton, so a
-        live object reference survives however many ancestors unwind before this runs). Once
-        closeOption rules out the "actually closing" case above, a pending section that differs
-        from what's already showing gets swapped in the same deferred way every other openSection()
-        caller already uses.
+        One exception: _closeSessionWithOption() sets closeOption on Home before a nested library
+        window (a collection, say) leaves for it, so choosing Exit from within one ends the real
+        session rather than just the collection (live-confirmed regression). closeOption being set
+        is the signal this arrived to close.
         """
-        if command and command.startswith('HOME') and self is windowutils.HOME:
-            pending = self._pendingSection
-            pendingForce = self._pendingSectionForce
-            self._pendingSection = None
-            self._pendingSectionForce = False
+        if navintent.isNavIntent(command) and self is windowutils.HOME:
+            # Arrived: Home took the intent when it was issued (GoHomeMixin.leaveFor() ->
+            # returnHere()). Only ending the session is still decided here.
             if self.closeOption is not None:
                 self.doClose()
-            elif pending is not None and (pending != self.section or pendingForce):
-                # force=True unconditionally here (not just pendingForce) - matches every other
-                # openSection() caller in this bubble/dispatch family (popBack(), _deferOpenSection())
-                # that already skips its own no-op guard once it's decided a real reconstruction is
-                # needed; pendingForce is what decided that above when pending == self.section.
-                self.postNav('openSection', self.openSection, args=(pending,), kwargs={'force': True})
             return
-        if command and command.startswith('HOME'):
-            # self is guaranteed not to be windowutils.HOME here (ruled out above) - go straight
-            # to _processHomeCommandDirect(), not the chain-checking UtilMixin.processCommand():
-            # this LibraryWindow instance always points its own _chainHost at itself (__init__),
-            # so calling the wrapper would resolve _liveChainHost() back to self and call
-            # host.processCommand(command) = self.processCommand(command) - which Python resolves
-            # right back to this very override, recursing forever. There's no other object to
-            # delegate to once "I'm not windowutils.HOME" has already been decided here; just
-            # close and let the bubble continue upward, matching a plain (non-chain-hosting)
-            # window's behavior exactly (the pre-Phase-1 UtilMixin.processCommand() behavior).
-            windowutils.UtilMixin._processHomeCommandDirect(self, command)
-            return
-        # Any other command (e.g. "NODATA") - safe to hand to the generic UtilMixin.processCommand()
-        # unchanged, since its 'HOME'-prefixed branch (the only one that touches _liveChainHost())
-        # can't fire for a command that isn't 'HOME'-prefixed.
+        # Any other window: UtilMixin.processCommand() closes this one and passes an intent on, or
+        # raises for "NODATA". It can't recurse through _chainHost pointing at self: it only
+        # delegates to a host that isn't this window.
         windowutils.UtilMixin.processCommand(self, command)
 
     def confirmExit(self):
@@ -1778,14 +1735,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.doClose()
             return
 
-        # Bubble via the same forceDismiss()+closeWithCommand('HOME') chain goHome() already uses
-        # to unwind every ancestor back to the real session (proven safe/correct - this is exactly
-        # how pressing Home from a descendant already works, and 'HOME' is the one bubble command
-        # every window class's processCommand() already knows to propagate, unlike a bespoke
-        # command string that only LibraryWindow's own override would understand). processCommand()
-        # below sees closeOption already set once the bubble reaches windowutils.HOME, and actually
-        # closes instead of the ordinary swallow-and-stay-open behavior a plain "go home" HOME
-        # bubble gets.
+        # Leave for Home like any other window outside the chain (GoHomeMixin.leaveFor(), the
+        # same path the Home button takes from a descendant). processCommand() sees closeOption
+        # already set once the result reaches windowutils.HOME, and closes instead of staying.
         self.goHome()
 
     def doUserOption(self, force_option=None, target=None):
@@ -2370,51 +2322,56 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         """
         self.postNav('openSection', self.openSection, args=(section,), kwargs={'force': force})
 
-    def goHome(self, section=None, with_root=False, force=False):
-        """GoHomeMixin.goHome() (windowutils.py) assumes self is some OTHER (descendant) window
-        handing off to a separate Home singleton elsewhere: force-dismiss self, bubble a close
-        command, then HOME.show(). Live-confirmed broken once self already IS that singleton
-        (windowutils.HOME) - self.forceDismiss() there ALSO force-dismisses self._background (the
-        _MWBackground hosting this whole session's outer blocking .modal() call,
-        MultiWindow.open(), kodigui.py), and closeWithCommand() unconditionally self.doClose()s -
-        both prematurely kill the entire session instead of just resetting to the root. Reached
-        via MultiWindow.goHomeAction() (Home-button remote mapping, kodigui.py) and the
-        "library.back_home" monitor event (onFirstInit() below) firing goHomeRoot() directly on
-        this window, not a descendant - both hit this exact bug before this fix. Just reset root
-        state and reactivate in that case instead of falling into the base class's
-        descendant-oriented dance; fall through to it unchanged for genuine descendants.
+    def navigate(self, intent):
+        """GoHomeMixin.navigate() (windowutils.py), for the window that acts on a NavIntent
+        (navintent.py). Reached from this window's own views and hosted screens (the Home button,
+        goHome() and goHomeRoot(), a sidebar click inside a screen, the screensaver's
+        library.back_home and monitor.py's on-sleep action).
 
-        force=True (threaded from a sidebar click - windowutils.py's SidebarMixin.sectionClicked()/
-        _dispatchSectionOpen()) skips the "already on this section" no-op below, the same way
-        openSection()'s own force param does - needed here specifically because a sidebar click
-        on a real hosted shell (EpisodesWindow etc.) always reaches this method through this exact
-        call, never library.py's other sidebar-click path (_deferOpenSection() directly): routeClick()
-        runs the shell's own sectionClicked(), which bubbles up through its goHome().
-        """
-        if self is windowutils.HOME:
-            # Posted, like every other swap (MultiWindow.postNav()): this is reached from a held
-            # Home button, the screensaver's back-to-Home event and signal handlers as well as
-            # clicks. A section wins over with_root - no caller asks for both, and a root reset
-            # would just be replaced by the section's own fresh open.
-            if section and (section != self.section or force):
-                self._deferOpenSection(section, force=force)
-            elif with_root:
-                self.postNav('goHomeRoot', self._goRootNow)
+        As Home (windowutils.HOME): posted, like every other swap (MultiWindow.postNav()). A section
+        wins over root - no caller asks for both, and a root reset would just be replaced by the
+        section's own fresh open. The old goHome() override did the same, and fell back to the
+        mixin's descendant-oriented dismiss-and-show for any other instance, which here would kill
+        the whole session: forceDismiss() also dismisses self._background (the _MWBackground
+        hosting the session's outer modal() call) and closeWithCommand() doClose()s.
+
+        Any other LibraryWindow (a nested one outside the chain, e.g. a collection opened
+        blocking) leaves for Home like any other window. Checking `self is HOME` here, rather than
+        delegating to _liveChainHost(), is what keeps a window that hosts itself from calling
+        itself forever - what GoHomeMixin's old ...Direct() variants existed for."""
+        if self is not windowutils.HOME:
+            self.leaveFor(intent)
             return
-        # _goHomeDirect(), not the chain-checking goHome() wrapper: this LibraryWindow instance
-        # always points its own _chainHost at itself (__init__), so the wrapper would resolve
-        # _liveChainHost() back to self and recurse forever. Once this override has already
-        # decided "I'm not windowutils.HOME," self-referential delegation is meaningless - see
-        # windowutils.py's GoHomeMixin._goHomeDirect() for the full reasoning.
-        windowutils.GoHomeMixin._goHomeDirect(self, section=section, with_root=with_root, force=force)
-
-    def goHomeRoot(self, *args, **kwargs):
-        if self is windowutils.HOME:
-            # Also the "library.back_home" listener (the screensaver, monitor.py), which used to
-            # reach show() on its own timer thread.
+        util.DEBUG_LOG('Navigate: {0} at Home', intent)
+        section = self.resolveSection(intent.section)
+        if section is not None and (section != self.section or intent.force):
+            self._deferOpenSection(section, force=intent.force)
+        elif intent.root:
             self.postNav('goHomeRoot', self._goRootNow)
-            return
-        windowutils.GoHomeMixin._goHomeRootDirect(self)
+
+    def returnHere(self, intent):
+        """Home, from a window outside the chain that's closing (GoHomeMixin.leaveFor()): come back
+        to the front, reset to the root if asked (show()/onReInit()), and open the section if one
+        was asked for. The open is posted, so it runs from this window's wait loop once the
+        closing windows are gone; force=True, as every reconstruction in this family, since
+        intent.force is what decided it when the section is already showing."""
+        util.DEBUG_LOG('Navigate: {0} returning Home', intent)
+        section = self.resolveSection(intent.section)
+        self.go_root = intent.root
+        self.show()
+        if section is not None and (section != self.section or intent.force):
+            self.postNav('openSection', self.openSection, args=(section,), kwargs={'force': True})
+
+    def resolveSection(self, section):
+        """A section asked for by key - a str, or plexobjects.PlexValue, from getLibrarySectionId():
+        the music player's / Album screen's / photo directory's "Go to <section>" - as the
+        sidebar's own section object. openSection() on a bare key blew up on `section.server`
+        (live, 2026-09-18); None (going to the root) if the sidebar has no such section."""
+        if isinstance(section, six.string_types):
+            key, section = section, self.sectionByKey(section)
+            if section is None:
+                util.DEBUG_LOG('Navigate: no sidebar section for key {0}, going to root', key)
+        return section
 
     def _goRootNow(self):
         """The posted half of goHome(with_root=True)/goHomeRoot(): go to Home's root, first row,
