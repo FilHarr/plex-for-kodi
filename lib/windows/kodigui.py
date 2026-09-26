@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 
+import gc
 import threading
 import time
 import traceback
@@ -1496,6 +1497,29 @@ class StepTiming(object):
 def markStep(timing, label):
     if timing is not None:
         timing.mark(label)
+
+
+# Python's own collections, now that none are forced after a screen is torn down (63037c16): each
+# one stops every Python thread, so one landing mid-build shows up as a stall in the timing lines.
+GC_PAUSE_LOG_MS = 10
+_gcStarted = {}
+
+
+def _logGcPause(phase, info):
+    if phase == 'start':
+        _gcStarted['at'] = time.time()
+        return
+    started = _gcStarted.pop('at', None)
+    if started is None:
+        return
+    ms = (time.time() - started) * 1000
+    if ms >= GC_PAUSE_LOG_MS:
+        util.DEBUG_LOG("GC pause: generation {0}, {1} ms, {2} collected", info.get('generation'), int(ms),
+                       info.get('collected'))
+
+
+if _logGcPause not in gc.callbacks:
+    gc.callbacks.append(_logGcPause)
 
 
 class SwapTiming(StepTiming):

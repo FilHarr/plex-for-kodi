@@ -106,6 +106,9 @@ class EpisodesPaginator(pagination.MCLPaginator):
     _currentEpisode = None
     _rightOffset = 0
     _seasonCardInserted = False
+    # Time spent in getData() and setItemInfo(), for fillEpisodes()'s Screen timing line.
+    fetchMs = 0
+    itemInfoMs = 0
 
     def reset(self):
         super(EpisodesPaginator, self).reset()
@@ -122,11 +125,17 @@ class EpisodesPaginator(pagination.MCLPaginator):
         return None
 
     def getData(self, offset, amount):
-        return (self.parentWindow.season or self.parentWindow.show_).episodes(offset=offset, limit=amount)
+        started = time.time()
+        try:
+            return (self.parentWindow.season or self.parentWindow.show_).episodes(offset=offset, limit=amount)
+        finally:
+            self.fetchMs += (time.time() - started) * 1000
 
     def createListItem(self, data):
         mli = super(EpisodesPaginator, self).createListItem(data)
+        started = time.time()
         self.parentWindow.setItemInfo(data, mli)
+        self.itemInfoMs += (time.time() - started) * 1000
         return mli
 
     def prepareListItem(self, data, mli):
@@ -2556,8 +2565,14 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         return mli
 
     def fillEpisodes(self, update=False, from_redirect=False, timing=None):
-        items = self.episodesPaginator.paginate()
+        paginator = self.episodesPaginator
+        paginator.fetchMs = paginator.itemInfoMs = 0
+        items = paginator.paginate()
         kodigui.markStep(timing, 'episode list')
+        if timing is not None:
+            timing.add('of which fetch', paginator.fetchMs)
+            timing.add('setItemInfo', paginator.itemInfoMs)
+            timing.add('items', len(items or ()))
         if from_redirect:
             self.episodeListControl.setSelectedItemByPos(0)
         if not update:
