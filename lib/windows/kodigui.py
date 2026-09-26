@@ -1002,8 +1002,14 @@ class ManagedListItem(object):
     def setProperty(self, key, value):
         if self._manager:
             self._manager._properties[key] = 1
+        # Every ListItem call takes Kodi's GUI lock, so skip a write that changes nothing: the
+        # value it already has, or '' for a property it never had. self.properties mirrors the
+        # list item - every other path that writes one (_updateListItem(), clear()) goes from it.
+        # A grid chunk rewrote 'index' and wrote empty 'progress'/'year' on every placeholder.
+        unchanged = self.properties.get(key, '') == value
         self.properties[key] = value
-        self.listItem.setProperty(key, value)
+        if not unchanged:
+            self.listItem.setProperty(key, value)
         return self
 
     def setProperties(self, prop_list, val_list_or_val):
