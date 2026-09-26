@@ -4771,7 +4771,10 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # music and photo sections have no such entry in /prefs (live-checked), so the default
             # of 2 above would fabricate one for them - and the merged type it leads to is exactly
             # what makes the server 500 on the artist-joined Album Artist sort.
-            if self.section.TYPE != 'artist' and collection_mode == 2 \
+            # Not for episodes either: a collection holds shows, never episodes, and with "4,18"
+            # the server counted shows instead - 159 index entries against 7000+ episodes on the
+            # AM6B, so the grid got 159 placeholders and the first chunk ran off the end.
+            if self.section.TYPE != 'artist' and collection_mode == 2 and self.itemType != 'episode' \
                     and not (self.filter or self.boolFilters.get('unwatched')):
                 jl_type = getQueryItemType(self.section, self.itemType, fallback_to_section_type=True,
                                            force_include_collections=True)
