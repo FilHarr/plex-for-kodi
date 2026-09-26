@@ -247,7 +247,7 @@ class PlexObject(Checks):
         if util.DEBUG_REQUESTS:
             util.DEBUG_LOG("Clearing cache for: {0}, {1}".format(self, urls))
 
-        from .asyncadapter import Session
+        from .asyncadapter import Session, vacuumIfWorthIt
         s = Session()
         for url in urls:
             try:
@@ -255,8 +255,8 @@ class PlexObject(Checks):
             except Exception as e:
                 util.LOG('Failed to delete cached URL {0}: {1}', url, e)
 
-        # compact DB
-        s.cache.vacuum()
+        # compact DB, once enough of it is free
+        vacuumIfWorthIt(s)
 
         base = util.CACHED_PLEX_URLS.get(util.INTERFACE.getRCBaseKey(), {})
 

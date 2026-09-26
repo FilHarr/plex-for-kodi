@@ -16,6 +16,8 @@ except ImportError:
     # urllib3 >= 2.1.0
     from requests.packages.urllib3.connection import HTTPSConnection as VerifiedHTTPSConnection
 
+import weakref
+import requests
 from requests.adapters import HTTPAdapter, Retry
 from requests.compat import urlparse
 from requests_cache import CachedSession
@@ -215,7 +217,8 @@ class AsyncHTTPConnectionPool(HTTPConnectionPool):
 
     def __init__(self, *args, **kwargs):
         HTTPConnectionPool.__init__(self, *args, **kwargs)
-        self.connections = []
+        # Weak: every connection the pool ever made used to stay listed (L5 in the navigation review).
+        self.connections = weakref.WeakSet()
 
     def _new_conn(self):
         """
@@ -236,12 +239,12 @@ class AsyncHTTPConnectionPool(HTTPConnectionPool):
             # Mark this connection as not reusable
             conn.auto_open = 0
 
-        self.connections.append(conn)
+        self.connections.add(conn)
 
         return conn
 
     def cancel(self):
-        for c in self.connections:
+        for c in list(self.connections):
             c.cancel()
 
 
@@ -250,7 +253,8 @@ class AsyncHTTPSConnectionPool(HTTPSConnectionPool):
 
     def __init__(self, *args, **kwargs):
         HTTPSConnectionPool.__init__(self, *args, **kwargs)
-        self.connections = []
+        # Weak, as in AsyncHTTPConnectionPool.
+        self.connections = weakref.WeakSet()
 
     def _new_conn(self):
         """
@@ -271,7 +275,7 @@ class AsyncHTTPSConnectionPool(HTTPSConnectionPool):
             extra_params['strict'] = self.strict
         connection = connection_class(host=actual_host, port=actual_port, timeout=self.timeout.connect_timeout, **extra_params)
 
-        self.connections.append(connection)
+        self.connections.add(connection)
 
         try:
             return self._prepare_conn(connection)
@@ -280,7 +284,7 @@ class AsyncHTTPSConnectionPool(HTTPSConnectionPool):
             return connection
 
     def cancel(self):
-        for c in self.connections:
+        for c in list(self.connections):
             c.cancel()
 
 
@@ -364,7 +368,10 @@ class AsyncHTTPAdapter(HTTPAdapter):
             url = parsed.geturl()
             conn = self.poolmanager.connection_from_url(url)
 
-        self.connections.append(conn)
+        # Once each: this ran per request and never removed anything, so the long-lived server
+        # session's list grew by one (mostly the same pool) per request (L5).
+        if conn not in self.connections:
+            self.connections.append(conn)
         return conn
 
 STOP_RETRYING_REQUESTS = False
@@ -377,7 +384,48 @@ class StoppableRetry(Retry):
         return super(StoppableRetry, self).increment(*args, **kwargs)
 
 
-class Session(CachedSession):
+class AsyncSessionMixin(object):
+    def mountAsyncAdapters(self):
+        self.mount('https://', AsyncHTTPAdapter(max_retries=StoppableRetry(MAX_RETRIES)))
+        self.mount('http://', AsyncHTTPAdapter(max_retries=StoppableRetry(MAX_RETRIES)))
+
+    def cancel(self):
+        for v in self.adapters.values():
+            v.close()
+            v.cancel()
+
+
+class PlainSession(AsyncSessionMixin, requests.Session):
+    """A session without the request cache, for http.HttpRequest's one-off requests, which never
+    use it: a cached session opens the SQLite cache and creates its three tables each time one is
+    built, once per request (E8 in the navigation review)."""
+    def __init__(self):
+        requests.Session.__init__(self)
+        self.mountAsyncAdapters()
+
+    def request(self, method, url, *args, **kwargs):
+        kwargs.pop('with_cache', None)
+        if DEBUG_REQUESTS:
+            xbmc.log("PlainSession.request: %s %s" % (method, url), xbmc.LOGINFO)
+        return requests.Session.request(self, method, url, *args, **kwargs)
+
+
+# Free space in the cache database worth a VACUUM, which rewrites the whole file.
+VACUUM_FREE_BYTES = 8 * 1024 * 1024
+
+
+def vacuumIfWorthIt(session):
+    """Deleting cached responses leaves free pages that SQLite reuses, so the file doesn't grow
+    for want of a VACUUM. One ran after every cache invalidation (a watched toggle, say) and
+    rewrote the whole file each time (L4 in the navigation review); now only once this much of it
+    is free."""
+    with session.cache.responses.connection() as con:
+        free = con.execute("PRAGMA freelist_count").fetchone()[0] * con.execute("PRAGMA page_size").fetchone()[0]
+    if free >= VACUUM_FREE_BYTES:
+        session.cache.vacuum()
+
+
+class Session(AsyncSessionMixin, CachedSession):
     def __init__(self, *args, **kwargs):
         kwargs['cache_name'] = os.path.join(TEMP_PATH, "pm4k_requests_cache")
         kwargs['backend'] = "sqlite"
@@ -385,17 +433,10 @@ class Session(CachedSession):
         if REQUESTS_CACHE_EXPIRY:
             kwargs['expire_after'] = datetime.timedelta(hours=REQUESTS_CACHE_EXPIRY)
         CachedSession.__init__(self, *args, **kwargs)
-
-        self.mount('https://', AsyncHTTPAdapter(max_retries=StoppableRetry(MAX_RETRIES)))
-        self.mount('http://', AsyncHTTPAdapter(max_retries=StoppableRetry(MAX_RETRIES)))
+        self.mountAsyncAdapters()
 
     def request(self, method, url, *args, **kwargs):
         self._is_cache_disabled = not kwargs.pop('with_cache', False)
         if DEBUG_REQUESTS:
             xbmc.log("Session.request: (cache enabled: %s) %s %s" % (not self._is_cache_disabled, method, url), xbmc.LOGINFO)
         return CachedSession.request(self, method, url, *args, **kwargs)
-
-    def cancel(self):
-        for v in self.adapters.values():
-            v.close()
-            v.cancel()

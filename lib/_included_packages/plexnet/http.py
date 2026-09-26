@@ -94,7 +94,8 @@ class HttpRequest(object):
         self.path = None
         self.hasParams = '?' in url
         self.ignoreResponse = False
-        self.session = asyncadapter.Session()
+        # Never cached, so no cache backend to open per request (E8 in the navigation review).
+        self.session = asyncadapter.PlainSession()
         self.session.headers = util.BASE_HEADERS.copy()
         self.currentResponse = None
         self.method = method
