@@ -1699,6 +1699,11 @@ class MultiWindow(object):
         with self._navLock:
             self._uiPending.append((name, fn, tuple(args), dict(kwargs or {}), time.time()))
 
+    def navRequestPending(self):
+        """Whether a navigation request is waiting to run (postNav())."""
+        with self._navLock:
+            return bool(self._navPending)
+
     def navWaitInterval(self):
         """How long the current view's wait loop should wait next: until the oldest request is
         due, if that's sooner than the usual interval, so the delay stays NAV_DEFER_SECONDS. A

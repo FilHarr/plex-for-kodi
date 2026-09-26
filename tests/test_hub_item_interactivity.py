@@ -42,9 +42,12 @@ class FakeHubDataSource(object):
     def show(self):
         return self._show
 
+    existsChecks = 0
+
     def exists(self, force_full_check=False):
         # Keep hubItemClicked()'s empty-hub cleanup branch inert - out of scope here (see module
         # docstring), it's not what these tests are checking.
+        self.existsChecks += 1
         return True
 
 
@@ -100,9 +103,43 @@ class FakeLibraryWindow(object):
         self.visibleHubs = []
         self.focusedHubIndex = 0
         self.processedCommands = []
+        self.navPending = False
+
+    def navRequestPending(self):
+        return self.navPending
 
     def processCommand(self, command):
         self.processedCommands.append(command)
+
+
+class HubItemClickedPostedOpenTest(KodiTestCase):
+    """A posted open (the host's queue) returns straight away: the existence check after it ran
+    on the main thread before the open could, and Back rebuilds the rows anyway."""
+
+    def _click(self, nav_pending):
+        movie = FakeHubDataSource('movie')
+        window = FakeLibraryWindow(FakeHubControl(FakeManagedListItem(movie)))
+        original_open = library.opener.open
+
+        def fake_open(obj, **kwargs):
+            window.navPending = nav_pending
+            return ''
+        library.opener.open = fake_open
+        try:
+            window.hubItemClicked(window.HUB_CONTROL_ID)
+        finally:
+            library.opener.open = original_open
+        return movie, window
+
+    def test_a_posted_open_skips_the_existence_check(self):
+        movie, window = self._click(nav_pending=True)
+        self.assertEqual(0, movie.existsChecks)
+        self.assertEqual([], window.processedCommands)
+
+    def test_a_blocking_open_still_checks_and_tidies_the_row(self):
+        movie, window = self._click(nav_pending=False)
+        self.assertEqual(1, movie.existsChecks)
+        self.assertEqual([''], window.processedCommands)
 
 
 class HubItemClickedRedirectionTest(KodiTestCase):

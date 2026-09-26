@@ -7184,6 +7184,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         command = opener.open(use_ds, context=None if auto_play else self, auto_play=auto_play,
                                dialog_props=self.carriedProps if auto_play else None, **extra_kwargs)
 
+        if not command and self.navRequestPending():
+            # Only posted (openWindow(); the opener returns ''): the open runs once this returns,
+            # so the check below would hold it up by a server round trip (15-50 ms on the AM6B),
+            # and Back rebuilds this view with fresh rows anyway - as grid clicks already skip it
+            # (3c). Blocking opens (auto-play, photos) still come back here and tidy the row.
+            return
+
         # Hub-becomes-empty cleanup - ported from HomeWindow.hubItemClicked() (home.py).
         # MediaItem.exists() checks the deleted/deletedAt flags; a full check is also tried since
         # we still want to show the media if it's still valid but has deleted files.
