@@ -90,7 +90,15 @@ class UtilityMonitor(xbmc.Monitor, signalsmixin.SignalsMixin):
                 reInitAddon()
                 _setGlobalProperty('is_active', '1')
                 kodigui.BaseFunctions.restoring = True
-                xbmc.executebuiltin('ReplaceWindow({0})'.format(kodigui.BaseFunctions.lastWinID))
+                if kodigui.BASE_WINDOW_ID:
+                    # The base window first, in place of Kodi's home, then the screen over it: a
+                    # screen returns to the window active when it was shown (ensureBaseWindow()).
+                    # Replacing Kodi's home with the screen itself left it to return to Kodi's home,
+                    # which showed for a moment on the next screen change after every restore.
+                    xbmc.executebuiltin('ReplaceWindow({0})'.format(kodigui.BASE_WINDOW_ID), True)
+                    xbmc.executebuiltin('ActivateWindow({0})'.format(kodigui.BaseFunctions.lastWinID))
+                else:
+                    xbmc.executebuiltin('ReplaceWindow({0})'.format(kodigui.BaseFunctions.lastWinID))
                 return
             else:
                 LOG("LastWinID was: %s, restarting" % kodigui.BaseFunctions.lastWinID)

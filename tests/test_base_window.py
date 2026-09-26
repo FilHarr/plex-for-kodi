@@ -42,3 +42,27 @@ class EnsureBaseWindowTest(KodiTestCase):
 
     def test_left_alone_before_the_base_window_is_known(self):
         self.assertFalse(self._run(current=10000, base=None).called)
+
+
+class RestoreTest(KodiTestCase):
+    """Restoring from minimised replaced Kodi's home with the last screen, which then returned to
+    Kodi's home: it showed for a moment on the next screen change after every restore (AM6B,
+    2026-09-27). The base window now replaces Kodi's home, and the screen shows over it."""
+
+    def _restore(self, base=13001):
+        from lib import monitor, util
+        with mock.patch.object(kodigui, 'BASE_WINDOW_ID', base), \
+                mock.patch.object(kodigui.BaseFunctions, 'lastWinID', 13004), \
+                mock.patch.object(kodigui.BaseFunctions, 'restoring', False), \
+                mock.patch.object(util, 'reInitAddon'), \
+                mock.patch.object(monitor, '_setGlobalProperty'), \
+                mock.patch.object(monitor.xbmc, 'executebuiltin') as builtin:
+            monitor.MONITOR.onNotification('script.plexmod', 'Other.RESTORE', '{}')
+            self.assertTrue(kodigui.BaseFunctions.restoring)
+        return [c.args for c in builtin.call_args_list]
+
+    def test_the_screen_comes_back_over_the_base_window(self):
+        self.assertEqual([('ReplaceWindow(13001)', True), ('ActivateWindow(13004)',)], self._restore())
+
+    def test_without_a_base_window_the_screen_replaces_kodis_home(self):
+        self.assertEqual([('ReplaceWindow(13004)',)], self._restore(base=None))
