@@ -813,6 +813,55 @@ class EmptyDataSource(DummyDataSource):
 DUMMY_DATA_SOURCE = DummyDataSource()
 
 
+class ScreenClosed(Exception):
+    """Raised by a guarded control or list item call once its screen has closed (WriteGuard)."""
+
+
+class WriteGuard(object):
+    """Lets a screen stop background work touching its controls once it has closed, without
+    waiting for that work (F5 in the navigation review). A screen that runs background fills
+    (mixins/tasks.py's TasksMixin) has one; every ManagedControlList it creates, and the items in
+    it, route their Kodi calls through the guard's lock and raise ScreenClosed once close() has
+    run. close() takes the lock, so it waits for the one call in progress - milliseconds - rather
+    than for a fill's server request; the host then closes the screen natively, freeing the
+    controls, with nothing still able to reach them."""
+
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.closed = False
+
+    def close(self):
+        with self.lock:
+            self.closed = True
+
+
+class _Guarded(object):
+    """A Kodi control or ListItem whose method calls go through a WriteGuard."""
+    __slots__ = ('_target', '_guard')
+
+    def __init__(self, target, guard):
+        self._target = target
+        self._guard = guard
+
+    def __getattr__(self, name):
+        attr = getattr(self._target, name)
+        if not callable(attr):
+            return attr
+        guard = self._guard
+
+        def call(*args, **kwargs):
+            with guard.lock:
+                if guard.closed:
+                    raise ScreenClosed(name)
+                return attr(*args, **kwargs)
+        return call
+
+    def __bool__(self):
+        return bool(self._target)
+
+    __nonzero__ = __bool__
+
+
 class ManagedListItem(object):
     __slots__ = ("_listItem", "dataSource", "properties", "label", "label2", "iconImage", "thumbnailImage", "path",
                  "_ID", "_manager", "_valid")
@@ -850,6 +899,9 @@ class ManagedListItem(object):
             except RuntimeError:
                 return None
 
+        guard = getattr(self._manager, '_guard', None) if self._manager else None
+        if guard is not None:
+            return _Guarded(self._listItem, guard)
         return self._listItem
 
     def invalidate(self):
@@ -977,11 +1029,14 @@ class ManagedListItem(object):
 
 class ManagedControlList(object):
     __slots__ = ("controlID", "control", "items", "_sortKey", "_idCounter", "_maxViewIndex", "_properties",
-                 "dataSource")
+                 "dataSource", "_guard")
 
     def __init__(self, window, control_id, max_view_index, data_source=None):
         self.controlID = control_id
-        self.control = window.getControl(control_id)
+        # The creating screen's WriteGuard, if it has one. Not applied by newControl(): the host's
+        # shared lists (the sidebar) are rebound to each screen that way, and outlive it.
+        self._guard = getattr(window, '_writeGuard', None)
+        self.control = self._guardedControl(window.getControl(control_id))
         self.items = []
         self._sortKey = None
         self._idCounter = 0
@@ -1040,9 +1095,12 @@ class ManagedControlList(object):
         self._idCounter += 1
         return str(self._idCounter)
 
+    def _guardedControl(self, control):
+        return _Guarded(control, self._guard) if self._guard is not None else control
+
     def reInit(self, window, control_id):
         self.controlID = control_id
-        self.control = window.getControl(control_id)
+        self.control = self._guardedControl(window.getControl(control_id))
         self.control.addItems([i._takeListItem(self, self._nextID()) for i in self.items])
 
     def setSort(self, sort):

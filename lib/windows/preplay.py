@@ -1096,6 +1096,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         return True
 
     def fillRelated(self):
+        if self.relatedPaginator is None:
+            # closed (doClose() drops it) before this task ran
+            return False
         if not self.relatedPaginator.leafCount:
             self.relatedListControl.reset()
             return False

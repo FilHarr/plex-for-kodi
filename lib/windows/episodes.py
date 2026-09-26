@@ -2562,6 +2562,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 cur_mli.dataSource.reload(checkFiles=1, includeChapters=1, fromMediaChoice=cur_mli.dataSource.mediaChoice is not None)
                 util.DEBUG_LOG("Episodes: Sync-loading currently selected item: {}", cur_mli.dataSource)
                 self._reloadItem(cur_mli, with_progress=item_progress, set_item_info=set_item_info)
+            except kodigui.ScreenClosed:
+                # the screen closed while this ran (kodigui.WriteGuard) - not missing data
+                return
             except:
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
                 self.doClose()
@@ -2648,6 +2651,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.setPostReloadItemInfo(episode, mli)
             if set_item_info:
                 self.setUserItemInfo(mli)
+        except kodigui.ScreenClosed:
+            # the screen closed while this ran (kodigui.WriteGuard) - not missing data
+            return
         except:
             util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
             self.doClose()
