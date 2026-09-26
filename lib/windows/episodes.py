@@ -2263,7 +2263,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         except AttributeError:
             return
 
-        self._fillRowData()
+        try:
+            self._fillRowData()
+        except kodigui.ScreenClosed:
+            # the screen closed while this ran (kodigui.WriteGuard) - this is a plain thread, not a
+            # SimpleTask, so nothing else would catch it
+            return
 
     def _fillRowData(self):
         mli = self.episodeListControl.getSelectedItem()
