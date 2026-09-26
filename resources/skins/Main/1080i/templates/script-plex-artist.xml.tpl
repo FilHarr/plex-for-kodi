@@ -633,7 +633,7 @@
             <width>1867</width>
             <height>{{ vscale(380) }}</height>
             <onup>409</onup>
-            <ondown>false</ondown>
+            <ondown>noop</ondown>
             <!-- RelatedPaginator always starts at offset=0 and never produces a left-boundary
                  marker (same as Episodes' Related row), so noop here was already a dead end -
                  safe to go straight to the sidebar. onright stays an unconditional hard stop. -->
