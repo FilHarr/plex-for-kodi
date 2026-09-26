@@ -248,7 +248,7 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
 
         carryProps = kwargs.get("window_props", None)
         if carryProps:
-            self.setProperties(list(carryProps.keys()), list(carryProps.values()))
+            applyCarriedProps(self, carryProps)
         self.setBoolProperty('is_plextuary', util.SKIN_PLEXTUARY)
 
     # Weak reference to the MultiWindow (LibraryWindow) showing this window as its current view,
@@ -433,11 +433,12 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         if self._closing:
             return
 
-        if not self._winID:
-            self._winID = xbmcgui.getCurrentWindowId()
-
+        # Written to this window only. It used to be written a second time through
+        # xbmcgui.Window(self._winID): the same window once it's open, so three GUI-locked calls
+        # (that constructor takes the lock too) for one property. Before it's open, _winID fell
+        # back to whichever window was on screen, so the write went there instead (F2 in the
+        # navigation review). getProperty() already reads from this window.
         try:
-            xbmcgui.Window(self._winID).setProperty(key, value)
             xbmcgui.WindowXML.setProperty(self, key, value)
         except RuntimeError:
             util.DEBUG_LOG('kodigui.BaseWindow.setProperty: Missing window ({}) ({})', self._winID, key)
@@ -669,7 +670,7 @@ class BaseDialog(XMLBase, xbmcgui.WindowXMLDialog, BaseFunctions):
         carryProps = kwargs.get("dialog_props", None)
         self.dialogProps = carryProps
         if carryProps:
-            self.setProperties(list(carryProps.keys()), list(carryProps.values()))
+            applyCarriedProps(self, carryProps)
         self.setBoolProperty('is_plextuary', util.SKIN_PLEXTUARY)
 
     def onCloseSignal(self, *args, **kwargs):
@@ -701,11 +702,8 @@ class BaseDialog(XMLBase, xbmcgui.WindowXMLDialog, BaseFunctions):
         if self._closing:
             return
 
-        if not self._winID:
-            self._winID = xbmcgui.getCurrentWindowId()
-
+        # This dialog only - see BaseWindow.setProperty().
         try:
-            xbmcgui.Window(self._winID).setProperty(key, value)
             xbmcgui.WindowXMLDialog.setProperty(self, key, value)
         except RuntimeError:
             xbmc.log('kodigui.BaseDialog.setProperty: Missing window', xbmc.LOGDEBUG)
@@ -1527,6 +1525,18 @@ def _logGcPause(phase, info):
 
 if _logGcPause not in gc.callbacks:
     gc.callbacks.append(_logGcPause)
+
+
+def applyCarriedProps(window, props):
+    """Properties carried into a new window or dialog (window_props/dialog_props) go to it and to
+    the window on screen underneath. That second write used to happen as a side effect of
+    setProperty() before a window was open (see BaseWindow.setProperty()), and the carried props
+    rely on it: LibraryWindow.carriedProps restores a hub row's labels on the window beneath a
+    dialog, and the dropdown re-applies them there after a sub-menu for the same reason."""
+    under = xbmcgui.Window(xbmcgui.getCurrentWindowId())
+    for key, value in props.items():
+        under.setProperty(key, value)
+        window.setProperty(key, value)
 
 
 class SwapTiming(StepTiming):
