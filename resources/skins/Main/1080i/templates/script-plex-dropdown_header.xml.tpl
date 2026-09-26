@@ -342,12 +342,15 @@
             </control>
         </focusedlayout>
     </control>
+    <!-- 14 rows high: it only shows when there are more than 14 options (Window.Property(scroll)),
+         and then the list is always at its 14-row maximum. Kodi can't hand a scrollbar to Python,
+         so it can't follow the list's height from there as the list does. -->
     <control type="scrollbar" id="1152">
-        <hitrect x="600" y="0" w="50" h="{{ vscale(528) }}" />
+        <hitrect x="600" y="0" w="50" h="{{ vscale(924) }}" />
         <left>604</left>
         <top>0</top>
         <width>12</width>
-        <height>{{ vscale(528) }}</height>
+        <height>{{ vscale(924) }}</height>
         <visible>true</visible>
         <texturesliderbackground colordiffuse="40000000" border="5">script.plex/white-square-rounded.png</texturesliderbackground>
         <texturesliderbar colordiffuse="77FFFFFF" border="5">script.plex/white-square-rounded.png</texturesliderbar>

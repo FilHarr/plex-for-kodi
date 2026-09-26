@@ -93,12 +93,9 @@ class DropdownDialog(kodigui.BaseDialog):
             self.getControl(111).setHeight(height + 6)
         else:
             shadowControl.setHeight(height)
+        # The scrollbar is sized in the templates: Kodi's getControl() can't return one, so resizing
+        # it here always raised (and logged an EXCEPTION), leaving it 8 rows high beside 14.
         self.optionsList.setHeight(ol_height)
-        if self.getBoolProperty('scroll'):
-            try:
-                self.getControl(self.SCROLLBAR_ID).setHeight(ol_height)
-            except:
-                pass
 
         if y == "middle":
             y = util.vperci(util.vscale(ol_height))
