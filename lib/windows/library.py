@@ -996,7 +996,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         if outgoingWasRealShell:
             outgoingShell._chainHost = None
             util.DEBUG_LOG("Library: _setupCurrent() closing outgoing {0}'s native window", outgoingShell)
+            dismissStarted = time.time()
             outgoingShell.forceDismiss()
+            timing = self.__dict__.get('_swapTiming')
+            if timing is not None:
+                timing.add('native close', (time.time() - dismissStarted) * 1000)
         del outgoingShell
 
         if not self._isRealShell(cls):
@@ -7605,7 +7609,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         return callback
 
     def _bindFetchedHubs(self, section, hubs, generation):
+        started = time.time()
         self._recommendedHubsCallback(section, hubs, generation)
+        swapStarted = self.__dict__.get('_lastSwapStarted')
+        util.DEBUG_LOG("Library: hub rows bound in {0} ms (fetched on a worker), {1} ms after the request",
+                       int((time.time() - started) * 1000),
+                       int((time.time() - swapStarted) * 1000) if swapStarted else '?')
         if (generation == self._listGeneration and not self.closing
                 and self.contentMode == 'recommended'):
             self._focusAnchorHub()

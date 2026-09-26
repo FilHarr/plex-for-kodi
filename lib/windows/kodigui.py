@@ -360,6 +360,10 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
                     self.onReInit()
             else:
                 self.started = True
+                host = self.hostedBy()
+                timing = host.__dict__.get('_swapTiming') if host is not None else None
+                if timing is not None:
+                    timing.mark('show')
                 self.paintInitialBackground()
 
                 from . import windowutils
@@ -373,6 +377,9 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
                 if hasattr(self, "onFirstInit"):
                     self.onFirstInit()
                 self.finishedInit = True
+                if timing is not None and host.__dict__.get('_swapTiming') is timing:
+                    timing.report(self)
+                    host._swapTiming = None
             util.setGlobalProperty('active_window', self.__class__.__name__)
 
         except util.NoDataException:
@@ -1399,6 +1406,35 @@ class MultiWindowView(object):
         super(MultiWindowView, self).onAction(action)
 
 
+class SwapTiming(object):
+    """How long one screen change on a MultiWindow took, step by step, logged as one DEBUG line
+    once the new view has finished its first init (step 4 in the navigation review). Started when
+    a navigation request runs (runPendingNav()); mark() records the time since the previous mark,
+    add() a duration measured inside a step."""
+
+    def __init__(self, name):
+        self.name = name
+        self.started = self._last = time.time()
+        self.steps = []
+
+    def mark(self, label):
+        now = time.time()
+        self.steps.append((label, (now - self._last) * 1000))
+        self._last = now
+
+    def add(self, label, ms):
+        self.steps.append((label, ms))
+
+    def elapsedMs(self):
+        return (time.time() - self.started) * 1000
+
+    def report(self, view):
+        self.mark('onFirstInit')
+        util.DEBUG_LOG("Swap timing: {0} -> {1}: {2} ms ({3})", self.name, view.__class__.__name__,
+                       int(self.elapsedMs()),
+                       ', '.join('{0} {1}'.format(label, int(ms)) for label, ms in self.steps))
+
+
 class MultiWindow(object):
     def __init__(self, windows=None, default_window=None, **kwargs):
         self._windows = windows
@@ -1592,6 +1628,11 @@ class MultiWindow(object):
         util.DEBUG_LOG("MultiWindow: running nav request {0}, {1:.0f} ms after posting{2}", name,
                        (now - due + self.NAV_DEFER_SECONDS) * 1000,
                        '' if getattr(view, 'finishedInit', False) else ' (view never finished init)')
+        # Reported by the next view to finish its first init (SwapTiming); a request that swaps
+        # nothing is simply replaced by the next one.
+        self._swapTiming = SwapTiming(name)
+        self._lastSwapStarted = self._swapTiming.started
+        self._swapTiming.add('queued', (now - due + self.NAV_DEFER_SECONDS) * 1000)
         try:
             fn(*args, **kwargs)
         except Exception:
@@ -1654,8 +1695,14 @@ class MultiWindow(object):
             # TEMPORARY diagnostic logging (hashed-orbiting-pizza.md live-crash investigation) -
             # remove once the native-crash-on-second-hosting-cycle bug is understood/fixed.
             util.DEBUG_LOG("MultiWindow: _open() about to call .modal() on {0}", self._current)
+            timing = self.__dict__.get('_swapTiming')
+            if timing is not None:
+                timing.mark('setup')
             self._current.modal()
             util.DEBUG_LOG("MultiWindow: _open() .modal() on {0} returned", self._current)
+            timing = self.__dict__.get('_swapTiming')
+            if timing is not None:
+                timing.mark('request+close')
 
         self._current.doClose()
         del self._current
