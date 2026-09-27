@@ -163,3 +163,32 @@ class BlackoutLiftTest(KodiTestCase):
         self.handler._liftBlackoutWhenPlaying(1)
         self.handler.stop_blackout.assert_called_once_with()
         self.assertFalse(self.handler.player.getTime.called)
+
+
+class StopDuringSeekOnStartTest(KodiTestCase):
+    """Back pressed as the seek-on-start ran: the stop was handled inside onPlayBackSeek()'s wait
+    for the video to play, which then ran its full 10 s, holding the closed video player window
+    open (AM6B, 2026-09-27). The wait now ends with the session."""
+
+    def test_the_seek_wait_ends_with_the_session(self):
+        h = player.SeekPlayerHandler.__new__(player.SeekPlayerHandler)
+        h.player = mock.Mock()
+        h.player.isPlayingVideo.return_value = False
+        h.waitingForSOS = False
+        h.seekOnStart = 5000
+        h.seekBackTo = 50
+        h.useResumeFix = False
+        h.skipFixForNextSeek = False
+        h.dialog = mock.Mock()
+        h.ended = False
+
+        def stopped(timeout):
+            h.ended = True  # sessionEnded(), run by Kodi inside the wait
+            return False
+        with mock.patch.object(player.SeekPlayerHandler, 'isDirectPlay', True), \
+                mock.patch.object(player.util.MONITOR, 'waitForAbort', side_effect=stopped) as wait, \
+                mock.patch.object(player.util.MONITOR, 'abortRequested', return_value=False), \
+                mock.patch.object(h, 'seekAbsolute') as seekAbsolute:
+            h.onPlayBackSeek(5000, 5000)
+        self.assertEqual(1, wait.call_count)
+        self.assertFalse(seekAbsolute.called)

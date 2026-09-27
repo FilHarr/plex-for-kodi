@@ -1188,9 +1188,18 @@ class SeekPlayerHandler(BasePlayerHandler):
             withinSOSHigh = origSOS + seekWindow + min(seekWindow, 500)
 
             tries = 0
-            while not self.player.isPlayingVideo() and tries < 100 and not util.MONITOR.abortRequested():
+            while not self.player.isPlayingVideo() and tries < 100 and not util.MONITOR.abortRequested() \
+                    and not self.ended:
                 util.MONITOR.waitForAbort(0.1)
                 tries += 1
+
+            if self.ended:
+                # Stopped during the seek-on-start (Back as playback started): the stop is handled
+                # inside the wait above, and the video never plays again, so the wait used to run
+                # its full 10 s, holding the closed video player window open until it did
+                # (live on the AM6B, 2026-09-27).
+                util.DEBUG_LOG("SeekHandler: onPlayBackSeek: session ended during the seek-on-start, exiting")
+                return
 
             p_time = getTime()
             if p_time is None:
