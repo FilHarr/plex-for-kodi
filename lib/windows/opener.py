@@ -1,7 +1,5 @@
 from __future__ import absolute_import
 
-import threading
-
 import six
 from plexnet import playqueue, plexapp, plexlibrary
 
@@ -172,36 +170,13 @@ def showClicked(show, context=None, **kwargs):
         except:
             seasons = None
         if seasons:
-            season = seasons[0]
-            if context is not None:
-                # Deferred via SKIN_RELOAD_DEFER_SECONDS, not called inline - an attempted fix for
-                # an intermittent unresponsive-black-screen hang on Back (not yet live-confirmed
-                # fixed): reproducible reliably (3-4 tries) with Kodi's own debug logging off, but
-                # NOT reproducible across many varied attempts with it on - a classic timing-race
-                # signature, since debug logging's overhead alone shifts execution speed, not
-                # logic. The one thing structurally unique to this path versus every other
-                # onClick()-triggered swap in this codebase: the
-                # show.seasons() fetch above runs synchronously, inline, in the same call stack as
-                # the swap below - every other click-driven swap already has its target object in
-                # hand and swaps immediately, no extra fetch first. That fetch's variable duration
-                # shifts exactly when the real-shell teardown/rebuild fires relative to whatever
-                # else is going on, enough to occasionally land badly. Deferring the swap itself by
-                # a beat is this codebase's own established mitigation for precisely this class of
-                # Kodi timing issue - see library.py's onAction() (popBack()), switchTab(),
-                # selectServer(), all deferred the same way, each documented as "a cheap, low-risk
-                # mitigation, not a proven fix" for a Kodi-side timing/reentrancy issue - same
-                # status here, not a guaranteed fix, just the same trusted mitigation shape.
-                # With a chain host, openWindow() posts the swap (MultiWindow.postNav()), so it
-                # already runs after this click, from the view's wait loop; a standalone context
-                # keeps the timer.
-                host = context._liveChainHost() if hasattr(context, '_liveChainHost') else None
-                if host is not None:
-                    return seasonClicked(season, context=context, **kwargs)
-                from . import windowutils
-                threading.Timer(windowutils.SKIN_RELOAD_DEFER_SECONDS, seasonClicked,
-                                args=(season,), kwargs=dict(context=context, **kwargs)).start()
-                return ''
-            return seasonClicked(season, context=context, **kwargs)
+            # Straight to the season. With a chain host, openWindow() posts the swap
+            # (MultiWindow.postNav()), so it runs after this click, from the view's wait loop. A
+            # standalone context used to open it 0.15 s later from a threading.Timer (the #27239
+            # note in windowutils.py), a blocking open on that timer's thread: a window driven from
+            # a second thread (S1 in the navigation review). It now opens on this thread, as every
+            # other open from a standalone window does.
+            return seasonClicked(seasons[0], context=context, **kwargs)
 
     if context is not None:
         context.openWindow(subitems.ShowWindow, media_item=show, **kwargs)

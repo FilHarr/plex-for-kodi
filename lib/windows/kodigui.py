@@ -1757,7 +1757,8 @@ class MultiWindow(object):
         return self._next
 
     # Delay before a posted navigation request runs. None needed (I2 in the navigation review, see
-    # windowutils.SKIN_RELOAD_DEFER_SECONDS); kept so a delay can be tried again in one place.
+    # the #27239 note in windowutils.py, once SKIN_RELOAD_DEFER_SECONDS); kept so a delay can be
+    # tried again in one place.
     NAV_DEFER_SECONDS = 0.0
     # How long a due request waits for the current view to finish initialising (finishedInit)
     # before running anyway - a view whose onFirstInit() raised never sets it.

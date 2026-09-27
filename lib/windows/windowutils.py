@@ -39,8 +39,9 @@ HOME = None
 # tied to the delay - the ones they did find were races the delay neither caused nor prevented.
 # The swap was already only a close flag when this went in (74b775cb), and that commit changed
 # the hub bind and the hub-slide thread too, so the delay may never have been what fixed the
-# crash. Still used by opener.py's standalone season open, which has no queue to post to.
-SKIN_RELOAD_DEFER_SECONDS = 0.15
+# crash. The last user, opener.py's standalone season open, opens directly since 3f stage E, and
+# the constant (SKIN_RELOAD_DEFER_SECONDS = 0.15) is gone. The comments that name it point here,
+# to this note on the #27239 reentrancy crash.
 
 
 class GoHomeMixin():

@@ -169,6 +169,31 @@ class ItemClickedFunctionsTest(KodiTestCase):
 
         self.assertEqual([(subitems.ShowWindow, {'media_item': show})], context.openWindowCalls)
 
+    def test_a_single_season_show_opens_its_season_at_once_from_a_standalone_window(self):
+        """3f stage E: a standalone context (no chain host) used to open the season 0.15 s later
+        from a threading.Timer, a blocking open on the timer's thread. It opens on the calling
+        thread now, before showClicked() returns."""
+        from plexnet.plexobjects import PlexValue
+
+        class SingleSeasonShow(FakeTyped):
+            def __init__(self, season):
+                FakeTyped.__init__(self, 'show')
+                self.season = season
+
+            def get(self, attr):
+                return PlexValue('1' if attr == 'skipChildren' else '')
+
+            def seasons(self):
+                return [self.season]
+
+        context = FakeContext()
+        context._liveChainHost = lambda: None
+        season = FakeTyped('season')
+
+        self.assertEqual('', opener.showClicked(SingleSeasonShow(season), context=context))
+
+        self.assertEqual([(episodes.EpisodesWindow, {'season': season})], context.openWindowCalls)
+
     def test_artist_with_context_swaps_in_place(self):
         context = FakeContext()
         artist = FakeTyped('artist')
