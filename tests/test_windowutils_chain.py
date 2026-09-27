@@ -256,6 +256,7 @@ class FakeLibrary(windowutils.UtilMixin):
     _returnHereNow = library.LibraryWindow._returnHereNow
     resolveSection = library.LibraryWindow.resolveSection
     processCommand = library.LibraryWindow.processCommand
+    _closeSessionWithOption = library.LibraryWindow._closeSessionWithOption
 
     def __init__(self, section=None):
         windowutils.UtilMixin.__init__(self)
@@ -292,6 +293,10 @@ class FakeLibrary(windowutils.UtilMixin):
 
     def doClose(self, **kw):
         self.calls.append(('doClose',))
+        self._allClosed = True
+
+    def windowSetBackground(self, url):
+        pass
 
 
 class LibraryNavigateTest(KodiTestCase):
@@ -362,11 +367,47 @@ class LibraryNavigateTest(KodiTestCase):
         home.processCommand(navintent.home())
         self.assertEqual([], home.calls)
 
-    def test_an_intent_arriving_at_home_with_a_session_end_closes_it(self):
+    def test_home_ends_the_session_itself(self):
+        """closeOption is set by Home as it acts on the intent, not stashed on it beforehand."""
         home = self._home()
-        home.closeOption = 'exit'
-        home.processCommand(navintent.home())
+        home.navigate(navintent.closeSession('exit'))
+        self.assertEqual('exit', home.closeOption)
         self.assertEqual([('doClose',)], home.calls)
+
+    def test_a_session_end_from_home_closes_it(self):
+        home = self._home()
+        home._closeSessionWithOption('signout')
+        self.assertEqual('signout', home.closeOption)
+        self.assertEqual([('doClose',)], home.calls)
+
+    def test_a_session_end_from_a_nested_library_window_ends_the_real_session(self):
+        """Exit inside a collection (a nested LibraryWindow) ends the session, not just the
+        collection (live-confirmed regression when this was first ported)."""
+        home = self._home()
+        nested = FakeLibrary()
+
+        nested._closeSessionWithOption({'fast_switch': 7})
+
+        self.assertEqual([('forceDismiss',), ('doClose',)], nested.calls)
+        self.assertIsNone(nested.closeOption)
+        self.assertEqual({'fast_switch': 7}, home.closeOption)
+        self.assertEqual([('doClose',)], home.calls)
+
+    def test_a_session_end_arriving_at_home_closes_it_once(self):
+        """It reaches Home twice from a nested window: as it arrives (processCommand()), and from
+        returnHere()'s posted copy. Whichever comes first closes; the other finds it closing."""
+        home = self._home()
+        intent = navintent.closeSession('exit')
+        home.processCommand(intent)
+        home.returnHere(intent)
+        self.assertEqual('exit', home.closeOption)
+        self.assertEqual([('doClose',)], home.calls)
+
+    def test_a_home_intent_arriving_at_home_no_longer_reads_close_option(self):
+        home = self._home()
+        home.closeOption = 'restart'
+        home.processCommand(navintent.home())
+        self.assertEqual([], home.calls)
 
     def test_an_intent_passing_a_nested_library_window_closes_it(self):
         self._home()

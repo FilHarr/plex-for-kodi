@@ -1582,16 +1582,16 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         session, since nothing sits underneath this window any more (live-confirmed: the Home
         button from a descendant closed the addon, before this override).
 
-        One exception: _closeSessionWithOption() sets closeOption on Home before a nested library
-        window (a collection, say) leaves for it, so choosing Exit from within one ends the real
-        session rather than just the collection (live-confirmed regression). closeOption being set
-        is the signal this arrived to close.
+        One exception: a closeSession() intent from a nested library window (Exit chosen inside a
+        collection, say) ends the session here, as it arrives, rather than waiting for returnHere()'s
+        posted copy: the collection closing would otherwise reveal the library underneath first
+        (live-confirmed regression, when closeOption was set on Home before the bubble instead).
         """
         if navintent.isNavIntent(command) and self is windowutils.HOME:
             # Arrived: Home took the intent when it was issued (GoHomeMixin.leaveFor() ->
             # returnHere()). Only ending the session is still decided here.
-            if self.closeOption is not None:
-                self.doClose()
+            if command.kind == navintent.NavIntent.CLOSE_SESSION:
+                self.navigate(command)
             return
         # Any other window: UtilMixin.processCommand() closes this one and passes an intent on, or
         # raises for "NODATA". It can't recurse through _chainHost pointing at self: it only
@@ -1729,16 +1729,11 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             kodigui.LAST_BG_URL = None
             target.windowSetBackground(None)
 
-        target.closeOption = option
-
-        if self is target:
-            self.doClose()
-            return
-
-        # Leave for Home like any other window outside the chain (GoHomeMixin.leaveFor(), the
-        # same path the Home button takes from a descendant). processCommand() sees closeOption
-        # already set once the result reaches windowutils.HOME, and closes instead of staying.
-        self.goHome()
+        # Home sets closeOption and closes as it acts on the intent (navigate()). From a nested
+        # instance, this leaves for Home like any other window outside the chain
+        # (GoHomeMixin.leaveFor(), the Home button's path from a descendant), and Home acts on it
+        # as it arrives there (processCommand()).
+        self.navigate(navintent.closeSession(option))
 
     def doUserOption(self, force_option=None, target=None):
         """Ported from HomeWindow.doUserOption() (home.py) - see quiet-orbiting-heron.md's Cold
@@ -2343,6 +2338,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             self.leaveFor(intent)
             return
         util.DEBUG_LOG('Navigate: {0} at Home', intent)
+        if intent.kind == navintent.NavIntent.CLOSE_SESSION:
+            # Not posted: ending the session closes this window, which the queue's own wait loop
+            # runs inside. main.py reads closeOption once this window's modal() returns.
+            # A nested window's close reaches here twice, as it arrives (processCommand()) and
+            # from returnHere(); the second finds the session already closing.
+            if not self._allClosed:
+                self.closeOption = intent.option
+                self.doClose()
+            return
         section = self.resolveSection(intent.section)
         if section is not None and (section != self.section or intent.force):
             self._deferOpenSection(section, force=intent.force)
@@ -2365,6 +2369,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         reconstruction in this family, since intent.force is what decided it when the section is
         already showing."""
         util.DEBUG_LOG('Navigate: {0} back at Home', intent)
+        if intent.kind == navintent.NavIntent.CLOSE_SESSION:
+            self.navigate(intent)
+            return
         section = self.resolveSection(intent.section)
         self.go_root = intent.root
         self.show()
@@ -2504,8 +2511,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 elif ex.button == 0:
                     self._shuttingDown = True
                     background.setShutdown()
-                    self.closeOption = "quit" if ex.modifier == "quit" else "exit"
-                    self.doClose()
+                    self.navigate(navintent.closeSession("quit" if ex.modifier == "quit" else "exit"))
                     return True
             finally:
                 self._checkingForExit = False
