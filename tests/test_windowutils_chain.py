@@ -167,10 +167,25 @@ class ChainAwareProcessCommandTest(HomeTestCase):
         # Home already has it, from where it was issued.
         self.assertEqual([], self.home.returned)
 
-    def test_no_data_still_raises(self):
+    def test_no_data_raises(self):
         shell = FakeChainedShell(chain_host=None)
         with self.assertRaises(windowutils.util.NoDataException):
-            shell.processCommand("NODATA")
+            shell.processCommand(navintent.noData())
+        self.assertFalse(shell.doCloseCalled)
+
+    def test_no_data_raises_in_a_hosted_screen_not_its_host(self):
+        """It's the result of the screen's own open (a hub item's menu, say): the screen handles
+        it; the host has nothing to do with it."""
+        host = FakeChainHost()
+        shell = FakeChainedShell(host)
+        with self.assertRaises(windowutils.util.NoDataException):
+            shell.processCommand(navintent.noData())
+        self.assertEqual([], host.processCommandCalls)
+
+    def test_the_old_string_is_no_longer_a_command(self):
+        shell = FakeChainedShell(chain_host=None)
+        shell.processCommand("NODATA")
+        self.assertFalse(shell.doCloseCalled)
 
 
 class ChainAwareOpenWindowTest(KodiTestCase):
@@ -407,6 +422,12 @@ class LibraryNavigateTest(KodiTestCase):
         home = self._home()
         home.closeOption = 'restart'
         home.processCommand(navintent.home())
+        self.assertEqual([], home.calls)
+
+    def test_no_data_arriving_at_home_raises_rather_than_being_taken_as_arrived(self):
+        home = self._home()
+        with self.assertRaises(windowutils.util.NoDataException):
+            home.processCommand(navintent.noData())
         self.assertEqual([], home.calls)
 
     def test_an_intent_passing_a_nested_library_window_closes_it(self):

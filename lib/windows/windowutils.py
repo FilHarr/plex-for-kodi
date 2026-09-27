@@ -282,7 +282,10 @@ class UtilMixin(GoHomeMixin):
         """The result of a blocking open (opener.handleOpen()). A NavIntent passing through
         (navintent.py) has already reached Home, which acts on it; this window closes too, passing
         it on to whatever opened it - unless it's hosted, when its host decides (Home stays; a
-        nested library window hosting it closes)."""
+        nested library window hosting it closes). A window that couldn't open (navintent.noData())
+        raises NoDataException here, for the caller's own handling."""
+        if navintent.isNoData(command):
+            raise util.NoDataException
         if navintent.isNavIntent(command):
             host = self._liveChainHost()
             if host is not None and host is not self:
@@ -295,8 +298,6 @@ class UtilMixin(GoHomeMixin):
             self.forceDismiss()
             self.exitCommand = command
             self.doClose()
-        elif command and command == "NODATA":
-            raise util.NoDataException
 
     def closeWithCommand(self, command):
         self.exitCommand = command

@@ -10,6 +10,10 @@ through their processCommand().
 It replaces the 'HOME' exit command and the section, force and go_root values that used to be
 stashed on Home before that bubble started, and the closeOption that was set on Home before a
 session-ending one: Home now sets closeOption itself, as it acts on a closeSession() intent.
+
+noData() is the odd one out: not somewhere to go, but a window's report that it couldn't open (its
+item deleted, or the server gone), in place of the "NODATA" exit command. It goes nowhere: whoever
+opened the window raises NoDataException on it (UtilMixin.processCommand()).
 """
 from __future__ import absolute_import
 
@@ -17,6 +21,7 @@ from __future__ import absolute_import
 class NavIntent(object):
     HOME = 'home'
     CLOSE_SESSION = 'closeSession'
+    NO_DATA = 'noData'
 
     __slots__ = ('kind', 'section', 'root', 'force', 'option')
 
@@ -28,6 +33,8 @@ class NavIntent(object):
         self.option = option
 
     def __repr__(self):
+        if self.kind == self.NO_DATA:
+            return 'NavIntent({0})'.format(self.kind)
         if self.kind == self.CLOSE_SESSION:
             # a fast switch's option is a dict with a user id; the kind is enough for the log
             return 'NavIntent({0}, option={1})'.format(
@@ -49,5 +56,14 @@ def closeSession(option):
     return NavIntent(NavIntent.CLOSE_SESSION, option=option)
 
 
+def noData():
+    """The window couldn't open: its setup raised NoDataException (kodigui.BaseWindow's onInit)."""
+    return NavIntent(NavIntent.NO_DATA)
+
+
 def isNavIntent(value):
     return isinstance(value, NavIntent)
+
+
+def isNoData(value):
+    return isinstance(value, NavIntent) and value.kind == NavIntent.NO_DATA

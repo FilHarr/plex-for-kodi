@@ -1587,14 +1587,15 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         posted copy: the collection closing would otherwise reveal the library underneath first
         (live-confirmed regression, when closeOption was set on Home before the bubble instead).
         """
-        if navintent.isNavIntent(command) and self is windowutils.HOME:
+        if navintent.isNavIntent(command) and not navintent.isNoData(command) \
+                and self is windowutils.HOME:
             # Arrived: Home took the intent when it was issued (GoHomeMixin.leaveFor() ->
             # returnHere()). Only ending the session is still decided here.
             if command.kind == navintent.NavIntent.CLOSE_SESSION:
                 self.navigate(command)
             return
         # Any other window: UtilMixin.processCommand() closes this one and passes an intent on, or
-        # raises for "NODATA". It can't recurse through _chainHost pointing at self: it only
+        # raises for noData(). It can't recurse through _chainHost pointing at self: it only
         # delegates to a host that isn't this window.
         windowutils.UtilMixin.processCommand(self, command)
 
@@ -7379,7 +7380,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         elif choice["key"] == "to_show":
             try:
                 command = opener.open(ds.show(), context=self, dialog_props=getattr(self, 'carriedProps', None))
-                if command == "NODATA":
+                if navintent.isNoData(command):
                     raise util.NoDataException
             except util.NoDataException:
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
@@ -7388,7 +7389,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         elif choice["key"] == "to_item":
             try:
                 command = opener.open(ds, context=self, dialog_props=getattr(self, 'carriedProps', None))
-                if command == "NODATA":
+                if navintent.isNoData(command):
                     raise util.NoDataException
             except util.NoDataException:
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
@@ -7397,7 +7398,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         elif choice["key"] == "start_over":
             try:
                 command = opener.open(ds, auto_play=True, start_over=True, dialog_props=getattr(self, 'carriedProps', None))
-                if command == "NODATA":
+                if navintent.isNoData(command):
                     raise util.NoDataException
             except util.NoDataException:
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
@@ -7407,7 +7408,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         elif choice["key"] == "resume":
             try:
                 command = opener.open(ds, auto_play=True, dialog_props=getattr(self, 'carriedProps', None))
-                if command == "NODATA":
+                if navintent.isNoData(command):
                     raise util.NoDataException
             except util.NoDataException:
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)

@@ -14,6 +14,7 @@ from six.moves import range
 from six.moves import zip
 
 from .. import util
+from . import navintent
 
 from plexnet import plexapp
 
@@ -417,7 +418,7 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             util.setGlobalProperty('active_window', self.__class__.__name__)
 
         except util.NoDataException:
-            self.exitCommand = "NODATA"
+            self.exitCommand = navintent.noData()
             self.doClose()
 
     def onAction(self, action):
