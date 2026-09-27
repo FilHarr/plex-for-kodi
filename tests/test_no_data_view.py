@@ -18,7 +18,7 @@ from xml.etree import ElementTree as ET
 from kodienv import ENV
 
 ENV.abort_requested = True
-from plexnet import video  # noqa: E402
+from plexnet import exceptions as plexExceptions, video  # noqa: E402
 from lib.windows import kodigui, library, navintent  # noqa: E402
 
 from .base import KodiTestCase, ensure_plex_interface, fixture  # noqa: E402
@@ -72,8 +72,60 @@ class OpenLoopTest(KodiTestCase):
         self.assertEqual(3, host.builds)
 
 
+class GoodView(object):
+    def __init__(self, host):
+        self.host = host
+        self.exitCommand = None
+
+    def modal(self):
+        self.host.shown.append(type(self).__name__)
+        self.host._allClosed = True
+
+    def doClose(self):
+        pass
+
+
+class BuildFailingHost(LoopHost):
+    """Episodes loads its show as it's constructed: a 404 there escaped _open() and ended the
+    session (live on the AM6B, 2026-09-27)."""
+
+    def __init__(self, recover):
+        LoopHost.__init__(self, stop_after=99)
+        self.recover = recover
+        self.shown = []
+        self._next = 'Episodes'
+
+    def _setupCurrent(self, cls):
+        if cls == 'Episodes':
+            raise plexExceptions.BadRequest('(404) not_found')
+        self._current = cls(self)
+
+    def viewFailed(self, error):
+        if not self.recover:
+            return False
+        self._next = GoodView
+        return True
+
+
+class BuildFailureTest(KodiTestCase):
+    def _open(self, host):
+        with mock.patch.object(kodigui.MONITOR, 'abortRequested', return_value=False),                 mock.patch.object(kodigui, 'ensureBaseWindow'):
+            host._open()
+
+    def test_a_screen_that_fails_to_build_lets_the_host_pick_another(self):
+        host = BuildFailingHost(recover=True)
+        self._open(host)
+        self.assertEqual(['GoodView'], host.shown)
+
+    def test_without_a_host_that_recovers_the_error_still_raises(self):
+        with self.assertRaises(plexExceptions.BadRequest):
+            self._open(BuildFailingHost(recover=False))
+
+
 class ViewClosedHost(object):
     viewClosed = library.LibraryWindow.viewClosed
+    viewFailed = library.LibraryWindow.viewFailed
+    _goBackFromFailedScreen = library.LibraryWindow._goBackFromFailedScreen
     popBack = library.LibraryWindow.popBack
 
     def __init__(self, back_stack, hosted=True):
@@ -130,6 +182,19 @@ class LibraryViewClosedTest(KodiTestCase):
     def test_only_hosted_screens(self):
         host = ViewClosedHost([('ShowWindow', {})], hosted=False)
         host.viewClosed(View(navintent.noData()))
+        self.assertEqual([], host.calls)
+
+    def test_a_hosted_screen_that_fails_to_build_goes_back_too(self):
+        host = ViewClosedHost([('ShowWindow', {'media_item': 'show'})])
+        host._next = 'EpisodesWindow'
+        self.assertTrue(host.viewFailed(plexExceptions.BadRequest('(404) not_found')))
+        self.assertEqual([('swapTo', 'ShowWindow', False, {'media_item': 'show'})], host.calls)
+        self.assertTrue(self.notice.called)
+
+    def test_a_view_of_its_own_that_fails_to_build_is_not_handled(self):
+        host = ViewClosedHost([], hosted=False)
+        host._next = 'PostersWindow'
+        self.assertFalse(host.viewFailed(plexExceptions.BadRequest('(500) error')))
         self.assertEqual([], host.calls)
 
     def test_not_once_the_host_is_closing(self):

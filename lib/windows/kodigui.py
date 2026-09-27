@@ -17,6 +17,12 @@ from .. import util
 from . import navintent
 
 from plexnet import plexapp
+from plexnet import exceptions as plexExceptions
+
+# A screen that can't load its item: deleted on the server, or the server answering with an error
+# (plexserver.query() raises BadRequest for anything but 200/201). It closes with
+# navintent.noData(), and the host goes back (LibraryWindow.viewClosed()/viewFailed()).
+NO_DATA_ERRORS = (util.NoDataException, plexExceptions.BadRequest, plexExceptions.NotFound)
 
 MONITOR = None
 
@@ -417,7 +423,8 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
                     host._swapTiming = None
             util.setGlobalProperty('active_window', self.__class__.__name__)
 
-        except util.NoDataException:
+        except NO_DATA_ERRORS as e:
+            util.LOG('{0}: its item could not be loaded ({1!r}), closing', type(self).__name__, e)
             self.exitCommand = navintent.noData()
             self.doClose()
 
@@ -1899,7 +1906,16 @@ class MultiWindow(object):
     def _open(self):
         firstOpen = True
         while not MONITOR.abortRequested() and not self._allClosed:
-            self._setupCurrent(self._next)
+            try:
+                self._setupCurrent(self._next)
+            except NO_DATA_ERRORS as e:
+                # A screen can load its item as it's constructed (Episodes loads its show): an
+                # error here escaped this loop and ended the session (live on the AM6B,
+                # 2026-09-27, a show deleted in Plex Web).
+                util.LOG('MultiWindow: {0} could not load its item ({1!r})', self._next, e)
+                if self.viewFailed(e):
+                    continue
+                raise
 
             if firstOpen:
                 firstOpen = False
@@ -1960,6 +1976,12 @@ class MultiWindow(object):
         """Called in _open()'s loop each time a view's modal() returns, before the next view (_next)
         is set up. Nothing by default."""
         pass
+
+    def viewFailed(self, error):
+        """Called in _open()'s loop when setting up the next view (_next) raised one of
+        NO_DATA_ERRORS. True if the host has picked another _next to set up instead; False (the
+        default) raises the error."""
+        return False
 
     def onColdStart(self):
         """Called once from open(), only when base_win_id was passed - i.e. only for the one

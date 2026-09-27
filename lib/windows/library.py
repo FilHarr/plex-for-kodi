@@ -1174,6 +1174,18 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 or not navintent.isNoData(getattr(view, 'exitCommand', None)):
             return
         util.DEBUG_LOG("Library: {0} couldn't load its item, going back", type(view).__name__)
+        self._goBackFromFailedScreen()
+
+    def viewFailed(self, error):
+        """MultiWindow's hook: a hosted screen raised as it was constructed (_setupCurrent()), before
+        it was ever shown - Episodes loads its show there. Go back as viewClosed() does."""
+        if self._allClosed or not self._isHostedShell:
+            return False
+        util.DEBUG_LOG("Library: {0} couldn't load its item, going back", self._next)
+        self._goBackFromFailedScreen()
+        return True
+
+    def _goBackFromFailedScreen(self):
         util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
         if self._backStack:
             self.popBack(view_gone=True)
