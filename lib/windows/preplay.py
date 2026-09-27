@@ -924,6 +924,13 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.paintClickedItem()
         kodigui.markStep(timing, 'paint clicked')
         self.video.reload(checkFiles=1, **VIDEO_RELOAD_KW)
+        if self.video.reloadFailed and not self.isExternal:
+            # Deleted, or the server's gone: setInfo() below reads fields only a full reload
+            # fills, and raised a TypeError, leaving a half-painted screen that never finished
+            # its init (live on the AM6B, 2026-09-27). The host goes back instead (viewClosed()).
+            # Not for Discover/watchlist items (external_item), whose reload goes elsewhere and
+            # hasn't been checked for this.
+            raise util.NoDataException
         kodigui.markStep(timing, 'reload')
 
         if self.fromWatchlist:

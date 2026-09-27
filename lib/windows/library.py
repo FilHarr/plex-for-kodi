@@ -1164,6 +1164,22 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         self._nextKwargs = kwargs
         self._current.doClose()
 
+    def viewClosed(self, view):
+        """MultiWindow's hook, as each view's modal() returns. A hosted screen whose setup found its
+        item gone (deleted, or the server unreachable) closes itself with navintent.noData() as its
+        exitCommand. Nothing had asked for another screen, so _open() would set the same one up
+        again, from the same _next and kwargs, and it would fail the same way. Go back instead, as
+        Back would, with the notice the hub menu's opens show."""
+        if self._allClosed or not self._isHostedShell \
+                or not navintent.isNoData(getattr(view, 'exitCommand', None)):
+            return
+        util.DEBUG_LOG("Library: {0} couldn't load its item, going back", type(view).__name__)
+        util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
+        if self._backStack:
+            self.popBack(view_gone=True)
+        else:
+            self.openSection(self.section, force=True, fresh=False, view_gone=True)
+
     def _chainRootEntry(self):
         """The root-restore entry this chain would unwind to: the stack's first entry, or - with
         no chain yet, the host showing its own section - the one a genesis swap would push now."""
@@ -1184,7 +1200,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             util.DEBUG_LOG("Library: posted Back found no chain left, ignored")
 
-    def popBack(self):
+    def popBack(self, view_gone=False):
+        """view_gone: the current view has already closed (viewClosed()), so openSection() mustn't
+        decline for it not being Kodi's current window."""
         entry = self._backStack.pop()
         cls, kwargs = entry
         if cls is None:
@@ -1198,6 +1216,8 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
             # force=True: section == self.section will be true here (root state is never
             # mutated while a shell is hosted), which openSection()'s own no-op guard would
             # otherwise decline.
+            if view_gone:
+                kwargs['view_gone'] = True
             if not self.openSection(force=True, fresh=False, **kwargs):
                 # Declined - the current view isn't Kodi's current window yet (Back pressed as a
                 # screen was still opening; its _winID is only set once its onInit() runs). Keep
@@ -1355,7 +1375,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         else:
             self.switchTab('library', item_type='collection')
 
-    def openSection(self, section, filter_=None, force=False, fresh=True):
+    def openSection(self, section, filter_=None, force=False, fresh=True, view_gone=False):
         """Swap this already-open window to a different section in place, reusing the same
         outer LibraryWindow object rather than closing and reconstructing a new one - see the
         Home-ControlledWindow plan's "One window, not two" / thread-safety discussion. Safe to
@@ -1389,9 +1409,12 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
         the first time: the hub rows' remembered positions (_hubReselectPositions) are cleared.
         Saved per-section preferences (sort, filters, view type, tab) are not navigation state and
         always apply.
+
+        view_gone=True (viewClosed(), via popBack()): the current view closed itself, so it isn't
+        Kodi's current window, but nothing is open on top of this window either.
         """
         try:
-            isCurrent = self.is_current_window
+            isCurrent = view_gone or self.is_current_window
         except AttributeError:
             # _current already torn down for real (session/window closing) - decline the same
             # as a descendant-on-top; nothing here to safely act on either way.

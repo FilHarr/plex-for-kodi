@@ -168,7 +168,7 @@ class Checks(object):
 
 class PlexObject(Checks):
     __slots__ = ("initpath", "key", "server", "container", "mediaChoice", "titleSort", "deleted", "_reloaded", "data",
-                 "_not_cachable")
+                 "_not_cachable", "reloadFailed")
     TYPE = None
     cachable = False
     is_watchlist = False
@@ -182,6 +182,10 @@ class PlexObject(Checks):
         self.titleSort = PlexValue('')
         self.deleted = False
         self._reloaded = False
+        # True while the last reload() couldn't fetch the item (deleted, or the server gone): it
+        # returns the object unchanged either way, and one reloaded before still counts as
+        # _reloaded
+        self.reloadFailed = False
 
         # items initialized by containers that shouldn't be cached get this special attribute set, which overrides
         # cachable
@@ -343,10 +347,12 @@ class PlexObject(Checks):
                     data = self.server.query(self.key, params=kwargs)
                 data = data[0]
                 self._reloaded = True
+                self.reloadFailed = False
             except Exception as e:
                 import traceback
                 traceback.print_exc()
                 util.ERROR(err=e)
+                self.reloadFailed = True
                 self.initpath = self.key
                 self.clearCache()
                 return self

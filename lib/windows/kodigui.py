@@ -1926,6 +1926,7 @@ class MultiWindow(object):
             timing = self.__dict__.get('_swapTiming')
             if timing is not None:
                 timing.mark('request+close')
+            self.viewClosed(self._current)
 
         self._current.doClose()
         del self._current
@@ -1954,6 +1955,11 @@ class MultiWindow(object):
             self.goHome(with_root=True)
             return True
         return
+
+    def viewClosed(self, view):
+        """Called in _open()'s loop each time a view's modal() returns, before the next view (_next)
+        is set up. Nothing by default."""
+        pass
 
     def onColdStart(self):
         """Called once from open(), only when base_win_id was passed - i.e. only for the one
