@@ -1712,12 +1712,13 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
     def _closeSessionWithOption(self, option, shutting_down=False):
         """Every doUserOption() branch that ends a session (go_online while local, signout, exit,
         the switch/signin/go_local catch-all) needs to act on the TRUE top-level session
-        (windowutils.HOME), not necessarily self. Live-confirmed regression, fixed here: self is a
-        fresh, non-cold-start LibraryWindow instance whenever it was opened for a movie collection
-        or similar (opener.collectionClicked()/sectionClicked() always construct a new instance,
-        never an in-place swap onto the real session - home_section is the one exception, folded
-        into openSection() already). Choosing Exit from within a collection just closed that
-        nested instance, revealing the library grid underneath instead of actually exiting.
+        (windowutils.HOME), not necessarily self. self can be a second, nested LibraryWindow:
+        opener.sectionClicked() (collections, photo directories, filtered sections) constructs one
+        when there's no live chain to reuse. With one, it swaps the section into that chain in
+        place (swapToSection()) - every in-app route passes its window as context today, so a
+        nested instance is rare. When they were the norm, choosing Exit from within a collection
+        just closed that nested instance, revealing the library grid underneath instead of
+        exiting (live-confirmed regression, fixed here).
         """
         target = windowutils.HOME
         if shutting_down:
