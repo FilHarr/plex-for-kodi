@@ -34,12 +34,20 @@ first - same guard the other lib.windows.* tests use for the same reason.
 
 from __future__ import absolute_import
 
+import types
+
 from kodienv import ENV
 
 ENV.abort_requested = True
-from lib.windows import library, navintent, windowutils  # noqa: E402
+from kodi_six import xbmcgui  # noqa: E402
+from lib.windows import kodigui, library, navintent, windowutils  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
+
+try:
+    from unittest import mock
+except ImportError:
+    import mock
 
 # A section OBJECT stand-in. Not a bare string: goHome() treats a str (plexobjects.PlexValue is
 # one) as a section key to be resolved through HOME.sectionByKey() - see the resolution test
@@ -454,3 +462,31 @@ class PhotoGoHomeTest(HomeTestCase):
         self.assertEqual([True], closed)
         self.assertEqual([('home', None, True, False)], [intentFields(i) for i in self.home.returned])
         self.assertIs(self.home.returned[0], viewer.exitCommand)
+
+
+class HomeRoutesTest(KodiTestCase):
+    """3f stage D (I6): each route to Home's root is the same intent through navigate()."""
+
+    def test_one_home_button_for_windows_and_multiwindows(self):
+        self.assertIs(kodigui.XMLBase.goHomeAction, kodigui.MultiWindow.goHomeAction)
+
+    def test_the_home_button_goes_home_to_the_root(self):
+        window = mock.Mock(spec=['goHome'])
+        action = mock.Mock()
+        action.getButtonCode.return_value = 61467
+        with mock.patch.object(kodigui.util, 'HOME_BUTTON_MAPPED', '61467'):
+            self.assertTrue(kodigui.XMLBase.goHomeAction(window, action))
+        window.goHome.assert_called_once_with(with_root=True)
+
+    def test_back_away_from_homes_root_navigates_there(self):
+        """It used to set go_root and show() directly, the one route that bypassed the queue."""
+        home = FakeLibrary(section=SECTION)
+        home.changingServer = False
+        windowutils.HOME = home
+        self.addCleanup(setattr, windowutils, 'HOME', None)
+        home._dispatchNativeAction = types.MethodType(library.LibraryWindow._dispatchNativeAction, home)
+
+        self.assertTrue(home._dispatchNativeAction(xbmcgui.ACTION_NAV_BACK))
+
+        self.assertEqual(['goHomeRoot'], home.posted)
+        self.assertEqual([('root',)], home.calls)

@@ -2526,10 +2526,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 return True
 
             if self.section != home.home_section:
-                # Not at the true root yet - treat back as "go home" (same contract goHome()
-                # itself uses), not "exit anything".
-                self.go_root = True
-                self.show()
+                # Not at the true root yet: Back goes to Home's root, the same intent as the Home
+                # button, posted like every other swap (navigate()).
+                self.navigate(navintent.home(root=True))
                 return True
 
             if self._checkingForExit or util.getSetting('disable_exit_on_back', False):

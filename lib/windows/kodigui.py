@@ -230,9 +230,12 @@ class XMLBase(object):
         self._onInit()
 
     def goHomeAction(self, action):
+        """The mapped Home button: Home's root, as a NavIntent (goHome() -> navigate()). Shared by
+        every window and MultiWindow. goHome(), not navigate() directly, so a window's own goHome()
+        (the photo viewer's) still decides how it leaves."""
         if (util.HOME_BUTTON_MAPPED is not None
                 and action.getButtonCode() == int(util.HOME_BUTTON_MAPPED) and hasattr(self, "goHome")):
-            util.DEBUG_LOG("Kodigui: Going home action")
+            util.DEBUG_LOG("Home button: going Home from {0}", type(self).__name__)
             self.goHome(with_root=True)
             return True
         return
@@ -1964,13 +1967,7 @@ class MultiWindow(object):
         self._allClosed = True
         self._current.doClose()
 
-    def goHomeAction(self, action):
-        if (util.HOME_BUTTON_MAPPED is not None
-                and action.getButtonCode() == int(util.HOME_BUTTON_MAPPED) and hasattr(self, "goHome")):
-            util.DEBUG_LOG("MultiWindow: Going home action")
-            self.goHome(with_root=True)
-            return True
-        return
+    goHomeAction = XMLBase.goHomeAction
 
     def viewClosed(self, view):
         """Called in _open()'s loop each time a view's modal() returns, before the next view (_next)
