@@ -7417,7 +7417,9 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 command = opener.open(ds.show(), context=self, dialog_props=getattr(self, 'carriedProps', None))
                 if navintent.isNoData(command):
                     raise util.NoDataException
-            except util.NoDataException:
+            except kodigui.NO_DATA_ERRORS:
+                # the server's own errors too: ds.show() fetches the show, and a 404 there
+                # (show deleted) fell through to routeAction(), which logs it with no notice
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
                 return
 
@@ -7426,7 +7428,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 command = opener.open(ds, context=self, dialog_props=getattr(self, 'carriedProps', None))
                 if navintent.isNoData(command):
                     raise util.NoDataException
-            except util.NoDataException:
+            except kodigui.NO_DATA_ERRORS:
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
                 return
 
@@ -7435,7 +7437,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 command = opener.open(ds, auto_play=True, start_over=True, dialog_props=getattr(self, 'carriedProps', None))
                 if navintent.isNoData(command):
                     raise util.NoDataException
-            except util.NoDataException:
+            except kodigui.NO_DATA_ERRORS:
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
                 return
             return
@@ -7445,7 +7447,7 @@ class LibraryWindow(PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin
                 command = opener.open(ds, auto_play=True, dialog_props=getattr(self, 'carriedProps', None))
                 if navintent.isNoData(command):
                     raise util.NoDataException
-            except util.NoDataException:
+            except kodigui.NO_DATA_ERRORS:
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
                 return
             return
