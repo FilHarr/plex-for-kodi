@@ -1323,6 +1323,11 @@ class HubsMixin(object):
     # plausibly slide that far. Not tied to HUB_SLIDE_TIME/SKIN_RELOAD_DEFER_SECONDS - a distinct
     # concern (background content bind, not animation or click-debounce), sized on its own.
     HUB_PEEK_BIND_DEFER_SECONDS = 0.2
+    # TEMPORARY (step 11 stage A in the navigation review, F1): each defer_peek caller alternates
+    # deferred and eager binding of the two off-screen rows, call by call, so successive Home
+    # presses and fresh entries compare the two on the AM6B ("Home reset timing" and "hub rows
+    # bound" lines). Goes once F1 is decided.
+    F1_ALTERNATE_PEEK_BIND = True
     # Hero art/info overlay (plan item 11) - ported from HomeWindow's own constants (home.py).
     # The overlay is unconditional - shown for every focused hub item, whatever its type (the old
     # HERO_ART_TYPES / _typeHasHeroArt() movie-and-TV-only gate is gone, and with it the
@@ -1342,6 +1347,15 @@ class HubsMixin(object):
     HERO_NO_ART_TYPES = ('playlist',)
     CLEAR_LOGO_DIM = util.scaleResolution(722, 162)
     CLEAR_LOGO_DIM_EPISODE = util.scaleResolution(660, 98)
+
+    def _f1DeferPeek(self, site):
+        """TEMPORARY (F1, see F1_ALTERNATE_PEEK_BIND): whether this call from site ('entry' or
+        'reset') defers the two off-screen rows - alternating per site while the switch is on."""
+        if not self.F1_ALTERNATE_PEEK_BIND:
+            return True
+        flips = self.__dict__.setdefault('_f1PeekFlips', {})
+        flips[site] = not flips.get(site, False)
+        return flips[site]
 
     def _hubRowHeight(self, hub):
         """A row's own real rendered height (pre-vscale template units) for whichever hub it's
@@ -1585,7 +1599,7 @@ class HubsMixin(object):
         # defer_peek, as on a fresh entry: the ring's two always-off-screen rows are bound
         # HUB_PEEK_BIND_DEFER_SECONDS later, off the Home press. _bindHubToControl() selects item 0
         # in every row it binds, now that nothing is remembered.
-        self._bindAllHubSlots(defer_peek=True)
+        self._bindAllHubSlots(defer_peek=self._f1DeferPeek('reset'))
 
         target = self._anchorControlId()
         # Pre-seeded for the same reason onFirstInit() does it: the programmatic focus below must
@@ -2394,9 +2408,11 @@ class HubsMixin(object):
         started = time.time()
         self._recommendedHubsCallback(section, hubs, generation)
         swapStarted = self.__dict__.get('_lastSwapStarted')
-        util.DEBUG_LOG("Library: hub rows bound in {0} ms (fetched on a worker), {1} ms after the request",
+        util.DEBUG_LOG("Library: hub rows bound in {0} ms (fetched on a worker), {1} ms after the request, "
+                       "off-screen rows {2}",
                        int((time.time() - started) * 1000),
-                       int((time.time() - swapStarted) * 1000) if swapStarted else '?')
+                       int((time.time() - swapStarted) * 1000) if swapStarted else '?',
+                       self.__dict__.get('_peekBindMode'))
         if (generation == self._listGeneration and not self.closing
                 and self.contentMode == 'recommended'):
             self._focusAnchorHub()
@@ -2524,7 +2540,7 @@ class HubsMixin(object):
             # *shown* state, not the hidden one. Group 51's position is no longer tied to it - set
             # once per entry in onFirstInit() (GROUP51_BASELINE_OFFSET's own comment).
 
-            self._bindAllHubSlots(defer_peek=True)
+            self._bindAllHubSlots(defer_peek=self._f1DeferPeek('entry'))
             util.DEBUG_LOG("Library: _recommendedHubsCallback() bound {0} hub(s) for {1}, anchor={2}",
                            min(len(sorted_hubs), len(self.hubControls)), section.key,
                            self._anchorControlId())
@@ -2551,6 +2567,7 @@ class HubsMixin(object):
         correctness (e.g. not leaving stale content from a just-deleted hub) matters more than
         shaving a few controls' worth of bind time."""
         self._hubPeekBindPending = False
+        self._peekBindMode = 'deferred' if defer_peek else 'eager'
         if not self.visibleHubs:
             for index in range(len(self.hubControls)):
                 self.hubControls[index].reset()
@@ -2705,6 +2722,9 @@ class HubsMixin(object):
             return
 
         list_gen = self._listGeneration
+        # "Slide timing" line (step 11 stage A in the navigation review): what runs before the rows
+        # move, then the animation itself, logged when it ends or is cut short.
+        timing = kodigui.StepTiming('{0} to row {1}'.format('down' if delta > 0 else 'up', new_index))
 
         # Finish any still-running slide from a fast preceding press first, so this transition
         # always starts from a settled, consistent state instead of fighting or compounding with
@@ -2718,6 +2738,7 @@ class HubsMixin(object):
         if self._hubPeekBindPending:
             with self.lock:
                 self._bindPeekHubs()
+        timing.mark('settle')
 
         old_focused_index = self.focusedHubIndex
         self.focusedHubIndex = new_index
@@ -2728,6 +2749,7 @@ class HubsMixin(object):
         self.setProperty('hub.anchor_id', str(self._anchorControlId()))
 
         self._prepareHubSlideHero()
+        timing.mark('hero')
 
         # The one control wrapping around: currently at the extreme role opposite the direction
         # of travel - its data isn't valid for any role in the new arrangement, so it needs a
@@ -2757,6 +2779,7 @@ class HubsMixin(object):
         # it lands on -1 (going up).
         if wrap_new_role == -1:
             self.setBoolProperty('hub.has_prev', wrap_hub_exists)
+        timing.mark('wrap bind')
 
         # The other 3 controls: reposition smoothly over the animation loop below, content
         # untouched (already correct for their new role - see this method's own docstring).
@@ -2804,24 +2827,41 @@ class HubsMixin(object):
         gen = self._hubSlideGen
         steps = self.HUB_SLIDE_STEPS
         step_time = self.HUB_SLIDE_TIME / float(steps)
+        timing.mark('setup')
+
+        def logTiming(drawn, first_step_at, animation_started, outcome):
+            util.DEBUG_LOG("Slide timing: {0}: {1} ms ({2}, animation {3}: {4}/{5} steps, first at {6}){7}",
+                           timing.name, int(timing.elapsedMs()), timing.stepsText(),
+                           int((time.time() - animation_started) * 1000), drawn, steps,
+                           int(first_step_at) if first_step_at is not None else '-',
+                           ' - ' + outcome if outcome else '')
 
         def run():
+            animation_started = time.time()
+            first_step_at = None
+            drawn = 0
             for i in range(1, steps + 1):
                 if self.closing or self._hubSlideGen != gen or self._listGeneration != list_gen:
+                    logTiming(drawn, first_step_at, animation_started, 'cut short')
                     return
                 t = i / float(steps)
                 eased = t * t * (3 - 2 * t)  # smoothstep - approximates the old sine inout tween
                 for wrapper, start_y, end_y in movers:
                     raw = int(round(start_y + (end_y - start_y) * eased))
                     wrapper.setPosition(0, util.vscale(raw, r=0))
+                drawn += 1
+                if first_step_at is None:
+                    first_step_at = timing.elapsedMs()
                 if util.MONITOR.waitFor(step_time):
                     return
             if self.closing or self._hubSlideGen != gen or self._listGeneration != list_gen:
+                logTiming(drawn, first_step_at, animation_started, 'cut short')
                 return
             for wrapper, start_y, end_y in movers:
                 wrapper.setPosition(0, util.vscale(end_y, r=0))
             self._hubSlideMovers = []
             self._finishHubSlide()
+            logTiming(drawn, first_step_at, animation_started, None)
 
         t = threading.Thread(target=run, name='hubslide')
         self._hubSlideThread = t

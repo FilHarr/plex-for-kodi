@@ -231,6 +231,19 @@ class LibrarySettings(object):
         self._mutate(apply_)
 
 
+def logHomeReset(window, note=None):
+    """The "Home reset timing" line (step 11 stage A in the navigation review, F1): an in-place
+    reset to Home's root, from the press (navigate()) through the queue, Kodi reactivating the
+    window (show()), the reset itself (onReInit()) and the target row's focus event
+    (routeFocus()). A module function so the routing tests' stand-in hosts need nothing extra."""
+    timing = window.__dict__.get('_homeResetTiming')
+    if timing is None:
+        return
+    window._homeResetTiming = None
+    util.DEBUG_LOG("Home reset timing: {0} ms ({1}){2}", int(timing.elapsedMs()), timing.stepsText(),
+                   ' - ' + note if note else '')
+
+
 class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin, windowutils.SidebarMixin, CommonMixin):
     bgXML = 'script-plex-blank.xml'
     path = util.ADDON.getAddonInfo('path')
@@ -2069,6 +2082,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if section is not None and (section != self.section or intent.force):
             self._deferOpenSection(section, force=intent.force)
         elif intent.root:
+            self._homeResetTiming = kodigui.StepTiming('Home reset')
             self.postNav('goHomeRoot', self._goRootNow)
 
     def returnHere(self, intent):
@@ -2111,6 +2125,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         """The posted half of goHome(with_root=True)/goHomeRoot(): go to Home's root, first row,
         item 0 - rebuilt if a section or chain is showing, reset in place if Home already is (see
         show()/onReInit())."""
+        kodigui.markStep(self.__dict__.get('_homeResetTiming'), 'queued')
         self.go_root = True
         self.show()
 
@@ -2147,6 +2162,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         reconstructing = self.go_root and self._needsRootReconstruct()
         if self._current and not reconstructing:
             self._current.show(**kwargs)
+            kodigui.markStep(self.__dict__.get('_homeResetTiming'), 'reactivate')
+        if reconstructing:
+            # A rebuild, not an in-place reset: the Swap timing line covers it.
+            self._homeResetTiming = None
         if self.go_root:
             self.onReInit()
 
@@ -2188,6 +2207,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 # Not needed on the rebuild branch above - the new window sets its own focus.
                 self._goRootAwaitFocus = self._resetHubsToTop()
                 self._goRootAwaitUntil = time.time() + 1.0
+                kodigui.markStep(self.__dict__.get('_homeResetTiming'),
+                                 'reset, off-screen rows {0}'.format(self.__dict__.get('_peekBindMode')))
             return
 
         if self.refill and self.contentMode != 'recommended':
@@ -2257,6 +2278,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         # belt: real user input ends the post-go_root wait (see routeFocus()), in case the reset's own
         # focus event never arrives.
+        if self._goRootAwaitFocus is not None:
+            logHomeReset(self, 'input before the focus event')
         self._goRootAwaitFocus = None
 
         # Dismiss the sidebar user/server popup first, before it can ever reach the back-stack
@@ -3037,10 +3060,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if self._goRootAwaitFocus is not None:
             if controlID == self._goRootAwaitFocus:
                 self._goRootAwaitFocus = None
+                kodigui.markStep(self.__dict__.get('_homeResetTiming'), 'focus')
+                logHomeReset(self)
             elif time.time() < self._goRootAwaitUntil:
                 return True
             else:
                 self._goRootAwaitFocus = None
+                logHomeReset(self, 'focus event not seen within the wait')
         return False
 
     def recordFocus(self, controlID):
