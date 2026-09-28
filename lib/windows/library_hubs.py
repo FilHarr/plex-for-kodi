@@ -1703,7 +1703,7 @@ class HubsMixin(object):
         self.updateBackgroundFrom(new_ds)
         self._setNoHeroArt(False)
 
-    def _updateHeroFromFocusedHubItem(self, control_id):
+    def _updateHeroFromFocusedHubItem(self, control_id, timing=None):
         """Sync the hero art/info overlay to whichever item is currently selected in hub-row
         control_id - called on horizontal (left/right) movement within a hub row, via
         checkHubItem() below. Port of the hero-art-relevant slice of HomeWindow.checkHubItem()
@@ -1718,10 +1718,13 @@ class HubsMixin(object):
         if not mli or mli.dataSource is None:
             return
         ds = mli.dataSource
+        kodigui.markStep(timing, 'lookup again')
         # Written before no_hero_art is cleared - see updateHeroFrom().
         self.setHeroInfo(ds)
+        kodigui.markStep(timing, 'hero text')
         self.updateBackgroundFrom(ds)
         self._setNoHeroArt(False)
+        kodigui.markStep(timing, 'background')
 
     # ------------------------------------------------------------------------------------------
     # Input: the Recommended view's own handlers (RecommendedWindow's viewAction(), viewClick() and
@@ -1795,7 +1798,10 @@ class HubsMixin(object):
             # case below) - the actual cursor movement is Kodi's own native list
             # behavior, not something this method does; False hands the action on like
             # anything else unhandled here.
-            self.checkHubItem(controlID, action=action)
+            # "Row move timing" (step 12 stage A in the navigation review).
+            timing = kodigui.StepTiming('Row move')
+            self.checkHubItem(controlID, action=action, timing=timing)
+            kodigui.logMoveTiming(self, timing)
         elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
             # Only reached when self._backStack is empty (the host's routeAction() pops the
             # chain first otherwise) - i.e. a hub row focused on the root 'recommended'
@@ -1874,7 +1880,7 @@ class HubsMixin(object):
 
         self.recordFocus(controlID)
 
-    def checkHubItem(self, control_id, action=None):
+    def checkHubItem(self, control_id, action=None, timing=None):
         """Horizontal (left/right) in-row hub navigation - hero-art sync (delegated to
         _updateHeroFromFocusedHubItem() above) and reselect-position memory, both hooked into
         this one call site (hubAction()). Port of HomeWindow.checkHubItem()
@@ -1904,6 +1910,7 @@ class HubsMixin(object):
         # The "See more" item (is.more) has no dataSource - nothing to sync the hero to, and not
         # a position worth remembering (the reselect would land on it, not on content).
         is_valid_mli = mli and mli.getProperty('is.more') != '1'
+        kodigui.markStep(timing, 'lookup')
 
         if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
             pos = control.getSelectedPos()
@@ -1924,7 +1931,7 @@ class HubsMixin(object):
             return True
 
         if is_valid_mli:
-            self._updateHeroFromFocusedHubItem(control_id)
+            self._updateHeroFromFocusedHubItem(control_id, timing=timing)
 
             # Reselect-position memory - remember this hub's scroll position so navigating away
             # and back (a different hub rebound to this same physical control, or a fresh
@@ -1936,6 +1943,7 @@ class HubsMixin(object):
                 pos = control.getSelectedPos()
                 if pos is not None and mli.dataSource is not None:
                     self._hubReselectPositions[identifier] = (str(mli.dataSource.ratingKey), pos)
+            kodigui.markStep(timing, 'position')
 
     def hubSeeMoreClicked(self, hub):
         """The row's trailing "See more" item (is.more, _bindHubToControl()) was clicked. Meant

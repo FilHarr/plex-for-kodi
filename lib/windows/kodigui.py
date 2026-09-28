@@ -1595,6 +1595,17 @@ def markStep(timing, label):
         timing.mark(label)
 
 
+def logMoveTiming(window, timing):
+    """The "Grid move timing" and "Row move timing" lines (step 12 stage A in the navigation
+    review): one arrow press's work, step by step, and the time since the previous press started,
+    which shows whether a held key outruns the handler."""
+    last = window.__dict__.get('_lastMoveStarted')
+    window._lastMoveStarted = timing.started
+    util.DEBUG_LOG("{0} timing: {1} ms ({2}), {3}", timing.name, int(timing.elapsedMs()), timing.stepsText(),
+                   '{0} ms after the previous press'.format(int((timing.started - last) * 1000))
+                   if last is not None else 'first press')
+
+
 # Python's own collections, now that none are forced after a screen is torn down (63037c16) and
 # a closed dialog is only collected when it outlives its caller (util.collectIfAlive()): each one
 # stops every Python thread, so one landing mid-build shows up as a stall in the timing lines.

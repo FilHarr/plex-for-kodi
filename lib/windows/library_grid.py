@@ -352,10 +352,16 @@ class GridMixin(object):
         chunk requests, the background and the key list as the cursor moves, the context menu,
         the watched toggle, and Back to the first row. True when the action was used; False lets
         the host's Back and Home handling and then Kodi's own have it."""
+        # "Grid move timing" (step 12 stage A in the navigation review): an arrow press's work.
+        timing = None
         if action.getId() in MOVE_SET:
+            timing = kodigui.StepTiming('Grid move')
             mli = self.showPanelControl.getSelectedItem()
+            pos = mli.pos() if mli else None
+            timing.mark('lookup')
             if mli:
-                self.requestChunk(mli.pos())
+                self.requestChunk(pos)
+            timing.mark('chunk')
 
             if util.addonSettings.dynamicBackgrounds:
                 # `mli and mli.dataSource`, not `is not None`, used to gate this - a real
@@ -380,10 +386,12 @@ class GridMixin(object):
                         self._setPlaylistBackground(mli.dataSource)
                     else:
                         self.updateBackgroundFrom(mli.dataSource)
+            timing.mark('background')
 
             controlID = self.getFocusId()
             if controlID == self.POSTERS_PANEL_ID or controlID == self.SCROLLBAR_ID:
                 self.updateKey()
+            timing.mark('key')
         elif action == xbmcgui.ACTION_CONTEXT_MENU:
             # item action possible?
             had_action = self.itemOptions()
@@ -414,6 +422,9 @@ class GridMixin(object):
                     return True
 
         self.updateItem()
+        if timing is not None:
+            timing.mark('item')
+            kodigui.logMoveTiming(self, timing)
         return False
 
     def gridClick(self, controlID):
