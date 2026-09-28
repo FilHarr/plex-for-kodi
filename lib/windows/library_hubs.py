@@ -51,6 +51,8 @@ class HubSlide(object):
         self.clock = clock
         self.started = None
         self.landed = False
+        # The wrapping row's bind, owed until the slide lands (HubsMixin._payWrapBind()).
+        self.owedBind = None
         self.drawn = 0
         self.firstStepAt = None
         self._y = start_y
@@ -1387,6 +1389,11 @@ class HubsMixin(object):
     # How long a hub slide takes (HubSlide, timed by the clock). Ported from HomeWindow, which
     # took 12 fixed steps of HUB_SLIDE_TIME / 12 and so stretched whenever a step ran late.
     HUB_SLIDE_TIME = 0.25
+    # TEMPORARY (step 11 stage D in the navigation review): bind the row that wraps round once the
+    # slide has landed (True), or before it starts (False, as through stage C). It's off screen
+    # for the whole slide either way; stage A measured its bind as most of the wait before the
+    # rows move (median 57 ms, 90th percentile 182). Judged by eye on the AM6B; goes once chosen.
+    HUB_WRAP_BIND_AFTER_SLIDE = True
     # Hero art/info overlay (plan item 11) - ported from HomeWindow's own constants (home.py).
     # The overlay is unconditional - shown for every focused hub item, whatever its type (the old
     # HERO_ART_TYPES / _typeHasHeroArt() movie-and-TV-only gate is gone, and with it the
@@ -2640,7 +2647,11 @@ class HubsMixin(object):
 
         All four rows, every time. A fresh entry and an in-place Home reset used to bind the two
         off-screen ones 0.2 s later from a timer thread (defer_peek); measured on the AM6B (step
-        11 stage A in the navigation review, F1), that didn't shorten either, so it went."""
+        11 stage A in the navigation review, F1), that didn't shorten either, so it went.
+
+        Lands any slide still running first: it would go on moving group 51 from where it
+        started, over the rows placed here."""
+        self._settleHubSlide()
         if not self.visibleHubs:
             for index in range(len(self.hubControls)):
                 self.hubControls[index].reset()
@@ -2747,10 +2758,11 @@ class HubsMixin(object):
 
         # The one control wrapping around: currently at the extreme role opposite the direction
         # of travel - its data isn't valid for any role in the new arrangement, so it needs a
-        # fresh content bind and a position snap to its new role. Done synchronously,
-        # immediately - its old and new roles are the ring's two extremes, -1 -> +2 going down
-        # and +2 -> -1 going up, neither ever on screen (HUB_ROTATION_RING's own comment), so
-        # there's nothing to collide with.
+        # fresh content bind and a position snap to its new role. Its old and new roles are the
+        # ring's two extremes, -1 -> +2 going down and +2 -> -1 going up, neither ever on screen
+        # (HUB_ROTATION_RING's own comment), and its new place stays off screen for the whole
+        # slide - so the move happens now and the bind can wait until the slide lands
+        # (HUB_WRAP_BIND_AFTER_SLIDE, _payWrapBind()).
         if delta > 0:
             wrap_role, wrap_new_role = self.HUB_MIN_ROLE, self.HUB_MAX_ROLE
         else:
@@ -2763,17 +2775,24 @@ class HubsMixin(object):
 
         wrap_hub_index = new_index + wrap_new_role
         wrap_hub_exists = 0 <= wrap_hub_index < len(self.visibleHubs)
-        if wrap_hub_exists:
-            self._bindHubToControl(self.visibleHubs[wrap_hub_index], wrap_index)
-        else:
-            self.hubControls[wrap_index].reset()
-            self.setProperty('hub.display.4{0:02d}'.format(wrap_index), '')
+        wrap_hub = self.visibleHubs[wrap_hub_index] if wrap_hub_exists else None
+
+        def bindWrap():
+            if wrap_hub is not None:
+                self._bindHubToControl(wrap_hub, wrap_index)
+            else:
+                self.hubControls[wrap_index].reset()
+                self.setProperty('hub.display.4{0:02d}'.format(wrap_index), '')
+
+        if not self.HUB_WRAP_BIND_AFTER_SLIDE:
+            bindWrap()
+            bindWrap = None
         # No hub.has_next update here - the wrap control's new role is -1 or +2, never +1, so it
         # never owns that state; whichever mover below lands on +1 does. It does own has_prev when
         # it lands on -1 (going up).
         if wrap_new_role == -1:
             self.setBoolProperty('hub.has_prev', wrap_hub_exists)
-        timing.mark('wrap bind')
+        timing.mark('wrap' if bindWrap is not None else 'wrap bind')
 
         # The other 3 controls keep their places in the stack and their content (already correct
         # for their new role - see this method's own docstring); only the new peek-below's height
@@ -2795,6 +2814,7 @@ class HubsMixin(object):
         slide = HubSlide(group, group.getPosition()[0], self._group51Y(old_focused_index),
                          self._group51Y(new_index), self.HUB_SLIDE_TIME, self.__dict__.get('_current'),
                          list_gen, timing)
+        slide.owedBind = bindWrap
 
         # Native focus moves to the destination row now, not when the slide finishes: Kodi hands a
         # Left/Right to whichever row has focus before any of this code sees it, so a Right pressed
@@ -2808,6 +2828,7 @@ class HubsMixin(object):
             # yields in between - but cheap to cover): land it now rather than animate.
             slide.land()
             self._finishHubSlide()
+            self._payWrapBind(slide)
             return
 
         self.setBoolProperty('hub.sliding', True)
@@ -2836,8 +2857,22 @@ class HubsMixin(object):
             return True
         self._hubSlide = None
         self._finishHubSlide()
+        self._payWrapBind(slide)
         slide.logTiming()
         return False
+
+    def _payWrapBind(self, slide):
+        """Bind the row that wrapped round, once slide has landed (step 11 stage D): it's off
+        screen for the whole slide, so its bind no longer holds up the rows starting to move. Paid
+        by the tick that lands the slide, or by _settleHubSlide() before the next press rotates
+        the ring - the next slide can bring that row into view. A slide whose view has gone is
+        dropped unpaid; the next view binds every row itself."""
+        bind, slide.owedBind = slide.owedBind, None
+        if bind is None:
+            return
+        started = time.time()
+        bind()
+        slide.timing.add('wrap bind after', (time.time() - started) * 1000)
 
     def _finishHubSlide(self):
         """Slide-completion - deliberately NOT a full _recommendedHubsCallback() rebuild (that
@@ -2872,4 +2907,5 @@ class HubsMixin(object):
             return
         slide.land()
         self._finishHubSlide()
+        self._payWrapBind(slide)
         slide.logTiming('cut short')

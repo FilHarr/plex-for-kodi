@@ -1997,6 +1997,7 @@ class HubSlideTickerTest(KodiTestCase):
         _tickHubSlide = library.LibraryWindow._tickHubSlide
         _settleHubSlide = library.LibraryWindow._settleHubSlide
         _hubSlideLive = library.LibraryWindow._hubSlideLive
+        _payWrapBind = library.LibraryWindow._payWrapBind
 
         def __init__(self, slide):
             self._hubSlide = slide
@@ -2036,6 +2037,44 @@ class HubSlideTickerTest(KodiTestCase):
         self.assertEqual((0, -400), group.moves[-1])
         self.assertEqual(1, host.finished)
         self.assertFalse(host._tickHubSlide(clock.now))
+
+    def _owing(self, slide):
+        binds = []
+        slide.owedBind = lambda: binds.append(True)
+        return binds
+
+    def test_the_wrapping_rows_bind_is_paid_once_it_lands(self):
+        """Stage D: the row that wrapped round is bound after the slide, not before it moves."""
+        slide, clock, group = self._slide()
+        binds = self._owing(slide)
+        host = self.Host(slide)
+        clock.now += 0.1
+        host._tickHubSlide(clock.now)
+        self.assertEqual([], binds, 'not while the slide is moving')
+        clock.now += 0.2
+        host._tickHubSlide(clock.now)
+        self.assertEqual([True], binds)
+        host._settleHubSlide()
+        self.assertEqual([True], binds)
+
+    def test_the_next_press_pays_it_before_rotating(self):
+        slide, clock, group = self._slide()
+        binds = self._owing(slide)
+        host = self.Host(slide)
+        clock.now += 0.1
+        host._tickHubSlide(clock.now)
+        host._settleHubSlide()
+        self.assertEqual([True], binds)
+
+    def test_a_dropped_slide_leaves_it_unpaid(self):
+        """The next view binds every row itself, and this one's controls may be gone."""
+        slide, clock, group = self._slide()
+        binds = self._owing(slide)
+        host = self.Host(slide)
+        host._current = 'a hosted screen'
+        host._tickHubSlide(clock.now)
+        host._settleHubSlide()
+        self.assertEqual([], binds)
 
     def test_a_slide_whose_view_has_gone_is_dropped_untouched(self):
         for change in ('view', 'swap', 'closing'):
