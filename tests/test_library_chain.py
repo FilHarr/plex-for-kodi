@@ -1520,6 +1520,42 @@ class GridBackTest(KodiTestCase):
         self.assertFalse(gridBack(self.Host(self.POSTERS_PANEL_ID, self.Panel(None))))
 
 
+class OnReInitPlayGuardTest(KodiTestCase):
+    """The grid's Play and "Shuffle All" (playButtonClicked()) ignore a second press while the
+    first is starting (playBtnClicked). Coming back to the view, e.g. from the player, clears it
+    (PlaybackBtnMixin.onReInit()) - LibraryWindow's own onReInit() used to skip that, so after one
+    Play both did nothing until a section or tab switch (live-caught 2026-09-28)."""
+
+    class Host(object):
+        refill = False
+        contentMode = 'library'
+
+        def __init__(self, go_root=False):
+            self.go_root = go_root
+            self.playBtnClicked = True
+            self.posted = []
+
+        def _needsRootReconstruct(self):
+            return True
+
+        def openSection(self, *args, **kwargs):
+            pass
+
+        def postNav(self, name, fn, args=(), kwargs=None, stack=False):
+            self.posted.append(name)
+
+    def test_the_guard_clears_when_the_view_shows_again(self):
+        host = self.Host()
+        library.LibraryWindow.onReInit(host)
+        self.assertFalse(host.playBtnClicked)
+
+    def test_and_on_the_way_back_to_homes_root(self):
+        host = self.Host(go_root=True)
+        library.LibraryWindow.onReInit(host)
+        self.assertFalse(host.playBtnClicked)
+        self.assertEqual(['openSection'], host.posted)
+
+
 class _FakeOnFocusHost(object):
     """A hand-built double carrying only what the Recommended view's focus path (onFocus() above:
     LibraryWindow.routeFocus(), then HubsMixin.hubFocus()) actually touches."""

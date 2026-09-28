@@ -2154,6 +2154,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self.onReInit()
 
     def onReInit(self):
+        # The grid's Play and "Shuffle All" guard (playButtonClicked()) clears once the view shows
+        # again, e.g. back from the player, as PlaybackBtnMixin.onReInit() does. This override
+        # used to skip it, so after one Play both did nothing until a section or tab switch.
+        PlaybackBtnMixin.onReInit(self)
+
         if self.go_root:
             # Ported from HomeWindow's onReInit() go_root handling (home.py) - see
             # quiet-orbiting-heron.md's Cold Start plan. Consumed by the Home-button action
