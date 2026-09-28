@@ -113,6 +113,10 @@ class DiscoverCreditsTask(backgroundthread.Task):
         if self.isCanceled() or not credit_groups:
             self.callback([], set())
             return
+        if self.credit_type is not None:
+            # One type asked for (DirectorWindow): getDiscoverCredits() returns that group's
+            # credits as a flat list, not (type, credits) pairs.
+            credit_groups = [(self.credit_type, credit_groups)]
 
         discover_hubs = []
         all_guids = []
