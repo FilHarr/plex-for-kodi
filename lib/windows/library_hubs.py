@@ -2,7 +2,6 @@ from __future__ import absolute_import
 
 import datetime
 import json
-import threading
 import time
 
 import plexnet
@@ -28,6 +27,73 @@ class _CatalogHub(object):
     def __init__(self, title, hub_identifier):
         self.title = title
         self.hubIdentifier = hub_identifier
+
+
+class HubSlide(object):
+    """One hub slide (step 11 stage C in the navigation review): group 51 from one offset to
+    another over duration seconds, eased (smoothstep), timed by the clock - each step goes where
+    the elapsed time says, so a late step shortens the slide instead of stretching it. The host
+    steps it from the view's wait loop, on the main thread (MultiWindow.addTicker()), and lands it
+    early when the next press or a swap needs it settled.
+
+    view and list_gen are what it belongs to: the host drops it, without touching its control,
+    once either has moved on. clock is time.time, or a stand-in in tests."""
+
+    def __init__(self, control, x, start_y, end_y, duration, view, list_gen, timing, clock=time.time):
+        self.control = control
+        self.x = x
+        self.start_y = start_y
+        self.end_y = end_y
+        self.duration = duration
+        self.view = view
+        self.list_gen = list_gen
+        self.timing = timing
+        self.clock = clock
+        self.started = None
+        self.landed = False
+        self.drawn = 0
+        self.firstStepAt = None
+        self._y = start_y
+
+    def start(self):
+        self.started = self.clock()
+
+    def step(self):
+        """Move to where the clock says; lands at the end. True while still moving."""
+        if self.landed:
+            return False
+        t = (self.clock() - self.started) / self.duration
+        if t >= 1:
+            self.land()
+            return False
+        eased = t * t * (3 - 2 * t)
+        y = int(round(self.start_y + (self.end_y - self.start_y) * eased))
+        if y != self._y:
+            self.control.setPosition(self.x, y)
+            self._y = y
+            self.drawn += 1
+            if self.firstStepAt is None:
+                self.firstStepAt = self.timing.elapsedMs()
+        return True
+
+    def land(self):
+        """Snap to the end, once."""
+        if self.landed:
+            return
+        self.landed = True
+        if self._y != self.end_y:
+            self.control.setPosition(self.x, self.end_y)
+            self._y = self.end_y
+            self.drawn += 1
+
+    def logTiming(self, outcome=None):
+        """The "Slide timing" line (step 11 stage A): what ran before the rows moved, then the
+        animation - moves drawn, and when the first one landed after the press."""
+        util.DEBUG_LOG("Slide timing: {0}: {1} ms ({2}, animation {3}: {4} steps, first at {5}){6}",
+                       self.timing.name, int(self.timing.elapsedMs()), self.timing.stepsText(),
+                       int((self.clock() - self.started) * 1000) if self.started else 0, self.drawn,
+                       int(self.firstStepAt) if self.firstStepAt is not None else '-',
+                       ' - ' + outcome if outcome else '')
 
 
 class HubsMixin(object):
@@ -1318,9 +1384,8 @@ class HubsMixin(object):
     # line. One setPosition() per slide step instead of one per row, and the rows can't land on
     # different frames.
     GROUP51_ID = 51
-    # Hub-switch slide animation step count/total time - ported verbatim from
-    # HomeWindow.HUB_SLIDE_STEPS/HUB_SLIDE_TIME.
-    HUB_SLIDE_STEPS = 12
+    # How long a hub slide takes (HubSlide, timed by the clock). Ported from HomeWindow, which
+    # took 12 fixed steps of HUB_SLIDE_TIME / 12 and so stretched whenever a step ran late.
     HUB_SLIDE_TIME = 0.25
     # Hero art/info overlay (plan item 11) - ported from HomeWindow's own constants (home.py).
     # The overlay is unconditional - shown for every focused hub item, whatever its type (the old
@@ -2633,25 +2698,12 @@ class HubsMixin(object):
         sync) is real again as of plan item 11 - see that method's own docstring. Calls
         self._bindHubToControl() for the wrap control's fresh bind instead of HomeWindow.showHub().
 
-        Staleness guard (Stage D2 addition, no HomeWindow equivalent needed - HomeWindow is a
-        single persistent window, never swapped out from under its own background thread): snap-
-        shots self._listGeneration (list_gen) here, at the moment this move is still definitely
-        valid, alongside the usual self._hubSlideGen repeat-press-cancellation snapshot. The
-        background animation loop below checks both, plus self.closing (the whole session
-        ending), before every setPosition() call - NOT self._closing (no leading underscore vs.
-        with - self.closing is LibraryWindow's own instance attribute for "session ending";
-        self._closing doesn't exist on LibraryWindow itself and resolves, via
-        MultiWindow.__getattr__, to whichever concrete window self._current currently *is* at
-        the moment it's read - after a mid-slide swap away from 'recommended', that's a fresh,
-        just-opened window with _closing=False, not the 'recommended' window this slide actually
-        belongs to. This is exactly the same delegation trap the plan's "Known interim gaps" bug
-        (3) already found and fixed for _scheduleBackgroundStaticSync() (kodigui.py - that method
-        and the self._bgSyncGen counter it needed are since removed entirely, no longer relevant
-        beyond this lesson - see windowSetBackground()'s own current comment for why) -
-        self._listGeneration
-        (bumped synchronously by switchTab()/openSection() before they close anything) is the
-        correct, non-delegated signal for "a swap happened out from under this", same idiom
-        _chunkCallbackFor()/_recommendedHubsFetchedFor() already use.
+        The animation is a HubSlide (step 11 in the navigation review): group 51 alone moves, timed
+        by the clock and stepped from the view's wait loop on the main thread (_tickHubSlide()).
+        It belongs to the view showing now and to self._listGeneration (bumped by every swap),
+        and is dropped without touching its control once either has moved on. Note self.closing
+        (LibraryWindow's own "session ending"), not self._closing, which MultiWindow.__getattr__
+        would resolve against whichever view is current.
         """
         if not self.visibleHubs:
             return
@@ -2727,11 +2779,10 @@ class HubsMixin(object):
                 self.setBoolProperty('hub.has_prev', True)
 
         # The one mover: group 51, from the old anchor's offset to the new one's (_group51Y()).
-        # (control, x, start y, end y), in pixels.
         group = self.getControl(self.GROUP51_ID)
-        movers = [(group, group.getPosition()[0],
-                   self._group51Y(old_focused_index), self._group51Y(new_index))]
-        self._hubSlideMovers = movers
+        slide = HubSlide(group, group.getPosition()[0], self._group51Y(old_focused_index),
+                         self._group51Y(new_index), self.HUB_SLIDE_TIME, self.__dict__.get('_current'),
+                         list_gen, timing)
 
         # Native focus moves to the destination row now, not when the slide finishes: Kodi hands a
         # Left/Right to whichever row has focus before any of this code sees it, so a Right pressed
@@ -2741,62 +2792,40 @@ class HubsMixin(object):
             self.setFocusId(self._anchorControlId())
 
         if self.closing or self._listGeneration != list_gen:
-            # No animation thread will run to land these at end_y - snap directly, matching what
-            # the loop's own tail does, so nothing is left mid-transition. self.closing (not
-            # self._closing - see this method's own docstring) is the real "tearing down for
-            # real" signal here; self._listGeneration != list_gen would mean a swap already
-            # landed between the checks above and here, on the same synchronous call - not
-            # expected (nothing yields control in between), but cheap to also cover.
-            for control, x, start_y, end_y in movers:
-                control.setPosition(x, end_y)
-            self._hubSlideMovers = []
+            # Tearing down, or a swap already landed on this same call (not expected - nothing
+            # yields in between - but cheap to cover): land it now rather than animate.
+            slide.land()
             self._finishHubSlide()
             return
 
         self.setBoolProperty('hub.sliding', True)
-        self._hubSliding = True
-        self._hubSlideGen += 1
-        gen = self._hubSlideGen
-        steps = self.HUB_SLIDE_STEPS
-        step_time = self.HUB_SLIDE_TIME / float(steps)
         timing.mark('setup')
+        slide.start()
+        self._hubSlide = slide
+        self.addTicker(self._tickHubSlide)
 
-        def logTiming(drawn, first_step_at, animation_started, outcome):
-            util.DEBUG_LOG("Slide timing: {0}: {1} ms ({2}, animation {3}: {4}/{5} steps, first at {6}){7}",
-                           timing.name, int(timing.elapsedMs()), timing.stepsText(),
-                           int((time.time() - animation_started) * 1000), drawn, steps,
-                           int(first_step_at) if first_step_at is not None else '-',
-                           ' - ' + outcome if outcome else '')
+    def _hubSlideLive(self, slide):
+        """Whether slide still belongs to what's showing: the same view, no swap since it started
+        (_listGeneration) and the session not ending. Otherwise its control may be gone."""
+        return (not self.closing and self._listGeneration == slide.list_gen
+                and self.__dict__.get('_current') is slide.view)
 
-        def run():
-            animation_started = time.time()
-            first_step_at = None
-            drawn = 0
-            for i in range(1, steps + 1):
-                if self.closing or self._hubSlideGen != gen or self._listGeneration != list_gen:
-                    logTiming(drawn, first_step_at, animation_started, 'cut short')
-                    return
-                t = i / float(steps)
-                eased = t * t * (3 - 2 * t)  # smoothstep - approximates the old sine inout tween
-                for control, x, start_y, end_y in movers:
-                    control.setPosition(x, int(round(start_y + (end_y - start_y) * eased)))
-                drawn += 1
-                if first_step_at is None:
-                    first_step_at = timing.elapsedMs()
-                if util.MONITOR.waitFor(step_time):
-                    return
-            if self.closing or self._hubSlideGen != gen or self._listGeneration != list_gen:
-                logTiming(drawn, first_step_at, animation_started, 'cut short')
-                return
-            for control, x, start_y, end_y in movers:
-                control.setPosition(x, end_y)
-            self._hubSlideMovers = []
-            self._finishHubSlide()
-            logTiming(drawn, first_step_at, animation_started, None)
-
-        t = threading.Thread(target=run, name='hubslide')
-        self._hubSlideThread = t
-        t.start()
+    def _tickHubSlide(self, now):
+        """The running slide's ticker (MultiWindow.addTicker()), once per wait slice on the main
+        thread: one step, then finish once it lands. False when there's nothing left to step."""
+        slide = self._hubSlide
+        if slide is None:
+            return False
+        if not self._hubSlideLive(slide):
+            self._hubSlide = None
+            slide.logTiming('dropped, its view has gone')
+            return False
+        if slide.step():
+            return True
+        self._hubSlide = None
+        self._finishHubSlide()
+        slide.logTiming()
+        return False
 
     def _finishHubSlide(self):
         """Slide-completion - deliberately NOT a full _recommendedHubsCallback() rebuild (that
@@ -2808,7 +2837,6 @@ class HubsMixin(object):
         (home.py), minus its checkHubItem(anchor_id) call - horizontal in-hub navigation/
         reselect-preview is out of scope for D2."""
         self.setBoolProperty('hub.sliding', False)
-        self._hubSliding = False
         anchor_id = self._anchorControlId()
         # Only while focus is still in the hub rows (on the control that was the anchor when the
         # slide started). A press that left them mid-slide - Up from the first row to the tabs, or
@@ -2819,35 +2847,17 @@ class HubsMixin(object):
             self.setFocusId(anchor_id)
 
     def _settleHubSlide(self):
-        """If a hub-slide animation is currently in flight, snap it straight to completion
-        instead of leaving it to finish on its own background thread. Bumps _hubSlideGen first
-        so that thread's own next gen-check (whether mid-sleep or mid-loop) sees the mismatch and
-        exits without touching state itself - not ported verbatim from HomeWindow._settleHubSlide()
-        (home.py) any more, though: HomeWindow is a single persistent window that's never
-        destroyed out from under this thread (see _startHubSlide()'s own docstring), but
-        LibraryWindow's is - switchTab()/openSection() call this right before doClose() tears the
-        native window down for real. Bumping the gen alone only stops the thread from touching
-        controls on its *next* loop check; a call already past that check (mid-setPosition(), or
-        about to make one for the current step) can still land after the native window is gone -
-        a real, theoretically-possible race, tried as a fix for a native crash switching back out
-        of Recommended (this was in place before that crash's actual cause - xbmc/xbmc#27552/
-        #27239, see windowutils.SKIN_RELOAD_DEFER_SECONDS - was diagnosed; the crash persisted
-        after this fix alone, at the same faulting address, so this specific race was likely never
-        what was actually firing). join()ing it here, before this method's own final setPosition()
-        snap, still closes a real (if apparently unobserved) window: once join() returns, no other
-        thread can still be calling into these controls, so the snap below is provably the last
-        write. HUB_SLIDE_TIME is 0.25s total, so a bounded wait is cheap insurance either way, not
-        a real stall - left in place as legitimate defensiveness, not reverted just because it
-        wasn't the actual fix.
-        """
-        if not self._hubSliding:
+        """Land the slide in progress at once and finish it: the next press starts from a settled
+        state, and a swap (switchTab(), openSection()) lands it while its view is still there. On
+        the main thread, like the steps, so nothing else can be moving the group at the same time.
+        A slide whose view has already gone is just dropped."""
+        slide = self._hubSlide
+        if slide is None:
             return
-        self._hubSlideGen += 1
-        thread = self._hubSlideThread
-        if thread and thread.is_alive():
-            thread.join(1.0)
-        self._hubSlideThread = None
-        for control, x, start_y, end_y in self._hubSlideMovers:
-            control.setPosition(x, end_y)
-        self._hubSlideMovers = []
+        self._hubSlide = None
+        if not self._hubSlideLive(slide):
+            slide.logTiming('dropped, its view has gone')
+            return
+        slide.land()
         self._finishHubSlide()
+        slide.logTiming('cut short')

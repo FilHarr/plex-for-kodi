@@ -444,10 +444,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.visibleHubs = []
         self.focusedHubIndex = 0
         self._anchorRingPos = 0
-        self._hubSlideGen = 0
-        self._hubSlideMovers = []
-        self._hubSliding = False
-        self._hubSlideThread = None
+        # The hub slide in progress (library_hubs.HubSlide), or None.
+        self._hubSlide = None
         # Built once per LibraryWindow lifetime, then rebound via newControl() on every later
         # 'recommended' entry - see onFirstInit()'s own comment for why (a fresh discard-and-
         # recreate every entry, the original shape here, is the one remaining structural
@@ -1007,11 +1005,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             return False
 
         self.tasks.kill()
-        # Settle any in-flight hub-slide animation (its own background thread, see
-        # _startHubSlide()) before doClose() below tears the native window down for real -
-        # otherwise that thread can still be mid-setPosition() on a control that's about to stop
-        # existing. Live-confirmed as a native invalid-pointer-read crash otherwise. Harmless
-        # no-op when contentMode isn't 'recommended' (self._hubSliding is only ever True there).
+        # Land any hub slide in progress (_startHubSlide()) while its view is still there, before
+        # doClose() below tears the native window down. It used to run on its own thread, which
+        # could still be mid-setPosition() on a control about to stop existing (live-confirmed as a
+        # native invalid-pointer-read crash); it steps on this thread now, so this just lands it.
+        # A no-op when no slide is running.
         self._settleHubSlide()
         self._retireListItems()
         # A tab switch is a fresh entry - see _hubReselectPositions' own comment (__init__).

@@ -1709,6 +1709,8 @@ class MultiWindow(object):
         self._navPending = []
         # UI updates from other threads (postUI()), oldest first, run before navigation.
         self._uiPending = []
+        # Per-slice callbacks (addTicker()). Main thread only, so no lock.
+        self._tickers = []
 
     def __getattr__(self, name):
         # dict lookup, not bare self._current - once _open()'s real teardown del's _current,
@@ -1827,6 +1829,25 @@ class MultiWindow(object):
         with self._navLock:
             self._uiPending.append((name, fn, tuple(args), dict(kwargs or {}), time.time()))
 
+    def addTicker(self, fn):
+        """Call fn(now) from the current view's wait loop, on the main thread, every slice (about
+        WAIT_SLICE_SECONDS) until it returns False: for work that advances with the clock on the
+        thread that also handles input, such as the hub slide (step 11 in the navigation review),
+        so a step and a key press never interleave. Main thread only; adding one that's already
+        running does nothing."""
+        if fn not in self._tickers:
+            self._tickers.append(fn)
+
+    def _runTickers(self, tickers, now):
+        for fn in tickers[:]:
+            try:
+                keep = fn(now)
+            except Exception:
+                util.ERROR()
+                keep = False
+            if not keep:
+                tickers.remove(fn)
+
     def navRequestPending(self):
         """Whether a navigation request is waiting to run (postNav())."""
         with self._navLock:
@@ -1862,11 +1883,14 @@ class MultiWindow(object):
                 util.ERROR()
 
     def runPendingNav(self, view):
-        """Run queued UI updates (postUI()), then the oldest due navigation request (postNav()).
-        Called from view's wait loop, between waits."""
+        """Run the tickers (addTicker()), queued UI updates (postUI()), then the oldest due
+        navigation request (postNav()). Called from view's wait loop, between waits."""
         now = time.time()
         if self._allClosed:
             return
+        tickers = self.__dict__.get('_tickers')
+        if tickers:
+            self._runTickers(tickers, now)
         self._runPendingUI(view, now)
         if getattr(view, '_closing', False):
             # An update started a swap (e.g. serverRefresh()'s openSection()); navigation waits
