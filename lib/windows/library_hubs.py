@@ -1389,11 +1389,6 @@ class HubsMixin(object):
     # How long a hub slide takes (HubSlide, timed by the clock). Ported from HomeWindow, which
     # took 12 fixed steps of HUB_SLIDE_TIME / 12 and so stretched whenever a step ran late.
     HUB_SLIDE_TIME = 0.25
-    # TEMPORARY (step 11 stage D in the navigation review): bind the row that wraps round once the
-    # slide has landed (True), or before it starts (False, as through stage C). It's off screen
-    # for the whole slide either way; stage A measured its bind as most of the wait before the
-    # rows move (median 57 ms, 90th percentile 182). Judged by eye on the AM6B; goes once chosen.
-    HUB_WRAP_BIND_AFTER_SLIDE = True
     # Hero art/info overlay (plan item 11) - ported from HomeWindow's own constants (home.py).
     # The overlay is unconditional - shown for every focused hub item, whatever its type (the old
     # HERO_ART_TYPES / _typeHasHeroArt() movie-and-TV-only gate is gone, and with it the
@@ -2761,8 +2756,9 @@ class HubsMixin(object):
         # fresh content bind and a position snap to its new role. Its old and new roles are the
         # ring's two extremes, -1 -> +2 going down and +2 -> -1 going up, neither ever on screen
         # (HUB_ROTATION_RING's own comment), and its new place stays off screen for the whole
-        # slide - so the move happens now and the bind can wait until the slide lands
-        # (HUB_WRAP_BIND_AFTER_SLIDE, _payWrapBind()).
+        # slide - so the move happens now and the bind waits until the slide lands
+        # (_payWrapBind()). Bound before the slide, it was most of the wait before the rows
+        # moved (step 11 in the navigation review: a median 58 ms, against 12 once landed).
         if delta > 0:
             wrap_role, wrap_new_role = self.HUB_MIN_ROLE, self.HUB_MAX_ROLE
         else:
@@ -2784,15 +2780,12 @@ class HubsMixin(object):
                 self.hubControls[wrap_index].reset()
                 self.setProperty('hub.display.4{0:02d}'.format(wrap_index), '')
 
-        if not self.HUB_WRAP_BIND_AFTER_SLIDE:
-            bindWrap()
-            bindWrap = None
         # No hub.has_next update here - the wrap control's new role is -1 or +2, never +1, so it
         # never owns that state; whichever mover below lands on +1 does. It does own has_prev when
         # it lands on -1 (going up).
         if wrap_new_role == -1:
             self.setBoolProperty('hub.has_prev', wrap_hub_exists)
-        timing.mark('wrap' if bindWrap is not None else 'wrap bind')
+        timing.mark('wrap')
 
         # The other 3 controls keep their places in the stack and their content (already correct
         # for their new role - see this method's own docstring); only the new peek-below's height
