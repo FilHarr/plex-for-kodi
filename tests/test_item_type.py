@@ -14,6 +14,7 @@ from kodienv import ENV
 
 ENV.abort_requested = True
 from lib.windows import library  # noqa: E402
+from lib.windows import library_grid  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
@@ -48,5 +49,5 @@ class LibrarySettingsItemTypeTest(KodiTestCase):
 
 class ChunkRequestTaskItemTypeTest(KodiTestCase):
     def test_carries_the_type_it_was_set_up_with(self):
-        task = library.ChunkRequestTask().setup(FakeSection('2', 'show'), 0, 10, None, item_type='episode')
+        task = library_grid.ChunkRequestTask().setup(FakeSection('2', 'show'), 0, 10, None, item_type='episode')
         self.assertEqual('episode', task.itemType)

@@ -1,6 +1,6 @@
 # coding=utf-8
 """
-lib/windows/library.py's LibraryWindow.hubItemClicked() - quiet-orbiting-heron.md item 10, Group B
+lib/windows/library_hubs.py's LibraryWindow.hubItemClicked() - quiet-orbiting-heron.md item 10, Group B
 (the "click-time behavior" gaps ported from HomeWindow.hubItemClicked(), home.py): in-progress
 auto-resume and season/episode -> show redirection for discover/watchlist hub items. Both are pure
 decisions (a setting/type/flag check feeding into what gets passed to opener.open()) extractable
@@ -23,6 +23,7 @@ from kodienv import ENV
 
 ENV.abort_requested = True
 from lib.windows import library  # noqa: E402
+from lib.windows import library_hubs  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
@@ -119,16 +120,16 @@ class HubItemClickedPostedOpenTest(KodiTestCase):
     def _click(self, nav_pending):
         movie = FakeHubDataSource('movie')
         window = FakeLibraryWindow(FakeHubControl(FakeManagedListItem(movie)))
-        original_open = library.opener.open
+        original_open = library_hubs.opener.open
 
         def fake_open(obj, **kwargs):
             window.navPending = nav_pending
             return ''
-        library.opener.open = fake_open
+        library_hubs.opener.open = fake_open
         try:
             window.hubItemClicked(window.HUB_CONTROL_ID)
         finally:
-            library.opener.open = original_open
+            library_hubs.opener.open = original_open
         return movie, window
 
     def test_a_posted_open_skips_the_existence_check(self):
@@ -152,12 +153,12 @@ class HubItemClickedRedirectionTest(KodiTestCase):
         window = FakeLibraryWindow(control)
 
         opened = []
-        original_open = library.opener.open
-        library.opener.open = lambda obj, **kwargs: opened.append((obj, kwargs)) or ''
+        original_open = library_hubs.opener.open
+        library_hubs.opener.open = lambda obj, **kwargs: opened.append((obj, kwargs)) or ''
         try:
             window.hubItemClicked(window.HUB_CONTROL_ID)
         finally:
-            library.opener.open = original_open
+            library_hubs.opener.open = original_open
 
         self.assertEqual(1, len(opened))
         self.assertIs(show, opened[0][0])
@@ -168,12 +169,12 @@ class HubItemClickedRedirectionTest(KodiTestCase):
         window = FakeLibraryWindow(control)
 
         opened = []
-        original_open = library.opener.open
-        library.opener.open = lambda obj, **kwargs: opened.append((obj, kwargs)) or ''
+        original_open = library_hubs.opener.open
+        library_hubs.opener.open = lambda obj, **kwargs: opened.append((obj, kwargs)) or ''
         try:
             window.hubItemClicked(window.HUB_CONTROL_ID)
         finally:
-            library.opener.open = original_open
+            library_hubs.opener.open = original_open
 
         self.assertEqual(1, len(opened))
         self.assertIs(episode, opened[0][0])
@@ -186,12 +187,12 @@ class HubItemClickedRedirectionTest(KodiTestCase):
         window = FakeLibraryWindow(control)
 
         opened = []
-        original_open = library.opener.open
-        library.opener.open = lambda obj, **kwargs: opened.append((obj, kwargs)) or ''
+        original_open = library_hubs.opener.open
+        library_hubs.opener.open = lambda obj, **kwargs: opened.append((obj, kwargs)) or ''
         try:
             window.hubItemClicked(window.HUB_CONTROL_ID)
         finally:
-            library.opener.open = original_open
+            library_hubs.opener.open = original_open
 
         self.assertEqual(1, len(opened))
         self.assertIs(movie, opened[0][0])
@@ -205,16 +206,16 @@ class HubItemClickedAutoResumeTest(KodiTestCase):
         window = FakeLibraryWindow(control)
 
         opened = []
-        original_open = library.opener.open
-        original_get_setting = library.util.getSetting
-        library.opener.open = lambda obj, **kwargs: opened.append((obj, kwargs)) or ''
-        library.util.getSetting = lambda key, *a, **kw: (
+        original_open = library_hubs.opener.open
+        original_get_setting = library_hubs.util.getSetting
+        library_hubs.opener.open = lambda obj, **kwargs: opened.append((obj, kwargs)) or ''
+        library_hubs.util.getSetting = lambda key, *a, **kw: (
             setting_value if key == 'home_inprogress_resume' else original_get_setting(key, *a, **kw))
         try:
             window.hubItemClicked(window.HUB_CONTROL_ID)
         finally:
-            library.opener.open = original_open
-            library.util.getSetting = original_get_setting
+            library_hubs.opener.open = original_open
+            library_hubs.util.getSetting = original_get_setting
 
         self.assertEqual(1, len(opened))
         return opened[0][1]

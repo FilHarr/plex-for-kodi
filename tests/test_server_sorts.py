@@ -22,6 +22,7 @@ from kodienv import ENV
 
 ENV.abort_requested = True
 from lib.windows import library  # noqa: E402
+from lib.windows import library_grid  # noqa: E402
 
 from plexnet import exceptions, plexlibrary  # noqa: E402
 
@@ -163,9 +164,9 @@ class ServerSortOptionsTest(KodiTestCase):
         self.assertEqual(['titleSort', 'artist.titleSort', 'lastViewedAt', 'ratingCount', 'somethingNew'],
                          [o['type'] for o in options])
         # pm4k's own strings win for keys it knows...
-        self.assertEqual(library.SORT_KEYS['artist']['titleSort']['title'], options[0]['title'])
-        self.assertEqual(library.SORT_KEYS['artist']['artist.titleSort']['display'], options[1]['display'])
-        self.assertEqual(library.SORT_KEYS['artist']['ratingCount']['display'], options[3]['display'])
+        self.assertEqual(library_grid.SORT_KEYS['artist']['titleSort']['title'], options[0]['title'])
+        self.assertEqual(library_grid.SORT_KEYS['artist']['artist.titleSort']['display'], options[1]['display'])
+        self.assertEqual(library_grid.SORT_KEYS['artist']['ratingCount']['display'], options[3]['display'])
         # ...and the server's title stands in for one it has never heard of.
         self.assertEqual('Something New', options[4]['title'])
         self.assertEqual('Something New', options[4]['display'])
@@ -201,7 +202,7 @@ class ServerSortOptionsTest(KodiTestCase):
         self.assertEqual([], self.server.requests)
 
     def test_sort_display_falls_back_to_the_server_title_then_none(self):
-        self.assertEqual(library.SORT_KEYS['artist']['titleSort']['display'],
+        self.assertEqual(library_grid.SORT_KEYS['artist']['titleSort']['display'],
                          _Window(self.section, sort='titleSort').sortDisplay())
         self.assertEqual('Something New', _Window(self.section, sort='somethingNew').sortDisplay())
         self.assertIsNone(_Window(self.section, sort='bogus').sortDisplay())
@@ -219,5 +220,5 @@ class LegacySortKeysTest(KodiTestCase):
         self.assertEqual('mediaHeight', library.LEGACY_SORT_KEYS['resolution'])
         self.assertEqual('photo.titleSort', library.LEGACY_SORT_KEYS['photos.titleSort'])
         for old, new in library.LEGACY_SORT_KEYS.items():
-            self.assertTrue(any(new in keys for keys in library.SORT_KEYS.values()), new)
-            self.assertFalse(any(old in keys for keys in library.SORT_KEYS.values()), old)
+            self.assertTrue(any(new in keys for keys in library_grid.SORT_KEYS.values()), new)
+            self.assertFalse(any(old in keys for keys in library_grid.SORT_KEYS.values()), old)
