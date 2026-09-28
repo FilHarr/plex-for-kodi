@@ -791,7 +791,7 @@ class GridMixin(object):
             # (ITEM_TYPE_BUTTON_ID, this method's only caller) is playlists-specific-hidden now,
             # per the user's own request: Playlists gets Music/Video as real tabList tabs
             # instead of a floating dropdown button, same _applyItemTypeChoice() effect either
-            # way - see onClick()'s TAB_LIST_ID branch.
+            # way - see tabListClicked() (library.py).
             return
 
         selectItem = None
@@ -813,7 +813,7 @@ class GridMixin(object):
     def _applyItemTypeChoice(self, choice, keep_focus=True):
         """Switch ITEM_TYPE in place (no window reconstruction) - shared by
         itemTypeButtonClicked()'s dropdown result above and the Playlists tabList's Music/Video
-        click (onClick()'s TAB_LIST_ID branch), which needs the exact same effect without a
+        click (tabListClicked(), library.py), which needs the exact same effect without a
         dropdown at all.
 
         keep_focus: forwarded to fill() - True (default) leaves native focus wherever it already

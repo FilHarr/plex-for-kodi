@@ -1961,8 +1961,8 @@ class MultiWindow(object):
                         self._openFailed = True
                         break
 
-            # TEMPORARY diagnostic logging (hashed-orbiting-pizza.md live-crash investigation) -
-            # remove once the native-crash-on-second-hosting-cycle bug is understood/fixed.
+            # Swap logging, kept from the hosted-screen crash investigation - see
+            # LibraryWindow._setupCurrent()'s first log line.
             util.DEBUG_LOG("MultiWindow: _open() about to call .modal() on {0}", self._current)
             ensureBaseWindow(type(self._current).__name__)
             timing = self.__dict__.get('_swapTiming')

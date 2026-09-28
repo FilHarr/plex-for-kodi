@@ -35,13 +35,9 @@ class HubsMixin(object):
     and list-item creation. A mixin for the same reason as GridMixin (library_grid.py)."""
 
     # ------------------------------------------------------------------------------------------
-    # Stage C: ported from home.py's HomeWindow, Recommended-tab sharing (quiet-orbiting-heron.md)
-    # -- not yet wired into any call path (Stage D). Mechanical, verbatim-where-possible port of
-    # the display-type inference, hub-settings persistence, hub visibility/ordering, and per-item-
-    # type ListItem builder logic that's already section-generic in HomeWindow. Nothing below is
-    # called by anything yet outside this group of methods calling each other (e.g. createListItem()
-    # dispatching to the per-type builders). home.py itself is untouched - HomeWindow keeps its own
-    # copies, still the live Home experience today.
+    # Display types, hub settings, hub visibility and ordering, and list-item creation. Ported,
+    # verbatim where possible, from home.py's HomeWindow (quiet-orbiting-heron.md, Recommended-tab
+    # sharing), whose Home screen this view replaced.
     # ------------------------------------------------------------------------------------------
 
     # Hub identifier prefixes that indicate 16x9 display format
@@ -211,15 +207,6 @@ class HubsMixin(object):
         'show': 'poster',
         'season': 'poster',
     }
-
-    @staticmethod
-    def inferDisplayType(hub):
-        """Infer display type from the first item in the hub."""
-        if not hub.items:
-            return "poster"  # Default fallback
-
-        item_type = hub.items[0].type
-        return HubsMixin.TYPE_TO_DISPLAY.get(item_type, "poster")
 
     # Display type defaults for known hub identifiers (by prefix)
     # This ensures correct display regardless of hub content

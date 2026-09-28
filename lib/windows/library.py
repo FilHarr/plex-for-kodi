@@ -386,10 +386,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # invalidate the list (_listGeneration).
         self.lock = threading.RLock()
 
-        # Stage C (quiet-orbiting-heron.md, Recommended-tab sharing): minimal state so the ported
-        # isHubHidden()/sortHubsByUserOrder()/getEnabledHubsForSection() below don't AttributeError
-        # if ever called - values match HomeWindow.__init__'s own initial values exactly (self.hubSettings
-        # = None, self.sectionHubs = {}). Nothing populates these from a live fetch yet - that's Stage D.
+        # The hub engine's settings (HubsMixin, library_hubs.py): loadHubSettings() fills
+        # hubSettings on every swap into the Recommended view (onFirstInit()), and sectionHubs
+        # caches each section's fetched hubs. Initial values as HomeWindow.__init__'s, which they
+        # were ported from (quiet-orbiting-heron.md, Recommended-tab sharing).
         self.hubSettings = None
         self.sectionHubs = {}
 
@@ -598,26 +598,26 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         return not hasattr(cls, 'MULTI_WINDOW_ID')
 
     def _setupCurrent(self, cls):
-        # TEMPORARY diagnostic logging (hashed-orbiting-pizza.md live-crash investigation) -
-        # remove once the native-crash-on-second-hosting-cycle bug is understood/fixed.
+        # Swap logging, kept from the hosted-screen crash investigation (hashed-orbiting-pizza.md):
+        # with the lines below and in openSection() and MultiWindow._open(), it places a native
+        # crash within a swap from the log alone. One on 2026-09-28 is still unexplained (the
+        # navigation review's follow-ups).
         util.DEBUG_LOG("Library: _setupCurrent({0}) real_shell_count={1} isHostedShell(before)={2}",
                         cls, getattr(self, '_realShellHostCount', 0), self._isHostedShell)
 
-        # EXPERIMENTAL fix, being tested live (hashed-orbiting-pizza.md crash investigation):
-        # hosted shells used to hold the host strongly (_chainHost, plus the host's bound
-        # onAction/onFirstInit patched onto them), making a reference cycle with self._current -
-        # refcounting alone can't free a genuine cycle, so the outgoing shell could survive past
-        # reassignment below until Python's cyclic GC happened to run. Hypothesis: Kodi's native
-        # side needs the outgoing window's Python object torn down promptly to safely reuse its
-        # window ID for the next one, and a shell kept alive by an uncollected cycle is what
-        # corrupts the next window built on that reused ID - live-confirmed as a
-        # 100%-deterministic native crash (identical faulting instruction and address - a classic
-        # "used a not-found sentinel as a pointer" read at 0xFFFFFFFFFFFFFFFF - across 5
-        # independent captures) that only manifests after a real shell has been hosted more than
-        # once before a section switch. Not proven. Shells now reach the host only through weak
-        # references (_hostRef, _chainHost - windowutils.UtilMixin), so that cycle no longer
-        # exists. The forced gc.collect() and 0.15 s sleep that used to follow every real-shell
-        # teardown (_forceCollectOutgoing()) are gone too: the step 4 baseline on the AM6B
+        # Hosted shells reach the host only through weak references (_hostRef, _chainHost -
+        # windowutils.UtilMixin; I8 in the navigation review routes their input by name through
+        # them). They used to hold it strongly (_chainHost, plus the host's bound
+        # onAction/onFirstInit patched onto them), a reference cycle with self._current that
+        # refcounting alone can't free, so an outgoing shell could outlive its swap until
+        # Python's cyclic GC happened to run. That was the suspected cause of a native crash in
+        # the hosted-screen investigation (hashed-orbiting-pizza.md): the same faulting
+        # instruction and address - a "not-found sentinel used as a pointer" read at
+        # 0xFFFFFFFFFFFFFFFF - across 5 captures, only after a real shell had been hosted more
+        # than once before a section switch, on the theory that Kodi reuses the outgoing window's
+        # ID for the next one. Never proven, and not seen since the cycle went. The forced
+        # gc.collect() and 0.15 s sleep that used to follow every real-shell teardown
+        # (_forceCollectOutgoing()) are gone too: the step 4 baseline on the AM6B
         # (2026-09-26) timed them at 260-430 ms of every Back, and without them Back to
         # Recommended went from ~600 to ~250 ms to first init, with no freeze or crash in a
         # rapid-Back stress run. Python's automatic gc still collects the cycles
@@ -703,7 +703,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # own thin view-type children (kodigui.MultiWindowView), these carry real business logic
         # of their own. Their onAction() calls routeActionToHost() first, and their onClick()
         # routeClickToHost(), which hands the sidebar's clicks to routeClick().
-        # TEMPORARY diagnostic logging - see this method's own top.
+        # Swap logging - see this method's first log line.
         util.DEBUG_LOG("Library: _setupCurrent({0}) real-shell branch complete, real_shell_count={1}",
                         cls, self._realShellHostCount)
 
@@ -969,7 +969,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         Also reached (mode always 'library'/'recommended', never 'categories') when leaving the
         Categories tab (genres.py's GenreBrowserWindow, hosted via browseGenres()'s swapTo()) back
         to an ordinary tab - self.contentMode is deliberately never mutated to 'categories' (see
-        browseGenres()/onClick()'s TAB_LIST_ID branch), so it still holds whatever content mode
+        browseGenres()/tabListClicked()), so it still holds whatever content mode
         was active before Categories was entered.
 
         item_type: optional - the Collections tab isn't a real contentMode either (like
@@ -1206,8 +1206,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.refill = True
         self.updateActiveSectionMarker(section)
 
-        # TEMPORARY diagnostic logging (hashed-orbiting-pizza.md live-crash investigation) -
-        # remove once the native-crash-on-second-hosting-cycle bug is understood/fixed.
+        # Swap logging - see _setupCurrent()'s first log line.
         util.DEBUG_LOG("Library: openSection() swapping in place to {0}, current={1} next={2} "
                         "isHostedShell={3} real_shell_count={4} backStack_len={5}",
                         section, self._current, self._next, self._isHostedShell,
@@ -1465,7 +1464,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         call it here either; every session-ending branch routes through _closeSessionWithOption()
         above instead of closing self directly - see that method's own comment for why.
 
-        target: explicit override for _sidebarTarget() - onClick()'s own USER_LIST_ID branch below
+        target: explicit override for _sidebarTarget() - routeClick()'s USER_LIST_ID branch below
         always has the right answer already (self when this call originated on self, the calling
         shell itself when a real shell forwarded its own click here - see e.g.
         preplay.PrePlayWindow.onClick()) and passing it avoids re-deriving it from self._current,
@@ -1817,10 +1816,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         timing.mark('controls')
 
         if self.contentMode == 'recommended':
-            # quiet-orbiting-heron.md Stage B: RecommendedWindow has none of the poster-grid
-            # controls (POSTERS_PANEL_ID/KEY_LIST_ID) doRefill() below binds against - real
-            # Recommended-tab rendering (Stage C/D) replaces this branch entirely, it doesn't
-            # call doRefill() at all.
+            # RecommendedWindow has none of the poster-grid controls (POSTERS_PANEL_ID/
+            # KEY_LIST_ID) doRefill() below binds against; its hub rows are bound here instead.
             self.refill = False
 
             # Stage D (quiet-orbiting-heron.md): fires every swap into 'recommended' -
@@ -1832,7 +1829,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # this swap's whole lifetime.
 
             # Populates self.hubSettings from the user's already-saved hub visibility/order
-            # preferences (Stage C's ported loadHubSettings(), never called until now) so
+            # preferences (loadHubSettings(), ported from HomeWindow) so
             # _recommendedHubsCallback()'s isHubHidden() filter below has real data to check
             # against, instead of always seeing "nothing hidden" (self.hubSettings starts None).
             # Synchronous (a single setting read), fine on the main thread here alongside the
@@ -2929,7 +2926,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             if self._tabListHasCollections:
                 # Collections - not a real contentMode (same shape as Categories below), just
                 # another tab entry pointing at switchToCollections() instead of switchTab() - see
-                # onClick()'s TAB_LIST_ID branch. Reuses the exact label the item-type dropdown
+                # tabListClicked(). Reuses the exact label the item-type dropdown
                 # used to show for this choice (T(32490, 'Collections')), now removed from that
                 # dropdown (itemTypeButtonClicked()) since this tab replaces it.
                 mli = kodigui.ManagedListItem(T(32490, 'Collections'))
@@ -2939,7 +2936,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             if self.section.TYPE in ('movie', 'show'):
                 # Categories (genres.py's GenreBrowserWindow) - not a real contentMode (see
                 # switchTab()'s own comment), just another tab entry pointing at browseGenres()
-                # instead of switchTab() - see onClick()'s TAB_LIST_ID branch.
+                # instead of switchTab() - see tabListClicked().
                 mli = kodigui.ManagedListItem(T(34102, 'Categories'))
                 mli.setProperty('item', '1')
                 mli.setProperty('content.mode', 'categories')
@@ -3165,11 +3162,9 @@ VIEWS_SQUARE_MUSIC = {
 
 
 class RecommendedWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windowutils.UtilMixin):
-    # Stage B (quiet-orbiting-heron.md, Recommended-tab sharing) - real template (near-verbatim
-    # copy of script-plex-home.xml.tpl's hub row stack + hero-info overlay), no Python-side
-    # hub-fetch/rendering logic wired to it yet (Stage C/D). Renders as an empty hub area until
-    # then - every Container(...)/Window.Property(...) reference in the template evaluates
-    # empty/false with nothing populating them.
+    # The Recommended view: every section's hub rows and hero, Home's included. Its template began
+    # as a copy of the old Home window's hub row stack and hero overlay (quiet-orbiting-heron.md,
+    # Recommended-tab sharing); the hub engine (HubsMixin, library_hubs.py) fills it.
     xmlFile = 'script-plex-recommended.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -3177,8 +3172,7 @@ class RecommendedWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windo
     width = 1920
     height = 1080
 
-    # Matches script-plex-home.xml.tpl's own control ids - not yet read by any Python logic
-    # here (Stage C/D's job), declared now so Stage C/D wiring has them ready.
+    # The now-playing widget (shown while music plays) and the first hub row.
     PLAYER_STATUS_BUTTON_ID = 204
     HUB_CONTROL_ID = 400
 
