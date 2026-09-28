@@ -448,15 +448,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._hubSlideMovers = []
         self._hubSliding = False
         self._hubSlideThread = None
-        # Pending threading.Timer for _bindPeekHubsDeferred() (see _bindAllHubSlots()'s own
-        # defer_peek param) - a fresh 'recommended' entry defers binding the ring's two always-
-        # off-screen extreme controls instead of doing it inline. Cancelled by _startHubSlide()/
-        # _settleHubSlide() so it can never fire concurrently with a slide's own Control mutation.
-        self._hubPeekBindTimer = None
-        # True from the moment _bindAllHubSlots(defer_peek=True) leaves those two controls unbound
-        # until _bindPeekHubs() actually binds them - independent of the timer, which a slide
-        # cancels and which can decline. _startHubSlide() binds them itself while this is set.
-        self._hubPeekBindPending = False
         # Built once per LibraryWindow lifetime, then rebound via newControl() on every later
         # 'recommended' entry - see onFirstInit()'s own comment for why (a fresh discard-and-
         # recreate every entry, the original shape here, is the one remaining structural
@@ -2207,8 +2198,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 # Not needed on the rebuild branch above - the new window sets its own focus.
                 self._goRootAwaitFocus = self._resetHubsToTop()
                 self._goRootAwaitUntil = time.time() + 1.0
-                kodigui.markStep(self.__dict__.get('_homeResetTiming'),
-                                 'reset, off-screen rows {0}'.format(self.__dict__.get('_peekBindMode')))
+                kodigui.markStep(self.__dict__.get('_homeResetTiming'), 'reset')
             return
 
         if self.refill and self.contentMode != 'recommended':

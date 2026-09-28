@@ -1315,19 +1315,6 @@ class HubsMixin(object):
     # HomeWindow.HUB_SLIDE_STEPS/HUB_SLIDE_TIME.
     HUB_SLIDE_STEPS = 12
     HUB_SLIDE_TIME = 0.25
-    # How long after a fresh 'recommended' entry _bindPeekHubsDeferred() waits before binding the
-    # ring's two extreme (HUB_MIN_ROLE/HUB_MAX_ROLE) controls - never on screen at rest (see
-    # HUB_ROTATION_RING's own comment), so never visible at the moment they'd otherwise be bound
-    # inline. Long enough that the window has definitely painted with its immediately-visible rows
-    # (anchor + peek-below) before this fires; short enough to almost always land before a user could
-    # plausibly slide that far. Not tied to HUB_SLIDE_TIME/SKIN_RELOAD_DEFER_SECONDS - a distinct
-    # concern (background content bind, not animation or click-debounce), sized on its own.
-    HUB_PEEK_BIND_DEFER_SECONDS = 0.2
-    # TEMPORARY (step 11 stage A in the navigation review, F1): each defer_peek caller alternates
-    # deferred and eager binding of the two off-screen rows, call by call, so successive Home
-    # presses and fresh entries compare the two on the AM6B ("Home reset timing" and "hub rows
-    # bound" lines). Goes once F1 is decided.
-    F1_ALTERNATE_PEEK_BIND = True
     # Hero art/info overlay (plan item 11) - ported from HomeWindow's own constants (home.py).
     # The overlay is unconditional - shown for every focused hub item, whatever its type (the old
     # HERO_ART_TYPES / _typeHasHeroArt() movie-and-TV-only gate is gone, and with it the
@@ -1347,15 +1334,6 @@ class HubsMixin(object):
     HERO_NO_ART_TYPES = ('playlist',)
     CLEAR_LOGO_DIM = util.scaleResolution(722, 162)
     CLEAR_LOGO_DIM_EPISODE = util.scaleResolution(660, 98)
-
-    def _f1DeferPeek(self, site):
-        """TEMPORARY (F1, see F1_ALTERNATE_PEEK_BIND): whether this call from site ('entry' or
-        'reset') defers the two off-screen rows - alternating per site while the switch is on."""
-        if not self.F1_ALTERNATE_PEEK_BIND:
-            return True
-        flips = self.__dict__.setdefault('_f1PeekFlips', {})
-        flips[site] = not flips.get(site, False)
-        return flips[site]
 
     def _hubRowHeight(self, hub):
         """A row's own real rendered height (pre-vscale template units) for whichever hub it's
@@ -1596,10 +1574,8 @@ class HubsMixin(object):
 
         self.focusedHubIndex = 0
         self._anchorRingPos = self.HUB_ROTATION_RING.index(self.HUB_CONTROL_ID)
-        # defer_peek, as on a fresh entry: the ring's two always-off-screen rows are bound
-        # HUB_PEEK_BIND_DEFER_SECONDS later, off the Home press. _bindHubToControl() selects item 0
-        # in every row it binds, now that nothing is remembered.
-        self._bindAllHubSlots(defer_peek=self._f1DeferPeek('reset'))
+        # _bindHubToControl() selects item 0 in every row it binds, now that nothing is remembered.
+        self._bindAllHubSlots()
 
         target = self._anchorControlId()
         # Pre-seeded for the same reason onFirstInit() does it: the programmatic focus below must
@@ -2384,7 +2360,7 @@ class HubsMixin(object):
 
         # Item 0 unless there's a remembered position: the native control keeps whatever it had
         # selected across replaceItems()/reset(), which may belong to a different hub (a slide's
-        # wrap rebind) or to before a fresh entry (_resetHubsToTop()'s deferred peek bind).
+        # wrap rebind) or to before an in-place Home reset (_resetHubsToTop()).
         selected = 0
         reselect = self._hubReselectPositions.get(identifier)
         if reselect and items:
@@ -2408,11 +2384,9 @@ class HubsMixin(object):
         started = time.time()
         self._recommendedHubsCallback(section, hubs, generation)
         swapStarted = self.__dict__.get('_lastSwapStarted')
-        util.DEBUG_LOG("Library: hub rows bound in {0} ms (fetched on a worker), {1} ms after the request, "
-                       "off-screen rows {2}",
+        util.DEBUG_LOG("Library: hub rows bound in {0} ms (fetched on a worker), {1} ms after the request",
                        int((time.time() - started) * 1000),
-                       int((time.time() - swapStarted) * 1000) if swapStarted else '?',
-                       self.__dict__.get('_peekBindMode'))
+                       int((time.time() - swapStarted) * 1000) if swapStarted else '?')
         if (generation == self._listGeneration and not self.closing
                 and self.contentMode == 'recommended'):
             self._focusAnchorHub()
@@ -2540,12 +2514,12 @@ class HubsMixin(object):
             # *shown* state, not the hidden one. Group 51's position is no longer tied to it - set
             # once per entry in onFirstInit() (GROUP51_BASELINE_OFFSET's own comment).
 
-            self._bindAllHubSlots(defer_peek=self._f1DeferPeek('entry'))
+            self._bindAllHubSlots()
             util.DEBUG_LOG("Library: _recommendedHubsCallback() bound {0} hub(s) for {1}, anchor={2}",
                            min(len(sorted_hubs), len(self.hubControls)), section.key,
                            self._anchorControlId())
 
-    def _bindAllHubSlots(self, defer_peek=False):
+    def _bindAllHubSlots(self):
         """Bind all 5 physical hub-row controls to their current roles, from
         self.visibleHubs/self.focusedHubIndex (already set by the caller) - factored out of
         _recommendedHubsCallback()'s own per-control loop (Stage D2) since it's also needed
@@ -2556,18 +2530,9 @@ class HubsMixin(object):
         construction only ever contains non-empty hubs, so any in-range index is automatically
         valid" (focusFirstValidHub()'s own comment there) still applies verbatim here.
 
-        defer_peek: True from _recommendedHubsCallback()'s fresh-entry call and _resetHubsToTop().
-        Skips binding (just resets) the ring's two extreme (HUB_MIN_ROLE/HUB_MAX_ROLE) controls
-        here and schedules _bindPeekHubsDeferred() to do it ~HUB_PEEK_BIND_DEFER_SECONDS later
-        instead - neither is on screen at rest (see HUB_ROTATION_RING's own comment), and a slide
-        before then binds them first (_hubPeekBindPending) - so it just moves 2 of the 4
-        createListItem() passes off the synchronous entry path. False (the reset()-then-
-        continue "out of range" branch below already covers a real gap) for every other caller -
-        those run mid-session, off the hot tab-entry path, where the eager behavior's own
-        correctness (e.g. not leaving stale content from a just-deleted hub) matters more than
-        shaving a few controls' worth of bind time."""
-        self._hubPeekBindPending = False
-        self._peekBindMode = 'deferred' if defer_peek else 'eager'
+        All four rows, every time. A fresh entry and an in-place Home reset used to bind the two
+        off-screen ones 0.2 s later from a timer thread (defer_peek); measured on the AM6B (step
+        11 stage A in the navigation review, F1), that didn't shorten either, so it went."""
         if not self.visibleHubs:
             for index in range(len(self.hubControls)):
                 self.hubControls[index].reset()
@@ -2605,81 +2570,17 @@ class HubsMixin(object):
 
             hub_index = self.focusedHubIndex + role
             hub_exists = 0 <= hub_index < len(self.visibleHubs)
-            # From whether the hub exists, not whether it's bound yet: role -1 is a deferred
-            # extreme now (HUB_MIN_ROLE).
             if role == -1:
                 self.setBoolProperty('hub.has_prev', hub_exists)
             elif role == 1:
                 self.setBoolProperty('hub.has_next', hub_exists)
 
-            if not hub_exists or (defer_peek and role in (self.HUB_MIN_ROLE, self.HUB_MAX_ROLE)):
+            if not hub_exists:
                 self.hubControls[index].reset()
                 self.setProperty('hub.display.4{0:02d}'.format(index), '')
                 continue
 
             self._bindHubToControl(self.visibleHubs[hub_index], index)
-
-        if defer_peek:
-            self._hubPeekBindPending = True
-            generation = self._listGeneration
-            timer = threading.Timer(self.HUB_PEEK_BIND_DEFER_SECONDS,
-                                    self._bindPeekHubsDeferred, args=[generation])
-            timer.name = 'hubpeekbind'
-            self._hubPeekBindTimer = timer
-            timer.start()
-
-    def _bindPeekHubsDeferred(self, generation):
-        """threading.Timer target scheduled by _bindAllHubSlots(defer_peek=True) - binds the
-        ring's two extreme (HUB_MIN_ROLE/HUB_MAX_ROLE) controls that call left skipped (reset only),
-        ~HUB_PEEK_BIND_DEFER_SECONDS after a fresh 'recommended' entry. Re-derives which physical
-        control currently holds each extreme role, and which hub belongs there, from live state
-        (self.focusedHubIndex/self._anchorRingPos) rather than anything captured at schedule time,
-        so this is still correct even if the user has already slid once or more by the time it
-        fires - same as every other role/content lookup in this file.
-
-        Declines under self.lock if stale (same generation/closing/contentMode guard
-        _recommendedHubsCallback() itself uses) or if a slide is actively mid-animation
-        (self._hubSliding): _startHubSlide()'s own wrap-control rebind already touches these same
-        two roles as part of every slide, so racing it from this second thread for content that's
-        about to be superseded anyway buys nothing and risks a genuine concurrent-Control-mutation
-        collision - the one thing this whole mechanism has stayed deliberately cautious about (see
-        _recommendedHubsCallback()'s own docstring). _settleHubSlide() - called by _startHubSlide()
-        before every new slide, and directly by switchTab()/openSection() before tearing this
-        window down - cancel()s and join()s this timer outright first, so this decline branch is
-        normally only reached in the narrow window where the timer had already started running
-        (past cancel()'s reach) just as _settleHubSlide() ran. Worst case either way: the role
-        stays unbound - still never visible - until the user's own next slide binds it for real
-        via the normal wrap path, never a wrong-content or missing-content-while-visible bug.
-
-        That last claim was wrong (live-caught 2026-09-24, Down pressed within the defer after a
-        Home reset left row 3 blank): a slide only rebinds the one control wrapping round from the
-        far end, while the unbound extreme on the near side rotates into a visible role empty.
-        _hubPeekBindPending now outlives a cancelled or declined timer, and _startHubSlide()
-        binds the two controls itself (_bindPeekHubs()) before rotating while it's still set.
-
-        _isHostedShell too: opening an item (swapTo()) changes neither the generation nor
-        contentMode, which stays 'recommended' under a hosted screen. Live-caught 2026-09-24: an
-        Episodes screen opened within the defer got this bind, which raised AttributeError
-        (HUB_CONTROL_ID resolved against the Episodes window). Back rebuilds Home anyway."""
-        with self.lock:
-            if (generation != self._listGeneration or self.closing or self._isHostedShell
-                    or self.contentMode != 'recommended' or self._hubSliding
-                    or not self._hubPeekBindPending):
-                return
-            self._bindPeekHubs()
-
-    def _bindPeekHubs(self):
-        """Bind the ring's two extreme (HUB_MIN_ROLE/HUB_MAX_ROLE) controls for the current
-        anchor - the part _bindAllHubSlots(defer_peek=True) left owed. Caller holds self.lock."""
-        self._hubPeekBindPending = False
-        for control_id in self.HUB_ROTATION_RING:
-            role = self._ringRoleOffset(control_id)
-            if role not in (self.HUB_MIN_ROLE, self.HUB_MAX_ROLE):
-                continue
-            index = control_id - self.HUB_CONTROL_ID
-            hub_index = self.focusedHubIndex + role
-            if 0 <= hub_index < len(self.visibleHubs):
-                self._bindHubToControl(self.visibleHubs[hub_index], index)
 
     def _startHubSlide(self, delta):
         """Move the logical focus delta positions (+1 down / -1 up) and animate the transition.
@@ -2730,14 +2631,6 @@ class HubsMixin(object):
         # always starts from a settled, consistent state instead of fighting or compounding with
         # one already in flight.
         self._settleHubSlide()
-
-        # A deferred peek bind still owed (the timer was just cancelled above, or declined): bind
-        # the two extreme controls now, for the pre-slide anchor. This slide only rebinds the
-        # control wrapping round from the far end - the near-side extreme rotates into a visible
-        # role, and would arrive empty (see _bindPeekHubsDeferred()'s docstring).
-        if self._hubPeekBindPending:
-            with self.lock:
-                self._bindPeekHubs()
         timing.mark('settle')
 
         old_focused_index = self.focusedHubIndex
@@ -2908,20 +2801,7 @@ class HubsMixin(object):
         write. HUB_SLIDE_TIME is 0.25s total, so a bounded wait is cheap insurance either way, not
         a real stall - left in place as legitimate defensiveness, not reverted just because it
         wasn't the actual fix.
-
-        Also unconditionally cancels/joins any pending _bindPeekHubsDeferred() timer (see
-        _bindAllHubSlots()'s defer_peek param) before the _hubSliding check below - that check is
-        specific to the slide-animation thread, but this method is also every caller's (including
-        switchTab()/openSection()) one chokepoint for "about to touch or tear down these controls
-        from another thread, make sure nothing else still can" - the peek-bind timer is exactly
-        such a thing, whether or not a slide happens to be in flight at the same moment.
         """
-        timer = self._hubPeekBindTimer
-        if timer is not None:
-            timer.cancel()
-            self._hubPeekBindTimer = None
-            timer.join(1.0)
-
         if not self._hubSliding:
             return
         self._hubSlideGen += 1
