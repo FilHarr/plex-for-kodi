@@ -88,11 +88,13 @@
              eliminated, consistent with the grouplist's auto-stack re-applying its own computed
              contribution on top of whatever this control's own posy already held, rather than
              genuinely handing off control once Python had set it explicitly. LibraryWindow owns
-             this control's position exclusively - onFirstInit() sets it once per 'recommended'
+             this control's position exclusively - onFirstInit() sets it on every 'recommended'
              entry via setPosition(), to LibraryWindow.GROUP51_BASELINE_OFFSET (-32: 518 + -32 =
              486, ANCHOR_ABS_Y) as the true absolute local-offset target, not a value added on
-             top of anything else; nothing moves it afterwards (slides move the per-role wrappers
-             inside it). The one gap this leaves: before that first setPosition() runs, grouplist
+             top of anything else. Since step 11 in the navigation review it's also what a slide
+             moves: the wrappers inside it sit at fixed places in one tall stack, and this
+             control's offset brings the focused row to the anchor line (_group51Y()). The one gap
+             this leaves: before that first setPosition() runs, grouplist
              50 auto-stacks this, its only child, flush to 0 (ignoring this declared posy, same as
              always) - a one-frame flash at init. -->
         <defaultcontrol>500</defaultcontrol>
@@ -109,11 +111,12 @@
              LibraryWindow.HUB_ROTATION_RING's own comment for why -1..+2 is every role a slide
              ever shows.
 
-             Position/height are Python-managed (HomeWindow._setRoleGeometry()/_roleLocalY(), called
-             from _bindAllHubSlots()/_startHubSlide()/_finishHubSlide()) - the posy/height declared
-             below are just the pre-bind fallback, matching whichever role this control starts in.
-             Every role's Y is computed by the same one recurrence, walked outward from the anchor
-             (fixed at LibraryWindow.ANCHOR_ABS_Y, 486) in whichever direction is needed: each row's Y
+             Position/height are Python-managed (LibraryWindow._setRoleGeometry()/_stackY(), called
+             from _bindAllHubSlots()/_startHubSlide()) - the posy/height declared below are just the
+             pre-bind fallback, matching whichever role this control starts in. Each wrapper sits at
+             its hub's place in one tall stack measured from the first hub, and group 51's offset
+             brings the focused row to the anchor (LibraryWindow.ANCHOR_ABS_Y, 486); relative to the
+             anchor, every row lands where the same one recurrence puts it: each row's Y
              is its neighbor's Y, plus or minus that neighbor's own real rendered content height
              (HomeWindow.ROW_CONTENT_HEIGHT, keyed by display type) plus a fixed gap
              (HomeWindow.ROW_GAP) - not a fixed constant for peek-above and a dynamic one for

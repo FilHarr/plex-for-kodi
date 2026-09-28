@@ -1304,13 +1304,20 @@ class HubsMixin(object):
     # The local y-offset group 51 must always be explicitly set to via setPosition() to sit at
     # its correct resting position - group 51 has no correct position at all until Python sets
     # it (see that control's own comment in the template for why grouplist 50's auto-stacking
-    # can't be relied on for this). Set once per fresh 'recommended' entry, in onFirstInit().
+    # can't be relied on for this). Set to this for the first row on every fresh 'recommended'
+    # entry, in onFirstInit(); _group51Y() adds the stack offset for any other row.
     # -32, not the 381 it once was: the hero overlay used to be conditional, with grouplist 50
     # shifting down 413px (its old Conditional animation) whenever it showed and this offset
     # counter-shifting by the same amount to keep the anchor at ANCHOR_ABS_Y. The overlay is
     # unconditional now, so both halves are baked in: 50 sits at 518 permanently and this is the
     # old 381 - 413. Negative is fine - it was already this value live whenever hero art showed.
     GROUP51_BASELINE_OFFSET = -32
+    # The group every row wrapper sits in (script-plex-recommended.xml.tpl). Since step 11 stage B
+    # in the navigation review it's what a slide moves: each wrapper has a fixed place in one tall
+    # stack (_stackY()), and this group's offset (_group51Y()) puts the focused row on the anchor
+    # line. One setPosition() per slide step instead of one per row, and the rows can't land on
+    # different frames.
+    GROUP51_ID = 51
     # Hub-switch slide animation step count/total time - ported verbatim from
     # HomeWindow.HUB_SLIDE_STEPS/HUB_SLIDE_TIME.
     HUB_SLIDE_STEPS = 12
@@ -1353,6 +1360,30 @@ class HubsMixin(object):
             (display_type, flags['text2lines']), self.ROW_CONTENT_HEIGHT[('poster', False)]
         )
 
+    def _stackY(self, hub_index):
+        """Where hub_index's row sits in the one tall stack of rows, from the first hub's top
+        (pre-vscale template units): every row above it, each with a ROW_GAP after it. An index
+        above the first hub or past the last uses _hubRowHeight(None)'s fallback, as
+        _roleLocalY() does - which is the difference of two of these."""
+        def step(index):
+            hub = self.visibleHubs[index] if 0 <= index < len(self.visibleHubs) else None
+            return self._hubRowHeight(hub) + self.ROW_GAP
+
+        if hub_index >= 0:
+            return sum(step(k) for k in range(hub_index))
+        return -sum(step(k) for k in range(hub_index, 0))
+
+    def _group51Y(self, focused_index):
+        """Group 51's y (pixels) that puts focused_index's row on the anchor line. Each part is
+        scaled on its own, so the anchor lands exactly on the baseline whatever the rounding."""
+        return (util.vscale(self.GROUP51_BASELINE_OFFSET, r=0)
+                - util.vscale(self._stackY(focused_index), r=0))
+
+    def _placeStack(self, focused_index):
+        """Move group 51 so focused_index's row is on the anchor line, at rest."""
+        group = self.getControl(self.GROUP51_ID)
+        group.setPosition(group.getPosition()[0], self._group51Y(focused_index))
+
     def _roleLocalY(self, role_offset, focused_index):
         """The local y-offset (within group 51's frame, pre-vscale template units) whichever
         control currently plays role_offset (0 = anchor, negative = above it, positive = below
@@ -1370,10 +1401,11 @@ class HubsMixin(object):
 
     def _setRoleGeometry(self, wrapper, role_offset, focused_index):
         """Position (and, for peek-below, size) wrapper for role_offset - shared by the initial
-        bind (_recommendedHubsCallback()) and _startHubSlide(). Ported verbatim from
-        HomeWindow._setRoleGeometry() (home.py)."""
+        bind (_recommendedHubsCallback()) and _startHubSlide(). The wrapper goes to its hub's place
+        in the stack (_stackY()); group 51's offset (_placeStack()) does the rest. Ported from
+        HomeWindow._setRoleGeometry() (home.py), which placed wrappers relative to the anchor."""
         y = self._roleLocalY(role_offset, focused_index)
-        wrapper.setPosition(0, util.vscale(y, r=0))
+        wrapper.setPosition(0, util.vscale(self._stackY(focused_index + role_offset), r=0))
         if role_offset == 1:
             wrapper.setHeight(util.vscale(self.height - self.ANCHOR_ABS_Y - y, r=0))
         return y
@@ -2541,6 +2573,7 @@ class HubsMixin(object):
             self.setBoolProperty('hub.has_next', False)
             self._setNoHeroArt(True)
             self.setProperty('hub.anchor_id', str(self._anchorControlId()))
+            self._placeStack(self.focusedHubIndex)
             for control_id in self.HUB_ROTATION_RING:
                 role = self._ringRoleOffset(control_id)
                 wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
@@ -2561,6 +2594,10 @@ class HubsMixin(object):
         anchor_hub = self.visibleHubs[self.focusedHubIndex]
         anchor_ds = self._previewSelectedItem(anchor_hub)
         self.updateHeroFrom(anchor_ds)
+
+        # Group 51 first, then each row placed and bound in turn: an empty row isn't shown (the
+        # template's NumItems condition), so a row appears already in place.
+        self._placeStack(self.focusedHubIndex)
 
         for control_id in sorted(self.HUB_ROTATION_RING, key=lambda cid: abs(self._ringRoleOffset(cid))):
             role = self._ringRoleOffset(control_id)
@@ -2674,24 +2711,26 @@ class HubsMixin(object):
             self.setBoolProperty('hub.has_prev', wrap_hub_exists)
         timing.mark('wrap bind')
 
-        # The other 3 controls: reposition smoothly over the animation loop below, content
-        # untouched (already correct for their new role - see this method's own docstring).
-        movers = []
+        # The other 3 controls keep their places in the stack and their content (already correct
+        # for their new role - see this method's own docstring); only the new peek-below's height
+        # and the has_next/has_prev flags change.
         for cid in self.HUB_ROTATION_RING:
             if cid == wrap_control_id:
                 continue
-            old_role = self._ringRoleOffset(cid, ring_pos=old_ring_pos)
             new_role = self._ringRoleOffset(cid, ring_pos=new_ring_pos)
-            start_y = self._roleLocalY(old_role, old_focused_index)
-            end_y = self._roleLocalY(new_role, new_index)
-            wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[cid])
             if new_role == 1:
+                wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[cid])
+                end_y = self._roleLocalY(new_role, new_index)
                 wrapper.setHeight(util.vscale(self.height - self.ANCHOR_ABS_Y - end_y, r=0))
                 self.setBoolProperty('hub.has_next', True)
             elif new_role == -1:
                 self.setBoolProperty('hub.has_prev', True)
-            movers.append((wrapper, start_y, end_y))
 
+        # The one mover: group 51, from the old anchor's offset to the new one's (_group51Y()).
+        # (control, x, start y, end y), in pixels.
+        group = self.getControl(self.GROUP51_ID)
+        movers = [(group, group.getPosition()[0],
+                   self._group51Y(old_focused_index), self._group51Y(new_index))]
         self._hubSlideMovers = movers
 
         # Native focus moves to the destination row now, not when the slide finishes: Kodi hands a
@@ -2708,8 +2747,8 @@ class HubsMixin(object):
             # real" signal here; self._listGeneration != list_gen would mean a swap already
             # landed between the checks above and here, on the same synchronous call - not
             # expected (nothing yields control in between), but cheap to also cover.
-            for wrapper, start_y, end_y in movers:
-                wrapper.setPosition(0, util.vscale(end_y, r=0))
+            for control, x, start_y, end_y in movers:
+                control.setPosition(x, end_y)
             self._hubSlideMovers = []
             self._finishHubSlide()
             return
@@ -2739,9 +2778,8 @@ class HubsMixin(object):
                     return
                 t = i / float(steps)
                 eased = t * t * (3 - 2 * t)  # smoothstep - approximates the old sine inout tween
-                for wrapper, start_y, end_y in movers:
-                    raw = int(round(start_y + (end_y - start_y) * eased))
-                    wrapper.setPosition(0, util.vscale(raw, r=0))
+                for control, x, start_y, end_y in movers:
+                    control.setPosition(x, int(round(start_y + (end_y - start_y) * eased)))
                 drawn += 1
                 if first_step_at is None:
                     first_step_at = timing.elapsedMs()
@@ -2750,8 +2788,8 @@ class HubsMixin(object):
             if self.closing or self._hubSlideGen != gen or self._listGeneration != list_gen:
                 logTiming(drawn, first_step_at, animation_started, 'cut short')
                 return
-            for wrapper, start_y, end_y in movers:
-                wrapper.setPosition(0, util.vscale(end_y, r=0))
+            for control, x, start_y, end_y in movers:
+                control.setPosition(x, end_y)
             self._hubSlideMovers = []
             self._finishHubSlide()
             logTiming(drawn, first_step_at, animation_started, None)
@@ -2809,7 +2847,7 @@ class HubsMixin(object):
         if thread and thread.is_alive():
             thread.join(1.0)
         self._hubSlideThread = None
-        for wrapper, start_y, end_y in self._hubSlideMovers:
-            wrapper.setPosition(0, util.vscale(end_y, r=0))
+        for control, x, start_y, end_y in self._hubSlideMovers:
+            control.setPosition(x, end_y)
         self._hubSlideMovers = []
         self._finishHubSlide()

@@ -1804,6 +1804,54 @@ class HomeHubDisplayTitleTest(KodiTestCase):
         self.assertEqual('Movies', self.title('Movies', 'movie.something.22'))
 
 
+class HubStackTest(KodiTestCase):
+    """Step 11 stage B: each row wrapper sits at its hub's place in one tall stack (_stackY()), and
+    group 51's offset (_group51Y()) brings the focused row to the anchor line, so a slide moves
+    group 51 alone. Relative to the anchor, every row must land exactly where the old per-row
+    recurrence (_roleLocalY()) put it, missing hubs above the first and past the last included."""
+
+    class Host(object):
+        ROW_GAP = library.LibraryWindow.ROW_GAP
+        GROUP51_BASELINE_OFFSET = library.LibraryWindow.GROUP51_BASELINE_OFFSET
+        _stackY = library.LibraryWindow._stackY
+        _group51Y = library.LibraryWindow._group51Y
+        _roleLocalY = library.LibraryWindow._roleLocalY
+
+        def __init__(self, heights):
+            self.visibleHubs = list(heights)  # each "hub" is just its row height here
+
+        def _hubRowHeight(self, hub):
+            return 446 if hub is None else hub
+
+    HEIGHTS = (446, 371, 326, 374, 398, 446)
+
+    def test_rows_land_where_the_old_recurrence_put_them(self):
+        host = self.Host(self.HEIGHTS)
+        for focused in range(len(self.HEIGHTS)):
+            for role in (-1, 0, 1, 2):
+                self.assertEqual(host._roleLocalY(role, focused),
+                                 host._stackY(focused + role) - host._stackY(focused),
+                                 'focused {0}, role {1}'.format(focused, role))
+
+    def test_the_stack_starts_at_the_first_hub(self):
+        host = self.Host(self.HEIGHTS)
+        self.assertEqual(0, host._stackY(0))
+        self.assertEqual(446 + 25, host._stackY(1))
+        self.assertEqual(-(446 + 25), host._stackY(-1))
+
+    def test_the_focused_row_sits_on_the_baseline(self):
+        host = self.Host(self.HEIGHTS)
+        base = library.util.vscale(host.GROUP51_BASELINE_OFFSET, r=0)
+        for focused in range(len(self.HEIGHTS)):
+            anchor = host._group51Y(focused) + library.util.vscale(host._stackY(focused), r=0)
+            self.assertEqual(base, anchor, 'focused {0}'.format(focused))
+
+    def test_a_slide_moves_the_group_by_the_rows_between(self):
+        host = self.Host(self.HEIGHTS)
+        self.assertEqual(-(371 + 25), host._group51Y(2) - host._group51Y(1))
+        self.assertEqual(371 + 25, host._group51Y(1) - host._group51Y(2))
+
+
 class HubRingRolesTest(KodiTestCase):
     """The four-control ring: roles -1..+2 around the anchor, and a slide in either direction wraps
     exactly one control between the two off-screen roles (-1 <-> +2) while the rest shift by one."""

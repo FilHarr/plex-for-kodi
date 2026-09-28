@@ -1845,8 +1845,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # control's own comment in script-plex-recommended.xml.tpl). This shell's control 51
             # is brand new every 'recommended' entry (RecommendedWindow gets torn down and
             # reconstructed by switchTab()/openSection() like any other view-type swap), so it's
-            # positioned here, once per entry, at its single fixed offset - nothing else ever
-            # moves it (the slides move the per-role wrappers inside it, see _setRoleGeometry()).
+            # positioned here, once per entry, at the first row's offset. The hub engine moves it
+            # from then on: every bind (_placeStack()) and every slide (_startHubSlide()).
             g51 = self.getControl(51)
             g51.setPosition(g51.getPosition()[0], util.vscale(self.GROUP51_BASELINE_OFFSET, r=0))
 
