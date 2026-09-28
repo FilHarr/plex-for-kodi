@@ -6,6 +6,7 @@ import threading
 import time
 
 import plexnet
+from kodi_six import xbmc
 from kodi_six import xbmcgui
 from plexnet import plexapp
 from six.moves import range
@@ -1584,7 +1585,7 @@ class HubsMixin(object):
         view on screen): land on the first hub row, item 0, as if Home had just been opened -
         without rebuilding the window. Forgets every row's remembered position, rebinds the ring
         from hub 0 on item 0 (which also puts the hero on hub 0's first item), and focuses the
-        anchor row. Returns the control id it focused, for onFocus()'s go_root wait - the sidebar
+        anchor row. Returns the control id it focused, for the host's routeFocus() go_root wait - the sidebar
         when there are no hubs, the same exception a section with no content gets."""
         self._settleHubSlide()
         self._hubReselectPositions = {}
@@ -1601,7 +1602,7 @@ class HubsMixin(object):
 
         target = self._anchorControlId()
         # Pre-seeded for the same reason onFirstInit() does it: the programmatic focus below must
-        # not look like a native arrival from outside the hub range to onFocus().
+        # not look like a native arrival from outside the hub range to hubFocus().
         self.lastFocusID = target
         self.setFocusId(target)
         return target
@@ -1646,10 +1647,161 @@ class HubsMixin(object):
         self.updateBackgroundFrom(ds)
         self._setNoHeroArt(False)
 
+    # ------------------------------------------------------------------------------------------
+    # Input: the Recommended view's own handlers (RecommendedWindow's viewAction(), viewClick() and
+    # viewFocus()), each called after the host's shared routing (kodigui.MultiWindowView).
+
+    def hubAction(self, action):
+        """The Recommended view's own actions, from the host's routeAction() after its shared
+        steps: on a hub row (control ids 400-4xx), Up and Down slide the rows, Left and Right sync
+        the hero, Back returns the row to its first item, and the context menu opens the hub
+        menu. True when the action was used; False lets the host's Back and Home handling and
+        then Kodi's own have it - Left and Right always go on to Kodi, which moves the row's cursor
+        itself."""
+        controlID = self.getFocusId()
+        if not 399 < controlID < 500:
+            return False
+
+        if self._hubJustEnteredFromOutside:
+            # Live-confirmed double-delivery (HUBDBG investigation): this same action
+            # already carried focus into the hub range natively (via a control outside
+            # it - the tabs row 320, the audio widget 204, or the sidebar rail 9001 -
+            # all landing here through 50's <defaultcontrol> chain, via <ondown> or, for
+            # the sidebar, <onright>) - Kodi delivers it here a second time *after* that
+            # navigation has already happened, which hubFocus() flagged for us (see its own
+            # comment; this method can't tell "just arrived" apart from "already settled
+            # here" - by the time it runs, the native move, if any, is already done either
+            # way).
+            #
+            # Checked and consumed here, before branching on action_id below - not only
+            # inside the MOVE_UP/MOVE_DOWN branch, where it originally lived: the replay
+            # carries whatever direction *caused* the entry (e.g. a RIGHT out of the
+            # sidebar, handled by the MOVE_LEFT/MOVE_RIGHT branch below, via
+            # checkHubItem()), not necessarily UP/DOWN - a flag left un-consumed by that
+            # branch stayed True and then wrongly swallowed the user's next, genuinely
+            # separate UP/DOWN press instead, live-confirmed as "after any sidebar
+            # interaction, the first up or down press does nothing." Consuming
+            # unconditionally here, for whatever action this replay actually is, is what
+            # keeps it from ever surviving to affect a later, unrelated real press.
+            self._hubJustEnteredFromOutside = False
+            return True
+        action_id = action.getId()
+        if action_id in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
+            # Topmost hub, pressing up: exit the rotation ring entirely instead of the
+            # silent no-op _startHubSlide() falls into at focusedHubIndex 0 - same role
+            # XML onup plays for grid content (library_posters.xml.tpl etc.), just done
+            # here in Python since hub-to-hub vertical nav is already fully Python-owned.
+            # Prefers the section-tabs row (plan item 0) when it's actually on screen;
+            # falls back to the audio widget (204) when the tabs are hidden (a 'mixed'
+            # section has none) so pressing up still lands somewhere reachable rather
+            # than nowhere - the same condition every XML onup/onright path into 204
+            # already gates on (e.g. section_tabs.xml.tpl's own onright).
+            if action_id == xbmcgui.ACTION_MOVE_UP and self.focusedHubIndex == 0:
+                if self.tabList and self.section.TYPE != 'mixed':
+                    self.setFocusId(self.TAB_LIST_ID)
+                    return True
+                elif xbmc.getCondVisibility(
+                        'Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))'):
+                    self.setFocusId(self.PLAYER_STATUS_BUTTON_ID)
+                    return True
+            self._startHubSlide(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
+            return True
+        elif action_id in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
+            # Plan items 10 (Group A)/11: sync hero art/info to the item this move is
+            # landing on, plus pagination/reselect-position memory (checkHubItem(),
+            # all hooked into this same call site). Reads
+            # getSelectedItem() directly, same as MOVE_SET's own dynamic-background
+            # update does for the grid (GridMixin.gridAction()) - Kodi's native container
+            # cursor is already at the new position by the time this runs (that existing,
+            # proven pattern is what this one's modeled on), not the old one, so no
+            # special before/after ordering is needed here. Deliberately doesn't
+            # return True (checkHubItem()'s return value only matters for the NAV_BACK
+            # case below) - the actual cursor movement is Kodi's own native list
+            # behavior, not something this method does; False hands the action on like
+            # anything else unhandled here.
+            self.checkHubItem(controlID, action=action)
+        elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
+            # Only reached when self._backStack is empty (the host's routeAction() pops the
+            # chain first otherwise) - i.e. a hub row focused on the root 'recommended'
+            # tab, no chain in progress. checkHubItem() resets to item 0 first if not
+            # already there (returns False, swallowed here); only lets the action
+            # propagate to the host's Back handling once already at item 0 - same shape
+            # as HomeWindow's own onAction() routing (home.py).
+            if not self.checkHubItem(controlID, action=action):
+                return True
+        elif action == xbmcgui.ACTION_CONTEXT_MENU:
+            # Hub-item context menu - ported from HomeWindow's identical routing
+            # (home.py's onAction(), `elif action == xbmcgui.ACTION_CONTEXT_MENU:`
+            # inside its own `elif 399 < controlID < 500:` branch). Same return-value
+            # -> serverRefresh() handoff as sectionMenu()'s trigger in the host's routeAction().
+            show_section = self.hubMenu(controlID)
+            if not show_section:
+                return True
+            self.serverRefresh(section=show_section)
+            return True
+        return False
+
+    def hubClick(self, controlID):
+        """The Recommended view's own clicks: every click the host's routeClick() didn't use."""
+        if controlID == self.TAB_LIST_ID:
+            self.tabListClicked()
+        elif 399 < controlID < 500:
+            self.hubItemClicked(controlID)
+        elif controlID == self.PLAYER_STATUS_BUTTON_ID:
+            self.showAudioPlayer()
+
+    def hubFocus(self, controlID):
+        """The Recommended view's own focus handling: every focus event the host's routeFocus()
+        didn't drop."""
+        # Flags "just crossed into the hub-row range (399-500) from a control outside it" for
+        # hubAction() to consume - live-confirmed Kodi behavior: a directional
+        # action that exits a native container via its own <onup>/<ondown>/<onright> (the tabs
+        # row 320, the audio widget 204, or the sidebar rail 9001, all landing on a hub control
+        # via 50's <defaultcontrol> chain) gets delivered to hubAction() a SECOND time *after*
+        # native navigation has already moved focus - onFocus(<hub control>) fires before
+        # hubAction()'s own getFocusId() for that same press, i.e. the move already happened once
+        # by the time our Python code runs at all. Without this guard, hubAction()
+        # treated that replay as a second, independent move and acted on it again (silently
+        # continuing on to the next row on entry, or swallowing the next real press after a
+        # sidebar interaction, depending on which action the replay carried).
+        #
+        # Computed here, not in hubAction(): this is the only place that reliably knows what
+        # controlID had focus *immediately before* this one (self.lastFocusID, not yet
+        # overwritten below) - hubAction()'s own getFocusId() can't tell "just arrived from
+        # outside" apart from "already settled here", since by the time it runs the native move,
+        # if any, has already completed either way. Consumed (reset to False) the first time
+        # hubAction() checks it, before branching on the action's own direction -
+        # the replay carries whatever direction caused the entry, not necessarily UP/DOWN - so
+        # it never survives to affect a later, unrelated real press; those never re-fire onFocus
+        # for the same control anyway, since in-hub vertical nav is entirely Python-owned
+        # (_startHubSlide()), not native.
+        redirect_landed = controlID == self._hubEntryRedirect
+        self._hubEntryRedirect = None
+        if not redirect_landed:
+            was_outside_hub = not (399 < (self.lastFocusID or -1) < 500)
+            self._hubJustEnteredFromOutside = (399 < controlID < 500) and was_outside_hub
+
+            # Entering the rows from outside (tabs, sidebar, audio widget) lands wherever Kodi's
+            # group focus memory says - the row control that last had focus. That's the anchor
+            # unless a slide finished while focus was outside the rows (_finishHubSlide() leaves
+            # focus alone then), so correct it here. The arrival's own flag stays set for the
+            # replayed action; the redirect's event (redirect_landed above) doesn't recompute
+            # it, whichever order the two arrive in, and lastFocusID is pre-seeded to the anchor.
+            if self._hubJustEnteredFromOutside and self.visibleHubs:
+                anchor_id = self._anchorControlId()
+                if controlID != anchor_id:
+                    self.reselectActiveSection(controlID, self.lastFocusID)
+                    self.lastFocusID = anchor_id
+                    self._hubEntryRedirect = anchor_id
+                    self.setFocusId(anchor_id)
+                    return
+
+        self.recordFocus(controlID)
+
     def checkHubItem(self, control_id, action=None):
         """Horizontal (left/right) in-row hub navigation - hero-art sync (delegated to
         _updateHeroFromFocusedHubItem() above) and reselect-position memory, both hooked into
-        this one call site (routeAction()'s hub-row branch). Port of HomeWindow.checkHubItem()
+        this one call site (hubAction()). Port of HomeWindow.checkHubItem()
         (home.py), plan item 10 Group A (quiet-orbiting-heron.md). In-row pagination (the old
         "load more" placeholder this also used to trigger) is gone - a row is capped at
         home.HUB_ROW_MAX_ITEMS, see _bindHubToControl().
@@ -1875,7 +2027,7 @@ class HubsMixin(object):
     def hubMenu(self, hubControlID):
         """Context menu (ACTION_CONTEXT_MENU) for whichever item is focused in a hub row - ported
         from HomeWindow.hubMenu() (home.py), adapted to this window's own state. Triggered from
-        routeAction()'s hub-row branch (399 < controlID < 500), which owns the return-value ->
+        hubAction() on a hub row (399 < controlID < 500), which owns the return-value ->
         serverRefresh() handoff, same shape as sectionMenu()'s own trigger.
 
         Two adaptations from the original, both deliberate scope-narrowing rather than a straight
@@ -1998,7 +2150,7 @@ class HubsMixin(object):
 
         elif choice["key"] == "disable_hub":
             # Disable hub via Manage Hubs settings (same as disabling in the dialog). Returning
-            # self.section hands off to routeAction()'s serverRefresh() call, same pattern
+            # self.section hands off to hubAction()'s serverRefresh() call, same pattern
             # sectionMenu()'s own 'manage_hubs'/'refresh_hubs' choices use - forces the section
             # to reopen, which re-triggers hub fetching/isHubHidden() filtering and so drops the
             # now-disabled hub from view.
@@ -2282,7 +2434,7 @@ class HubsMixin(object):
         if self.visibleHubs:
             # Live-confirmed regression from the setFocusId() call itself (2026-09-04): it
             # triggers a real onFocus(<hub control>) callback the same as any other focus
-            # move, and onFocus()'s own _hubJustEnteredFromOutside detector (see its own
+            # move, and hubFocus()'s own _hubJustEnteredFromOutside detector (see its own
             # docstring) can't tell this deliberate, one-time initial focus apart from a
             # genuine native cross-container arrow move (sidebar/tabs -> hub row) - it read
             # self.lastFocusID as still outside the hub range (None, or wherever native
@@ -2293,7 +2445,7 @@ class HubsMixin(object):
             # first move (hero/reselect-position not updating) to a dead first "load more"
             # trigger, both self-correcting on a second press. Pre-seeding lastFocusID to the
             # anchor control itself - true in spirit, there's no real prior focus to speak of
-            # on a window that has never painted - makes onFocus()'s own was_outside_hub read
+            # on a window that has never painted - makes hubFocus()'s own was_outside_hub read
             # False regardless of exactly when its callback actually runs relative to this
             # line, rather than trying to race a reset against it afterward.
             self.lastFocusID = self._anchorControlId()

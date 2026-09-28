@@ -118,7 +118,8 @@ class FakeLibrarySettings(object):
 
 
 buildTabList = library.LibraryWindow.buildTabList
-libraryOnClick = library.LibraryWindow.onClick
+gridClick = library.LibraryWindow.gridClick
+hubClick = library.LibraryWindow.hubClick
 genresOnClick = genres.GenreBrowserWindow.onClick
 tabListNeedsRebuild = library.LibraryWindow._tabListNeedsRebuild
 switchTab = library.LibraryWindow.switchTab
@@ -329,13 +330,11 @@ class BuildTabListCollectionsGatingTest(KodiTestCase):
 
 
 class LibraryOnClickTabDispatchTest(KodiTestCase):
+    """The tabs row isn't one of the host's shared controls (routeClick()): the grid's and
+    Recommended's own click handlers each hand it to the host's tabListClicked()."""
+
     class FakeHost(NavRecorder):
-        # onClick() starts with the sidebar's routeClick(), which a tab click falls through.
-        routeClick = library.LibraryWindow.routeClick
-        SECTION_LIST_ID = library.LibraryWindow.SECTION_LIST_ID
-        USER_LIST_ID = library.LibraryWindow.USER_LIST_ID
-        SERVER_LIST_ID = library.LibraryWindow.SERVER_LIST_ID
-        SECTION_LIST_ID = 1  # distinct from TAB_LIST_ID, never matched in these tests
+        tabListClicked = library.LibraryWindow.tabListClicked
         TAB_LIST_ID = 320
 
         def __init__(self, selected_mode, is_playlists=False, library_tab_item_type=None):
@@ -360,7 +359,7 @@ class LibraryOnClickTabDispatchTest(KodiTestCase):
     def test_categories_click_defers_to_browseGenres(self):
         host = self.FakeHost('categories')
 
-        libraryOnClick(host, host.TAB_LIST_ID)
+        gridClick(host, host.TAB_LIST_ID)
 
         self.assertEqual(1, len(host.posts))
         post = host.posts[0]
@@ -369,7 +368,7 @@ class LibraryOnClickTabDispatchTest(KodiTestCase):
     def test_collections_click_defers_to_switchToCollections(self):
         host = self.FakeHost('collections')
 
-        libraryOnClick(host, host.TAB_LIST_ID)
+        gridClick(host, host.TAB_LIST_ID)
 
         self.assertEqual(1, len(host.posts))
         post = host.posts[0]
@@ -378,7 +377,7 @@ class LibraryOnClickTabDispatchTest(KodiTestCase):
     def test_library_click_defers_to_switchTab_unchanged(self):
         host = self.FakeHost('library')
 
-        libraryOnClick(host, host.TAB_LIST_ID)
+        gridClick(host, host.TAB_LIST_ID)
 
         self.assertEqual(1, len(host.posts))
         post = host.posts[0]
@@ -391,16 +390,24 @@ class LibraryOnClickTabDispatchTest(KodiTestCase):
         must pass the host's own _libraryTabItemType() result through to switchTab()."""
         host = self.FakeHost('library', library_tab_item_type='movie')
 
-        libraryOnClick(host, host.TAB_LIST_ID)
+        gridClick(host, host.TAB_LIST_ID)
 
         self.assertEqual({'item_type': 'movie'}, host.posts[0].kwargs)
 
     def test_recommended_click_never_passes_an_item_type(self):
         host = self.FakeHost('recommended', library_tab_item_type='movie')
 
-        libraryOnClick(host, host.TAB_LIST_ID)
+        gridClick(host, host.TAB_LIST_ID)
 
         self.assertEqual({'item_type': None}, host.posts[0].kwargs)
+
+    def test_the_recommended_view_hands_the_tabs_row_over_the_same_way(self):
+        host = self.FakeHost('library')
+
+        hubClick(host, host.TAB_LIST_ID)
+
+        self.assertEqual(1, len(host.posts))
+        self.assertEqual(host.switchTab, host.posts[0].function)
 
 
 class GenresOnClickDelegationTest(KodiTestCase):

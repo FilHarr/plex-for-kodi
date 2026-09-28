@@ -37,21 +37,6 @@ from .library_hubs import HubsMixin
 from .mixins.playbackbtn import PlaybackBtnMixin
 from .mixins.common import CommonMixin
 
-MOVE_SET = frozenset(
-    (
-        xbmcgui.ACTION_MOVE_LEFT,
-        xbmcgui.ACTION_MOVE_RIGHT,
-        xbmcgui.ACTION_MOVE_UP,
-        xbmcgui.ACTION_MOVE_DOWN,
-        xbmcgui.ACTION_MOUSE_MOVE,
-        xbmcgui.ACTION_PAGE_UP,
-        xbmcgui.ACTION_PAGE_DOWN,
-        xbmcgui.ACTION_FIRST_PAGE,
-        xbmcgui.ACTION_LAST_PAGE,
-        xbmcgui.ACTION_MOUSE_WHEEL_DOWN,
-        xbmcgui.ACTION_MOUSE_WHEEL_UP
-    )
-)
 
 # Sort keys the addon used to persist under its own spelling, mapped to the server's (as
 # /sorts advertises them, and as SORT_KEYS/serverSortOptions() now key them). Applied when a
@@ -263,11 +248,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     # identically in every content-mode's template, so it doesn't need per-shell delegation.
     TAB_LIST_ID = 320
 
-    # onFocus()'s own "just crossed into the hub range from outside it" flag, consumed by
-    # routeAction()'s hub-branch - see onFocus()'s own comment for the double-delivery bug this
-    # guards against. Class-level default so it's never missing before the first onFocus() call.
+    # hubFocus()'s "just crossed into the hub range from outside it" flag, consumed by
+    # hubAction() - see hubFocus()'s own comment (library_hubs.py) for the double-delivery bug this
+    # guards against. Class-level default so it's never missing before the first focus event.
     _hubJustEnteredFromOutside = False
-    # The anchor control onFocus() just redirected an arrival to (see there), so that redirect's
+    # The anchor control hubFocus() just redirected an arrival to (see there), so that redirect's
     # own focus event leaves _hubJustEnteredFromOutside as the real arrival set it.
     _hubEntryRedirect = None
 
@@ -347,7 +332,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.dcpjThread = None
         self.dcpjTimeout = 0
 
-        self.dragging = False
 
         self.cleared = True
         self.librarySettings = LibrarySettings(self.section)
@@ -379,7 +363,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # methods that set it). _shuttingDown is read directly, unguarded, by player.py's
         # playQueueCallback() - must exist before anything else can run, not just before
         # shutdown() is ever called.
-        # go_root/_goRootAwaitFocus are consumed by onReInit()/routeAction()/onFocus() below - see
+        # go_root/_goRootAwaitFocus are consumed by onReInit()/routeAction()/routeFocus() below - see
         # those for the full mechanism, ported from HomeWindow's own go_root handling.
         self.closeOption = None
         self._shuttingDown = False
@@ -1789,7 +1773,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # only one) have nothing to switch to - hiding the row entirely rather than showing a lone
         # "Recommended" tab with nothing to switch between. Set unconditionally, every fresh
         # onFirstInit() (i.e. every content-mode/section swap, not just once) - section_tabs.xml.tpl
-        # gates control 320's own <visible> on this; routeAction()'s hub-row MOVE_UP interception below
+        # gates control 320's own <visible> on this; hubAction()'s hub-row MOVE_UP interception (library_hubs.py)
         # also checks it directly before redirecting focus there, since a hidden control can't
         # usefully receive focus.
         self.setBoolProperty('hide.section_tabs', self.section.TYPE == 'mixed')
@@ -2197,8 +2181,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 self.postNav('openSection', self.openSection, args=(home.home_section,), kwargs={'force': True})
             else:
                 # Already showing Home: reset it in place to the first row, item 0 (the Home
-                # rule), then have onFocus() ignore the stray focus event this window's
-                # reactivation fires, until the reset's own focus event arrives (see onFocus()).
+                # rule), then have routeFocus() ignore the stray focus event this window's
+                # reactivation fires, until the reset's own focus event arrives (see routeFocus()).
                 # Not needed on the rebuild branch above - the new window sets its own focus.
                 self._goRootAwaitFocus = self._resetHubsToTop()
                 self._goRootAwaitUntil = time.time() + 1.0
@@ -2256,17 +2240,20 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         return kodigui.MultiWindow.routeAction(self, action)
 
     def routeAction(self, action):
-        """Every action on the current view comes here first: kodigui.MultiWindowView.onAction()
-        for the grid and Recommended views, and the first line of each hosted shell's own
-        onAction() (routeActionToHost()). Returns True when the action was used here; False hands
-        it back to the view's own onAction() (the old _currentOnAction forward). For a hosted
-        shell only the shared parts below apply - sidebar popups, Back (its handleBack(), then the
-        chain), the sidebar, server and user buttons, the Home button - before _isHostedShell
-        returns to the shell."""
+        """Every action on the current view comes here first, through routeActionToHost(): the
+        first line of each hosted screen's onAction(), and of kodigui.MultiWindowView's for the
+        grid and Recommended views. Returns True when the action was used here; False hands it
+        back to the view's own onAction().
+
+        The order: sidebar popups; the view's own Back steps (handleBack()), then Back through the
+        chain; the sidebar, server and user buttons; the grid's or Recommended's own handler
+        (viewAction()); then Back at Home's root and the Home button (_dispatchNativeAction()).
+        This method reads only the controls every view shares; each view's own controls are read
+        by its own handler (I4 in the navigation review)."""
         if self._shuttingDown:
             return True
 
-        # belt: real user input ends the post-go_root wait (see onFocus()), in case the reset's own
+        # belt: real user input ends the post-go_root wait (see routeFocus()), in case the reset's own
         # focus event never arrives.
         self._goRootAwaitFocus = None
 
@@ -2278,42 +2265,17 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 self.dismissSidebarPopupOnBack(target=self._sidebarTarget()):
             return True
 
-        # A hosted screen's own Back steps (handleBack(), kodigui.BaseWindow) come before the chain
-        # pops below. NAV_BACK only, as on the screens' own standalone path. On an error, Back
+        # The showing view's own Back steps (handleBack()) come before the chain pops below, so
+        # they apply mid-chain too: a hosted screen's (kodigui.BaseWindow), and the grid's snap to
+        # item 0 (GridMixin.gridBack()), e.g. in a collection's grid reached with a non-empty
+        # _backStack. Which actions count as Back is the view's (BACK_ACTIONS). On an error, Back
         # still pops rather than doing nothing.
-        if action == xbmcgui.ACTION_NAV_BACK and self._isHostedShell:
+        if action in getattr(self._current, 'BACK_ACTIONS', ()):
             try:
                 if self._current.handleBack():
                     return True
             except Exception:
                 util.ERROR()
-
-        # Grid "home" on Back, requested directly: Back while scrolled down the poster/list grid
-        # snaps to item 0 first, rather than immediately leaving the section/chain - only once
-        # already on item 0 does Back fall through to its normal meaning (below). Checked ahead of
-        # the chain-pop branch immediately below so this applies even mid-chain (e.g. browsing a
-        # Collection's own grid, reached via swapToSection() with a non-empty _backStack) - a
-        # scrolled-down position there should also snap home before that chain pops a level.
-        #
-        # not self._isHostedShell first, and short-circuiting before anything else: self.
-        # POSTERS_PANEL_ID/self.getFocusId() aren't real attributes of this outer host object,
-        # they resolve via MultiWindow.__getattr__ delegation to self._current - fine whenever
-        # self._current is one of LibraryWindow's own thin view-type proxies (PostersWindow etc.,
-        # which do define POSTERS_PANEL_ID), but once a real shell is hosted (e.g. PrePlayWindow,
-        # after clicking an item from this exact grid) self._current has no such attribute at all.
-        # Live-confirmed regression without this guard: raised a bare AttributeError from inside
-        # routeAction() on every single Back press while any shell was hosted, silently swallowed
-        # somewhere above this call - Back appeared to simply stop doing anything at all after
-        # opening an item from a grid. contentMode == 'library' (not 'recommended') and focus on
-        # POSTERS_PANEL_ID specifically - hub-row Back has its own separate semantics, untouched
-        # here.
-        if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and \
-                not self._isHostedShell and self.contentMode == 'library' \
-                and self.getFocusId() == self.POSTERS_PANEL_ID:
-            mli = self.showPanelControl.getSelectedItem() if self.showPanelControl else None
-            if mli and mli.pos():
-                self.showPanelControl.selectItem(0)
-                return True
 
         # Descendant-chain back-stack (hashed-orbiting-pizza.md Phase 1) - swapTo() always
         # pushes a root-restore entry on the genesis swap out of this window's own grid, so
@@ -2404,207 +2366,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                     self.setFocusId(self.SERVER_BUTTON_ID)
                     return True
 
-            if self._isHostedShell:
-                # Everything below here (grid MOVE_SET, drag, hub-rotation-ring) is specific to
-                # LibraryWindow's own content area and reads state (self.contentMode,
-                # self.getFocusId() delegating through __getattr__ to the hosted shell's real
-                # focused control) that has nothing to do with whatever the real shell is
-                # actually showing. Confirmed concretely: PrePlayWindow's own
-                # ROLES_LIST_ID/REVIEWS_LIST_ID/EXTRA_LIST_ID/RELATED_LIST_ID/COLLECTION_LIST_IDS
-                # (400-406) all fall inside the 399 < controlID < 500 hub-rotation check below -
-                # without this early return, ordinary up/down navigation on a hosted
-                # PrePlayWindow whose host was last on the 'recommended' tab would wrongly
-                # trigger _startHubSlide()/hub-menu logic against host-side state. The shared
-                # sidebar/server/user controls above (SidebarMixin) stay reachable either way.
-                return self._dispatchNativeAction(action)
-
-            if self.dragging:
-                if not action == xbmcgui.ACTION_MOUSE_DRAG:
-                    self.dragging = False
-                    self.setBoolProperty('dragging', self.dragging)
-
-            if self.contentMode == 'recommended':
-                # Stage D2 (quiet-orbiting-heron.md): up/down on a hub-row control switches
-                # which hub is logically focused (rotation-ring slide) instead of falling
-                # through to the blanket return below - same interception HomeWindow's own
-                # onAction() does (home.py, `elif 399 < controlID < 500:`). Explicitly re-checks
-                # contentMode == 'recommended' here too (redundant with the outer if, but this
-                # whole branch is exactly the kind of contentMode-independent-handler risk the
-                # plan's "Known interim gaps"/item 9 flagged - control ids 400-404 only exist in
-                # RecommendedWindow's template, so this is defensive, not reachable any other way
-                # today, but cheap insurance against a future control-id collision).
-                controlID = self.getFocusId()
-                if 399 < controlID < 500 and self.contentMode == 'recommended':
-                    if self._hubJustEnteredFromOutside:
-                        # Live-confirmed double-delivery (HUBDBG investigation): this same action
-                        # already carried focus into the hub range natively (via a control outside
-                        # it - the tabs row 320, the audio widget 204, or the sidebar rail 9001 -
-                        # all landing here through 50's <defaultcontrol> chain, via <ondown> or, for
-                        # the sidebar, <onright>) - Kodi delivers it to routeAction() a second time
-                        # *after* that navigation has already happened, which onFocus() flagged for
-                        # us (see its own comment; routeAction() itself can't tell "just arrived" apart
-                        # from "already settled here" - by the time it runs, the native move, if
-                        # any, is already done either way).
-                        #
-                        # Checked and consumed here, before branching on action_id below - not only
-                        # inside the MOVE_UP/MOVE_DOWN branch, where it originally lived: the replay
-                        # carries whatever direction *caused* the entry (e.g. a RIGHT out of the
-                        # sidebar, handled by the MOVE_LEFT/MOVE_RIGHT branch below, via
-                        # checkHubItem()), not necessarily UP/DOWN - a flag left un-consumed by that
-                        # branch stayed True and then wrongly swallowed the user's next, genuinely
-                        # separate UP/DOWN press instead, live-confirmed as "after any sidebar
-                        # interaction, the first up or down press does nothing." Consuming
-                        # unconditionally here, for whatever action this replay actually is, is what
-                        # keeps it from ever surviving to affect a later, unrelated real press.
-                        self._hubJustEnteredFromOutside = False
-                        return True
-                    action_id = action.getId()
-                    if action_id in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
-                        # Topmost hub, pressing up: exit the rotation ring entirely instead of the
-                        # silent no-op _startHubSlide() falls into at focusedHubIndex 0 - same role
-                        # XML onup plays for grid content (library_posters.xml.tpl etc.), just done
-                        # here in Python since hub-to-hub vertical nav is already fully Python-owned
-                        # (see this branch's own docstring reference to home.py's onAction()).
-                        # Prefers the section-tabs row (plan item 0) when it's actually on screen;
-                        # falls back to the audio widget (204) when the tabs are hidden (a 'mixed'
-                        # section has none) so pressing up still lands somewhere reachable rather
-                        # than nowhere - the same condition every XML onup/onright path into 204
-                        # already gates on (e.g. section_tabs.xml.tpl's own onright).
-                        if action_id == xbmcgui.ACTION_MOVE_UP and self.focusedHubIndex == 0:
-                            if self.tabList and self.section.TYPE != 'mixed':
-                                self.setFocusId(self.TAB_LIST_ID)
-                                return True
-                            elif xbmc.getCondVisibility(
-                                    'Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))'):
-                                self.setFocusId(self.PLAYER_STATUS_BUTTON_ID)
-                                return True
-                        self._startHubSlide(-1 if action_id == xbmcgui.ACTION_MOVE_UP else 1)
-                        return True
-                    elif action_id in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
-                        # Plan items 10 (Group A)/11: sync hero art/info to the item this move is
-                        # landing on, plus pagination/reselect-position memory (checkHubItem(),
-                        # all hooked into this same call site). Reads
-                        # getSelectedItem() directly, same as MOVE_SET's own dynamic-background
-                        # update below does for the grid - Kodi's native container cursor is
-                        # already at the new position by the time routeAction() runs (that existing,
-                        # proven pattern is what this one's modeled on), not the old one, so no
-                        # special before/after ordering is needed here. Deliberately doesn't
-                        # return (checkHubItem()'s return value only matters for the NAV_BACK
-                        # case below) - the actual cursor movement is Kodi's own native list
-                        # behavior, not something this method does; falls through to
-                        # kodigui.MultiWindow.routeAction() below like anything else unhandled here.
-                        self.checkHubItem(controlID, action=action)
-                    elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
-                        # Only reached when self._backStack is empty (routeAction()'s own top-of-
-                        # method check already intercepts NAV_BACK/PREVIOUS_MENU otherwise) - i.e.
-                        # a hub row focused on the root 'recommended' tab, no chain in progress.
-                        # checkHubItem() resets to item 0 first if not already there (returns
-                        # False, swallowed here); only lets the action propagate to whatever
-                        # default NAV_BACK handling exists below once already at item 0 - same
-                        # shape as HomeWindow's own onAction() routing (home.py).
-                        if not self.checkHubItem(controlID, action=action):
-                            return True
-                    elif action == xbmcgui.ACTION_CONTEXT_MENU:
-                        # Hub-item context menu - ported from HomeWindow's identical routing
-                        # (home.py's onAction(), `elif action == xbmcgui.ACTION_CONTEXT_MENU:`
-                        # inside its own `elif 399 < controlID < 500:` branch). Same return-value
-                        # -> serverRefresh() handoff sectionMenu()'s own trigger uses above.
-                        show_section = self.hubMenu(controlID)
-                        if not show_section:
-                            return True
-                        self.serverRefresh(section=show_section)
-                        return True
-
-                # quiet-orbiting-heron.md Stage B: everything below this point (MOVE_SET,
-                # mouse-drag, context-menu handling) reaches into grid-specific state
-                # (self.showPanelControl, a ManagedControlList still bound to the old library
-                # window's control 101) unconditionally - RecommendedWindow's template has no
-                # such control at all, and self.showPanelControl is stale (switchTab() doesn't
-                # clear it, just leaves it unused). Live-confirmed as a native use-after-free
-                # crash navigating within the hub lists (MOVE_SET fires on every arrow key) -
-                # unlike onFocus()/onClick()/onReInit()'s equivalent guards, this one was missed
-                # the first time since it's not gated behind a single top-level if/elif. So this
-                # branch still can't just fall into that code the way the non-recommended path
-                # does at the bottom of this method.
-                #
-                # A bare `return` here (the original D2 shape) went further than that guard
-                # needed, though - it's inside this method's own try: block, so it also skipped
-                # _dispatchNativeAction(action) entirely (the base-class/NAV_BACK dispatch at the
-                # very bottom of this method, which hands ordinary actions back to the view's own
-                # onAction() by returning False) - the real native WindowXML.onAction() Kodi needs
-                # to actually move focus within a list. Horizontal in-hub navigation (left/right
-                # between items in the same hub row) was never actually reaching Kodi at all as a
-                # result - live-confirmed, not just "out of scope" the way checkHubItem()'s richer
-                # per-item behavior (hero-art updates, pagination) genuinely still is.
-                # Calling the dispatch directly - skipping only this method's own grid-specific
-                # body in between - fixes that without reopening the crash the blanket return was
-                # protecting against.
-                return self._dispatchNativeAction(action)
-
-            if action.getId() in MOVE_SET:
-                mli = self.showPanelControl.getSelectedItem()
-                if mli:
-                    self.requestChunk(mli.pos())
-
-                if util.addonSettings.dynamicBackgrounds:
-                    # `mli and mli.dataSource`, not `is not None`, used to gate this - a real
-                    # footgun for Playlist dataSources specifically: BasePlaylist defines
-                    # __len__() (playlist.py) returning its *member* count, which is always 0
-                    # for the summary objects this grid fetches (real items are never loaded
-                    # just to browse the grid) - Python falls back to __len__ for truthiness
-                    # when __bool__ isn't defined, so a perfectly valid Playlist object silently
-                    # evaluated as falsy here, skipping the background update on every single
-                    # scroll. Live-confirmed via diagnostic logging: MOVE_SET fired correctly
-                    # every time with a valid mli.dataSource, but this check still failed.
-                    # Explicit `is not None` sidesteps __len__ entirely.
-                    if mli is not None and mli.dataSource is not None:
-                        if self.section.TYPE == 'playlists':
-                            # updateBackgroundFrom() keys off ds.get('art', ...), which
-                            # playlists don't have (see _setPlaylistBackground()'s own
-                            # docstring) - without this, scrolling through the playlists grid
-                            # silently did nothing (no art, so no background write at all),
-                            # leaving whichever playlist fillPlaylists() randomly picked at fill
-                            # time showing until the next full refill (e.g. a Music/Video tab
-                            # swap) happened to pick a different one.
-                            self._setPlaylistBackground(mli.dataSource)
-                        else:
-                            self.updateBackgroundFrom(mli.dataSource)
-
-                controlID = self.getFocusId()
-                if controlID == self.POSTERS_PANEL_ID or controlID == self.SCROLLBAR_ID:
-                    self.updateKey()
-            elif action == xbmcgui.ACTION_MOUSE_DRAG:
-                self.onMouseDrag(action)
-            elif action == xbmcgui.ACTION_CONTEXT_MENU:
-                # item action possible?
-                had_action = self.itemOptions()
-                if not had_action:
-                    if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
-                        self.lastNonOptionsFocusID = self.lastFocusID
-                        self.setFocusId(self.OPTIONS_GROUP_ID)
-                        return True
-                    else:
-                        if self.lastNonOptionsFocusID:
-                            self.setFocusId(self.lastNonOptionsFocusID)
-                            self.lastNonOptionsFocusID = None
-                            return True
-                else:
-                    return True
-            elif self.isWatchedAction(action):
-                mli = self.showPanelControl.getSelectedItem()
-                if not mli or not mli.dataSource:
-                    return True
-                self.toggleWatched(mli)
+            # The showing view's own controls, when it's one of this window's own views
+            # (kodigui.MultiWindowView): the grid's or Recommended's handler. A hosted screen
+            # handles its own once this method hands the action back.
+            if isinstance(self._current, kodigui.MultiWindowView) and self._current.viewAction(action):
                 return True
-
-            elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_CONTEXT_MENU):
-                if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)) and \
-                        (not util.addonSettings.fastBack or action == xbmcgui.ACTION_CONTEXT_MENU):
-                    if xbmc.getCondVisibility('Integer.IsGreater(Container(101).ListItem.Property(index),5)'):
-                        self.showPanelControl.selectItem(0)
-                        return True
-
-            self.updateItem()
 
         except:
             util.ERROR()
@@ -2649,76 +2415,36 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         return False
 
-    def onClick(self, controlID):
-        if self.routeClick(controlID):
+    def tabListClicked(self):
+        """A click on the tabs row (TAB_LIST_ID), from the grid's and Recommended's own click
+        handlers: both templates have the row. It isn't one of routeClick()'s shared controls,
+        because Pre-play and Episodes use the same ID for their video-resolution group, and Genres
+        handles its own tabs row."""
+        mli = self.tabList.getSelectedItem()
+        if not mli:
             return
 
-        if controlID == self.TAB_LIST_ID:
-            # Plan item 0 (quiet-orbiting-heron.md): TAB_LIST_ID exists identically in every
-            # content-mode's template, so this is checked before the contentMode=='recommended'
-            # bypass below, same as SECTION_LIST_ID above.
-            mli = self.tabList.getSelectedItem()
-            if mli:
-                if self._tabListIsPlaylists:
-                    # Music/Video: _applyItemTypeChoice() is an in-place refill (reset()/fill()),
-                    # never a doClose()-based window reconstruction - none of the deferral below
-                    # applies, same as itemTypeButtonClicked()'s own dropdown-result call to it.
-                    self._applyItemTypeChoice(mli.getProperty('item.type'))
-                    return
-
-                # Posted (MultiWindow.postNav()), not a direct switchTab() call: confirmed as
-                # xbmc/xbmc#27552/#27239, an upstream Kodi core bug - CGUIWindow::OnAction()'s
-                # focused-control parent walk crashes if the window/skin gets reloaded nested
-                # underneath the very OnAction()/onClick() call that triggered it. switchTab()'s
-                # doClose() is exactly that kind of reload, so it must never run synchronously,
-                # inline, from this callback - see windowutils.SKIN_RELOAD_DEFER_SECONDS' own
-                # comment for the full diagnosis.
-                mode = mli.getProperty('content.mode')
-                if mode == 'categories':
-                    self.postNav('browseGenres', self.browseGenres)
-                elif mode == 'collections':
-                    self.postNav('switchToCollections', self.switchToCollections)
-                else:
-                    item_type = self._libraryTabItemType() if mode == 'library' else None
-                    self.postNav('switchTab', self.switchTab, args=(mode,), kwargs={'item_type': item_type})
+        if self._tabListIsPlaylists:
+            # Music/Video: _applyItemTypeChoice() is an in-place refill (reset()/fill()), never a
+            # doClose()-based window reconstruction - none of the deferral below applies, same as
+            # itemTypeButtonClicked()'s own dropdown-result call to it.
+            self._applyItemTypeChoice(mli.getProperty('item.type'))
             return
 
-        if self.contentMode == 'recommended':
-            # RecommendedWindow has none of the grid controls (POSTERS_PANEL_ID/KEY_LIST_ID/etc.)
-            # the elif chain below unconditionally checks against - live-confirmed as an
-            # AttributeError otherwise, so hub-row clicks need their own branch here rather than
-            # falling into that chain. PLAYER_STATUS_BUTTON_ID (204, the header audio widget) is
-            # checked explicitly too, for the same reason - it's the one control from that chain
-            # this window's own template actually has (script-plex-recommended.xml.tpl), and
-            # without this the unconditional `return` below swallowed clicks on it entirely
-            # (live-confirmed: no music-player window opened, unlike every other window that
-            # reaches the elif chain's own PLAYER_STATUS_BUTTON_ID case further down).
-            if 399 < controlID < 500:
-                self.hubItemClicked(controlID)
-            elif controlID == self.PLAYER_STATUS_BUTTON_ID:
-                self.showAudioPlayer()
-            return
-
-        if controlID == self.POSTERS_PANEL_ID:
-            self.showPanelClicked()
-        elif controlID == self.KEY_LIST_ID:
-            self.keyClicked()
-        elif controlID == self.PLAYER_STATUS_BUTTON_ID:
-            self.showAudioPlayer()
-        elif controlID == self.PLAY_BUTTON_ID:
-            self.playButtonClicked()
-        elif controlID == self.SHUFFLE_BUTTON_ID:
-            self.shuffleButtonClicked()
-        elif controlID == self.OPTIONS_BUTTON_ID:
-            self.optionsButtonClicked()
-        elif controlID == self.VIEWTYPE_BUTTON_ID:
-            self.viewTypeButtonClicked()
-        elif controlID == self.SORT_BUTTON_ID:
-            self.sortButtonClicked()
-        elif controlID == self.FILTER1_BUTTON_ID:
-            self.filter1ButtonClicked()
-        elif controlID == self.ITEM_TYPE_BUTTON_ID:
-            self.itemTypeButtonClicked()
+        # Posted (MultiWindow.postNav()), not a direct switchTab() call: confirmed as
+        # xbmc/xbmc#27552/#27239, an upstream Kodi core bug - CGUIWindow::OnAction()'s
+        # focused-control parent walk crashes if the window/skin gets reloaded nested underneath
+        # the very OnAction()/onClick() call that triggered it. switchTab()'s doClose() is exactly
+        # that kind of reload, so it must never run synchronously, inline, from this callback - see
+        # the #27239 note in windowutils.py for the full diagnosis.
+        mode = mli.getProperty('content.mode')
+        if mode == 'categories':
+            self.postNav('browseGenres', self.browseGenres)
+        elif mode == 'collections':
+            self.postNav('switchToCollections', self.switchToCollections)
+        else:
+            item_type = self._libraryTabItemType() if mode == 'library' else None
+            self.postNav('switchTab', self.switchTab, args=(mode,), kwargs={'item_type': item_type})
 
     def searchButtonClicked(self):
         self.processCommand(search.dialog(self, section_id=self.section.key))
@@ -3293,79 +3019,34 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self.setProperty('server.iconmod', '')
             self.setProperty('server.iconmod2', '')
 
-    def onFocus(self, controlID):
-        # Flags "just crossed into the hub-row range (399-500) from a control outside it" for
-        # routeAction()'s own hub-branch to consume - live-confirmed Kodi behavior: a directional
-        # action that exits a native container via its own <onup>/<ondown>/<onright> (the tabs
-        # row 320, the audio widget 204, or the sidebar rail 9001, all landing on a hub control
-        # via 50's <defaultcontrol> chain) gets delivered to routeAction() a SECOND time *after*
-        # native navigation has already moved focus - onFocus(<hub control>) fires before
-        # routeAction()'s own getFocusId() for that same press, i.e. the move already happened once
-        # by the time our Python code runs at all. Without this guard, routeAction()'s hub-branch
-        # treated that replay as a second, independent move and acted on it again (silently
-        # continuing on to the next row on entry, or swallowing the next real press after a
-        # sidebar interaction, depending on which action the replay carried).
-        #
-        # Computed here, not in routeAction(): this is the only place that reliably knows what
-        # controlID had focus *immediately before* this one (self.lastFocusID, not yet
-        # overwritten below) - routeAction()'s own getFocusId() can't tell "just arrived from
-        # outside" apart from "already settled here", since by the time it runs the native move,
-        # if any, has already completed either way. Consumed (reset to False) the first time
-        # routeAction()'s hub-branch checks it, before branching on the action's own direction -
-        # the replay carries whatever direction caused the entry, not necessarily UP/DOWN - so
-        # it never survives to affect a later, unrelated real press; those never re-fire onFocus
-        # for the same control anyway, since in-hub vertical nav is entirely Python-owned
-        # (_startHubSlide()), not native.
-        # After an in-place go_root reset (onReInit()), this window's reactivation re-focuses
-        # whichever control had focus before the Home press. Live-confirmed 2026-09-24: that event
-        # is always delivered before the reset's own setFocusId() event (0-1ms vs ~100-135ms after
-        # the reset), so focus still ends on the target - but handled as real focus, it records the
-        # old control as lastFocusID. From the sidebar (9001) or the audio widget (204) that makes
-        # the target's own event below look like a native arrival from outside the hub range
-        # (_hubJustEnteredFromOutside), which then swallows the next real press. So ignore every
-        # focus event until the target's own arrives; the deadline is only a safety net.
+    def routeFocus(self, controlID):
+        """Every focus event on the grid and Recommended views comes here first
+        (kodigui.MultiWindowView.onFocus()); True drops it before the view's own handler sees it.
+
+        After an in-place go_root reset (onReInit()), this window's reactivation re-focuses
+        whichever control had focus before the Home press. Live-confirmed 2026-09-24: that event
+        is always delivered before the reset's own setFocusId() event (0-1ms vs ~100-135ms after
+        the reset), so focus still ends on the target - but handled as real focus, it records the
+        old control as lastFocusID. From the sidebar (9001) or the audio widget (204) that makes
+        the target's own event look like a native arrival from outside the hub range
+        (_hubJustEnteredFromOutside, HubsMixin.hubFocus()), which then swallows the next real
+        press. So ignore every focus event until the target's own arrives; the deadline is only a
+        safety net."""
         if self._goRootAwaitFocus is not None:
             if controlID == self._goRootAwaitFocus:
                 self._goRootAwaitFocus = None
             elif time.time() < self._goRootAwaitUntil:
-                return
+                return True
             else:
                 self._goRootAwaitFocus = None
+        return False
 
-        if self.contentMode == 'recommended':
-            redirect_landed = controlID == self._hubEntryRedirect
-            self._hubEntryRedirect = None
-            if not redirect_landed:
-                was_outside_hub = not (399 < (self.lastFocusID or -1) < 500)
-                self._hubJustEnteredFromOutside = (399 < controlID < 500) and was_outside_hub
-
-                # Entering the rows from outside (tabs, sidebar, audio widget) lands wherever Kodi's
-                # group focus memory says - the row control that last had focus. That's the anchor
-                # unless a slide finished while focus was outside the rows (_finishHubSlide() leaves
-                # focus alone then), so correct it here. The arrival's own flag stays set for the
-                # replayed action; the redirect's event (redirect_landed above) doesn't recompute
-                # it, whichever order the two arrive in, and lastFocusID is pre-seeded to the anchor.
-                if self._hubJustEnteredFromOutside and self.visibleHubs:
-                    anchor_id = self._anchorControlId()
-                    if controlID != anchor_id:
-                        self.reselectActiveSection(controlID, self.lastFocusID)
-                        self.lastFocusID = anchor_id
-                        self._hubEntryRedirect = anchor_id
-                        self.setFocusId(anchor_id)
-                        return
-
+    def recordFocus(self, controlID):
+        """The sidebar's section marker (reselectActiveSection()) and lastFocusID follow focus.
+        Called by each view's own focus handler once it has read lastFocusID for itself."""
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
-        if self.contentMode == 'recommended':
-            # quiet-orbiting-heron.md Stage B: RecommendedWindow has no KEY_LIST_ID (or any
-            # other grid control) - live-confirmed as an AttributeError otherwise, since this
-            # runs on every focus change, not just KEY_LIST_ID's own. Real Recommended-tab focus
-            # handling (Stage C/D) replaces this branch.
-            return
-
-        if controlID == self.KEY_LIST_ID:
-            self.selectKey()
 
 class PostersWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windowutils.UtilMixin):
     xmlFile = 'script-plex-posters.xml'
@@ -3398,6 +3079,20 @@ class PostersWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windowuti
 
     ROW_SIZE = 6
     CHUNK_OVERCOMMIT = 6
+
+    # This view's own input, after the host's shared routing (kodigui.MultiWindowView): the
+    # grid's handlers (library_grid.py).
+    def viewAction(self, action):
+        return self.hostedBy().gridAction(action)
+
+    def viewClick(self, controlID):
+        self.hostedBy().gridClick(controlID)
+
+    def viewFocus(self, controlID):
+        self.hostedBy().gridFocus(controlID)
+
+    def handleBack(self):
+        return self.hostedBy().gridBack()
 
 
 class PostersSmallWindow(PostersWindow):
@@ -3483,6 +3178,18 @@ class RecommendedWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windo
     HUB_CONTROL_ID = 400
 
     MULTI_WINDOW_ID = 0
+
+    # This view's own input, after the host's shared routing (kodigui.MultiWindowView): the hub
+    # engine's handlers (library_hubs.py). Its Back steps are in hubAction(), which runs after
+    # the chain pops, so it keeps the default handleBack().
+    def viewAction(self, action):
+        return self.hostedBy().hubAction(action)
+
+    def viewClick(self, controlID):
+        self.hostedBy().hubClick(controlID)
+
+    def viewFocus(self, controlID):
+        self.hostedBy().hubFocus(controlID)
 
 
 VIEWS_RECOMMENDED = {

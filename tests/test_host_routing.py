@@ -2,8 +2,8 @@
 """
 I8 in the navigation review: a hosted view's input reaches LibraryWindow by name, not by the host
 overwriting the view's callbacks. kodigui.BaseWindow.routeActionToHost() is the first line of every
-hosted shell's onAction(); kodigui.MultiWindowView forwards the grid and Recommended views' five
-callbacks to the host. Both hold the host through a weak reference (_hostRef), and drop a late
+hosted shell's onAction(); kodigui.MultiWindowView sends the grid and Recommended views' input
+through the host's shared routing first, then to the view's own handlers (I4). Both hold the host through a weak reference (_hostRef), and drop a late
 callback on a view the host has already swapped out (hostedBy()).
 
 The host side (LibraryWindow.routeAction()) is covered in test_library_chain.OnActionTest.
@@ -27,26 +27,30 @@ from .base import KodiTestCase  # noqa: E402
 
 
 class FakeHost(object):
-    def __init__(self, routed=True):
+    def __init__(self, routed=True, clickRouted=False, focusRouted=False):
         self._current = None
         self.routed = routed
+        self.clickRouted = clickRouted
+        self.focusRouted = focusRouted
         self.calls = []
 
     def routeAction(self, action):
         self.calls.append(('action', action))
         return self.routed
 
+    def routeClick(self, controlID):
+        self.calls.append(('routeClick', controlID))
+        return self.clickRouted
+
+    def routeFocus(self, controlID):
+        self.calls.append(('routeFocus', controlID))
+        return self.focusRouted
+
     def _onFirstInit(self):
         self.calls.append(('firstInit',))
 
     def onReInit(self):
         self.calls.append(('reInit',))
-
-    def onClick(self, controlID):
-        self.calls.append(('click', controlID))
-
-    def onFocus(self, controlID):
-        self.calls.append(('focus', controlID))
 
     def postNav(self, name, fn, args=(), kwargs=None, stack=False):
         self.calls.append(('postNav', name, fn, args, stack))
@@ -58,6 +62,7 @@ class FakeWindowBase(object):
     started = True
     hostedBy = kodigui.BaseWindow.hostedBy
     routeActionToHost = kodigui.BaseWindow.routeActionToHost
+    routeClickToHost = kodigui.BaseWindow.routeClickToHost
     ignoresInput = kodigui.BaseWindow.ignoresInput
 
     def __init__(self):
@@ -68,7 +73,15 @@ class FakeWindowBase(object):
 
 
 class FakeThinView(kodigui.MultiWindowView, FakeWindowBase):
-    pass
+    def __init__(self):
+        FakeWindowBase.__init__(self)
+        self.viewCalls = []
+
+    def viewClick(self, controlID):
+        self.viewCalls.append(('click', controlID))
+
+    def viewFocus(self, controlID):
+        self.viewCalls.append(('focus', controlID))
 
 
 def hosted(view, host):
@@ -117,7 +130,7 @@ class RouteActionToHostTest(KodiTestCase):
 
 
 class MultiWindowViewTest(KodiTestCase):
-    def test_every_callback_goes_to_the_host(self):
+    def test_input_goes_to_the_host_first_then_to_the_views_own_handlers(self):
         host = FakeHost()
         view = hosted(FakeThinView(), host)
         view.onFirstInit()
@@ -125,9 +138,22 @@ class MultiWindowViewTest(KodiTestCase):
         view.onClick(101)
         view.onFocus(102)
         view.onAction('a')
-        self.assertEqual([('firstInit',), ('reInit',), ('click', 101), ('focus', 102), ('action', 'a')],
-                         host.calls)
+        self.assertEqual([('firstInit',), ('reInit',), ('routeClick', 101), ('routeFocus', 102),
+                          ('action', 'a')], host.calls)
+        self.assertEqual([('click', 101), ('focus', 102)], view.viewCalls)
         self.assertEqual([], view.defaultActions)
+
+    def test_a_click_the_host_used_never_reaches_the_view(self):
+        """The sidebar's clicks (LibraryWindow.routeClick())."""
+        view = hosted(FakeThinView(), FakeHost(clickRouted=True))
+        view.onClick(9000)
+        self.assertEqual([], view.viewCalls)
+
+    def test_a_focus_event_the_host_dropped_never_reaches_the_view(self):
+        """The go_root wait (LibraryWindow.routeFocus())."""
+        view = hosted(FakeThinView(), FakeHost(focusRouted=True))
+        view.onFocus(9001)
+        self.assertEqual([], view.viewCalls)
 
     def test_an_action_the_host_hands_back_reaches_the_views_default(self):
         """Replaces the host's forward through the saved _currentOnAction."""
@@ -145,6 +171,7 @@ class MultiWindowViewTest(KodiTestCase):
         view.onAction('a')
         self.assertEqual([], host.calls)
         self.assertEqual([], view.defaultActions)
+        self.assertEqual([], view.viewCalls)
 
     def test_librarys_grid_and_recommended_views_are_multiwindow_views(self):
         for cls in (library.PostersWindow, library.PostersSmallWindow, library.ListView16x9Window,
@@ -157,6 +184,56 @@ class MultiWindowViewTest(KodiTestCase):
             for name in ('onFirstInit', 'onReInit', 'onClick', 'onFocus', 'onAction'):
                 self.assertIs(getattr(kodigui.MultiWindowView, name), getattr(cls, name),
                               '{0}.{1} overrides the forward'.format(cls.__name__, name))
+            for name in ('viewAction', 'viewClick', 'viewFocus'):
+                self.assertIsNot(getattr(kodigui.MultiWindowView, name), getattr(cls, name),
+                                 '{0} has no {1} of its own'.format(cls.__name__, name))
+
+
+class ViewHandlersTest(KodiTestCase):
+    """I4: each of LibraryWindow's views names its own handlers on the host - the grid views the
+    grid's (library_grid.py), Recommended the hub engine's (library_hubs.py)."""
+
+    class Host(object):
+        def __init__(self):
+            self._current = None
+            self.calls = []
+
+        def __getattr__(self, name):
+            if name.startswith(('grid', 'hub')):
+                return lambda *args: self.calls.append((name,) + args) or 'result'
+            raise AttributeError(name)
+
+    def _view(self, cls):
+        host = self.Host()
+        view = object.__new__(cls)
+        view._hostRef = weakref.ref(host)
+        host._current = view
+        return view, host
+
+    def test_the_grid_views(self):
+        for cls in (library.PostersWindow, library.PostersSmallWindow, library.ListView16x9Window,
+                    library.SquaresWindow, library.ListViewSquareWindow, library.TrackListWindow):
+            view, host = self._view(cls)
+            self.assertEqual('result', view.viewAction('a'))
+            view.viewClick(101)
+            view.viewFocus(151)
+            self.assertEqual('result', view.handleBack())
+            self.assertEqual([('gridAction', 'a'), ('gridClick', 101), ('gridFocus', 151), ('gridBack',)],
+                             host.calls, cls.__name__)
+
+    def test_the_recommended_view(self):
+        view, host = self._view(library.RecommendedWindow)
+        self.assertEqual('result', view.viewAction('a'))
+        view.viewClick(400)
+        view.viewFocus(401)
+        self.assertEqual([('hubAction', 'a'), ('hubClick', 400), ('hubFocus', 401)], host.calls)
+
+    def test_recommended_has_no_back_step_before_the_chain_pops(self):
+        """Its row's Back to item 0 is in hubAction(), after the chain: a Recommended view reached
+        mid-chain goes back up the chain first, as before I4."""
+        view, host = self._view(library.RecommendedWindow)
+        self.assertFalse(view.handleBack())
+        self.assertEqual([], host.calls)
 
 
 class HostedShellsRouteFirstTest(KodiTestCase):

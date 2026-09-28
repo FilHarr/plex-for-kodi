@@ -340,6 +340,10 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             return False
         return self.hostedBy().routeClick(controlID)
 
+    # The actions that run handleBack() while this screen is hosted: NAV_BACK only, as on the
+    # screens' own standalone path. The host's own views take PREVIOUS_MENU too (MultiWindowView).
+    BACK_ACTIONS = (xbmcgui.ACTION_NAV_BACK,)
+
     def handleBack(self):
         """This screen's own Back steps, the ones that keep it open (a scrolled row back to its
         first item, the extras rows back to the button row). Returns True when one of them used
@@ -1505,10 +1509,19 @@ class _MWBackground(ControlledWindow):
 
 class MultiWindowView(object):
     """A view that only ever exists as a MultiWindow's current window (LibraryWindow's grid and
-    Recommended views): the host owns all its input, so every callback goes straight to the host's
-    handler of the same name, and onAction() through the host's routeAction(). List it before
-    ControlledWindow in the bases. Input on a view the host has swapped out, or that hasn't started
-    its first init, is dropped (see BaseWindow.ignoresInput())."""
+    Recommended views). Its input takes the same route as a hosted screen's: the host's shared
+    routing first (routeActionToHost(), routeClickToHost(), the host's routeFocus()), then the
+    view's own handlers, which each view class supplies: viewAction(), viewClick(), viewFocus() and
+    handleBack(). The host calls viewAction() and handleBack() itself, from routeAction(), at the
+    points in its order where a view's own handling belongs. So the host reads only the controls
+    every view shares, and one view's control IDs never reach another's handlers (I4 in the
+    navigation review).
+
+    List it before ControlledWindow in the bases. Input on a view the host has swapped out, or
+    that hasn't started its first init, is dropped (see BaseWindow.ignoresInput())."""
+
+    # Back, and PREVIOUS_MENU (Escape on a keyboard), both run the view's own Back steps.
+    BACK_ACTIONS = (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU)
 
     def onFirstInit(self):
         host = self.hostedBy()
@@ -1521,17 +1534,31 @@ class MultiWindowView(object):
             host.onReInit()
 
     def onClick(self, controlID):
-        if not self.ignoresInput():
-            self.hostedBy().onClick(controlID)
+        if not self.routeClickToHost(controlID):
+            self.viewClick(controlID)
 
     def onFocus(self, controlID):
-        if not self.ignoresInput():
-            self.hostedBy().onFocus(controlID)
+        if self.ignoresInput():
+            return
+        if not self.hostedBy().routeFocus(controlID):
+            self.viewFocus(controlID)
 
     def onAction(self, action):
         if self.routeActionToHost(action):
             return
         super(MultiWindowView, self).onAction(action)
+
+    def viewAction(self, action):
+        """This view's own handling of an action, called by the host's routeAction() after the
+        shared steps. True when it used the action; False lets the host's Back and Home handling
+        and then Kodi's own have it."""
+        return False
+
+    def viewClick(self, controlID):
+        """This view's own clicks: every click the host's routeClick() didn't use."""
+
+    def viewFocus(self, controlID):
+        """This view's own focus handling: every focus event the host's routeFocus() didn't use."""
 
 
 class StepTiming(object):
@@ -2008,11 +2035,10 @@ class MultiWindow(object):
         when the click was used; False hands it back to the screen's own onClick()."""
         return False
 
-    def onClick(self, controlID):
-        pass
-
-    def onFocus(self, controlID):
-        pass
+    def routeFocus(self, controlID):
+        """A MultiWindowView's focus events come here first. Returns True when the host used the
+        event and the view's own viewFocus() should not see it."""
+        return False
 
 
 class SafeControlEdit(object):

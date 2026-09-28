@@ -51,6 +51,7 @@ class FakeAction(object):
 
 class FakeShell(object):
     xmlFile = 'script-plex-fake.xml'
+    BACK_ACTIONS = library.kodigui.BaseWindow.BACK_ACTIONS
     path = '/fake/path'
     theme = 'Main'
     res = '1080i'
@@ -231,17 +232,11 @@ class FakeHostWindow(object):
         self.onActionCalls.append(action)
         return False
 
-    # kodigui.MultiWindowView forwards these four straight to the host - no-op stand-ins.
+    # kodigui.MultiWindowView forwards these two straight to the host - no-op stand-ins.
     def _onFirstInit(self):
         pass
 
     def onReInit(self):
-        pass
-
-    def onClick(self, controlID):
-        pass
-
-    def onFocus(self, controlID):
         pass
 
 
@@ -258,7 +253,14 @@ routeAction = library.LibraryWindow.routeAction
 _captureRootRestoreState = library.LibraryWindow._captureRootRestoreState
 _consumeRestoreItemPos = library.LibraryWindow._consumeRestoreItemPos
 _captureHostedShellRestoreState = library.LibraryWindow._captureHostedShellRestoreState
-onFocus = library.LibraryWindow.onFocus
+gridBack = library.LibraryWindow.gridBack
+
+
+def onFocus(host, controlID):
+    """What kodigui.MultiWindowView.onFocus() does for the Recommended view: the host's
+    routeFocus() first, then the view's own handler, HubsMixin.hubFocus()."""
+    if not library.LibraryWindow.routeFocus(host, controlID):
+        library.LibraryWindow.hubFocus(host, controlID)
 
 
 class IsRealShellTest(KodiTestCase):
@@ -1214,11 +1216,6 @@ class OnActionTest(KodiTestCase):
         host = FakeHostWindow()
         host._shuttingDown = False
         host._goRootAwaitFocus = None
-        # contentMode == 'recommended' (not 'library'): short-circuits the grid "snap to item 0
-        # first" check just above the branch under test here without needing self.getFocusId()/
-        # self.POSTERS_PANEL_ID (neither of which this minimal fake defines) - that check's own
-        # guard is covered directly by the hosted-shell test below instead.
-        host.contentMode = 'recommended'
         host._backStack = [(FakeShell, {})]
         popCalls = []
         host.popBack = lambda: popCalls.append(True)
@@ -1234,7 +1231,6 @@ class OnActionTest(KodiTestCase):
         host = FakeHostWindow()
         host._shuttingDown = False
         host._goRootAwaitFocus = None
-        host.contentMode = 'recommended'
         host._backStack = [(FakeShell, {}), (FakeShell, {})]
         popCalls = []
 
@@ -1261,17 +1257,15 @@ class OnActionTest(KodiTestCase):
         self.assertEqual([], popCalls)
 
     def test_navback_with_a_hosted_shell_does_not_touch_grid_specific_attributes(self):
-        """Regression guard for a real live bug (2026-09-03): the grid "snap to item 0 first"
-        Back handling (routeAction(), immediately above the chain-pop branch covered by the test
-        above) must short-circuit on `not self._isHostedShell` before touching
-        self.contentMode/self.getFocusId()/self.POSTERS_PANEL_ID - none of which a real
-        shell-hosting LibraryWindow actually has as its own attributes (they resolve via
-        MultiWindow.__getattr__ delegation to self._current, and a real shell like PrePlayWindow
-        doesn't define POSTERS_PANEL_ID at all). Without the guard this raised a bare
-        AttributeError on every single Back press while any shell was hosted - Back appeared to
-        just stop doing anything after opening an item from a grid. FakeHostWindow deliberately
-        doesn't define contentMode (see module docstring), so a regressed guard fails this test
-        with that same AttributeError instead of silently passing."""
+        """Regression guard for a real live bug (2026-09-03): the grid's "snap to item 0 first"
+        Back step must never run for a hosted screen - it reads self.getFocusId()/
+        self.POSTERS_PANEL_ID/self.showPanelControl, and a real shell like PrePlayWindow doesn't
+        define POSTERS_PANEL_ID at all. It raised a bare AttributeError on every Back press while
+        any shell was hosted - Back appeared to just stop doing anything after opening an item
+        from a grid. Since I4 the step is the grid view's own handleBack() (GridMixin.gridBack()),
+        so the host only ever asks the view that's showing. FakeHostWindow deliberately doesn't
+        define contentMode/POSTERS_PANEL_ID (see module docstring), so a regression fails this
+        test with that same AttributeError instead of silently passing."""
         host = FakeHostWindow()
         host._shuttingDown = False
         host._goRootAwaitFocus = None
@@ -1339,13 +1333,21 @@ class OnActionHandleBackTest(KodiTestCase):
             library.util.ERROR = originalError
         self.assertEqual(1, len(posted))
 
-    def test_unhosted_host_never_asks_its_current_view(self):
-        """A grid/Recommended view isn't a hosted screen; its Back steps stay on the host."""
+    def test_the_hosts_own_views_take_previous_menu_too(self):
+        """The grid view's Back step (gridBack()) runs for PREVIOUS_MENU as well as Back, as the
+        grid's snap to item 0 always did (kodigui.MultiWindowView.BACK_ACTIONS)."""
         host = self._host(handleBackResult=True)
         host._isHostedShell = False
-        host.contentMode = 'recommended'
+        host._current.BACK_ACTIONS = library.kodigui.MultiWindowView.BACK_ACTIONS
+        posted = self._press(host, xbmcgui.ACTION_PREVIOUS_MENU)
+        self.assertEqual(1, host._current.handleBackCalls)
+        self.assertEqual([], posted)
+
+    def test_a_view_without_back_steps_is_not_asked(self):
+        """Not every view has BACK_ACTIONS (the chain tests' plain doubles): nothing to ask."""
+        host = self._host(handleBackResult=True)
+        host._current = ReadyView()
         posted = self._press(host, xbmcgui.ACTION_NAV_BACK)
-        self.assertEqual(0, host._current.handleBackCalls)
         self.assertEqual(1, len(posted))
 
     def test_navback_with_an_empty_backstack_falls_through_unmodified(self):
@@ -1367,11 +1369,14 @@ class OnActionHandleBackTest(KodiTestCase):
         self.assertEqual([], popCalls)
 
     def test_hosted_shell_skips_the_grid_body_and_dispatches_natively(self):
+        """A hosted screen's action goes from the shared steps straight to the Back and Home
+        handling: the grid's and Recommended's handlers are for their own views only."""
         host = FakeHostWindow()
         host._shuttingDown = False
         host._goRootAwaitFocus = None
         host._backStack = [(FakeShell, {})]  # non-empty, but this action isn't NAV_BACK
         host._isHostedShell = True
+        host._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
         host.SECTION_LIST_ID = 1
         host.SERVER_BUTTON_ID = 2
         host.USER_BUTTON_ID = 3
@@ -1386,13 +1391,138 @@ class OnActionHandleBackTest(KodiTestCase):
         self.assertEqual([action], dispatchCalls)
 
 
+class ViewActionTest(KodiTestCase):
+    """I4: routeAction() reads only the controls every view shares. The grid's and Recommended's
+    own controls are read by their own handlers (viewAction()), which the host calls only when one
+    of its own views (kodigui.MultiWindowView) is showing - so a hosted screen's control IDs never
+    reach them."""
+
+    class FakeView(library.kodigui.MultiWindowView):
+        def __init__(self, used=False):
+            self.used = used
+            self.actions = []
+
+        def viewAction(self, action):
+            self.actions.append(action)
+            return self.used
+
+    def _host(self, current, focus_id=999):
+        host = FakeHostWindow()
+        host._shuttingDown = False
+        host._goRootAwaitFocus = None
+        host._backStack = []
+        host.SECTION_LIST_ID = 1
+        host.SERVER_BUTTON_ID = 2
+        host.USER_BUTTON_ID = 3
+        host.SERVER_LIST_ID = 4
+        host.getFocusId = lambda: focus_id
+        host._current = current
+        host.dispatched = []
+        host._dispatchNativeAction = lambda action: host.dispatched.append(action) or False
+        host.hubAction = lambda action: self.fail('hub code reached for {0}'.format(current))
+        return host
+
+    def test_the_views_own_handler_runs_after_the_shared_steps(self):
+        view = self.FakeView(used=True)
+        host = self._host(view)
+        action = FakeAction(xbmcgui.ACTION_MOVE_DOWN)
+
+        self.assertTrue(routeAction(host, action))
+
+        self.assertEqual([action], view.actions)
+        self.assertEqual([], host.dispatched, "an action the view used goes no further")
+
+    def test_an_action_the_view_passes_on_reaches_back_and_home_handling(self):
+        view = self.FakeView(used=False)
+        host = self._host(view)
+        action = FakeAction(xbmcgui.ACTION_MOVE_DOWN)
+
+        routeAction(host, action)
+
+        self.assertEqual([action], view.actions)
+        self.assertEqual([action], host.dispatched)
+
+    def test_a_shared_control_never_reaches_the_view(self):
+        view = self.FakeView(used=True)
+        host = self._host(view, focus_id=4)  # the server list
+        host.setFocusId = lambda control_id: None
+
+        self.assertTrue(routeAction(host, FakeAction(xbmcgui.ACTION_SELECT_ITEM)))
+
+        self.assertEqual([], view.actions)
+
+    def test_a_hosted_pre_plays_lists_never_reach_hub_code(self):
+        """Pre-play's ROLES/REVIEWS/EXTRA/RELATED/collection lists are 400-406, inside the hub
+        rows' range: up and down on them used to reach the hub slide when the host was last on
+        the Recommended tab, until a guard was added after a live crash."""
+        shell = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
+        for control_id in range(400, 407):
+            host = self._host(shell, focus_id=control_id)
+            host._isHostedShell = True
+            host.contentMode = 'recommended'
+            for action_id in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN, xbmcgui.ACTION_CONTEXT_MENU):
+                action = FakeAction(action_id)
+                routeAction(host, action)
+                self.assertEqual(action, host.dispatched[-1])
+
+
+class GridBackTest(KodiTestCase):
+    """GridMixin.gridBack(), the grid view's handleBack(): Back on a scrolled grid snaps to item 0
+    before the host pops the chain."""
+
+    POSTERS_PANEL_ID = 101
+
+    class Item(object):
+        def __init__(self, pos):
+            self._pos = pos
+
+        def pos(self):
+            return self._pos
+
+    class Panel(object):
+        def __init__(self, pos):
+            self.item = GridBackTest.Item(pos) if pos is not None else None
+            self.selected = []
+
+        def getSelectedItem(self):
+            return self.item
+
+        def selectItem(self, pos):
+            self.selected.append(pos)
+
+    class Host(object):
+        POSTERS_PANEL_ID = 101
+
+        def __init__(self, focus_id, panel):
+            self.focus_id = focus_id
+            self.showPanelControl = panel
+
+        def getFocusId(self):
+            return self.focus_id
+
+    def test_a_scrolled_grid_snaps_to_the_first_item(self):
+        panel = self.Panel(37)
+        self.assertTrue(gridBack(self.Host(self.POSTERS_PANEL_ID, panel)))
+        self.assertEqual([0], panel.selected)
+
+    def test_on_the_first_item_back_goes_on(self):
+        panel = self.Panel(0)
+        self.assertFalse(gridBack(self.Host(self.POSTERS_PANEL_ID, panel)))
+        self.assertEqual([], panel.selected)
+
+    def test_only_with_the_grid_focused(self):
+        panel = self.Panel(37)
+        self.assertFalse(gridBack(self.Host(151, panel)))  # the key list
+        self.assertEqual([], panel.selected)
+
+    def test_no_panel_yet_or_nothing_selected(self):
+        self.assertFalse(gridBack(self.Host(self.POSTERS_PANEL_ID, None)))
+        self.assertFalse(gridBack(self.Host(self.POSTERS_PANEL_ID, self.Panel(None))))
+
+
 class _FakeOnFocusHost(object):
-    """A hand-built double carrying only what LibraryWindow.onFocus() (the real, unbound method
-    under test below) actually touches for a 'recommended'-mode, non-SECTION_LIST_ID focus event -
-    contentMode == 'recommended' returns early (library.py:3546-3551) right after the
-    _hubJustEnteredFromOutside computation and the SECTION_LIST_ID branch (never taken here, its
-    own attributes never read - see that branch's short-circuit), so nothing past that point
-    (KEY_LIST_ID/selectKey()) needs a stand-in."""
+    """A hand-built double carrying only what the Recommended view's focus path (onFocus() above:
+    LibraryWindow.routeFocus(), then HubsMixin.hubFocus()) actually touches."""
 
     SECTION_LIST_ID = 900  # any value distinct from the hub control ids used below
 
@@ -1411,6 +1541,7 @@ class _FakeOnFocusHost(object):
 
     HUB_ROTATION_RING = library.LibraryWindow.HUB_ROTATION_RING
     _anchorControlId = library.LibraryWindow._anchorControlId
+    recordFocus = library.LibraryWindow.recordFocus
 
     def setFocusId(self, control_id):
         self.focusCalls.append(control_id)
@@ -1420,7 +1551,7 @@ class _FakeOnFocusHost(object):
 
 
 class OnFocusHubEntryFlagTest(KodiTestCase):
-    """LibraryWindow.onFocus()'s _hubJustEnteredFromOutside detector (library.py:3495-3520) - live-
+    """HubsMixin.hubFocus()'s _hubJustEnteredFromOutside detector - live-
     reported regression (2026-09-04) from onFirstInit()'s 'recommended' branch forcing focus onto
     the anchor hub control on every fresh entry (the focus-ring fix from earlier the same day):
     that setFocusId() call fires a real onFocus() the same as any other focus move, and this
@@ -1446,7 +1577,7 @@ class OnFocusHubEntryFlagTest(KodiTestCase):
         """Contrast case, proving the fix actually matters: without pre-seeding lastFocusID (the
         pre-fix shape - whatever native default control focus/None left it at), the exact same
         onFocus(<hub control>) call sets the flag, which then goes on to wrongly swallow the
-        user's next real press (routeAction()'s own hub-branch, library.py:2638-2660)."""
+        user's next real press (HubsMixin.hubAction())."""
         host = _FakeOnFocusHost(last_focus_id=None)
 
         onFocus(host, self.ANCHOR_CONTROL_ID)
@@ -1464,12 +1595,12 @@ class OnFocusHubEntryFlagTest(KodiTestCase):
 
 
 class OnFocusGoRootWaitTest(KodiTestCase):
-    """LibraryWindow.onFocus()'s go_root wait. After an in-place go_root reset (onReInit(),
+    """LibraryWindow.routeFocus()'s go_root wait. After an in-place go_root reset (onReInit(),
     _resetHubsToTop()), the window's reactivation re-focuses whichever control had focus before the
     Home press, and that event arrives before the reset's own focus event (live-confirmed
     2026-09-24). Handled as real focus it recorded the old control as lastFocusID, so a stray from
     the sidebar (9001) set _hubJustEnteredFromOutside on the target's own event and swallowed the
-    next real press. onFocus() now ignores everything until the target's own event arrives."""
+    next real press. routeFocus() now ignores everything until the target's own event arrives."""
 
     ANCHOR_CONTROL_ID = 400
     SIDEBAR_ID = 9001

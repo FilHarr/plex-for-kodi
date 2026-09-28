@@ -8,6 +8,7 @@ import plexnet
 import six
 import six.moves.urllib.parse
 from kodi_six import xbmc
+from kodi_six import xbmcgui
 from plexnet import playqueue
 from plexnet import playlist
 from plexnet import plexapp
@@ -33,6 +34,22 @@ from .mixins.watchlist import removeFromWatchlistBlind
 
 
 KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+MOVE_SET = frozenset(
+    (
+        xbmcgui.ACTION_MOVE_LEFT,
+        xbmcgui.ACTION_MOVE_RIGHT,
+        xbmcgui.ACTION_MOVE_UP,
+        xbmcgui.ACTION_MOVE_DOWN,
+        xbmcgui.ACTION_MOUSE_MOVE,
+        xbmcgui.ACTION_PAGE_UP,
+        xbmcgui.ACTION_PAGE_DOWN,
+        xbmcgui.ACTION_FIRST_PAGE,
+        xbmcgui.ACTION_LAST_PAGE,
+        xbmcgui.ACTION_MOUSE_WHEEL_DOWN,
+        xbmcgui.ACTION_MOUSE_WHEEL_UP
+    )
+)
 
 
 THUMB_POSTER_DIM = util.scaleResolution(268, 402)
@@ -325,6 +342,124 @@ class GridMixin(object):
     item-type buttons, item options and shuffle. A mixin rather than an object of its own because it
     reads the host's state throughout (L6 in the navigation review). LibraryWindow lists it first in
     its bases, so its methods still come before its other bases' (CommonMixin.toggleWatched)."""
+
+    # ------------------------------------------------------------------------------------------
+    # Input: the grid views' own handlers (PostersWindow's viewAction(), viewClick(), viewFocus()
+    # and handleBack()), each called after the host's shared routing (kodigui.MultiWindowView).
+
+    def gridAction(self, action):
+        """The grid view's own actions, from the host's routeAction() after its shared steps:
+        chunk requests, the background and the key list as the cursor moves, the context menu,
+        the watched toggle, and Back to the first row. True when the action was used; False lets
+        the host's Back and Home handling and then Kodi's own have it."""
+        if action.getId() in MOVE_SET:
+            mli = self.showPanelControl.getSelectedItem()
+            if mli:
+                self.requestChunk(mli.pos())
+
+            if util.addonSettings.dynamicBackgrounds:
+                # `mli and mli.dataSource`, not `is not None`, used to gate this - a real
+                # footgun for Playlist dataSources specifically: BasePlaylist defines
+                # __len__() (playlist.py) returning its *member* count, which is always 0
+                # for the summary objects this grid fetches (real items are never loaded
+                # just to browse the grid) - Python falls back to __len__ for truthiness
+                # when __bool__ isn't defined, so a perfectly valid Playlist object silently
+                # evaluated as falsy here, skipping the background update on every single
+                # scroll. Live-confirmed via diagnostic logging: MOVE_SET fired correctly
+                # every time with a valid mli.dataSource, but this check still failed.
+                # Explicit `is not None` sidesteps __len__ entirely.
+                if mli is not None and mli.dataSource is not None:
+                    if self.section.TYPE == 'playlists':
+                        # updateBackgroundFrom() keys off ds.get('art', ...), which
+                        # playlists don't have (see _setPlaylistBackground()'s own
+                        # docstring) - without this, scrolling through the playlists grid
+                        # silently did nothing (no art, so no background write at all),
+                        # leaving whichever playlist fillPlaylists() randomly picked at fill
+                        # time showing until the next full refill (e.g. a Music/Video tab
+                        # swap) happened to pick a different one.
+                        self._setPlaylistBackground(mli.dataSource)
+                    else:
+                        self.updateBackgroundFrom(mli.dataSource)
+
+            controlID = self.getFocusId()
+            if controlID == self.POSTERS_PANEL_ID or controlID == self.SCROLLBAR_ID:
+                self.updateKey()
+        elif action == xbmcgui.ACTION_CONTEXT_MENU:
+            # item action possible?
+            had_action = self.itemOptions()
+            if not had_action:
+                if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
+                    self.lastNonOptionsFocusID = self.lastFocusID
+                    self.setFocusId(self.OPTIONS_GROUP_ID)
+                    return True
+                else:
+                    if self.lastNonOptionsFocusID:
+                        self.setFocusId(self.lastNonOptionsFocusID)
+                        self.lastNonOptionsFocusID = None
+                        return True
+            else:
+                return True
+        elif self.isWatchedAction(action):
+            mli = self.showPanelControl.getSelectedItem()
+            if not mli or not mli.dataSource:
+                return True
+            self.toggleWatched(mli)
+            return True
+
+        elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_CONTEXT_MENU):
+            if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)) and \
+                    (not util.addonSettings.fastBack or action == xbmcgui.ACTION_CONTEXT_MENU):
+                if xbmc.getCondVisibility('Integer.IsGreater(Container(101).ListItem.Property(index),5)'):
+                    self.showPanelControl.selectItem(0)
+                    return True
+
+        self.updateItem()
+        return False
+
+    def gridClick(self, controlID):
+        """The grid view's own clicks: every click the host's routeClick() didn't use."""
+        if controlID == self.TAB_LIST_ID:
+            self.tabListClicked()
+        elif controlID == self.POSTERS_PANEL_ID:
+            self.showPanelClicked()
+        elif controlID == self.KEY_LIST_ID:
+            self.keyClicked()
+        elif controlID == self.PLAYER_STATUS_BUTTON_ID:
+            self.showAudioPlayer()
+        elif controlID == self.PLAY_BUTTON_ID:
+            self.playButtonClicked()
+        elif controlID == self.SHUFFLE_BUTTON_ID:
+            self.shuffleButtonClicked()
+        elif controlID == self.OPTIONS_BUTTON_ID:
+            self.optionsButtonClicked()
+        elif controlID == self.VIEWTYPE_BUTTON_ID:
+            self.viewTypeButtonClicked()
+        elif controlID == self.SORT_BUTTON_ID:
+            self.sortButtonClicked()
+        elif controlID == self.FILTER1_BUTTON_ID:
+            self.filter1ButtonClicked()
+        elif controlID == self.ITEM_TYPE_BUTTON_ID:
+            self.itemTypeButtonClicked()
+
+    def gridFocus(self, controlID):
+        """The grid view's own focus handling: every focus event the host's routeFocus() didn't
+        drop."""
+        self.recordFocus(controlID)
+        if controlID == self.KEY_LIST_ID:
+            self.selectKey()
+
+    def gridBack(self):
+        """The grid view's own Back step (its handleBack()), which the host runs before it pops
+        the chain: Back while scrolled down the grid snaps to item 0 first, and only once already
+        on item 0 does Back mean leaving. Before the chain pops, so it applies mid-chain too, e.g.
+        in a collection's grid reached via swapToSection() with a non-empty _backStack."""
+        if self.getFocusId() != self.POSTERS_PANEL_ID:
+            return False
+        mli = self.showPanelControl.getSelectedItem() if self.showPanelControl else None
+        if mli and mli.pos():
+            self.showPanelControl.selectItem(0)
+            return True
+        return False
 
     def onItemChanged(self, mli):
         if not mli:
@@ -1664,8 +1799,8 @@ class GridMixin(object):
 
     def _setPlaylistBackground(self, pl):
         """Background art + corner-panel colors for a single playlist - factored out of
-        fillPlaylists() so the same per-item treatment can also run on focus-move (routeAction()'s
-        MOVE_SET handling below), not just once at fill time. Needed at all because playlists
+        fillPlaylists() so the same per-item treatment can also run on focus-move (gridAction()'s
+        MOVE_SET handling above), not just once at fill time. Needed at all because playlists
         never go through the generic updateBackgroundFrom()/setBackground() path: that keys off
         ds.get('art', ...), which playlists don't have - mirrors the old playlists.py's own
         fill(), which set 'background' directly from .composite instead for the same reason.
