@@ -2020,6 +2020,17 @@ class HubsMixin(object):
                 self.hubSeeMoreClicked(control.dataSource)
             return
 
+        # A click can land on the row a slide is leaving: the press moves the logical focus at
+        # once, but Kodi applies the matching setFocusId() a moment later (it only queues), and a
+        # quick Select in between goes to the row that still had focus. That row's item opens -
+        # it's what was highlighted - so Back should come back to it, not to where the slide was
+        # heading (live-caught 2026-09-28). Kept with the anchor it was taken against, so it's
+        # ignored once focus has moved on (_captureRootRestoreState()).
+        role = self._ringRoleOffset(hub_control_id)
+        clicked_index = self.focusedHubIndex + role
+        self._openedFromHub = ((self.focusedHubIndex, clicked_index)
+                               if role and 0 <= clicked_index < len(self.visibleHubs) else None)
+
         # In-progress auto-resume - ported from HomeWindow.hubItemClicked() (home.py).
         auto_play = False
         if util.getSetting('home_inprogress_resume'):
@@ -2712,6 +2723,7 @@ class HubsMixin(object):
             return
 
         list_gen = self._listGeneration
+        self._openedFromHub = None
         # "Slide timing" line (step 11 stage A in the navigation review): what runs before the rows
         # move, then the animation itself, logged when it ends or is cut short.
         timing = kodigui.StepTiming('{0} to row {1}'.format('down' if delta > 0 else 'up', new_index))

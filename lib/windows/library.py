@@ -757,8 +757,14 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         _isHostedShell" branch in both callers), so contentMode alone is enough to know which of
         the two restore shapes applies; no need to inspect self.getFocusId()."""
         if self.contentMode == 'recommended':
-            if self.visibleHubs and 0 <= self.focusedHubIndex < len(self.visibleHubs):
-                hub = self.visibleHubs[self.focusedHubIndex]
+            index = self.focusedHubIndex
+            # The row an item was just opened from, when the click landed on the row a slide was
+            # leaving (hubItemClicked()) - only while focus hasn't moved since.
+            opened = self.__dict__.pop('_openedFromHub', None)
+            if opened is not None and opened[0] == index:
+                index = opened[1]
+            if self.visibleHubs and 0 <= index < len(self.visibleHubs):
+                hub = self.visibleHubs[index]
                 identifier = hub.getCleanHubIdentifier(is_home=self.section.key is None)
                 return {'_restoreHubId': identifier}
             return {}

@@ -691,6 +691,34 @@ class CaptureRootRestoreStateTest(KodiTestCase):
 
         self.assertEqual({'_restoreHubId': 'hub-b'}, _captureRootRestoreState(host))
 
+    def _recommended(self, focused, opened=None):
+        host = self._Bag()
+        host.contentMode = 'recommended'
+        host.visibleHubs = [self._FakeHub('hub-a'), self._FakeHub('hub-b'), self._FakeHub('hub-c')]
+        host.focusedHubIndex = focused
+        host.section = self._FakeSection(key='1')
+        if opened is not None:
+            host._openedFromHub = opened
+        return host
+
+    def test_an_item_opened_from_the_row_a_slide_was_leaving_comes_back_to_that_row(self):
+        """Live-caught 2026-09-28: two quick Downs then Select opened the middle row's item (Kodi
+        hadn't applied the second move's focus yet), and Back landed on the row below it."""
+        host = self._recommended(focused=2, opened=(2, 1))
+
+        self.assertEqual({'_restoreHubId': 'hub-b'}, _captureRootRestoreState(host))
+
+    def test_the_opened_row_is_ignored_once_focus_has_moved_on(self):
+        host = self._recommended(focused=0, opened=(2, 1))
+
+        self.assertEqual({'_restoreHubId': 'hub-a'}, _captureRootRestoreState(host))
+
+    def test_the_opened_row_is_used_once(self):
+        host = self._recommended(focused=2, opened=(2, 1))
+        _captureRootRestoreState(host)
+
+        self.assertEqual({'_restoreHubId': 'hub-c'}, _captureRootRestoreState(host))
+
     def test_recommended_mode_with_no_visible_hubs_is_a_no_op(self):
         host = self._Bag()
         host.contentMode = 'recommended'

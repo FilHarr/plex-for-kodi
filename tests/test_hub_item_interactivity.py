@@ -88,6 +88,8 @@ class FakeLibraryWindow(object):
     _hubIsMusic = library.LibraryWindow._hubIsMusic
     MUSIC_ITEM_TYPES = library.LibraryWindow.MUSIC_ITEM_TYPES
     _anchorControlId = library.LibraryWindow._anchorControlId
+    _ringRoleOffset = library.LibraryWindow._ringRoleOffset
+    HUB_MIN_ROLE = library.LibraryWindow.HUB_MIN_ROLE
     # HUB_CONTROL_ID lives on RecommendedWindow (the template-backed content shell), not
     # LibraryWindow itself - a real LibraryWindow instance resolves self.HUB_CONTROL_ID via
     # MultiWindow.__getattr__ delegation to self._current (a live RecommendedWindow) while the
