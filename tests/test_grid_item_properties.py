@@ -5,8 +5,9 @@ review). The chunk writer (GridMixin._chunkCallback()) no longer writes summary 
 the removed 16:9 list view read, or a per-item initialized or unwatched, which nothing read. Checked
 here against the rendered templates of every view the chunk writer fills, for every played-
 indicator style, so a template that starts reading one of them fails until the writer follows.
-(The square list reads summary, but it only shows Photos and Playlists, which fill their items
-themselves.)
+(The square list reads summary, but it only shows Photos, which fills its items
+itself.) The Collection and folder screens' item writers (collection.py) are held to the same
+rule.
 
 Importing lib.windows.library starts lib.player's monitor thread unless abort_requested is set
 first - same guard the other lib.windows.* tests use for the same reason.
@@ -23,6 +24,7 @@ from kodienv import ENV
 
 ENV.abort_requested = True
 from lib.templating.context import TEMPLATE_CONTEXTS  # noqa: E402
+from lib.windows import collection  # noqa: E402
 from lib.windows import library  # noqa: E402
 from lib.windows import library_grid  # noqa: E402
 
@@ -34,6 +36,8 @@ from .test_templates import render_theme  # noqa: E402
 CHUNK_VIEWS = (library.PostersWindow, library.PostersSmallWindow, library.SquaresWindow,
                library.TrackListWindow)
 NOT_WRITTEN = ('summary', 'art', 'initialized', 'unwatched')
+# The Collection and folder screens: collection.BoundedGridWindow's own item writers.
+BOUNDED_VIEWS = (collection.CollectionWindow, collection.SubDirWindow)
 READ_RE = re.compile(r'ListItem\.Property\(([^)$]+)\)')
 
 
@@ -46,7 +50,7 @@ class GridItemPropertiesTest(KodiTestCase):
             context = copy.deepcopy(TEMPLATE_CONTEXTS)
             context['indicators']['START'] = {'INHERIT': style, 'style': style, 'hide_aw_bg': False}
             rendered = render_theme(make_engine(tempfile.mkdtemp(), context=context), 'modern-colored')
-            for view in CHUNK_VIEWS:
+            for view in CHUNK_VIEWS + BOUNDED_VIEWS:
                 name = view.xmlFile[len('script-plex-'):-len('.xml')]
                 cls.reads[(style, view)] = set(READ_RE.findall(rendered[name]))
 
@@ -57,6 +61,20 @@ class GridItemPropertiesTest(KodiTestCase):
 
     def test_the_writer_leaves_them_out(self):
         source = inspect.getsource(library_grid.GridMixin._chunkCallback)
+        for prop in NOT_WRITTEN:
+            with self.subTest(prop=prop):
+                self.assertNotIn("setProperty('{0}'".format(prop), source)
+
+    def test_the_collection_and_folder_screens_read_none_of_them_either(self):
+        for (style, view), reads in self.reads.items():
+            if view in BOUNDED_VIEWS:
+                with self.subTest(indicators=style, view=view.__name__):
+                    self.assertEqual(set(), reads & set(NOT_WRITTEN))
+                    self.assertEqual(view.SHOWS_YEAR, 'year' in reads)
+
+    def test_their_writers_leave_them_out(self):
+        source = (inspect.getsource(collection.BoundedGridWindow.setItemInfo)
+                  + inspect.getsource(collection.BoundedGridWindow.setWatchedInfo))
         for prop in NOT_WRITTEN:
             with self.subTest(prop=prop):
                 self.assertNotIn("setProperty('{0}'".format(prop), source)

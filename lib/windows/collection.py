@@ -29,7 +29,6 @@ MOVE_SET = frozenset((
 # THUMB_DIM matches library_grid's THUMB_POSTER_DIM - same tile markup is lifted from
 # script-plex-posters.xml.tpl, so the same fetch dimensions apply.
 THUMB_DIM = util.scaleResolution(268, 402)
-ART_DIM = util.scaleResolution(630, 355)
 # The home hero overlay's own big-clearlogo box (LibraryWindow.CLEAR_LOGO_DIM, library.py -
 # script-plex-recommended.xml.tpl's movie/show variant): the collection info panel is that overlay
 # verbatim, minus its meta row (on request, 2026-09-20). Was 616x109, the title-fallback box.
@@ -243,13 +242,16 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         # handles the same movie/show/nested-collection/plain-directory mix either shell's grid can
         # contain. defaultTitle/defaultThumb/defaultArt are all base PlexObject-level fallbacks
         # (plexobjects.py), so this works unchanged for a Generic/TYPE=='Directory' folder entry too.
+        # Only what the templates read (the navigation review's step 12 follow-ups, checked by
+        # tests/test_grid_item_properties.py): no per-item summary or art, which neither screen
+        # reads, and a year only where it's shown. Each write is a GUI call.
         mli.setLabel(data.defaultTitle)
-        mli.setProperty('summary', util.widenParagraphBreaks(data.get('summary')))
         # Second caption line under the poster (script-plex-collection.xml.tpl's 'year' label, the
         # library grid's own - on request, 2026-09-20). Plain year only: the grid's sort-key
         # subDisplay variants don't apply here, there's no sort. Nested collections/folders
-        # carry no year, so theirs stays a single line.
-        mli.setProperty('year', data.TYPE != 'collection' and data.get('year') or '')
+        # carry no year, so theirs stays a single line. The folder screen shows none.
+        if self.SHOWS_YEAR:
+            mli.setProperty('year', data.TYPE != 'collection' and data.get('year') or '')
         if data.TYPE == 'collection':
             # Collections often have no own poster - fall back to a composite of member posters,
             # same as library.py's _chunkCallback() (library.py:4071-4076) and the dead-code
@@ -257,7 +259,6 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
             mli.setThumbnailImage(data.artCompositeURL(*THUMB_DIM))
         else:
             mli.setThumbnailImage(data.defaultThumb.asTranscodedImageURL(*THUMB_DIM))
-            mli.setProperty('art', data.defaultArt.asTranscodedImageURL(*ART_DIM))
         if not data.isDirectory() and data.get('duration').asInt():
             mli.setLabel2(util.durationToText(data.fixedDuration()))
 
@@ -283,8 +284,6 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
                 # of borrowing episodes.py's shape for a different underlying type.
                 mli.setProperty('unwatched.count', str(data.unViewedLeafCount))
                 mli.setBoolProperty('unwatched.count.large', data.unViewedLeafCount > 999)
-            else:
-                mli.setProperty('unwatched', '1')
         elif data.isFullyWatched:
             mli.setBoolProperty('watched', '1')
         mli.setProperty('progress', util.getProgressImage(data))
@@ -467,6 +466,8 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
 
 class CollectionWindow(BoundedGridWindow):
     xmlFile = 'script-plex-collection.xml'
+    # Its template shows the year under each poster (setItemInfo()); the folder screen's doesn't.
+    SHOWS_YEAR = True
     # The background art/corner colours stay the collection's own (setup()) rather than
     # following the focused member - see BoundedGridWindow.onAction().
     BACKGROUND_FOLLOWS_FOCUS = False
@@ -563,6 +564,7 @@ class SubDirPaginator(BoundedGridPaginator):
 
 class SubDirWindow(BoundedGridWindow):
     xmlFile = 'script-plex-subdir.xml'
+    SHOWS_YEAR = False
 
     def __init__(self, *args, **kwargs):
         BoundedGridWindow.__init__(self, *args, **kwargs)
