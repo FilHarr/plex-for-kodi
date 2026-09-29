@@ -1703,7 +1703,7 @@ class HubsMixin(object):
         self.updateBackgroundFrom(new_ds)
         self._setNoHeroArt(False)
 
-    def _updateHeroFromFocusedHubItem(self, control_id, timing=None):
+    def _updateHeroFromFocusedHubItem(self, control_id, mli=None, timing=None):
         """Sync the hero art/info overlay to whichever item is currently selected in hub-row
         control_id - called on horizontal (left/right) movement within a hub row, via
         checkHubItem() below. Port of the hero-art-relevant slice of HomeWindow.checkHubItem()
@@ -1711,9 +1711,10 @@ class HubsMixin(object):
         calling it directly for the same reason checkHubItem() does (own docstring, home.py):
         updateHeroFrom() always calls updateBackgroundFrom() unconditionally, ignoring the
         dynamicBackgrounds setting - hero info (title/summary) should still update regardless of
-        that setting, only the background art panel itself is gated on it."""
-        control = self.hubControls[control_id - self.HUB_CONTROL_ID]
-        mli = control.getSelectedItem()
+        that setting, only the background art panel itself is gated on it. mli is the caller's
+        own lookup of the selected item, if it made one."""
+        if mli is None:
+            mli = self.hubControls[control_id - self.HUB_CONTROL_ID].getSelectedItem()
         # `is None`, not truthiness - unopened Playlist objects are falsy (see setHeroInfo()).
         if not mli or mli.dataSource is None:
             return
@@ -1906,14 +1907,15 @@ class HubsMixin(object):
         False means "handled" (jumped back to item 0) - the caller should swallow the action.
         """
         control = self.hubControls[control_id - self.HUB_CONTROL_ID]
-        mli = control.getSelectedItem()
+        # One lookup, handed to the hero update and the position memory below (step 12 stage B in
+        # the navigation review).
+        mli, pos = control.getSelectedItemAndPos()
         # The "See more" item (is.more) has no dataSource - nothing to sync the hero to, and not
         # a position worth remembering (the reselect would land on it, not on content).
         is_valid_mli = mli and mli.getProperty('is.more') != '1'
         kodigui.markStep(timing, 'lookup')
 
         if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
-            pos = control.getSelectedPos()
             if pos is not None and pos > 0:
                 control.selectItem(0)
                 self.updateHeroFrom(control[0].dataSource)
@@ -1931,7 +1933,7 @@ class HubsMixin(object):
             return True
 
         if is_valid_mli:
-            self._updateHeroFromFocusedHubItem(control_id, timing=timing)
+            self._updateHeroFromFocusedHubItem(control_id, mli=mli, timing=timing)
 
             # Reselect-position memory - remember this hub's scroll position so navigating away
             # and back (a different hub rebound to this same physical control, or a fresh
@@ -1940,7 +1942,6 @@ class HubsMixin(object):
             if control.dataSource:
                 is_home = self.section.key is None
                 identifier = control.dataSource.getCleanHubIdentifier(is_home=is_home)
-                pos = control.getSelectedPos()
                 if pos is not None and mli.dataSource is not None:
                     self._hubReselectPositions[identifier] = (str(mli.dataSource.ratingKey), pos)
             kodigui.markStep(timing, 'position')

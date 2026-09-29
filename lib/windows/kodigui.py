@@ -1273,13 +1273,15 @@ class ManagedControlList(object):
         return None
 
     def getSelectedItem(self):
-        pos = self.control.getSelectedPosition()
-        if not self.positionIsValid(pos):
-            pos = self.size() - 1
+        return self.getSelectedItemAndPos()[0]
 
-        if pos < 0:
-            return None
-        return self.getListItem(pos)
+    def getSelectedItemAndPos(self):
+        """The selected item and its position, from the one lookup: for a caller that needs both,
+        where the item's pos() would scan the list for a position this already read."""
+        pos = self.getSelectedPos()
+        if pos is None:
+            return None, None
+        return self.getListItem(pos), pos
 
     def getSelectedPos(self):
         pos = self.control.getSelectedPosition()

@@ -356,8 +356,9 @@ class GridMixin(object):
         timing = None
         if action.getId() in MOVE_SET:
             timing = kodigui.StepTiming('Grid move')
-            mli = self.showPanelControl.getSelectedItem()
-            pos = mli.pos() if mli else None
+            # One lookup per press, handed to everything below that needs the item or its
+            # position (step 12 stage B in the navigation review).
+            mli, pos = self.showPanelControl.getSelectedItemAndPos()
             timing.mark('lookup')
             if mli:
                 self.requestChunk(pos)
@@ -388,9 +389,12 @@ class GridMixin(object):
                         self.updateBackgroundFrom(mli.dataSource)
             timing.mark('background')
 
-            controlID = self.getFocusId()
-            if controlID == self.POSTERS_PANEL_ID or controlID == self.SCROLLBAR_ID:
-                self.updateKey()
+            # Asks for the focus only when there's something to write, so a press within one
+            # letter makes no GUI call here.
+            if mli is not None and self._keyUpdateDue(mli):
+                controlID = self.getFocusId()
+                if controlID == self.POSTERS_PANEL_ID or controlID == self.SCROLLBAR_ID:
+                    self.updateKey(mli)
             timing.mark('key')
         elif action == xbmcgui.ACTION_CONTEXT_MENU:
             # item action possible?
@@ -421,10 +425,12 @@ class GridMixin(object):
                     self.showPanelControl.selectItem(0)
                     return True
 
-        self.updateItem()
         if timing is not None:
+            self.updateItem(mli, pos)
             timing.mark('item')
             kodigui.logMoveTiming(self, timing)
+        else:
+            self.updateItem()
         return False
 
     def gridClick(self, controlID):
@@ -458,6 +464,9 @@ class GridMixin(object):
         self.recordFocus(controlID)
         if controlID == self.KEY_LIST_ID:
             self.selectKey()
+            # Moving along the letter list moves its selection away from the grid's letter, so
+            # the next press back in the grid writes both again.
+            self._shownKey = None
 
     def gridBack(self):
         """The grid view's own Back step (its handleBack()), which the host runs before it pops
@@ -562,6 +571,13 @@ class GridMixin(object):
             return True
 
 
+    def _keyUpdateDue(self, mli):
+        """Whether updateKey() has anything to write for mli: its letter isn't the one showing, or
+        it's a photo other than the last item, whose details onItemChanged() shows."""
+        if mli.getProperty('key') != self._shownKey:
+            return True
+        return self.lastItem != mli and mli.dataSource is not None and mli.dataSource.TYPE == 'photo'
+
     def updateKey(self, mli=None):
         mli = mli or self.showPanelControl.getSelectedItem()
         if not mli:
@@ -571,7 +587,14 @@ class GridMixin(object):
             self.lastItem = mli
             self.onItemChanged(mli)
 
-        util.setGlobalProperty('key', mli.getProperty('key'))
+        # The key property and the letter list's selection only when the letter changes: two GUI
+        # calls, each of which can wait a frame for Kodi's lock (step 12 in the navigation
+        # review). _shownKey is cleared wherever something else may have moved either.
+        key = mli.getProperty('key')
+        if key == self._shownKey:
+            return
+        self._shownKey = key
+        util.setGlobalProperty('key', key)
 
         self.selectKey(mli)
 
@@ -612,6 +635,7 @@ class GridMixin(object):
 
         self.setFocusId(self.POSTERS_PANEL_ID)
         util.setGlobalProperty('key', li.dataSource)
+        self._shownKey = li.dataSource
 
     def playButtonClicked(self, shuffle=False):
         if self.playBtnClicked:
@@ -1380,13 +1404,18 @@ class GridMixin(object):
 
         self.updateFilterDisplay()
 
-    def updateItem(self, mli=None):
-        mli = mli or self.showPanelControl.getSelectedItem()
+    def updateItem(self, mli=None, pos=None):
+        """Moves the chunk that holds a placeholder item to the front of the queue. mli and pos
+        from the caller's own lookup, if it made one."""
+        if mli is None:
+            mli, pos = self.showPanelControl.getSelectedItemAndPos()
         if not mli or mli.dataSource:
             return
 
+        if pos is None:
+            pos = mli.pos()
         for task in self.tasks:
-            if task.contains(mli.pos()):
+            if task.contains(pos):
                 util.DEBUG_LOG('Moving task to front: {0}', task)
                 backgroundthread.BGThreader.moveToFront(task)
                 break
@@ -1408,6 +1437,8 @@ class GridMixin(object):
 
     def fill(self, keep_focus=False):
         self.backgroundSet = False
+        # The fill writes the key property and rebuilds the letter list.
+        self._shownKey = None
 
         if self.section.TYPE in ('photo', 'photodirectory'):
             self.fillPhotos()

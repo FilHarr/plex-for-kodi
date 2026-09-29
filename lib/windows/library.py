@@ -330,6 +330,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.keyListControl = None
         self.sectionList = None
         self.lastItem = None
+        # The letter updateKey() last wrote to the key property and the letter list (library_grid).
+        self._shownKey = None
         self.lastFocusID = None
         self.lastNonOptionsFocusID = None
         self.refill = False
@@ -1166,6 +1168,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.subOptionCache = {}
         self._filterTypeByKey = {}
         self.lastItem = None
+        self._shownKey = None
         self.lastFocusID = None
         self.lastNonOptionsFocusID = None
 
@@ -2169,6 +2172,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # again, e.g. back from the player, as PlaybackBtnMixin.onReInit() does. This override
         # used to skip it, so after one Play both did nothing until a section or tab switch.
         PlaybackBtnMixin.onReInit(self)
+        # Another window may have written the global key property meanwhile.
+        self._shownKey = None
 
         if self.go_root:
             # Ported from HomeWindow's onReInit() go_root handling (home.py) - see
