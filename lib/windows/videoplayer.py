@@ -9,7 +9,6 @@ import uuid
 from kodi_six import xbmc
 from kodi_six import xbmcgui
 
-from lib import colors
 from lib import kodijsonrpc
 from lib import player
 from lib import util
@@ -178,7 +177,6 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
         player.PLAYER.on('started.video', self.onVideoStarted)
         player.PLAYER.on('changed.video', self.onVideoChanged)
         player.PLAYER.on('post.play', self.postPlay)
-        player.PLAYER.on('change.background', self.changeBackground)
         player.PLAYER.on('playback.failed', self.setPlaybackFailed)
 
         self.sessionID = str(uuid.uuid4())
@@ -202,8 +200,6 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
 
     def onReInit(self):
         util.DEBUG_LOG('VideoPlayerWindow: Reinitializing')
-        if not self.earlyAbortRequested:
-            self.setBackground()
 
     def onAction(self, action):
         try:
@@ -324,13 +320,11 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
             # below the top band as it is
             self.setProperty('on.extras', xbmc.getCondVisibility('Control.IsVisible(500)') and '1' or '')
 
-    def setBackground(self):
-        video = self.video if self.video else self.playQueue.current()
-        self.windowSetBackground(video.defaultArt.asTranscodedImageURL(*kodigui.HERO_ART_SIZE, opacity=60,
-                                                                       background=colors.noAlpha.Background))
-
-    def changeBackground(self, url, **kwargs):
-        self.windowSetBackground(url)
+    def paintInitialBackground(self):
+        """No hero art on this screen at any point, on request (2026-09-29): not while a video
+        starts, between queued items, after a stop, or on post-play. So no first paint either (the
+        base class would show the last art shown anywhere) - the box is hidden from the start."""
+        self.setProperty('no_hero_art', '1')
 
     def sessionEnded(self, session_id=None, **kwargs):
         if session_id != self.sessionID:
@@ -398,8 +392,6 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
                 ct += 1
             util.DEBUG_LOG("BGM check done")
 
-        self.setBackground()
-
         self.sessionID = self.sessionID or str(uuid.uuid4())
 
         try:
@@ -443,7 +435,6 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
     def hidePostPlay(self):
         self.postPlayMode = False
         self.setProperty('post.play', '')
-        self.setProperty('no_hero_art', '')
         self._setPanelCorners({})
         self.setProperties((
             'info.title',
@@ -510,9 +501,8 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
     def setPostPlayBackground(self):
         # Post-play's background is only the shared 4-corner colour panel
         # (includes/default_background.xml.tpl), tinted from the item that just played; the
-        # hero-art box stays hidden while post-play is up. hidePostPlay() restores both for the
-        # next item's start-up.
-        self.setProperty('no_hero_art', '1')
+        # hero-art box is hidden on this screen throughout (paintInitialBackground()).
+        # hidePostPlay() clears the panel for the next item's start-up.
         if util.addonSettings.dynamicBackgrounds:
             self._setPanelCorners(util.backgroundPanelCorners(
                 getattr(self.prev, 'ultraBlurColors', None),
@@ -748,7 +738,6 @@ def play(video=None, play_queue=None, resume=False, bgm=False, context=None, **k
         player.PLAYER.off('starting.video', w.onVideoStarting)
         player.PLAYER.off('started.video', w.onVideoStarted)
         player.PLAYER.off('changed.video', w.onVideoChanged)
-        player.PLAYER.off('change.background', w.changeBackground)
         player.PLAYER.off('playback.failed', w.setPlaybackFailed)
         player.PLAYER.reset()
 
