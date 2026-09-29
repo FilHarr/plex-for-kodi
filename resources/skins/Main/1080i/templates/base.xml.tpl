@@ -12,5 +12,7 @@
     <controls>
         {% block controls %}{% endblock %}
         <control type="label" id="666"><visible>false</visible></control><!-- sanity check dummy -->
+        <!-- skin reload marker: one item from kodigui.XMLBase's first init; a skin reload rebuilds it empty -->
+        <control type="list" id="667"><visible>false</visible><itemlayout width="1" height="1"/><focusedlayout width="1" height="1"/></control>
     </controls>
 </window>

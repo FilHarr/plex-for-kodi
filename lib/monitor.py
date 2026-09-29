@@ -162,10 +162,7 @@ class UtilityMonitor(xbmc.Monitor, signalsmixin.SignalsMixin):
                 return
             self._skin_reloading = False
             from .windows import windowutils
-            if windowutils.HOME:
-                LOG("Skin reload settled ({}): restarting addon to recover UI", method)
-                windowutils.HOME.closeOption = "restart"
-                windowutils.HOME.doClose()
+            windowutils.restartAfterSkinReload(method)
             return
 
     def stopPlayback(self):

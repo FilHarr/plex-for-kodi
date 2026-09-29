@@ -169,7 +169,19 @@ class XMLBase(object):
     defer_init = False
     defer_init_time = 0.25
 
+    # A hidden list in base.xml.tpl, given one item at a window's first init. On stock Kodi 21 a skin
+    # reload (a skin add-on update, or a manual reload) rebuilds our open windows' controls from the
+    # XML without telling us - no GUI.OnSkinLoaded before Kodi 22 - and re-inits the active one: its
+    # lists come back empty and every control object we hold is freed, so the next one we touch
+    # crashes Kodi (live on the PC, 2026-09-29). The marker coming back empty is how we notice.
+    SKIN_RELOAD_MARKER_ID = 667
+
     def onInit(self, count=0):
+        if self.started and not count and self._controlsRebuilt():
+            # Before anything below touches a control: restart, as for the monitor's reload notices
+            from . import windowutils
+            windowutils.restartAfterSkinReload('{0} rebuilt'.format(type(self).__name__))
+            return
         if not self.started:
             if self.defer_init:
                 util.DEBUG_LOG("Kodigui: Deferring init of {} for {}s", self, self.defer_init_time)
@@ -233,7 +245,32 @@ class XMLBase(object):
                             windowutils.HOME.closeWRecompileTpls()
                     return
                 raise
+            self._markControls()
         self._onInit()
+
+    def _markControls(self):
+        try:
+            self.getControl(self.SKIN_RELOAD_MARKER_ID).addItem(xbmcgui.ListItem())
+            self._marked = True
+        except RuntimeError:
+            # Compiled before the marker existed: no check for this window
+            self._marked = False
+
+    def _controlsRebuilt(self):
+        # Kodi's own count, never self.getControl(): Kodi's Python binding returns the control object
+        # it cached on the first call (Window::GetControlById(), "find in window vector first"), which
+        # the reload freed - reading it gave the old count, and could as well have crashed. Container()
+        # reads the topmost window or dialog, this one in its onInit; one without the marker gives ''.
+        if not getattr(self, '_marked', False):
+            return False
+        # Only when that topmost one is this window: BackgroundWindow re-inits at startup with Home on
+        # top and not yet marked, whose empty marker restarted us on every launch
+        if isinstance(self, xbmcgui.WindowXMLDialog):
+            if xbmcgui.getCurrentWindowDialogId() != self._winID:
+                return False
+        elif xbmcgui.getCurrentWindowId() != self._winID or xbmcgui.getCurrentWindowDialogId() != 9999:
+            return False
+        return xbmc.getInfoLabel('Container({0}).NumItems'.format(self.SKIN_RELOAD_MARKER_ID)) == '0'
 
     def goHomeAction(self, action):
         """The mapped Home button: Home's root, as a NavIntent (goHome() -> navigate()). Shared by

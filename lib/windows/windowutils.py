@@ -9,6 +9,23 @@ from . import navintent
 from . import opener
 
 HOME = None
+_restartingForSkinReload = False
+
+
+def restartAfterSkinReload(reason):
+    """
+    Closes Home with its closeOption at "restart": _main() returns, and main.realExit() runs the
+    addon again from a clean state. For a skin reload with us open, noticed either by the monitor
+    (GUI.OnSkinLoaded: Kodi 22, and the p3i CoreELEC builds) or by a window finding its controls
+    rebuilt (kodigui.XMLBase.onInit(), stock Kodi 21). Only the first one to notice restarts.
+    """
+    global _restartingForSkinReload
+    if _restartingForSkinReload or HOME is None:
+        return
+    _restartingForSkinReload = True
+    util.LOG("Skin reload: restarting the addon ({0})", reason)
+    HOME.closeOption = "restart"
+    HOME.doClose()
 
 # Confirmed upstream Kodi core bug (xbmc/xbmc#27552, consolidated into #27239, fix proposed in
 # xbmc/xbmc#28928, not yet merged/released as of this writing): CGUIWindow::OnAction() walks the
