@@ -147,6 +147,12 @@ class BaseFunctions(object):
 
 LAST_BG_URL = None
 BG_NA = "script.plex/home/background-fallback_black.png"
+# The size background art is requested at: the hero art box's, which is the only place any screen
+# draws it (the full-screen copies behind search results and Person are going). The box
+# (includes/default_background.xml.tpl) is 1229 wide plus its 61-pixel zoom pad, and a 16:9 image
+# covers that at 1290x726; the window's 1920x1080 was about 2.2 times the pixels (step 12 in the
+# navigation review). tests/test_move_lookups.py checks it against the template.
+HERO_ART_SIZE = (1290, 726)
 NAV_HIDDEN = False
 
 
@@ -536,7 +542,7 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         # the requested aspect, it returns the whole image scaled until both dimensions are
         # >= what was asked (verified live: 1920x1440 requested -> 2560x1440 returned), so asking
         # for a non-16:9 size here only wastes bandwidth and texture memory.
-        return util.backgroundFromArt(art, width=self.width, height=self.height, opacity=100)
+        return util.backgroundFromArt(art, width=HERO_ART_SIZE[0], height=HERO_ART_SIZE[1], opacity=100)
 
     def updateBackgroundFrom(self, ds):
         # `ds is not None`, not truthiness: an unopened Playlist is falsy (BasePlaylist.__len__()

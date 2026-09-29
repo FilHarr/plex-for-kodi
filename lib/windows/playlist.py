@@ -408,7 +408,8 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     def setProperties(self):
         self.setProperty(
             'background',
-            util.backgroundFromArt(self.playlist.composite, width=self.width, height=self.height)
+            util.backgroundFromArt(self.playlist.composite, width=kodigui.HERO_ART_SIZE[0],
+                                   height=kodigui.HERO_ART_SIZE[1])
         )
         self.setProperty('playlist.thumb', self.playlist.composite.asTranscodedImageURL(*self.ALBUM_THUMB_DIM))
         self.setProperty('playlist.title', util.colorizeEmoji(self.playlist.title))

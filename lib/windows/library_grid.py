@@ -1862,7 +1862,7 @@ class GridMixin(object):
         seeded fake-color fallback, seeded from this same playlist so art and panel stay paired.
         """
         self.windowSetBackground(util.backgroundFromArt(
-            pl.composite, width=self.width, height=self.height))
+            pl.composite, width=kodigui.HERO_ART_SIZE[0], height=kodigui.HERO_ART_SIZE[1]))
         self._setPanelCorners(util.backgroundPanelCorners(
             None, seed=pl.get('ratingKey') or pl.title))
 

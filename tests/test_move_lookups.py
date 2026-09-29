@@ -249,3 +249,22 @@ class HubRowLookupTest(KodiTestCase):
         window.checkHubItem(window.HUB_CONTROL_ID, action=None)
         self.assertEqual([], window.heroFrom)
         self.assertEqual({}, window._hubReselectPositions)
+
+
+class HeroArtSizeTest(KodiTestCase):
+    """kodigui.HERO_ART_SIZE follows the hero art box in includes/default_background.xml.tpl: a
+    16:9 image that covers the box's width (1229 plus the zoom pad) and so its height too."""
+
+    def test_the_size_covers_the_template_box(self):
+        import os
+        import re
+        from .base import TEMPLATE_DIR
+        with open(os.path.join(TEMPLATE_DIR, 'includes', 'default_background.xml.tpl'), encoding='utf-8') as fp:
+            tpl = fp.read()
+        pad = int(re.search(r'hero_zoom_pad = (\d+)', tpl).group(1))
+        box = re.search(r'<width>\{\{ (\d+) \+ hero_zoom_pad \}\}</width>\s*<height>(\d+)</height>', tpl)
+        width, height = int(box.group(1)) + pad, int(box.group(2))
+        art_w, art_h = kodigui.HERO_ART_SIZE
+        self.assertEqual(width, art_w)
+        self.assertEqual(round(width * 9 / 16.0), art_h)
+        self.assertGreaterEqual(art_h, height)
