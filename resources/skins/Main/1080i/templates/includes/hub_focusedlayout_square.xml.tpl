@@ -69,24 +69,26 @@
                     <aspectratio scalediffuse="false">keep</aspectratio>
                 </control>
                 <control type="group">
+                    <!-- The poster tile's progress bar (hub_itemlayout_poster.xml.tpl), on request (2026-09-29):
+                         inset 8px, 16px above the art's bottom edge, pill-masked, the same colours. -->
                     <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
-                    <posx>0</posx>
-                    <posy>{{ vscale(230) }}</posy>
+                    <posx>8</posx>
+                    <posy>{{ vscale(224) }}</posy>
                     <control type="image">
                         <posx>0</posx>
                         <posy>0</posy>
-                        <width>240</width>
-                        <height>{{ vscale(10) }}</height>
-                        <texture>script.plex/white-square.png</texture>
-                        <colordiffuse>C0000000</colordiffuse>
+                        <width>224</width>
+                        <height>{{ vscale(8) }}</height>
+                        <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                        <colordiffuse>E60A0F1A</colordiffuse>
                     </control>
                     <control type="image">
                         <posx>0</posx>
-                        <posy>1</posy>
-                        <width>240</width>
+                        <posy>0</posy>
+                        <width>224</width>
                         <height>{{ vscale(8) }}</height>
-                        <texture>$INFO[ListItem.Property(progress)]</texture>
-                        <colordiffuse>FFCC7B19</colordiffuse>
+                        <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                        <colordiffuse>FFE5A00D</colordiffuse>
                     </control>
                 </control>
                 <!-- hub.nolabels.<id> - see hub_itemlayout_square.xml.tpl's own copy. -->
