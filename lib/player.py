@@ -15,7 +15,7 @@ from iso639 import languages
 from . import backgroundthread
 from . import kodijsonrpc
 from . import colors
-from .windows import seekdialog, windowutils, blackoutdialog
+from .windows import seekdialog, windowutils, blackoutdialog, kodigui
 from . import util
 from . import seamless_branching
 from .language_util import getNativeLanguages, resolveLanguage
@@ -2691,7 +2691,9 @@ class PlexPlayer(xbmc.Player, signalsmixin.SignalsMixin):
         self.trigger('new.video', video=self.video)
         self.trigger(
             'change.background',
-            url=self.video.defaultArt.asTranscodedImageURL(1920, 1080, opacity=60, background=colors.noAlpha.Background)
+            # The same URL VideoPlayerWindow.setBackground() builds, or the window fetches the art twice.
+            url=self.video.defaultArt.asTranscodedImageURL(*kodigui.HERO_ART_SIZE, opacity=60,
+                                                           background=colors.noAlpha.Background)
         )
         try:
             if not playerObject:
