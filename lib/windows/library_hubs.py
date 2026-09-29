@@ -1502,6 +1502,8 @@ class HubsMixin(object):
         live-caught 2026-09-24 as the previous item's time-left pill (remainingTime, written
         last) flickering on section changes on the AM6B, where each write is slow enough for
         Kodi to render frames in between."""
+        # A Left/Right hero write still waiting for the cursor to rest is older than this one.
+        self.cancelSettle()
         result = self.updateBackgroundFrom(ds)
         self.setHeroInfo(ds)
         self._setNoHeroArt(False)
@@ -1698,6 +1700,8 @@ class HubsMixin(object):
         every move into a hub scrolled past its first item."""
         new_hub = self.visibleHubs[self.focusedHubIndex]
         new_ds = self._previewSelectedItem(new_hub)
+        # A Left/Right hero write still waiting for the cursor to rest is for the row being left.
+        self.cancelSettle()
         # Written before no_hero_art is cleared - see updateHeroFrom().
         self.setHeroInfo(new_ds)
         self.updateBackgroundFrom(new_ds)
@@ -1720,12 +1724,26 @@ class HubsMixin(object):
             return
         ds = mli.dataSource
         kodigui.markStep(timing, 'lookup again')
+        # Step 12 stage D (navigation review): the art waits for the cursor to rest, and with
+        # settleAll (TEMPORARY variant switch) the hero text and colours wait with it.
+        if self.settleAll:
+            self.settleLater(lambda: self._writeHero(ds))
+            kodigui.markStep(timing, 'hero text')
+            kodigui.markStep(timing, 'background')
+            return
         # Written before no_hero_art is cleared - see updateHeroFrom().
         self.setHeroInfo(ds)
         kodigui.markStep(timing, 'hero text')
+        self.updatePanelFrom(ds)
+        self._setNoHeroArt(False)
+        self.settleLater(lambda: self.updateArtFrom(ds))
+        kodigui.markStep(timing, 'background')
+
+    def _writeHero(self, ds):
+        # Written before no_hero_art is cleared - see updateHeroFrom().
+        self.setHeroInfo(ds)
         self.updateBackgroundFrom(ds)
         self._setNoHeroArt(False)
-        kodigui.markStep(timing, 'background')
 
     # ------------------------------------------------------------------------------------------
     # Input: the Recommended view's own handlers (RecommendedWindow's viewAction(), viewClick() and

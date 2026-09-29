@@ -339,6 +339,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # the panel (and its ListItems) was replaced while a modal child window was open,
         # so we never touch a freed ListItem afterwards (see showPanelClicked).
         self._listGeneration = 0
+        # TEMPORARY (step 12 stage D in the navigation review): which settle variant the current
+        # Recommended view uses, flipped on each open (_flipSettleVariant()).
+        self._settleOpens = 0
         self.subOptionCache = {}
         self._filterTypeByKey = {}
         self.closing = False
@@ -601,6 +604,20 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         shells define this attribute. See _setupCurrent()'s bifurcation below."""
         return not hasattr(cls, 'MULTI_WINDOW_ID')
 
+    @property
+    def settleAll(self):
+        """TEMPORARY (step 12 stage D): the hub rows' settle variant on Left/Right. True: the art,
+        colours and hero text all wait for the cursor to rest. False: only the art waits."""
+        return self._settleOpens % 2 == 1
+
+    def _flipSettleVariant(self):
+        """TEMPORARY (step 12 stage D): each Recommended open takes the other variant, and says
+        which, so the two can be compared by eye on the AM6B."""
+        self._settleOpens += 1
+        name = 'all waits' if self.settleAll else 'art waits'
+        util.DEBUG_LOG('Settle variant: {0} (open {1})', name, self._settleOpens)
+        util.showNotification('Hero: {0}'.format(name), time_ms=2000)
+
     def _setupCurrent(self, cls):
         # Swap logging, kept from the hosted-screen crash investigation (hashed-orbiting-pizza.md):
         # with the lines below and in openSection() and MultiWindow._open(), it places a native
@@ -657,6 +674,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             kodigui.MultiWindow._setupCurrent(self, cls)
             if issubclass(cls, RecommendedWindow):
                 self._hideStaleHero()
+                self._flipSettleVariant()
             util.DEBUG_LOG("Library: _setupCurrent({0}) thin-proxy branch complete", cls)
             return
 

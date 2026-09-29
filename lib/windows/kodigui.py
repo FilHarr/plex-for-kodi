@@ -564,6 +564,12 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             self.updatePanelFrom(ds)
             return self.windowSetBackground(self.backgroundURLFor(ds))
 
+    def updateArtFrom(self, ds):
+        """The hero art half of updateBackgroundFrom(), on its own: for a write that waits for the
+        cursor to rest while the colour panel follows every press (MultiWindow.settleLater())."""
+        if util.addonSettings.dynamicBackgrounds and ds is not None:
+            return self.windowSetBackground(self.backgroundURLFor(ds))
+
     def updatePanelFrom(self, ds):
         """The colour panel half of updateBackgroundFrom(), on its own for a screen that shows no
         art: the library grids."""
@@ -1736,6 +1742,8 @@ class MultiWindow(object):
         self._uiPending = []
         # Per-slice callbacks (addTicker()). Main thread only, so no lock.
         self._tickers = []
+        # The write waiting for the cursor to rest (settleLater()): (due, fn, view), or None.
+        self._settle = None
 
     def __getattr__(self, name):
         # dict lookup, not bare self._current - once _open()'s real teardown del's _current,
@@ -1862,6 +1870,34 @@ class MultiWindow(object):
         running does nothing."""
         if fn not in self._tickers:
             self._tickers.append(fn)
+
+    # How long the cursor has to rest before a settleLater() write runs.
+    SETTLE_SECONDS = 0.2
+
+    def settleLater(self, fn):
+        """Run fn once the cursor has rested SETTLE_SECONDS: each call replaces the write waiting
+        and restarts the wait, so a held key runs none until it's let go (step 12 stage D in the
+        navigation review). On the main thread, from the ticker. Dropped if the view changes
+        first; cancelSettle() drops it when something else writes what it would have."""
+        self._settle = (time.time() + self.SETTLE_SECONDS, fn, self.__dict__.get('_current'))
+        self.addTicker(self._tickSettle)
+
+    def cancelSettle(self):
+        self._settle = None
+
+    def _tickSettle(self, now):
+        settle = self.__dict__.get('_settle')
+        if settle is None:
+            return False
+        due, fn, view = settle
+        if self.__dict__.get('_current') is not view or getattr(view, '_closing', False):
+            self._settle = None
+            return False
+        if now < due:
+            return True
+        self._settle = None
+        fn()
+        return False
 
     def _runTickers(self, tickers, now):
         for fn in tickers[:]:
