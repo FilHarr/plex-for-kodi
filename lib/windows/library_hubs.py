@@ -1734,7 +1734,8 @@ class HubsMixin(object):
     def hubAction(self, action):
         """The Recommended view's own actions, from the host's routeAction() after its shared
         steps: on a hub row (control ids 400-4xx), Up and Down slide the rows, Left and Right sync
-        the hero, Back returns the row to its first item, and the context menu opens the hub
+        the hero, Back returns the row to its first item and then to the first row, and the
+        context menu opens the hub
         menu. True when the action was used; False lets the host's Back and Home handling and
         then Kodi's own have it - Left and Right always go on to Kodi, which moves the row's cursor
         itself."""
@@ -1811,6 +1812,11 @@ class HubsMixin(object):
             # propagate to the host's Back handling once already at item 0 - same shape
             # as HomeWindow's own onAction() routing (home.py).
             if not self.checkHubItem(controlID, action=action):
+                return True
+            # Then, below the first row, back to the first row's item 0 - the Home button's
+            # in-place reset - before the host's Back (Home's root, or the exit dialog).
+            if self.focusedHubIndex > 0:
+                self._resetHubsToTop()
                 return True
         elif action == xbmcgui.ACTION_CONTEXT_MENU:
             # Hub-item context menu - ported from HomeWindow's identical routing
