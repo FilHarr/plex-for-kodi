@@ -477,6 +477,11 @@ class CollectionWindow(BoundedGridWindow):
         if self.entrySectionId is None and not self.entryFromWatchlist:
             self.entrySectionId = self.collection.getLibrarySectionId()
 
+    def backgroundItem(self):
+        # The collection's own art from the first frame (kodigui's paintInitialBackground()),
+        # the same as setup() paints.
+        return self.collection
+
     def summaryButtonClicked(self):
         # The full text, off the object - the collection.summary property only ever holds the
         # capped display copy (util.summaryForBox()).

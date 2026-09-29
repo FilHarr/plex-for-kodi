@@ -1200,8 +1200,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # themselves), and reset() checks contentMode == 'recommended' *before* it ever looks
             # at self.section.TYPE, so that stale value would load the hub-style Recommended
             # view-shell instead of the squares/tabs one - live-confirmed: no Audio/Video split
-            # and a black background (that shell doesn't read 'background' the way
-            # _setPlaylistBackground() sets it). Arriving from an ordinary library section never
+            # and a black background (that shell doesn't read 'background' the way the
+            # playlists grid used to set it). Arriving from an ordinary library section never
             # hit this, since none of them force contentMode to 'recommended' in the first place.
             self.contentMode = 'library'
         else:
@@ -1457,7 +1457,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             background.setShutdown()
         else:
             util.DEBUG_LOG("Killing last background image")
-            kodigui.LAST_BG_URL = None
             target.windowSetBackground(None)
 
         # Home sets closeOption and closes as it acts on the intent (navigate()). From a nested

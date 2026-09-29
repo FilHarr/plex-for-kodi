@@ -145,7 +145,6 @@ class BaseFunctions(object):
         self.setFocusId(control)
 
 
-LAST_BG_URL = None
 BG_NA = "script.plex/home/background-fallback_black.png"
 # The size background art is requested at: the hero art box's, which is the only place any screen
 # draws it (the full-screen copies behind search results and Person are going). The box
@@ -249,7 +248,7 @@ class XMLBase(object):
 
 class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
     __slots__ = ("_closing", "_winID", "started", "finishedInit", "dialogProps", "isOpen", "_errored",
-                 "_closeSignalled", "_bgPainted", "_panelLayer", "_panelColors")
+                 "_closeSignalled", "_bgURL", "_panelLayer", "_panelColors")
     supportsAutoPlay = False
 
     def __init__(self, *args, **kwargs):
@@ -260,7 +259,8 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self._winID = None
         self.started = False
         self.finishedInit = False
-        self._bgPainted = False
+        # The art URL windowSetBackground() last wrote to this window, None before the first.
+        self._bgURL = None
         self._panelLayer = 'a'
         self._panelColors = ('', '', '', '')
         self.dialogProps = kwargs.get("dialog_props", None)
@@ -505,18 +505,28 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         """The item whose art this window's hero shows, if it knows it before onFirstInit()."""
         return None
 
+    def initialBackgroundURL(self):
+        """The art a new window's first frame shows: its own item's (backgroundItem()), or None for
+        no art. A screen whose art isn't an item's own art (a playlist's composite) overrides this."""
+        ds = self.backgroundItem()
+        return self.backgroundURLFor(ds) if ds is not None else None
+
     def paintInitialBackground(self):
-        """A new window's first hero-art paint. Its own item's art where it knows the item
-        (backgroundItem()) - the same URL its own updateBackgroundFrom() paints later, so that's a
-        no-op, and Show -> Episodes still keeps the show's art up throughout. Otherwise the last
-        background shown anywhere, which for a screen that knows its item was the previous item's
-        (the library grid's first item, or the movie/show a Related click came from)."""
-        ds = self.backgroundItem() if util.addonSettings.dynamicBackgrounds else None
-        url = ds is not None and self.backgroundURLFor(ds)
+        """A new window's first hero-art paint: its own art, the same URL its own
+        updateBackgroundFrom() paints later, so that's a no-op (and Show -> Episodes keeps the
+        show's art up throughout). Or no art. Never the previous screen's: that used to be the
+        fallback, a global of the last art shown anywhere, so a screen opened from a library grid
+        showed the right art only because the grid wrote art it never shows on every press (step
+        12 stage C in the navigation review).
+
+        No art is written as empty properties, not left alone: Kodi can hand a new window a
+        reused id's old ones (PrePlayWindow.doClose())."""
+        url = self.initialBackgroundURL() if util.addonSettings.dynamicBackgrounds else None
         if url:
             self.windowSetBackground(url)
-        elif LAST_BG_URL:
-            self.windowSetBackground(LAST_BG_URL)
+        else:
+            self.setProperty('background_static', '')
+            self.setProperty('background', '')
 
     def backgroundURLFor(self, ds):
         """The hero-art URL updateBackgroundFrom() paints for ds, or None if it has no art."""
@@ -549,7 +559,14 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         # is its item count, empty until opened) - see LibraryWindow.setHeroInfo(). Playlists
         # then resolve to no art here (they carry `composite`, deliberately not treated as
         # background art - the hero art box is hidden for them via hero.no_art) but still get
-        # their seeded panel corners below.
+        # their seeded panel corners (updatePanelFrom()).
+        if util.addonSettings.dynamicBackgrounds and ds is not None:
+            self.updatePanelFrom(ds)
+            return self.windowSetBackground(self.backgroundURLFor(ds))
+
+    def updatePanelFrom(self, ds):
+        """The colour panel half of updateBackgroundFrom(), on its own for a screen that shows no
+        art: the library grids."""
         if util.addonSettings.dynamicBackgrounds and ds is not None:
             # 4-corner tinted-panel colors, Phase 1 approximation of official Plex's native
             # per-corner art color extraction - see docs/notes/hero-art-background-status.md.
@@ -563,7 +580,6 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             corners = util.backgroundPanelCorners(getattr(ds, 'ultraBlurColors', None),
                                                   seed=ds.get('ratingKey') or ds.get('title'))
             self._setPanelCorners(corners)
-            return self.windowSetBackground(self.backgroundURLFor(ds))
 
     PANEL_CORNER_PROPS = (('background_panel_tl', 'topLeft'), ('background_panel_tr', 'topRight'),
                            ('background_panel_bl', 'bottomLeft'), ('background_panel_br', 'bottomRight'))
@@ -600,33 +616,23 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self._panelLayer = target
 
     def windowSetBackground(self, value):
+        """Writes the hero art, or the no-art image when value is empty (an item with no art shows
+        none, not the previous item's). Skips a URL this window already shows: compared with this
+        window's own last write (_bgURL), not a global of the last art shown anywhere, which could
+        match while this window showed something else and skip a write it needed (step 12 stage C
+        in the navigation review)."""
         if not util.addonSettings.dbgCrossfade:
-            if not value:
-                return
-            self.setProperty("background_static", value)
+            self.setProperty("background_static", value or BG_NA)
             return value
 
-        global LAST_BG_URL
-
         if not value:
-            bg = LAST_BG_URL or BG_NA
-            self.setProperty("background_static", bg)
-            self.setProperty("background", BG_NA)
-            LAST_BG_URL = BG_NA
+            if self._bgURL != BG_NA:
+                self.setProperty("background_static", BG_NA)
+                self.setProperty("background", BG_NA)
+                self._bgURL = BG_NA
             return BG_NA
 
-        cur1 = self.getProperty('background')
-        # window ids get reused, so on this window instance's own first background set, cur1
-        # here (and LAST_BG_URL below) may just be leftover from whatever window last held this
-        # id - not this window's own prior state. Jump straight to the new value rather than
-        # crossfading from that stale one.
-        instant = not self._bgPainted
-        self._bgPainted = True
-        if instant or not cur1:
-            self.setProperty("background_static", value)
-            self.setProperty("background", value)
-
-        elif LAST_BG_URL != value:
+        if self._bgURL != value:
             # Both layers move together now, on request: the previous item's art should be gone
             # the instant focus moves off it, not held solid as a backdrop for the crossfading
             # layer above to blend against (the original reason for staggering these - see git
@@ -639,8 +645,8 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             # moments instead.
             self.setProperty("background_static", value)
             self.setProperty("background", value)
+            self._bgURL = value
 
-        LAST_BG_URL = value
         return value
 
     def doClose(self, **kw):

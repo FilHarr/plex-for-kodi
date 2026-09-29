@@ -46,6 +46,11 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
     SUMMARY_BUTTON_ID = 305
     ARTIST_BUTTON_ID = 306
 
+    def backgroundItem(self):
+        # The album's own art from the first frame (kodigui's paintInitialBackground()), the same
+        # as updateProperties() paints.
+        return self.album
+
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
         self.album = kwargs.get('album')

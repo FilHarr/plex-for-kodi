@@ -375,18 +375,12 @@ class GridMixin(object):
                 # scroll. Live-confirmed via diagnostic logging: MOVE_SET fired correctly
                 # every time with a valid mli.dataSource, but this check still failed.
                 # Explicit `is not None` sidesteps __len__ entirely.
+                #
+                # The colour panel only: a grid shows no hero art, and the screens it opens paint
+                # their own (step 12 stage C in the navigation review). Playlists included: they
+                # have no ultraBlurColors, so their panel is seeded from the playlist.
                 if mli is not None and mli.dataSource is not None:
-                    if self.section.TYPE == 'playlists':
-                        # updateBackgroundFrom() keys off ds.get('art', ...), which
-                        # playlists don't have (see _setPlaylistBackground()'s own
-                        # docstring) - without this, scrolling through the playlists grid
-                        # silently did nothing (no art, so no background write at all),
-                        # leaving whichever playlist fillPlaylists() randomly picked at fill
-                        # time showing until the next full refill (e.g. a Music/Video tab
-                        # swap) happened to pick a different one.
-                        self._setPlaylistBackground(mli.dataSource)
-                    else:
-                        self.updateBackgroundFrom(mli.dataSource)
+                    self.updatePanelFrom(mli.dataSource)
             timing.mark('background')
 
             # Asks for the focus only when there's something to write, so a press within one
@@ -1426,13 +1420,13 @@ class GridMixin(object):
 
         if randomize:
             item = random.choice(items)
-            self.updateBackgroundFrom(item)
+            self.updatePanelFrom(item)
         else:
             # we want the first item of the first chunk
             if position != 0:
                 return
 
-            self.updateBackgroundFrom(items[0])
+            self.updatePanelFrom(items[0])
         self.backgroundSet = True
 
     def fill(self, keep_focus=False):
@@ -1839,33 +1833,6 @@ class GridMixin(object):
         mli.setProperty('album.artist', itemCount)
         return mli
 
-    def _setPlaylistBackground(self, pl):
-        """Background art + corner-panel colors for a single playlist - factored out of
-        fillPlaylists() so the same per-item treatment can also run on focus-move (gridAction()'s
-        MOVE_SET handling above), not just once at fill time. Needed at all because playlists
-        never go through the generic updateBackgroundFrom()/setBackground() path: that keys off
-        ds.get('art', ...), which playlists don't have - mirrors the old playlists.py's own
-        fill(), which set 'background' directly from .composite instead for the same reason.
-
-        windowSetBackground(), not a bare setProperty(): a bare setProperty() skips the
-        background_static/LAST_BG_URL bookkeeping windowSetBackground() (kodigui.py) does for
-        every other background-setting path in the app - live-confirmed as a stale-art flash
-        without it (a bare setProperty() here left 'background' pointing at a playlist's
-        composite while background_static/LAST_BG_URL still held whatever the *previous*
-        Recommended-tab visit last set, so the next Recommended entry whose anchor happened to
-        match LAST_BG_URL again silently kept showing this playlist's art instead of the real
-        new value).
-
-        Panel corners: playlists have no ultraBlurColors of their own (not a Video/Photo/Audio
-        media item at all), so backgroundPanelCorners() is called directly with seed= instead of
-        through updateBackgroundFrom() - real ultraBlurColors is never an option here, only the
-        seeded fake-color fallback, seeded from this same playlist so art and panel stay paired.
-        """
-        self.windowSetBackground(util.backgroundFromArt(
-            pl.composite, width=kodigui.HERO_ART_SIZE[0], height=kodigui.HERO_ART_SIZE[1]))
-        self._setPanelCorners(util.backgroundPanelCorners(
-            None, seed=pl.get('ratingKey') or pl.title))
-
     @busy.dialog()
     def fillPlaylists(self, keep_focus=False):
         # Playlists were never a paginated library query (see the old playlists.py's own fill()) -
@@ -1897,7 +1864,7 @@ class GridMixin(object):
             items.append(mli)
 
         if not self.backgroundSet:
-            self._setPlaylistBackground(random.choice(playlists))
+            self.updatePanelFrom(random.choice(playlists))
             self.backgroundSet = True
 
         self.showPanelControl.addItems(items)
@@ -1925,7 +1892,7 @@ class GridMixin(object):
             return
 
         photo = random.choice(photos)
-        self.updateBackgroundFrom(photo)
+        self.updatePanelFrom(photo)
         thumbDim = TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['thumb_dim']
         fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['fallback'])
 

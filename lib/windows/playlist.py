@@ -94,6 +94,15 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.sectionList = None
         ChunkRequestTask.WINDOW = self
 
+    def backgroundURL(self):
+        return util.backgroundFromArt(self.playlist.composite, width=kodigui.HERO_ART_SIZE[0],
+                                      height=kodigui.HERO_ART_SIZE[1])
+
+    def initialBackgroundURL(self):
+        # The composite from the first frame (kodigui's paintInitialBackground()): a playlist has
+        # no art of its own for backgroundItem() to give.
+        return self.backgroundURL()
+
     def onFirstInit(self):
         self.playlistListControl = kodigui.ManagedControlList(self, self.PLAYLIST_LIST_ID, 5)
         self.setProperties()
@@ -406,11 +415,9 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         backgroundthread.BGThreader.addTasksToFront(self.tasks)
 
     def setProperties(self):
-        self.setProperty(
-            'background',
-            util.backgroundFromArt(self.playlist.composite, width=kodigui.HERO_ART_SIZE[0],
-                                   height=kodigui.HERO_ART_SIZE[1])
-        )
+        # windowSetBackground(), not setProperty('background'): both art layers, where this used
+        # to fill the top one only and the other came from whatever the grid last wrote.
+        self.windowSetBackground(self.backgroundURL())
         self.setProperty('playlist.thumb', self.playlist.composite.asTranscodedImageURL(*self.ALBUM_THUMB_DIM))
         self.setProperty('playlist.title', util.colorizeEmoji(self.playlist.title))
         self.setProperty('playlist.duration', util.durationToText(self.playlist.duration.asInt()))
