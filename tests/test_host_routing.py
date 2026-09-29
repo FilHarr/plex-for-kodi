@@ -174,7 +174,7 @@ class MultiWindowViewTest(KodiTestCase):
         self.assertEqual([], view.viewCalls)
 
     def test_librarys_grid_and_recommended_views_are_multiwindow_views(self):
-        for cls in (library.PostersWindow, library.PostersSmallWindow, library.ListView16x9Window,
+        for cls in (library.PostersWindow, library.PostersSmallWindow,
                     library.SquaresWindow, library.ListViewSquareWindow, library.TrackListWindow,
                     library.RecommendedWindow):
             mro = cls.__mro__
@@ -211,7 +211,7 @@ class ViewHandlersTest(KodiTestCase):
         return view, host
 
     def test_the_grid_views(self):
-        for cls in (library.PostersWindow, library.PostersSmallWindow, library.ListView16x9Window,
+        for cls in (library.PostersWindow, library.PostersSmallWindow,
                     library.SquaresWindow, library.ListViewSquareWindow, library.TrackListWindow):
             view, host = self._view(cls)
             self.assertEqual('result', view.viewAction('a'))

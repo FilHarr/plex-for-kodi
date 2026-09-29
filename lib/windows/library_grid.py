@@ -55,7 +55,6 @@ MOVE_SET = frozenset(
 THUMB_POSTER_DIM = util.scaleResolution(268, 402)
 THUMB_AR16X9_DIM = util.scaleResolution(619, 348)
 THUMB_SQUARE_DIM = util.scaleResolution(355, 355)
-ART_AR16X9_DIM = util.scaleResolution(630, 355)
 
 TYPE_KEYS = {
     'episode': {
@@ -69,17 +68,14 @@ TYPE_KEYS = {
     'movie': {
         'fallback': 'movie',
         'thumb_dim': THUMB_POSTER_DIM,
-        'art_dim': ART_AR16X9_DIM
     },
     'show': {
         'fallback': 'show',
         'thumb_dim': THUMB_POSTER_DIM,
-        'art_dim': ART_AR16X9_DIM
     },
     'collection': {
         'fallback': 'movie',
         'thumb_dim': THUMB_POSTER_DIM,
-        'art_dim': ART_AR16X9_DIM
     },
     'album': {
         'fallback': 'music',
@@ -277,9 +273,6 @@ def getQueryItemType(section, item_type, fallback_to_section_type=False, force_i
 
 # Roughly a screenful of grid items: the first chunk's timing line says when this many were written.
 CHUNK_SCREENFUL = 30
-# List item properties a grid writes only for views whose template reads them (a view's
-# ITEM_PROPERTIES, library.py): step 12 stage F in the navigation review.
-OPTIONAL_ITEM_PROPERTIES = frozenset(('summary', 'art'))
 
 
 class ChunkRequestTask(backgroundthread.Task):
@@ -1430,8 +1423,6 @@ class GridMixin(object):
 
     def fill(self, keep_focus=False):
         self.backgroundSet = False
-        # What this fill's items are written with, for the chunks and a later view-type switch.
-        self._itemProps = self.ITEM_PROPERTIES
         # The fill writes the key property and rebuilds the letter list.
         self._shownKey = None
 
@@ -2008,9 +1999,10 @@ class GridMixin(object):
                 marks['background'] = time.time()
 
             thumbDim = TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['thumb_dim']
-            artDim = TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie']).get('art_dim', (256, 256))
-            # Only the optional properties the view reads (step 12 stage F).
-            props = self._itemProps
+            # Only what the grid templates read (step 12 stage F in the navigation review, checked
+            # by tests/test_grid_item_properties.py): no summary or art, which only the 16:9 list
+            # view read, and no per-item initialized or unwatched, which nothing read. Each write is
+            # a GUI call that can wait for Kodi's lock while it loads the visible artwork.
 
             if not self.showPanelControl:
                 return
@@ -2035,13 +2027,8 @@ class GridMixin(object):
 
                         mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
 
-                        if 'summary' in props:
-                            mli.setProperty('summary', util.widenParagraphBreaks(obj.summary))
-
                         #mli.setLabel2(util.durationToText(obj.fixedDuration()))
                         mli.setLabel2(subtitle)
-                        if 'art' in props:
-                            mli.setProperty('art', obj.defaultArt.asTranscodedImageURL(*artDim))
                         mli.setBoolProperty('watched', obj.isFullyWatched)
                     else:
                         mli.clear()
@@ -2067,9 +2054,6 @@ class GridMixin(object):
                         mli.setProperty('album.artist', obj.parentTitle)
 
                         mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
-
-                        if 'summary' in props:
-                            mli.setProperty('summary', util.widenParagraphBreaks(obj.summary))
 
                         mli.setLabel2(obj.year)
                     else:
@@ -2117,9 +2101,6 @@ class GridMixin(object):
                             mli.setLabel(obj.defaultTitle or '')
 
                         if obj.TYPE == 'collection':
-                            colArtDim = TYPE_KEYS.get('collection').get('art_dim', (256, 256))
-                            if 'art' in props:
-                                mli.setProperty('art', obj.artCompositeURL(*colArtDim))
                             mli.setThumbnailImage(obj.server.getImageTranscodeURL(
                                 obj.artCompositeURL(*tuple(2*dim for dim in thumbDim)), *thumbDim)
                             )
@@ -2129,8 +2110,6 @@ class GridMixin(object):
                             else:
                                 mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
                         mli.dataSource = obj
-                        if 'summary' in props:
-                            mli.setProperty('summary', util.widenParagraphBreaks(obj.get('summary')))
 
                         # get secondary sort based info
                         sk_data = SORT_KEYS[self.section.TYPE].get(self.sort, {'subDisplay': None})
@@ -2149,8 +2128,6 @@ class GridMixin(object):
                         if obj.TYPE != 'collection':
                             if not obj.isDirectory() and obj.get('duration').asInt():
                                 mli.setLabel2(util.durationToText(obj.fixedDuration()))
-                            if 'art' in props:
-                                mli.setProperty('art', obj.defaultArt.asTranscodedImageURL(*artDim))
                             if not obj.isWatched and obj.TYPE != "Directory":
                                 if self.section.TYPE == 'show' or obj.TYPE == 'show' or obj.TYPE == 'season':
                                     mli.setProperty('unwatched.count', str(obj.unViewedLeafCount))

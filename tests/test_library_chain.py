@@ -2286,7 +2286,6 @@ class ChunkCallbackStopsMidChunkTest(KodiTestCase):
             self.lock = library.threading.RLock()
             self._listGeneration = 1
             self.section = type('S', (), {'type': 'artist'})()
-            self._itemProps = frozenset()
 
         def setBackground(self, *a, **k):
             pass

@@ -26,8 +26,8 @@ MOVE_SET = frozenset((
     xbmcgui.ACTION_PAGE_UP, xbmcgui.ACTION_PAGE_DOWN,
 ))
 
-# Matches library.py's THUMB_POSTER_DIM/ART_AR16X9_DIM (library.py:63,66) - same tile markup is
-# lifted from script-plex-posters.xml.tpl, so the same fetch dimensions apply.
+# THUMB_DIM matches library_grid's THUMB_POSTER_DIM - same tile markup is lifted from
+# script-plex-posters.xml.tpl, so the same fetch dimensions apply.
 THUMB_DIM = util.scaleResolution(268, 402)
 ART_DIM = util.scaleResolution(630, 355)
 # The home hero overlay's own big-clearlogo box (LibraryWindow.CLEAR_LOGO_DIM, library.py -
