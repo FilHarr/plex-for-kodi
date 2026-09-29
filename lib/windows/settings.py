@@ -677,8 +677,10 @@ class Settings(object):
                 BoolSetting(
                     'plextuary_offer', T(35102, 'Offer Plextuary on startup'), True
                 ).description(
-                    T(35103, "When Plex starts under a different skin, offer to switch to Plextuary, installing it "
-                             "if needed. Plex's screens are designed around Plextuary's fonts.")
+                    T(35103, "When Plex starts under a different skin, or with a Plextuary font set other than "
+                             "Inter UI, offer to switch, installing Plextuary if needed; and remind you when "
+                             "Plextuary is too old. Plex's screens are designed around Plextuary's Inter UI "
+                             "fonts.")
                 ),
                 OptionsSetting(
                     'plextuary_variant', T(35099, 'Plextuary variant'), skin_check.AUTO,

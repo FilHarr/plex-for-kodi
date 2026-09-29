@@ -3554,11 +3554,11 @@ msgid "Offer Plextuary on startup"
 msgstr ""
 
 msgctxt "#35103"
-msgid "When Plex starts under a different skin, offer to switch to Plextuary, installing it if needed. Plex's screens are designed around Plextuary's fonts."
+msgid "When Plex starts under a different skin, or with a Plextuary font set other than Inter UI, offer to switch, installing Plextuary if needed; and remind you when Plextuary is too old. Plex's screens are designed around Plextuary's Inter UI fonts."
 msgstr ""
 
 msgctxt "#35104"
-msgid "Plex's screens are designed for the Plextuary skins. Under other skins, text and layouts can come out wrong."
+msgid "Plex is designed to be used with the Plextuary skins. If you use a different skin, text and layouts can appear wrong."
 msgstr ""
 
 msgctxt "#35105"
@@ -3574,21 +3574,69 @@ msgid "Don't ask again"
 msgstr ""
 
 msgctxt "#35108"
-msgid "{0} couldn't be installed. It's available from the dontpanic repository."
+msgid "{0} couldn't be installed. It's available from the {1} repository."
 msgstr ""
 
 msgctxt "#35109"
-msgid "Detected: {0}. Selected: {1}."
+msgid "Detected platform: {0}"
 msgstr ""
 
 msgctxt "#35110"
-msgid "Detected: {0}. Selected in settings: {1}."
+msgid "Skin to use: {0}"
 msgstr ""
 
 msgctxt "#35111"
-msgid "This changes the skin for all of Kodi."
+msgid "Switching skins will apply to all of Kodi, not just this addon."
 msgstr ""
 
 msgctxt "#35112"
 msgid "CoreELEC {0} build"
+msgstr ""
+
+msgctxt "#35113"
+msgid "Plex is designed to use Plextuary's default font (Inter UI). If you use a different font, text and layouts can appear wrong."
+msgstr ""
+
+msgctxt "#35114"
+msgid "Current font: {0}."
+msgstr ""
+
+msgctxt "#35115"
+msgid "Switching fonts will change the font for all of Kodi. Switch to Inter UI now?"
+msgstr ""
+
+msgctxt "#35116"
+msgid "{0} {1} is older than Plex needs, so some small text will come out too large. Updates come from the {2} repository."
+msgstr ""
+
+msgctxt "#35117"
+msgid "Don't remind me again"
+msgstr ""
+
+msgctxt "#35118"
+msgid "Switch"
+msgstr ""
+
+msgctxt "#35119"
+msgid "Install and switch"
+msgstr ""
+
+msgctxt "#35120"
+msgid "Not now"
+msgstr ""
+
+msgctxt "#35121"
+msgid "Skin to install: {0}"
+msgstr ""
+
+msgctxt "#35122"
+msgid "{0} (chosen in settings)"
+msgstr ""
+
+msgctxt "#35123"
+msgid "Update now closes Plex and opens Kodi's list of installed skins: select {0} there, then Update. Start Plex again once it's updated."
+msgstr ""
+
+msgctxt "#35124"
+msgid "Update now"
 msgstr ""

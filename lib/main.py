@@ -159,15 +159,9 @@ def stopPlaybackOnExit():
 
 
 def main(force_render=False):
-    global BACKGROUND
+    global BACKGROUND, skipEnsureLastUsed
 
     try:
-        # Before any of our windows exist: switching skins reloads every window Kodi has
-        try:
-            skin_check.check()
-        except:
-            util.ERROR()
-
         # A second attempt only when the background window's XML was broken, with the templates
         # recompiled; a third would render the same files, so a second failure ends the addon.
         # Each attempt's Cron stops before the next one starts (L2 in the navigation review).
@@ -178,6 +172,17 @@ def main(force_render=False):
             if not attempt:
                 # cleanup cache folder
                 util.cleanupCacheFolder()
+
+                # Once our windows are compiled (its dialogs are ours) but before any exists: switching
+                # skins reloads every window Kodi has. The templates don't depend on the skin.
+                try:
+                    if skin_check.check():
+                        # Off to update Plextuary in Kodi's add-on browser. realExit()'s RunAddon()
+                        # stub and its Action(back) would back straight out of it again.
+                        skipEnsureLastUsed = True
+                        return
+                except:
+                    util.ERROR()
 
             errored = False
             with util.Cron(1 / util.addonSettings.tickrate):
