@@ -244,14 +244,13 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         # (plexobjects.py), so this works unchanged for a Generic/TYPE=='Directory' folder entry too.
         # Only what the templates read (the navigation review's step 12 follow-ups, checked by
         # tests/test_grid_item_properties.py): no per-item summary or art, which neither screen
-        # reads, and a year only where it's shown. Each write is a GUI call.
+        # reads. Each write is a GUI call.
         mli.setLabel(data.defaultTitle)
         # Second caption line under the poster (script-plex-collection.xml.tpl's 'year' label, the
         # library grid's own - on request, 2026-09-20). Plain year only: the grid's sort-key
         # subDisplay variants don't apply here, there's no sort. Nested collections/folders
-        # carry no year, so theirs stays a single line. The folder screen shows none.
-        if self.SHOWS_YEAR:
-            mli.setProperty('year', data.TYPE != 'collection' and data.get('year') or '')
+        # carry no year, so theirs stays a single line.
+        mli.setProperty('year', data.TYPE != 'collection' and data.get('year') or '')
         if data.TYPE == 'collection':
             # Collections often have no own poster - fall back to a composite of member posters,
             # same as library.py's _chunkCallback() (library.py:4071-4076) and the dead-code
@@ -466,8 +465,6 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
 
 class CollectionWindow(BoundedGridWindow):
     xmlFile = 'script-plex-collection.xml'
-    # Its template shows the year under each poster (setItemInfo()); the folder screen's doesn't.
-    SHOWS_YEAR = True
     # The background art/corner colours stay the collection's own (setup()) rather than
     # following the focused member - see BoundedGridWindow.onAction().
     BACKGROUND_FOLLOWS_FOCUS = False
@@ -564,7 +561,6 @@ class SubDirPaginator(BoundedGridPaginator):
 
 class SubDirWindow(BoundedGridWindow):
     xmlFile = 'script-plex-subdir.xml'
-    SHOWS_YEAR = False
 
     def __init__(self, *args, **kwargs):
         BoundedGridWindow.__init__(self, *args, **kwargs)

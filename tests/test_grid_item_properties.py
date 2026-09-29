@@ -70,7 +70,7 @@ class GridItemPropertiesTest(KodiTestCase):
             if view in BOUNDED_VIEWS:
                 with self.subTest(indicators=style, view=view.__name__):
                     self.assertEqual(set(), reads & set(NOT_WRITTEN))
-                    self.assertEqual(view.SHOWS_YEAR, 'year' in reads)
+                    self.assertIn('year', reads)
 
     def test_their_writers_leave_them_out(self):
         source = (inspect.getsource(collection.BoundedGridWindow.setItemInfo)
