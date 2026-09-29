@@ -782,16 +782,18 @@ CE_SB_LAV_SWITCH = False
 CE_NEEDS_EMBEDDED_SEEKBACK = True
 CE_NEEDS_HOME_ON_SCREENSAVER = True
 CE_VS10 = False  # VS10 output mode switching (CoreELEC Amlogic builds: U3k, avdvplus, p3i)
+CE_BUILD = None  # which of those custom builds, if any
 
 def getCoreELEC():
     global platform, device, platform_version, vendor, model, CE_SB_LAV_SWITCH, CE_NEEDS_EMBEDDED_SEEKBACK, \
-           CE_NEEDS_HOME_ON_SCREENSAVER, CE_VS10
+           CE_NEEDS_HOME_ON_SCREENSAVER, CE_VS10, CE_BUILD
     try:
         stdout = subprocess.check_output('lsb_release', shell=True).decode()
         match = re.search(r'CoreELEC', stdout)
         if match:
             if "U3k" in stdout:
                 CE_VS10 = True
+                CE_BUILD = "U3k"
                 try:
                     CE_SB_LAV_SWITCH = int(stdout.split("U3k_")[-1]) >= CE_U3K_SB_LAV_MIN
                     if CE_SB_LAV_SWITCH:
@@ -801,6 +803,7 @@ def getCoreELEC():
 
             elif "avdvplus" in stdout:
                 CE_VS10 = True
+                CE_BUILD = "avdvplus"
                 try:
                     CE_SB_LAV_SWITCH = int(stdout.split("avdvplus_")[-1]) >= CE_AVD_SB_LAV_MIN
                     if CE_SB_LAV_SWITCH:
@@ -810,6 +813,7 @@ def getCoreELEC():
 
             elif "p3i_" in stdout:
                 CE_VS10 = True
+                CE_BUILD = "p3i"
                 CE_SB_LAV_SWITCH = True
                 CE_NEEDS_HOME_ON_SCREENSAVER = False
                 LOG("CoreELEC p3i build with LAV filters found. List-based fixing seamless branching possible.")
@@ -819,6 +823,7 @@ def getCoreELEC():
 
             elif "CPM" in stdout:
                 CE_VS10 = True
+                CE_BUILD = "CPM"
                 LOG("CoreELEC CPM build found. VS10 mode switching available.")
 
             platform = "Linux"

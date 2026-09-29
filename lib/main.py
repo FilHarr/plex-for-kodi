@@ -29,6 +29,7 @@ from .templating import render_templates
 from .windows import background, userselect, home, library, windowutils, kodigui, busy
 from . import player
 from . import backgroundthread
+from . import skin_check
 from . import util
 from .logging import KodiLogProxyHandler
 from .data_cache import dcm
@@ -161,6 +162,12 @@ def main(force_render=False):
     global BACKGROUND
 
     try:
+        # Before any of our windows exist: switching skins reloads every window Kodi has
+        try:
+            skin_check.check()
+        except:
+            util.ERROR()
+
         # A second attempt only when the background window's XML was broken, with the templates
         # recompiled; a third would render the same files, so a second failure ends the addon.
         # Each attempt's Cron stops before the next one starts (L2 in the navigation review).

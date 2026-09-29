@@ -3536,3 +3536,59 @@ msgstr ""
 msgctxt "#35098"
 msgid "When playback ends and a 'Next Up' item is available, play it automatically once the post-play countdown finishes."
 msgstr ""
+
+msgctxt "#35099"
+msgid "Plextuary variant"
+msgstr ""
+
+msgctxt "#35100"
+msgid "Automatic ({0})"
+msgstr ""
+
+msgctxt "#35101"
+msgid "Which Plextuary skin to offer when Plex starts. Automatic picks the one built for this device; choose another to override it. Takes effect the next time Plex starts."
+msgstr ""
+
+msgctxt "#35102"
+msgid "Offer Plextuary on startup"
+msgstr ""
+
+msgctxt "#35103"
+msgid "When Plex starts under a different skin, offer to switch to Plextuary, installing it if needed. Plex's screens are designed around Plextuary's fonts."
+msgstr ""
+
+msgctxt "#35104"
+msgid "Plex's screens are designed for the Plextuary skins. Under other skins, text and layouts can come out wrong."
+msgstr ""
+
+msgctxt "#35105"
+msgid "Switch to it now?"
+msgstr ""
+
+msgctxt "#35106"
+msgid "Install it and switch to it now?"
+msgstr ""
+
+msgctxt "#35107"
+msgid "Don't ask again"
+msgstr ""
+
+msgctxt "#35108"
+msgid "{0} couldn't be installed. It's available from the dontpanic repository."
+msgstr ""
+
+msgctxt "#35109"
+msgid "Detected: {0}. Selected: {1}."
+msgstr ""
+
+msgctxt "#35110"
+msgid "Detected: {0}. Selected in settings: {1}."
+msgstr ""
+
+msgctxt "#35111"
+msgid "This changes the skin for all of Kodi."
+msgstr ""
+
+msgctxt "#35112"
+msgid "CoreELEC {0} build"
+msgstr ""

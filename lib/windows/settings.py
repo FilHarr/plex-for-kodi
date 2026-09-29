@@ -18,6 +18,7 @@ import lib.cache
 from lib import util
 from lib import genres
 from lib import actions
+from lib import skin_check
 from lib.util import T
 from . import kodigui
 from . import windowutils
@@ -673,6 +674,21 @@ class Settings(object):
         ),
         'ui': (
             T(32467, 'User Interface'), (
+                BoolSetting(
+                    'plextuary_offer', T(35102, 'Offer Plextuary on startup'), True
+                ).description(
+                    T(35103, "When Plex starts under a different skin, offer to switch to Plextuary, installing it "
+                             "if needed. Plex's screens are designed around Plextuary's fonts.")
+                ),
+                OptionsSetting(
+                    'plextuary_variant', T(35099, 'Plextuary variant'), skin_check.AUTO,
+                    [(skin_check.AUTO, T(35100, 'Automatic ({0})').format(
+                        skin_check.variantName(skin_check.detectedVariant())))] + list(skin_check.VARIANTS),
+                    show_cb=lambda: util.getSetting('plextuary_offer', True)
+                ).description(
+                    T(35101, "Which Plextuary skin to offer when Plex starts. Automatic picks the one built for this "
+                             "device; choose another to override it. Takes effect the next time Plex starts.")
+                ),
                 OptionsSetting(
                     'watched_indicators', T(33022, ''),
                     "modern_2024",
