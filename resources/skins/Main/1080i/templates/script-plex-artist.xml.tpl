@@ -330,11 +330,12 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$INFO[Window.Property(popular_tracks.header)][/B]</label>
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$INFO[Window.Property(popular_tracks.header)]</label>
             </control>
             <control type="list" id="402">
                 <posx>53</posx>
@@ -621,11 +622,12 @@
             <posy>0</posy>
             <width>1000</width>
             <height>{{ vscale(80) }}</height>
-            <font>font12</font>
+            <font>font30_title</font>
             <align>left</align>
             <aligny>center</aligny>
-            <textcolor>FFE9E6E7</textcolor>
-            <label>[B]$INFO[Window.Property(related.header)][/B]</label>
+            <textcolor>FFD2CCCE</textcolor>
+            <shadowcolor>66000000</shadowcolor>
+            <label>$INFO[Window.Property(related.header)]</label>
         </control>
         <control type="fixedlist" id="401">
             <posx>53</posx>

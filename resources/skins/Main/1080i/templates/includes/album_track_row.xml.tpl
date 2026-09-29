@@ -28,11 +28,14 @@
     <posy>0</posy>
     <width>800</width>
     <height>{{ vscale(100) }}</height>
-    <font>font12</font>
+    <!-- Recommended's row-title style (font30_title, FFD2CCCE, 66000000 shadow), as every other
+         row heading uses. -->
+    <font>font30_title</font>
     <align>left</align>
     <aligny>center</aligny>
-    <textcolor>FFE9E6E7</textcolor>
-    <label>[B]$INFO[ListItem.Label][/B]</label>
+    <textcolor>FFD2CCCE</textcolor>
+    <shadowcolor>66000000</shadowcolor>
+    <label>$INFO[ListItem.Label]</label>
 </control>
 
 <!-- TRACK ################################################################################## -->

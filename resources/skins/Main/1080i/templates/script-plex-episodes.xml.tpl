@@ -1224,17 +1224,18 @@
                      the episode row/header block's shared baseline above rather than Seasons' own raw
                      x=115 (its label sits directly on its own list's art start, see that control's own
                      comment) - see the list's own comment below for the matching clip-edge shift. Style
-                     still matches Seasons: font12/FFE9E6E7/no shadow/no uppercase, not the old
-                     FFFFFFFF+shadow+uppercase treatment. -->
+                     still matches Seasons: font30_title/FFD2CCCE/66000000 shadow/no uppercase, not the old
+                     FFFFFFFF+uppercase treatment. -->
                 <posx>53</posx>
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$ADDON[script.plexmod 33609][/B]</label>
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$ADDON[script.plexmod 33609]</label>
             </control>
             <control type="fixedlist" id="402">
                 <!-- 45 = 113 - group 50's own posx=60 - the itemlayout's own 5+3 left margin. This
@@ -1419,7 +1420,7 @@
             <height>{{ vscale(453) }}</height>
             <width>1920</width>
             <control type="label">
-                <!-- posx=53, style FFE9E6E7/no uppercase - matches Seasons' own Extras label style, but
+                <!-- posx=53, style FFD2CCCE/no uppercase - matches Seasons' own Extras label style, but
                      lands at x=113 not Seasons' own x=115 (see the Roles label's own comment above).
                      posy=0: the -20 that used to sit here levelled this label against Roles' own -20
                      for the case where Roles is hidden and Extras reflows up to take its place. Every
@@ -1429,11 +1430,12 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$INFO[Window.Property(extras.header)][/B]</label>
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$INFO[Window.Property(extras.header)]</label>
             </control>
             <control type="fixedlist" id="403">
                 <!-- 45: same derivation as the Roles list above - see the SHARED HUB-ROW RECIPE at grouplist 60 above. -->

@@ -27,11 +27,12 @@
         <posy>0</posy>
         <width>1000</width>
         <height>{{ vscale(80) }}</height>
-        <font>font12</font>
+        <font>font30_title</font>
         <align>left</align>
         <aligny>center</aligny>
-        <textcolor>FFE9E6E7</textcolor>
-        <label>[B]$INFO[Window.Property({{ header_prop }})][/B]</label>
+        <textcolor>FFD2CCCE</textcolor>
+        <shadowcolor>66000000</shadowcolor>
+        <label>$INFO[Window.Property({{ header_prop }})]</label>
     </control>
     <control type="fixedlist" id="{{ id }}">
         <posx>53</posx>

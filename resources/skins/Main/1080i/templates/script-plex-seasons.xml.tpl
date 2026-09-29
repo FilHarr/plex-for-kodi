@@ -400,20 +400,21 @@
                  (from 501) to match the label + list both dropping 9px on request. -->
             <height>{{ vscale(510) }}</height>
             <width>1920</width>
-            <!-- "X Seasons"/"X Season", bold, font12 (bumped from font10 on request). 30, not the
-                 original 21: dropped 9px on request, along with the list below it. posx=63, not 60:
+            <!-- "X Seasons"/"X Season", font30_title - Recommended's row-title font, bold by its own
+                 style (was font12 + [B], and font10 before that). 30, not the original 21: dropped 9px on request, along with the list below it. posx=63, not 60:
                  nudged 3px right on request, matching Recommended's own row-title x (115). -->
             <control type="label">
                 <posx>63</posx>
                 <posy>{{ vscale(30) }}</posy>
                 <width>800</width>
                 <height>{{ vscale(30) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <!-- FFE9E6E7, midpoint between the summary text's FFD2CCCE and pure white. -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$INFO[Window.Property(season.count)][/B]</label>
+                <!-- FFD2CCCE, Recommended's row-title colour (the same as the summary text); was FFE9E6E7. -->
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$INFO[Window.Property(season.count)]</label>
             </control>
             <control type="fixedlist" id="400">
                 <!-- posx=53, not 40: clip line moved to match Recommended's own hub-row clip edge
@@ -652,12 +653,13 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <!-- Matches the season count label's own style: font12, bold, no shadow, no uppercase. -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$ADDON[script.plexmod 33609][/B]</label>
+                <!-- Matches the season count label's own style: font30_title, Recommended's 66000000 shadow, no uppercase. -->
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$ADDON[script.plexmod 33609]</label>
             </control>
             <control type="fixedlist" id="401">
                 <!-- 53 = 113 - group 50's own posx=52 - the itemlayout's own 5+3 left margin, so the
@@ -854,12 +856,13 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <!-- Matches the season count label's own style: font12, bold, no uppercase. -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$INFO[Window.Property(extras.header)][/B]</label>
+                <!-- Matches the season count label's own style: font30_title, no uppercase. -->
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$INFO[Window.Property(extras.header)]</label>
             </control>
             <control type="fixedlist" id="402">
                 <!-- 53: same derivation as the Roles list above - see the SHARED HUB-ROW RECIPE at grouplist 60 above. -->
@@ -1086,12 +1089,13 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <!-- Matches the season count label's own style: font12, bold, no uppercase. -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$INFO[Window.Property(related.header)][/B]</label>
+                <!-- Matches the season count label's own style: font30_title, no uppercase. -->
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$INFO[Window.Property(related.header)]</label>
             </control>
             <control type="fixedlist" id="403">
                 <!-- posx=53, not 40 (width shrunk to match): see list 400's comment above for the full

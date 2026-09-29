@@ -482,14 +482,15 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <!-- Matches Episodes'/Seasons' own Roles heading style: font12, bold, no shadow, no
+                <!-- Matches Episodes'/Seasons' own Roles heading style: font30_title, 66000000 shadow, no
                      uppercase (script-plex-seasons.xml.tpl id 401's own label, script-plex-episodes.xml.tpl
                      id 502's own label - normalized here 2026-09-04, on request). -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$ADDON[script.plexmod 33609][/B]</label>
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$ADDON[script.plexmod 33609]</label>
             </control>
             <control type="fixedlist" id="400">
                 <!-- 53 = 113 - group 50's own posx=52 - the itemlayout's own 5+3 left margin, putting
@@ -678,15 +679,16 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <!-- Same heading style as Roles/Extras/Related below - font12, bold, no shadow, no
+                <!-- Same heading style as Roles/Extras/Related below - font30_title, 66000000 shadow, no
                      uppercase, matching Episodes'/Seasons' own section headers (normalized 2026-09-04,
                      on request) - Reviews has no direct Episodes/Seasons counterpart to copy verbatim
                      from, so this just applies their shared convention. -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$ADDON[script.plexmod 32953][/B]</label>
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$ADDON[script.plexmod 32953]</label>
             </control>
             <control type="fixedlist" id="401">
                 <!-- 53: same derivation as every other list here - see the SHARED HUB-ROW RECIPE at grouplist 60 above. This row has no
@@ -882,14 +884,15 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <!-- Matches Episodes'/Seasons' own Extras heading style: font12, bold, no shadow, no
+                <!-- Matches Episodes'/Seasons' own Extras heading style: font30_title, 66000000 shadow, no
                      uppercase (normalized 2026-09-04, on request) - see the Roles label's own comment
                      above. -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$ADDON[script.plexmod 32305][/B]</label>
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$ADDON[script.plexmod 32305]</label>
             </control>
             <control type="fixedlist" id="402">
                 <!-- 51, not 0 (width shrunk to match): same sidebar-clearance clip-line fix as the Roles list above - identical margin math (5px inner padding group). -->
@@ -1127,14 +1130,15 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
-                <!-- Matches Episodes'/Seasons' own Related heading style: font12, bold, no shadow, no
+                <!-- Matches Episodes'/Seasons' own Related heading style: font30_title, 66000000 shadow, no
                      uppercase (normalized 2026-09-04, on request) - see the Roles label's own comment
                      above. -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$INFO[Window.Property(related.header)][/B]</label>
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$INFO[Window.Property(related.header)]</label>
             </control>
             <control type="fixedlist" id="403">
                 <!-- 53, not 0 (width shrunk to match): same sidebar-clearance clip-line fix as the Roles list above. 105, not 103: this row's own inner padding group is 3px, not 5, so the clip line only needs to close a 2px-smaller gap to reach the same x=113 art position. -->
@@ -1409,13 +1413,14 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
                 <!-- Same normalized heading style as Roles/Extras/Related above (2026-09-04, on
                      request) - see the Roles label's own comment. -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$INFO[Window.Property(collection.header.0)][/B]</label>
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$INFO[Window.Property(collection.header.0)]</label>
             </control>
             <control type="fixedlist" id="404">
                 <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
@@ -1685,13 +1690,14 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
                 <!-- Same normalized heading style as Roles/Extras/Related above (2026-09-04, on
                      request) - see the Roles label's own comment. -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$INFO[Window.Property(collection.header.1)][/B]</label>
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$INFO[Window.Property(collection.header.1)]</label>
             </control>
             <control type="fixedlist" id="405">
                 <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
@@ -1961,13 +1967,14 @@
                 <posy>0</posy>
                 <width>1000</width>
                 <height>{{ vscale(80) }}</height>
-                <font>font12</font>
+                <font>font30_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
                 <!-- Same normalized heading style as Roles/Extras/Related above (2026-09-04, on
                      request) - see the Roles label's own comment. -->
-                <textcolor>FFE9E6E7</textcolor>
-                <label>[B]$INFO[Window.Property(collection.header.2)][/B]</label>
+                <textcolor>FFD2CCCE</textcolor>
+                <shadowcolor>66000000</shadowcolor>
+                <label>$INFO[Window.Property(collection.header.2)]</label>
             </control>
             <control type="fixedlist" id="406">
                 <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
