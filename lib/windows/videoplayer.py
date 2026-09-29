@@ -326,7 +326,7 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
 
     def setBackground(self):
         video = self.video if self.video else self.playQueue.current()
-        self.windowSetBackground(video.defaultArt.asTranscodedImageURL(1920, 1080, opacity=60,
+        self.windowSetBackground(video.defaultArt.asTranscodedImageURL(*kodigui.HERO_ART_SIZE, opacity=60,
                                                                        background=colors.noAlpha.Background))
 
     def changeBackground(self, url, **kwargs):
