@@ -161,24 +161,36 @@ def main(force_render=False):
     global BACKGROUND
 
     try:
-        with kodigui.GlobalProperty('rendering'):
-            render_templates(force=force_render)
+        # A second attempt only when the background window's XML was broken, with the templates
+        # recompiled; a third would render the same files, so a second failure ends the addon.
+        # Each attempt's Cron stops before the next one starts (L2 in the navigation review).
+        for attempt in range(2):
+            with kodigui.GlobalProperty('rendering'):
+                render_templates(force=force_render)
 
-        # cleanup cache folder
-        util.cleanupCacheFolder()
+            if not attempt:
+                # cleanup cache folder
+                util.cleanupCacheFolder()
 
-        with util.Cron(1 / util.addonSettings.tickrate):
-            BACKGROUND = background.BackgroundWindow.create(function=_main)
-            if BACKGROUND.waitForOpen():
-                with kodigui.GlobalProperty('running'):
-                    BACKGROUND.modal()
+            errored = False
+            with util.Cron(1 / util.addonSettings.tickrate):
+                BACKGROUND = background.BackgroundWindow.create(function=_main)
+                if BACKGROUND.waitForOpen():
+                    with kodigui.GlobalProperty('running'):
+                        BACKGROUND.modal()
 
-                    # we've had an XMLError during modalizing, rebuild templates
-                    if BACKGROUND._errored:
-                        return main(force_render=True)
-                    del BACKGROUND
-            else:
-                util.LOG("Couldn't start main loop, exiting.")
+                        # we've had an XMLError during modalizing, rebuild templates
+                        errored = BACKGROUND._errored
+                        del BACKGROUND
+                else:
+                    util.LOG("Couldn't start main loop, exiting.")
+
+            if not errored:
+                break
+            if attempt:
+                util.LOG("Background window still broken after recompiling the templates, exiting.",
+                         level=xbmc.LOGERROR)
+            force_render = True
     finally:
         try:
             util.setGlobalProperty('ignore_spinner', '')
