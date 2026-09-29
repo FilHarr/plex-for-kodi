@@ -36,7 +36,7 @@ class SeasonsMixin(object):
         return mli
 
     def fillSeasons(self, show, update=False, seasonsFilter=None, selectSeason=None, do_focus=True,
-                     extraFirstItem=None, altControlAttr=None, altThreshold=6, seasons=None):
+                     extraFirstItem=None, seasons=None):
         if seasons is None:
             try:
                 seasons = show.seasons()
@@ -87,16 +87,6 @@ class SeasonsMixin(object):
                 idx += 1
 
         subItemListControl = getattr(self, self.SEASONS_CONTROL_ATTR)
-        # altControlAttr: same "fixedlist needs enough items, plain list doesn't" split as
-        # ShowWindow's own season-tab row (subitems.py's fillSeasonTabs()) - only ever passed by a
-        # caller with its own second, plain-list control to fall back to (EpisodesWindow's tab row);
-        # ShowWindow's own season row (id=400, a plain list already) never passes this, so its own
-        # behavior is unchanged.
-        if altControlAttr is not None:
-            altControl = getattr(self, altControlAttr)
-            if len(seasons) <= altThreshold:
-                subItemListControl, altControl = altControl, subItemListControl
-            altControl.reset()
         if update:
             subItemListControl.replaceItems(items)
         else:

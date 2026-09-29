@@ -459,10 +459,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     EPISODE_LIST_ID = 400
     SEASONS_LIST_ID = 205
-    # Plain-list twin of the row above, used instead once there are 6 seasons or fewer - see
-    # script-plex-seasons.xml.tpl's own copy of this row (and its 205 control's comment) for why a
-    # type="fixedlist" misbehaves at low item counts.
-    SEASONS_LIST_ID_ALT = 206
     ROLES_LIST_ID = 402
     EXTRA_LIST_ID = 403
 
@@ -501,7 +497,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     SUMMARY_BUTTON_ID = 350
 
     SEASONS_CONTROL_ATTR = "seasonsListControl"
-    SEASONS_CONTROL_ATTR_ALT = "seasonsListControlAlt"
 
     # (season ratingKey, episode) - see _cacheSeasonCardPick(). Class-level default so the accessors
     # below don't depend on reset() having run first.
@@ -856,7 +851,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.initMediaInfoPillControls()
 
         self.seasonsListControl = kodigui.ManagedControlList(self, self.SEASONS_LIST_ID, 5)
-        self.seasonsListControlAlt = kodigui.ManagedControlList(self, self.SEASONS_LIST_ID_ALT, 5)
         self.rolesListControl = kodigui.ManagedControlList(self, self.ROLES_LIST_ID, 5)
         self.extraListControl = kodigui.ManagedControlList(self, self.EXTRA_LIST_ID, 5)
 
@@ -1007,7 +1001,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                          set_item_info=True)
         self.postpone_simple(self.fillSeasons, self.show_, seasonsFilter=lambda x: len(x) > 1,
                              selectSeason=self.season, update=True, do_focus=not self.manuallySelectedSeason,
-                             extraFirstItem=self._showTabItem(), altControlAttr=self.SEASONS_CONTROL_ATTR_ALT)
+                             extraFirstItem=self._showTabItem())
 
     def postSetup(self, select_play_button=True):
         self.checkForHeaderFocus(xbmcgui.ACTION_MOVE_DOWN, initial=True)
@@ -1065,8 +1059,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # postpone less important tasks
         self.batch_simple([
             (self.fillSeasons, (self.show_,), dict(seasonsFilter=lambda x: len(x) > 1, selectSeason=self.season,
-                                                    extraFirstItem=self._showTabItem(),
-                                                    altControlAttr=self.SEASONS_CONTROL_ATTR_ALT)),
+                                                    extraFirstItem=self._showTabItem())),
             (self.fillExtras, None, None),
             (self.fillRoles, None, None),
         ])
@@ -1303,11 +1296,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             if action in (xbmcgui.ACTION_MOVE_DOWN, xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
                 self.hadUserInteraction = True
 
-            if action == xbmcgui.ACTION_MOVE_UP and controlID in (self.EPISODE_LIST_ID, self.SEASONS_LIST_ID,
-                                                                    self.SEASONS_LIST_ID_ALT):
+            if action == xbmcgui.ACTION_MOVE_UP and controlID in (self.EPISODE_LIST_ID, self.SEASONS_LIST_ID):
                 self.updateBackgroundFrom((self.season or self.show_ or self.season.show()))
 
-            if controlID in (self.SEASONS_LIST_ID, self.SEASONS_LIST_ID_ALT) and \
+            if controlID == self.SEASONS_LIST_ID and \
                     action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT):
                 self.manuallySelectedSeason = True
 
@@ -1341,7 +1333,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 # blanks header_topleft in favour of the sidebar, so group 200's own
                 # <defaultcontrol always="true">201</defaultcontrol> (default.xml.tpl) points at a
                 # control that no longer exists. What's left inside it is the audio widget (204, only
-                # focusable while Player.HasAudio) and, on Seasons/Episodes, the season tabs (205/206,
+                # focusable while Player.HasAudio) and, on Seasons/Episodes, the season tabs (205,
                 # only when they have items) - so with nothing playing and no tabs the group has no
                 # focusable child at all, Kodi drops focus entirely and the screen goes dead to
                 # everything but Back (live-reported on Artist, Pre-play and skipChildren Seasons;
@@ -1423,11 +1415,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.infoButtonClicked()
         elif controlID == self.SUMMARY_BUTTON_ID:
             self.summaryButtonClicked()
-        elif controlID in (self.SEASONS_LIST_ID, self.SEASONS_LIST_ID_ALT):
+        elif controlID == self.SEASONS_LIST_ID:
             if self.fromWatchlist:
                 return
-            seasonsControl = self.seasonsListControl if controlID == self.SEASONS_LIST_ID else self.seasonsListControlAlt
-            mli = seasonsControl.getSelectedItem()
+            mli = self.seasonsListControl.getSelectedItem()
             if not mli:
                 return
             item = mli.dataSource

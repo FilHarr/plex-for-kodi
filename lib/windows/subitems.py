@@ -80,10 +80,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     # unrelated to (and doesn't collide with) the ids above, since it lives in the shared header
     # (group 200, header_middle_add block) rather than this screen's own content group 50.
     SEASON_TABS_LIST_ID = 205
-    # Plain-list twin of the row above, used instead once there are 6 seasons or fewer - see that
-    # control's own comment in the template for why a type="fixedlist" misbehaves at low item counts.
-    # fillSeasonTabs() below decides which of the two actually gets the items.
-    SEASON_TABS_LIST_ID_ALT = 206
 
     OPTIONS_GROUP_ID = 200
 
@@ -174,7 +170,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.extraListControl = kodigui.ManagedControlList(self, self.EXTRA_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
         self.seasonTabsControl = kodigui.ManagedControlList(self, self.SEASON_TABS_LIST_ID, 5)
-        self.seasonTabsListControl = kodigui.ManagedControlList(self, self.SEASON_TABS_LIST_ID_ALT, 5)
 
         if self.sectionList is None:
             self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
@@ -503,7 +498,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 # blanks header_topleft in favour of the sidebar, so group 200's own
                 # <defaultcontrol always="true">201</defaultcontrol> (default.xml.tpl) points at a
                 # control that no longer exists. What's left inside it is the audio widget (204, only
-                # focusable while Player.HasAudio) and, on Seasons/Episodes, the season tabs (205/206,
+                # focusable while Player.HasAudio) and, on Seasons/Episodes, the season tabs (205,
                 # only when they have items) - so with nothing playing and no tabs the group has no
                 # focusable child at all, Kodi drops focus entirely and the screen goes dead to
                 # everything but Back (live-reported on Artist, Pre-play and skipChildren Seasons;
@@ -581,8 +576,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                     # make the destination window re-check it.
                     self.openItem(item=mli.dataSource, inherit_from_watchlist=False,
                                  is_watchlisted=self.is_watchlisted, directly_from_watchlist=True)
-        elif controlID in (self.SEASON_TABS_LIST_ID, self.SEASON_TABS_LIST_ID_ALT):
-            self.seasonTabClicked(controlID)
+        elif controlID == self.SEASON_TABS_LIST_ID:
+            self.seasonTabClicked()
         elif controlID == self.PLAYER_STATUS_BUTTON_ID:
             self.showAudioPlayer()
         elif controlID == self.EXTRA_LIST_ID:
@@ -873,9 +868,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                                         entry_section_id=self.entrySectionId,
                                         entry_from_watchlist=self.entryFromWatchlist, **kw))
 
-    def seasonTabClicked(self, controlID=None):
-        control = self.seasonTabsListControl if controlID == self.SEASON_TABS_LIST_ID_ALT else self.seasonTabsControl
-        mli = control.getSelectedItem()
+    def seasonTabClicked(self):
+        mli = self.seasonTabsControl.getSelectedItem()
         # No dataSource means the pinned "Show" tab - already this screen, nothing to do.
         if not mli or not mli.dataSource:
             return
@@ -1182,20 +1176,11 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         for season in seasons:
             items.append(kodigui.ManagedListItem(season.title or '', data_source=season))
 
-        # 6 seasons or fewer (7 tabs, Show included): the plain-list control (206) - past that: the
-        # fixedlist (205), which needs enough items to fill the row before its focusposition/movement
-        # scrolling makes sense. See that control's own comment in the template for the fixedlist's
-        # short-list quirk this split avoids. The other control is always emptied so its own <visible>
-        # keeps it hidden.
-        target, other = (self.seasonTabsListControl, self.seasonTabsControl) if len(seasons) <= 6 \
-            else (self.seasonTabsControl, self.seasonTabsListControl)
-
-        other.reset()
         if update:
-            target.replaceItems(items)
+            self.seasonTabsControl.replaceItems(items)
         else:
-            target.reset()
-            target.addItems(items)
+            self.seasonTabsControl.reset()
+            self.seasonTabsControl.addItems(items)
 
     def fillExtras(self):
         items = []

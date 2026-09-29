@@ -296,7 +296,7 @@
              texturenofocus/texturefocus both "-" (explicit none, not just omitted - Kodi otherwise
              falls back to its own default button look) - the focus highlight itself is the separate
              image below instead, not this control's own texture, so it can be sized bigger than the
-             actual hit area. onup carries the 205/206/200 season-tab fallback the episode carousel
+             actual hit area. onup carries the 205/200 season-tab fallback the episode carousel
              (400) used to have directly - that control's own onup now just points here instead, and
              the season tabs' own ondown was repointed here too, both visiting this control in
              top-to-bottom order on the way through. id=350, not 310: that collided with
@@ -316,7 +316,6 @@
             <width>813</width>
             <height>{{ vscale(90) }}</height>
             <onup condition="Control.IsVisible(205)">205</onup>
-            <onup condition="Control.IsVisible(206)">206</onup>
             <onup>200</onup>
             <ondown>400</ondown>
             <onleft>9000</onleft>
@@ -376,13 +375,12 @@
         <!-- 452 = 307 (button row's own posy below, see its comment) + 145 (buttons) -->
         <height>{{ vscale(452) }}</height>
 
-        <!-- Trying fixedlist again (see the child control's own comment below for focusposition=1/
-             movement=1 vs the old dead-center focusposition=2) rather than the plain list Seasons' own
-             season row uses (script-plex-seasons.xml.tpl id 400) - the focused item anchors to a fixed
-             near-left cell instead of moving with the rest of the row. 500 is a clipping mask (grouplist
-             clips its children, a plain group doesn't); the fixedlist inside it fills that mask directly
-             (posx=0, width matching 500's own 1875) - focusposition=1 doesn't need the oversized/negative-
-             shifted box the old dead-center version required, since the anchor cell isn't the middle one.
+        <!-- A fixedlist (see the child control's own comment below for its focusposition) - the
+             focused item anchors to the row's first cell instead of moving with the rest of the row.
+             500 is a clipping mask (grouplist clips its children, a plain group doesn't); the
+             fixedlist inside it fills that mask directly (posx=0, width matching 500's own 1875) - a
+             first-cell anchor doesn't need the oversized/negative-shifted box the old dead-center
+             version required.
              500's own onup/ondown/onleft/onright are still required here (duplicated onto the child list
              too): a grouplist wrapper doesn't automatically forward its child's direction rules for keys
              outside its own orientation axis - same reason the buttongroup grouplist (300) below
@@ -416,13 +414,12 @@
             <usecontrolcoords>true</usecontrolcoords>
             <orientation>horizontal</orientation>
             <itemgap>0</itemgap>
-            <!-- 350 (the summary click-target), not straight to 205/206/200 - see the inner
+            <!-- 350 (the summary click-target), not straight to 205/200 - see the inner
                  fixedlist's own identical copy of this fix, just below, for the full reasoning. -->
             <onup condition="!String.IsEmpty(Container(400).ListItem.Property(summary))">350</onup>
             <!-- Fallback replicates 350's own onup chain, so the row behaves as if the target
                  simply weren't there. -->
             <onup condition="Control.IsVisible(205)">205</onup>
-            <onup condition="Control.IsVisible(206)">206</onup>
             <onup>200</onup>
             <!-- Two conditioned tags routing straight to the actual target button, not
                  condition="Control.IsVisible(300)">300 (the grouplist's own id) relying on its
@@ -439,31 +436,31 @@
             <onleft>9000</onleft>
             <onright>noop</onright>
             <control type="fixedlist" id="400">
-                <!-- Trying fixedlist again, focusposition=1/movement=1 this time - not the old focusposition=2
-                     dead-center pin (which needed the list oversized to 5 cells wide and negative-shifted to
-                     keep that center cell fixed, see this row's git history). focusposition=1 anchors the
-                     focused item to the SECOND cell of this fixedlist's own box (index 1, 0-based) instead of
-                     the middle, so no oversizing/negative-shift is needed - posx/width stay a plain fit
-                     against the clipping mask, same as this row's own plain-list version. movement=1 is
-                     required alongside focusposition, not optional: a fixedlist with focusposition set but no
-                     movement tag pins the list at its first loaded item and never actually scrolls its
-                     underlying content to bring focusposition's cell into place, leaving blank space past the
-                     end - live-verified elsewhere in this codebase (see git history for the fix). -->
-                <focusposition>1</focusposition>
-                <movement>1</movement>
+                <!-- focusposition=0: the focused episode pinned to the row's first cell, the row
+                     scrolling under it - the same as every other row now (Recommended's hub rows,
+                     script-plex-recommended.xml.tpl, explain the tail). Was 1 (the previous episode
+                     kept in view on the left), and before that the dead-center 2, which needed the
+                     list oversized and negative-shifted (see this row's git history). movement =
+                     itemsPerPage - 1, itemsPerPage being (1875 - 544) / 544 + 1 = 3: the last episodes
+                     spread to the last whole cell. movement is required alongside focusposition, not
+                     optional: a fixedlist with focusposition set but no movement tag pins the list at
+                     its first loaded item and never actually scrolls its underlying content to bring
+                     focusposition's cell into place, leaving blank space past the end - live-verified
+                     elsewhere in this codebase (see git history for the fix). -->
+                <focusposition>0</focusposition>
+                <movement>2</movement>
                 <posx>0</posx>
                 <posy>{{ vscale(18) }}</posy>
                 <width>1875</width>
                 <height>{{ vscale(400) }}</height>
-                <!-- 350 (the summary click-target), not straight to 205/206/200: keeps that focus
+                <!-- 350 (the summary click-target), not straight to 205/200: keeps that focus
                      stop reachable from the episode row via remote/keyboard, not just mouse/touch -
                      matching Seasons' own identical fix to its button row. The season-tab row
-                     fallback (205/206/200) this used to carry directly has moved up onto 350's own
+                     fallback (205/200) this used to carry directly has moved up onto 350's own
                      onup instead, one level further up the chain. -->
                 <onup condition="!String.IsEmpty(Container(400).ListItem.Property(summary))">350</onup>
                 <!-- Same fallback as this row's own copy above. -->
                 <onup condition="Control.IsVisible(205)">205</onup>
-                <onup condition="Control.IsVisible(206)">206</onup>
                 <onup>200</onup>
                 <!-- Same fix as this row's own copy above - see its comment. -->
                 <ondown condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">308</ondown>
@@ -1200,7 +1197,6 @@
         <height>{{ vscale(1800) }}</height>
 
         <onup condition="Control.IsVisible(205)">205</onup>
-        <onup condition="Control.IsVisible(206)">206</onup>
         <onup>200</onup>
         <!-- 5, not 0: matches Seasons' own Roles/Extras/Related gap (script-plex-seasons.xml.tpl id 60). -->
         <itemgap>5</itemgap>
@@ -1240,7 +1236,7 @@
                 <textcolor>FFE9E6E7</textcolor>
                 <label>[B]$ADDON[script.plexmod 33609][/B]</label>
             </control>
-            <control type="list" id="402">
+            <control type="fixedlist" id="402">
                 <!-- 45 = 113 - group 50's own posx=60 - the itemlayout's own 5+3 left margin. This
                      screen's group 50 sits 8px right of Seasons', so its lists sit 8px left of Seasons'
                      53 and both land on the same absolute x=113 - see the SHARED HUB-ROW RECIPE at grouplist 60 above. -->
@@ -1260,6 +1256,12 @@
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
+                <!-- Focus pinned to the row's first slot, the row scrolling under it - the same as
+                     Recommended's hub rows (script-plex-recommended.xml.tpl, which explains the tail).
+                     movement = itemsPerPage - 1, itemsPerPage being (1875 - 270) / 270 + 1 = 6: the last
+                     items spread to the last whole slot, where this row, a plain list before, left them. -->
+                <focusposition>0</focusposition>
+                <movement>5</movement>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
                 <!-- 244x244 art (was 200x200) and the thinner role-selected-thin.png focus ring below -
@@ -1433,7 +1435,7 @@
                 <textcolor>FFE9E6E7</textcolor>
                 <label>[B]$INFO[Window.Property(extras.header)][/B]</label>
             </control>
-            <control type="list" id="403">
+            <control type="fixedlist" id="403">
                 <!-- 45: same derivation as the Roles list above - see the SHARED HUB-ROW RECIPE at grouplist 60 above. -->
                 <posx>45</posx>
                 <posy>{{ vscale(22) }}</posy>
@@ -1449,6 +1451,12 @@
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
+                <!-- Focus pinned to the row's first slot, the row scrolling under it - the same as
+                     Recommended's hub rows (script-plex-recommended.xml.tpl, which explains the tail).
+                     movement = itemsPerPage - 1, itemsPerPage being (1875 - 544) / 544 + 1 = 3: the last
+                     items spread to the last whole slot, where this row, a plain list before, left them. -->
+                <focusposition>0</focusposition>
+                <movement>2</movement>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
                 <!-- Art 299x168 -> 512x288, rounded-corner ar16x9 mask, duration badge, ring-mask focus
@@ -1636,32 +1644,25 @@
 {% endblock content %}
 
 {# widget sits at the header's far right, past the tabs, so the header runs tabs -> widget. #}
-{% block header_audiowidget_onleft %}<onleft condition="Control.IsVisible(205)">205</onleft><onleft condition="Control.IsVisible(206)">206</onleft><onleft>9000</onleft>{% endblock %}
+{% block header_audiowidget_onleft %}<onleft condition="Control.IsVisible(205)">205</onleft><onleft>9000</onleft>{% endblock %}
 
 {% block header_middle_add %}
 <!-- SEASON TABS -->
 <!-- "Show" (pinned, no dataSource - see EpisodesWindow._showTabItem()/onClick(), episodes.py) followed
-     by every season, plain type="list" rather than the old fixedlist center-pinned carousel - matches
+     by every season, focus in the first slot rather than the old center-pinned carousel - matches
      the identical row now on script-plex-seasons.xml.tpl (the show/season page this "Show" tab returns
      to) exactly, both technique and layout: see that file's own comment for the full reasoning ("Show"
-     has to stay pinned at the visible left edge, which a center-focus carousel can't guarantee). posx=120,
+     has to sit at the visible left edge while the row fits, which a center-focus carousel can't
+     guarantee). posx=120,
      not the old 100: matches this screen's own content column exactly (group 50's own posx=60 + its
      children's own posx=60), so the tab row's left edge lines up with the title/summary below instead of
      sitting 20px left of it. width=1420 (120 + 1420 = 1540) fills the rest of the header out to the same
      right boundary this row always used - 20px shy of the audio widget's collapsed hitbox at
      1920-360=1560. -->
 <control type="fixedlist" id="205">
-    <!-- Used once there are more than 6 seasons (7+ tabs including "Show") - below that, sibling
-         control 206 (a plain type="list") takes over instead; fillSeasons()'s altControlAttr
-         (mixins/seasons.py, called from here with EpisodesWindow.SEASONS_CONTROL_ATTR_ALT) decides
-         which of the two gets the items and always leaves the other empty so its own <visible> below
-         keeps it hidden. See script-plex-seasons.xml.tpl's own copy of this row (its 205 control's
-         comment) for why a type="fixedlist" needs this split at low item counts: it computes each
-         item's on-screen slot from distance to BOTH ends of the list, and once total items <=
-         itemsPerPage a plain list flush-aligns correctly where a fixedlist doesn't. focusposition=3
-         makes items 0-3 render at their own natural, unscrolled position and starts scrolling exactly
-         once focus reaches index 4 (the 5th item) - which only matters once there are enough tabs to
-         fill the row, i.e. exactly the >6 case this control now handles. -->
+    <!-- One control for every season count - see script-plex-seasons.xml.tpl's own copy of this
+         row (its 205 control's comment) for why the plain-list twin (206) it once had for 6 seasons
+         or fewer is gone. -->
     <visible>Integer.IsGreater(Container(205).NumItems,0)</visible>
     <!-- The old fixedlist wrapper never carried this (an existing gap, not intentional per
          includes/section_tabs.xml.tpl's own comment on why every header-row control needs its own copy) -
@@ -1671,20 +1672,19 @@
     <posy>0</posy>
     <width>1420</width>
     <height>{{ vscale(125) }}</height>
-    <focusposition>3</focusposition>
-    <!-- See script-plex-seasons.xml.tpl's own copy of this row for why this is needed (without it,
-         Kodi pins the focused item at the focusposition slot from the very first item, leaving blank
-         space at the left instead of a tab). Live-verified at cell width 170 (movement=4). At 200,
-         itemsPerPage=floor(1420/200)=7, so movement is capped at 3 (itemsPerPage-1-focusposition) -
-         see seasons.xml.tpl's own comment on the maxCursor off-by-one this avoids. -->
-    <movement>3</movement>
+    <!-- Focus pinned to the first tab slot, the tabs scrolling under it - the same as every row
+         (script-plex-recommended.xml.tpl's hub rows explain the tail). movement = itemsPerPage - 1,
+         itemsPerPage being (1420 - 200) / 200 + 1 = 7 - see script-plex-seasons.xml.tpl's own copy
+         of this row on the maxCursor off-by-one a larger value would cause. -->
+    <focusposition>0</focusposition>
+    <movement>6</movement>
     <preloaditems>4</preloaditems>
     <onup>200</onup>
     <onleft>9000</onleft>
     <onright condition="Control.IsVisible(204)">204</onright>
     <onright>noop</onright>
     <!-- 350 (the summary click-target), not straight to 400: visits it in top-to-bottom order on
-         the way down, matching 350's own onup back up to here/206. -->
+         the way down, matching 350's own onup back up to here. -->
     <ondown condition="!String.IsEmpty(Container(400).ListItem.Property(summary))">350</ondown>
     <!-- Fallback is 350's own ondown, skipping the stop when there's no summary. -->
     <ondown>400</ondown>
@@ -1753,98 +1753,6 @@
         </control>
         <control type="label">
             <visible>!Control.HasFocus(205)</visible>
-            <posx>0</posx>
-            <posy>0</posy>
-            <width>170</width>
-            <height>{{ vscale(125) }}</height>
-            <font>font10</font>
-            <align>center</align>
-            <aligny>center</aligny>
-            <textcolor>80FFFFFF</textcolor>
-            <label>$INFO[ListItem.Label]</label>
-        </control>
-        <control type="image">
-            <visible>!String.IsEmpty(ListItem.Property(current))</visible>
-            <posx>25</posx>
-            <posy>{{ vscale(89) }}</posy>
-            <width>120</width>
-            <height>2</height>
-            <texture>script.plex/white-square.png</texture>
-            <colordiffuse>FFE5A00D</colordiffuse>
-        </control>
-    </focusedlayout>
-</control>
-
-<control type="list" id="206">
-    <!-- Plain-list twin of 205 for <=6 seasons (<=7 tabs) - see 205's own comment above for why. No
-         focusposition/movement/preloaditems: a plain list already renders every item at its natural
-         position and only scrolls if focus would otherwise leave the visible width, which never
-         happens at this item count. -->
-    <visible>Integer.IsGreater(Container(206).NumItems,0)</visible>
-    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
-    <posx>120</posx>
-    <posy>0</posy>
-    <width>1420</width>
-    <height>{{ vscale(125) }}</height>
-    <onup>200</onup>
-    <onleft>9000</onleft>
-    <onright condition="Control.IsVisible(204)">204</onright>
-    <onright>noop</onright>
-    <!-- 350 (the summary click-target), not straight to 400: visits it in top-to-bottom order on
-         the way down, matching 350's own onup back up to here/205. -->
-    <ondown condition="!String.IsEmpty(Container(400).ListItem.Property(summary))">350</ondown>
-    <!-- Fallback is 350's own ondown, skipping the stop when there's no summary. -->
-    <ondown>400</ondown>
-    <orientation>horizontal</orientation>
-    <itemlayout width="200" height="{{ vscale(125) }}">
-        <control type="label">
-            <posx>0</posx>
-            <posy>0</posy>
-            <width>170</width>
-            <height>{{ vscale(125) }}</height>
-            <font>font10</font>
-            <align>center</align>
-            <aligny>center</aligny>
-            <textcolor>80FFFFFF</textcolor>
-            <label>$INFO[ListItem.Label]</label>
-        </control>
-        <control type="image">
-            <visible>!String.IsEmpty(ListItem.Property(current))</visible>
-            <posx>25</posx>
-            <posy>{{ vscale(89) }}</posy>
-            <width>120</width>
-            <height>2</height>
-            <texture>script.plex/white-square.png</texture>
-            <colordiffuse>FFE5A00D</colordiffuse>
-        </control>
-    </itemlayout>
-    <focusedlayout width="200" height="{{ vscale(125) }}">
-        <!-- Focus background - see 205's own copy of this control above for the full reasoning. -->
-        <control type="image">
-            <visible>Control.HasFocus(206)</visible>
-            <posx>0</posx>
-            <posy>{{ vscale(37) }}</posy>
-            <width>170</width>
-            <height>{{ vscale(50) }}</height>
-            <colordiffuse>33FFFFFF</colordiffuse>
-            <texture border="10">script.plex/white-square-rounded.png</texture>
-        </control>
-        <control type="label">
-            <visible>Control.HasFocus(206)</visible>
-            <posx>0</posx>
-            <posy>0</posy>
-            <width>170</width>
-            <height>{{ vscale(125) }}</height>
-            <font>font10</font>
-            <align>center</align>
-            <aligny>center</aligny>
-            <scroll>true</scroll>
-            <scrollspeed>25</scrollspeed>
-            <textcolor>FFFFFFFF</textcolor>
-            <label>$INFO[ListItem.Label]</label>
-        </control>
-        <control type="label">
-            <visible>!Control.HasFocus(206)</visible>
             <posx>0</posx>
             <posy>0</posy>
             <width>170</width>

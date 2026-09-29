@@ -491,7 +491,7 @@
                 <textcolor>FFE9E6E7</textcolor>
                 <label>[B]$ADDON[script.plexmod 33609][/B]</label>
             </control>
-            <control type="list" id="400">
+            <control type="fixedlist" id="400">
                 <!-- 53 = 113 - group 50's own posx=52 - the itemlayout's own 5+3 left margin, putting
                      the clip edge on x=105. That is 39px clear of the collapsed sidebar rail, whose
                      widest icon ends at x=66, so departing cards clip in open space rather than
@@ -508,6 +508,12 @@
                 <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
+                <!-- Focus pinned to the row's first slot, the row scrolling under it - the same as
+                     Recommended's hub rows (script-plex-recommended.xml.tpl, which explains the tail).
+                     movement = itemsPerPage - 1, itemsPerPage being (1867 - 270) / 270 + 1 = 6: the last
+                     items spread to the last whole slot, where this row, a plain list before, left them. -->
+                <focusposition>0</focusposition>
+                <movement>5</movement>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
                 <!-- 244x244 art (was 200x200), role-selected-thin.png focus ring, name label in
@@ -682,7 +688,7 @@
                 <textcolor>FFE9E6E7</textcolor>
                 <label>[B]$ADDON[script.plexmod 32953][/B]</label>
             </control>
-            <control type="list" id="401">
+            <control type="fixedlist" id="401">
                 <!-- 53: same derivation as every other list here - see the SHARED HUB-ROW RECIPE at grouplist 60 above. This row has no
                      inner group, so the recipe's 3px art inset is applied to the card and its content
                      block directly instead. -->
@@ -695,6 +701,12 @@
                 <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
+                <!-- Focus pinned to the row's first slot, the row scrolling under it - the same as
+                     Recommended's hub rows (script-plex-recommended.xml.tpl, which explains the tail).
+                     movement = itemsPerPage - 1, itemsPerPage being (1867 - 537) / 537 + 1 = 3: the last
+                     items spread to the last whole slot, where this row, a plain list before, left them. -->
+                <focusposition>0</focusposition>
+                <movement>2</movement>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="537">
@@ -879,7 +891,7 @@
                 <textcolor>FFE9E6E7</textcolor>
                 <label>[B]$ADDON[script.plexmod 32305][/B]</label>
             </control>
-            <control type="list" id="402">
+            <control type="fixedlist" id="402">
                 <!-- 51, not 0 (width shrunk to match): same sidebar-clearance clip-line fix as the Roles list above - identical margin math (5px inner padding group). -->
                 <posx>53</posx>
                 <posy>{{ vscale(22) }}</posy>
@@ -890,6 +902,12 @@
                 <onleft>9000</onleft>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
+                <!-- Focus pinned to the row's first slot, the row scrolling under it - the same as
+                     Recommended's hub rows (script-plex-recommended.xml.tpl, which explains the tail).
+                     movement = itemsPerPage - 1, itemsPerPage being (1867 - 544) / 544 + 1 = 3: the last
+                     items spread to the last whole slot, where this row, a plain list before, left them. -->
+                <focusposition>0</focusposition>
+                <movement>2</movement>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="544">
@@ -1118,7 +1136,7 @@
                 <textcolor>FFE9E6E7</textcolor>
                 <label>[B]$INFO[Window.Property(related.header)][/B]</label>
             </control>
-            <control type="list" id="403">
+            <control type="fixedlist" id="403">
                 <!-- 53, not 0 (width shrunk to match): same sidebar-clearance clip-line fix as the Roles list above. 105, not 103: this row's own inner padding group is 3px, not 5, so the clip line only needs to close a 2px-smaller gap to reach the same x=113 art position. -->
                 <posx>53</posx>
                 <posy>{{ vscale(22) }}</posy>
@@ -1134,6 +1152,12 @@
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
+                <!-- Focus pinned to the row's first slot, the row scrolling under it - the same as
+                     Recommended's hub rows (script-plex-recommended.xml.tpl, which explains the tail).
+                     movement = itemsPerPage - 1, itemsPerPage being (1867 - 272) / 272 + 1 = 6: the last
+                     items spread to the last whole slot, where this row, a plain list before, left them. -->
+                <focusposition>0</focusposition>
+                <movement>5</movement>
                 <preloaditems>4</preloaditems>
                 <!-- ITEM LAYOUT ########################################## -->
                 <itemlayout width="272">
@@ -1393,7 +1417,7 @@
                 <textcolor>FFE9E6E7</textcolor>
                 <label>[B]$INFO[Window.Property(collection.header.0)][/B]</label>
             </control>
-            <control type="list" id="404">
+            <control type="fixedlist" id="404">
                 <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
                 <posx>53</posx>
                 <posy>{{ vscale(22) }}</posy>
@@ -1409,6 +1433,12 @@
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
+                <!-- Focus pinned to the row's first slot, the row scrolling under it - the same as
+                     Recommended's hub rows (script-plex-recommended.xml.tpl, which explains the tail).
+                     movement = itemsPerPage - 1, itemsPerPage being (1867 - 272) / 272 + 1 = 6: the last
+                     items spread to the last whole slot, where this row, a plain list before, left them. -->
+                <focusposition>0</focusposition>
+                <movement>5</movement>
                 <preloaditems>4</preloaditems>
                 <itemlayout width="272">
                     <control type="group">
@@ -1663,7 +1693,7 @@
                 <textcolor>FFE9E6E7</textcolor>
                 <label>[B]$INFO[Window.Property(collection.header.1)][/B]</label>
             </control>
-            <control type="list" id="405">
+            <control type="fixedlist" id="405">
                 <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
                 <posx>53</posx>
                 <posy>{{ vscale(22) }}</posy>
@@ -1679,6 +1709,12 @@
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
+                <!-- Focus pinned to the row's first slot, the row scrolling under it - the same as
+                     Recommended's hub rows (script-plex-recommended.xml.tpl, which explains the tail).
+                     movement = itemsPerPage - 1, itemsPerPage being (1867 - 272) / 272 + 1 = 6: the last
+                     items spread to the last whole slot, where this row, a plain list before, left them. -->
+                <focusposition>0</focusposition>
+                <movement>5</movement>
                 <preloaditems>4</preloaditems>
                 <itemlayout width="272">
                     <control type="group">
@@ -1933,7 +1969,7 @@
                 <textcolor>FFE9E6E7</textcolor>
                 <label>[B]$INFO[Window.Property(collection.header.2)][/B]</label>
             </control>
-            <control type="list" id="406">
+            <control type="fixedlist" id="406">
                 <!-- 53, not 0 (width shrunk to match) - see the Related list's own comment above, identical margin math. -->
                 <posx>53</posx>
                 <posy>{{ vscale(22) }}</posy>
@@ -1948,6 +1984,12 @@
                 <onright>noop</onright>
                 <scrolltime>200</scrolltime>
                 <orientation>horizontal</orientation>
+                <!-- Focus pinned to the row's first slot, the row scrolling under it - the same as
+                     Recommended's hub rows (script-plex-recommended.xml.tpl, which explains the tail).
+                     movement = itemsPerPage - 1, itemsPerPage being (1867 - 272) / 272 + 1 = 6: the last
+                     items spread to the last whole slot, where this row, a plain list before, left them. -->
+                <focusposition>0</focusposition>
+                <movement>5</movement>
                 <preloaditems>4</preloaditems>
                 <itemlayout width="272">
                     <control type="group">

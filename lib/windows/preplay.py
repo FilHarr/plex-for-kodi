@@ -321,7 +321,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 # blanks header_topleft in favour of the sidebar, so group 200's own
                 # <defaultcontrol always="true">201</defaultcontrol> (default.xml.tpl) points at a
                 # control that no longer exists. What's left inside it is the audio widget (204, only
-                # focusable while Player.HasAudio) and, on Seasons/Episodes, the season tabs (205/206,
+                # focusable while Player.HasAudio) and, on Seasons/Episodes, the season tabs (205,
                 # only when they have items) - so with nothing playing and no tabs the group has no
                 # focusable child at all, Kodi drops focus entirely and the screen goes dead to
                 # everything but Back (live-reported on Artist, Pre-play and skipChildren Seasons;

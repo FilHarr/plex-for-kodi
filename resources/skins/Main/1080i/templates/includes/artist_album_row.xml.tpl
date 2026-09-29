@@ -33,7 +33,7 @@
         <textcolor>FFE9E6E7</textcolor>
         <label>[B]$INFO[Window.Property({{ header_prop }})][/B]</label>
     </control>
-    <control type="list" id="{{ id }}">
+    <control type="fixedlist" id="{{ id }}">
         <posx>53</posx>
         <posy>{{ vscale(22) }}</posy>
         <width>1867</width>
@@ -47,6 +47,12 @@
         <onright>noop</onright>
         <scrolltime>200</scrolltime>
         <orientation>horizontal</orientation>
+        <!-- Focus pinned to the row's first slot, the row scrolling under it - the same as
+             Recommended's hub rows (script-plex-recommended.xml.tpl, which explains the tail).
+             movement = itemsPerPage - 1, itemsPerPage being (1867 - 282) / 282 + 1 = 6: the last
+             items spread to the last whole slot, where this row, a plain list before, left them. -->
+        <focusposition>0</focusposition>
+        <movement>5</movement>
         <preloaditems>4</preloaditems>
         <!-- ITEM LAYOUT ########################################## -->
         <itemlayout width="282">
