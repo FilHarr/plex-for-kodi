@@ -1,6 +1,7 @@
 # coding=utf-8
 import os
 import glob
+import re
 import shutil
 
 from pprint import pformat
@@ -168,7 +169,7 @@ class TemplateEngine(object):
         for template in templates:
             fn = "script-plex-{}{}.xml.tpl".format(template, ".custom" if theme == "custom" and
                                                    template in custom_templates else "")
-            compiled_template = self.compile(fn, template_context)
+            compiled_template = strip_compiled(self.compile(fn, template_context))
             if self.write(template, compiled_template):
                 applied.append(template)
             else:
@@ -177,6 +178,21 @@ class TemplateEngine(object):
 
         update_callback(progress["steps"], progress["steps"], "complete")
         LOG('Using theme {} for: {}', theme, applied)
+
+
+_COMMENT_RE = re.compile(r'<!--.*?-->', re.S)
+
+
+def strip_compiled(xml):
+    """A compiled window without what Kodi never uses: comments, each line's leading and trailing
+    whitespace, and the blank lines that leaves. Line breaks stay, so a Kodi skin error's line
+    number still points at a readable tag. The .tpl sources keep every comment. Kodi parses the
+    whole file on every window build, and comments and indentation were half to two-thirds of
+    the biggest windows (step 13 in the navigation review). tests/test_template_strip.py checks
+    the result parses to the same element tree."""
+    xml = _COMMENT_RE.sub('', xml)
+    lines = (line.strip() for line in xml.split('\n'))
+    return '\n'.join(line for line in lines if line) + '\n'
 
 
 engine = TemplateEngine()
