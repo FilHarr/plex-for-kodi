@@ -61,6 +61,13 @@ def render_templates(theme=None, templates=None, force=False):
 
             # get template overrides
             watch_state_type = getSetting('watched_indicators', 'modern_2024')
+            if watch_state_type == 'classic':
+                # Classic (an orange triangle on unplayed items) left the settings menu in
+                # 9ed1695c and its definition went in step 12 stage F of the navigation review, so
+                # grid items no longer carry the property it read. A setting still holding it
+                # becomes the default.
+                watch_state_type = 'modern_2024'
+                setSetting('watched_indicators', watch_state_type)
             hub_count = getSetting('hub_count', 8)
 
             overrides = {

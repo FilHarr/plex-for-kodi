@@ -332,6 +332,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.lastItem = None
         # The letter updateKey() last wrote to the key property and the letter list (library_grid).
         self._shownKey = None
+        # The optional properties the grid's items were written with (the view's ITEM_PROPERTIES
+        # at fill()): a view-type switch reuses the items only if they carry what the new view reads.
+        self._itemProps = frozenset()
         self.lastFocusID = None
         self.lastNonOptionsFocusID = None
         self.refill = False
@@ -1932,7 +1935,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             backgroundthread.BGThreader.addTasksToFront([task])
 
             self.setBoolProperty("initialized", True)
-        elif self.showPanelControl and not self.refill:
+        elif self.showPanelControl and not self.refill and self.ITEM_PROPERTIES <= self._itemProps:
+            # A view-type switch reuses the items, unless this view reads properties they were
+            # written without (step 12 stage F) - posters to the 16:9 list refills instead.
             self.showPanelControl.newControl(self)
             self.keyListControl.newControl(self)
             self.showPanelControl.selectItem(0)
@@ -3076,6 +3081,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
 class PostersWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windowutils.UtilMixin):
     xmlFile = 'script-plex-posters.xml'
+    # The optional list item properties this view's template reads (of library_grid's
+    # OPTIONAL_ITEM_PROPERTIES): a grid chunk writes only these, each write being a GUI call that
+    # can wait for Kodi's lock (step 12 stage F in the navigation review).
+    # tests/test_grid_item_properties.py checks each view's set against its compiled template.
+    ITEM_PROPERTIES = frozenset()
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
     res = '1080i'
@@ -3131,6 +3141,7 @@ class PostersSmallWindow(PostersWindow):
 
 class ListView16x9Window(PostersWindow):
     xmlFile = 'script-plex-listview-16x9.xml'
+    ITEM_PROPERTIES = frozenset(('summary', 'art'))
     VIEWTYPE = 'list'
     MULTI_WINDOW_ID = 2
     ROW_SIZE = 0
@@ -3145,6 +3156,7 @@ class SquaresWindow(PostersWindow):
 
 class ListViewSquareWindow(PostersWindow):
     xmlFile = 'script-plex-listview-square.xml'
+    ITEM_PROPERTIES = frozenset(('summary',))
     VIEWTYPE = 'list'
     ROW_SIZE = 0
     MULTI_WINDOW_ID = 1
@@ -3168,6 +3180,7 @@ class TrackListWindow(ListViewSquareWindow):
     # pane entirely and styles each row as a track: title, artist, duration, on the Artist screen's
     # own Popular Tracks pill. Photos and Playlists keep the parent window/template unchanged.
     xmlFile = 'script-plex-listview-tracks.xml'
+    ITEM_PROPERTIES = frozenset()
 
 
 VIEWS_SQUARE = {

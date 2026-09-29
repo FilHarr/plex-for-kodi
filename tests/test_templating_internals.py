@@ -126,10 +126,13 @@ class PrepareTemplateDataTest(KodiTestCase):
 
     def test_indicators_with_a_start_key_resolve_the_inheritance_chain(self):
         ctx = self.context()
-        ctx["indicators"]["START"] = {"INHERIT": "classic", "style": "classic"}
+        ctx["indicators"]["START"] = {"INHERIT": "modern_2024", "style": "modern_2024"}
         resolved = prepare_template_data("modern", ctx)
-        self.assertEqual("FFCC7B19", resolved["indicators"]["unwatched_count_bg"])
-        self.assertTrue(resolved["indicators"]["use_unwatched"])
+        # modern_2024 -> modern -> base
+        self.assertEqual("watched_2024.png", resolved["indicators"]["assets"]["watched"])
+        self.assertEqual("CC000000", resolved["indicators"]["unwatched_count_bg"])
+        self.assertFalse(resolved["indicators"]["use_unwatched"])
+        self.assertTrue(resolved["indicators"]["show"])
 
     def test_the_none_indicator_style_switches_them_off(self):
         ctx = self.context()

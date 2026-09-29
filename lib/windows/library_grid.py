@@ -277,6 +277,9 @@ def getQueryItemType(section, item_type, fallback_to_section_type=False, force_i
 
 # Roughly a screenful of grid items: the first chunk's timing line says when this many were written.
 CHUNK_SCREENFUL = 30
+# List item properties a grid writes only for views whose template reads them (a view's
+# ITEM_PROPERTIES, library.py): step 12 stage F in the navigation review.
+OPTIONAL_ITEM_PROPERTIES = frozenset(('summary', 'art'))
 
 
 class ChunkRequestTask(backgroundthread.Task):
@@ -1382,14 +1385,10 @@ class GridMixin(object):
     def updateUnwatchedAndProgress(self, mli):
         mli.dataSource.reload()
         if mli.dataSource.isWatched:
-            mli.setProperty('unwatched', '')
             mli.setProperty('unwatched.count', '')
-        else:
-            if self.section.TYPE == 'show' or mli.dataSource.TYPE == 'show' or mli.dataSource.TYPE == 'season':
-                mli.setProperty('unwatched.count', str(mli.dataSource.unViewedLeafCount))
-                mli.setBoolProperty('unwatched.count.large', mli.dataSource.unViewedLeafCount > 999)
-            else:
-                mli.setProperty('unwatched', '1')
+        elif self.section.TYPE == 'show' or mli.dataSource.TYPE == 'show' or mli.dataSource.TYPE == 'season':
+            mli.setProperty('unwatched.count', str(mli.dataSource.unViewedLeafCount))
+            mli.setBoolProperty('unwatched.count.large', mli.dataSource.unViewedLeafCount > 999)
         mli.setBoolProperty('watched', mli.dataSource.isFullyWatched)
         mli.setProperty('progress', util.getProgressImage(mli.dataSource))
 
@@ -1431,6 +1430,8 @@ class GridMixin(object):
 
     def fill(self, keep_focus=False):
         self.backgroundSet = False
+        # What this fill's items are written with, for the chunks and a later view-type switch.
+        self._itemProps = self.ITEM_PROPERTIES
         # The fill writes the key property and rebuilds the letter list.
         self._shownKey = None
 
@@ -2008,6 +2009,8 @@ class GridMixin(object):
 
             thumbDim = TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['thumb_dim']
             artDim = TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie']).get('art_dim', (256, 256))
+            # Only the optional properties the view reads (step 12 stage F).
+            props = self._itemProps
 
             if not self.showPanelControl:
                 return
@@ -2032,15 +2035,14 @@ class GridMixin(object):
 
                         mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
 
-                        mli.setProperty('summary', util.widenParagraphBreaks(obj.summary))
+                        if 'summary' in props:
+                            mli.setProperty('summary', util.widenParagraphBreaks(obj.summary))
 
                         #mli.setLabel2(util.durationToText(obj.fixedDuration()))
                         mli.setLabel2(subtitle)
-                        mli.setProperty('art', obj.defaultArt.asTranscodedImageURL(*artDim))
-                        if not obj.isWatched:
-                            mli.setProperty('unwatched', '1')
+                        if 'art' in props:
+                            mli.setProperty('art', obj.defaultArt.asTranscodedImageURL(*artDim))
                         mli.setBoolProperty('watched', obj.isFullyWatched)
-                        mli.setProperty('initialized', '1')
                     else:
                         mli.clear()
                         if obj is False:
@@ -2066,7 +2068,8 @@ class GridMixin(object):
 
                         mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
 
-                        mli.setProperty('summary', util.widenParagraphBreaks(obj.summary))
+                        if 'summary' in props:
+                            mli.setProperty('summary', util.widenParagraphBreaks(obj.summary))
 
                         mli.setLabel2(obj.year)
                     else:
@@ -2115,7 +2118,8 @@ class GridMixin(object):
 
                         if obj.TYPE == 'collection':
                             colArtDim = TYPE_KEYS.get('collection').get('art_dim', (256, 256))
-                            mli.setProperty('art', obj.artCompositeURL(*colArtDim))
+                            if 'art' in props:
+                                mli.setProperty('art', obj.artCompositeURL(*colArtDim))
                             mli.setThumbnailImage(obj.server.getImageTranscodeURL(
                                 obj.artCompositeURL(*tuple(2*dim for dim in thumbDim)), *thumbDim)
                             )
@@ -2125,7 +2129,8 @@ class GridMixin(object):
                             else:
                                 mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
                         mli.dataSource = obj
-                        mli.setProperty('summary', util.widenParagraphBreaks(obj.get('summary')))
+                        if 'summary' in props:
+                            mli.setProperty('summary', util.widenParagraphBreaks(obj.get('summary')))
 
                         # get secondary sort based info
                         sk_data = SORT_KEYS[self.section.TYPE].get(self.sort, {'subDisplay': None})
@@ -2144,16 +2149,14 @@ class GridMixin(object):
                         if obj.TYPE != 'collection':
                             if not obj.isDirectory() and obj.get('duration').asInt():
                                 mli.setLabel2(util.durationToText(obj.fixedDuration()))
-                            mli.setProperty('art', obj.defaultArt.asTranscodedImageURL(*artDim))
+                            if 'art' in props:
+                                mli.setProperty('art', obj.defaultArt.asTranscodedImageURL(*artDim))
                             if not obj.isWatched and obj.TYPE != "Directory":
                                 if self.section.TYPE == 'show' or obj.TYPE == 'show' or obj.TYPE == 'season':
                                     mli.setProperty('unwatched.count', str(obj.unViewedLeafCount))
                                     mli.setBoolProperty('unwatched.count.large', obj.unViewedLeafCount > 999)
-                                else:
-                                    mli.setProperty('unwatched', '1')
                             elif obj.isFullyWatched and obj.TYPE != "Directory":
                                 mli.setBoolProperty('watched', '1')
-                            mli.setProperty('initialized', '1')
 
                         mli.setProperty('progress', util.getProgressImage(obj))
                     else:

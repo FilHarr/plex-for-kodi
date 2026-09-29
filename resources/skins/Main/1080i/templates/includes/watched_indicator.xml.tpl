@@ -1,15 +1,5 @@
     {% if indicators.show %}
     {% with xoff = xoff|default(158) & yoff = yoff|default(0) & uw_size = uw_size|default(32) & wbg_w = wbg_w|default(32) & wbg_h = wbg_h|default(32) & count_zoom = count_zoom|default(40) %}
-        {% if indicators.use_unwatched %}
-        <control type="image">
-            <visible>!String.IsEmpty({{ itemref|default("ListItem") }}.Property(unwatched)) + String.IsEmpty({{ itemref|default("ListItem") }}.Property(watched))</visible>
-            <posx>{{ xoff - uw_size }}</posx>
-            <posy>{{ uw_posy|default(0)|vscale }}</posy>
-            <width>{{ uw_size }}</width>
-            <height>{{ uw_size|vscale }}</height>
-            <texture fallback="script.plex/indicators/{{ indicators.assets.unwatched }}">special://profile/addon_data/script.plexmod/media/{{ indicators.assets.unwatched }}</texture>
-        </control>
-        {% else %}
         <control type="group">
             <visible>!String.IsEmpty({{ itemref|default("ListItem") }}.Property(watched)) + String.IsEmpty({{ itemref|default("ListItem") }}.Property(unwatched.count))</visible>
             <posx>{{ xoff - wbg_w }}</posx>
@@ -32,28 +22,9 @@
                 <texture fallback="script.plex/indicators/{{ indicators.assets.watched }}">special://profile/addon_data/script.plexmod/media/{{ indicators.assets.watched }}</texture>
             </control>
         </control>
-        {% endif %}
         {% if with_count %}
         <control type="group">
             <visible>!String.IsEmpty({{ itemref|default("ListItem") }}.Property(unwatched.count))</visible>
-            {% if indicators.style == "classic" %}
-            <control type="image">
-                <posx>{{ xoff - wbg_w - 1 }}</posx>
-                <posy>{{ yoff|vscale }}</posy>
-                <width>{{ wbg_w + 1 }}</width>
-                <height>{{ (wbg_h + 1)|vscale }}</height>
-                <texture>script.plex/white-square.png</texture>
-                <colordiffuse>FF000000</colordiffuse>
-            </control>
-            <control type="image">
-                <posx>{{ xoff - wbg_w }}</posx>
-                <posy>{{ yoff|vscale }}</posy>
-                <width>{{ wbg_w }}</width>
-                <height>{{ wbg_h|vscale }}</height>
-                <texture>script.plex/white-square.png</texture>
-                <colordiffuse>{{ indicators.unwatched_count_bg|default("FFCC7B19") }}</colordiffuse>
-            </control>
-            {% else %}
             <control type="image">
                 <visible>String.IsEmpty({{ itemref|default("ListItem") }}.Property(unwatched.count.large))</visible>
                 <posx>{{ xoff - wbg_w }}</posx>
@@ -72,7 +43,6 @@
                 <texture diffuse="{{ wbg|default('script.plex/masks/badge-mask-tr.png') }}">script.plex/white-square.png</texture>
                 <colordiffuse>{{ indicators.unwatched_count_bg|default("FFCC7B19") }}</colordiffuse>
             </control>
-            {% endif %}
             <control type="label">{# this label uses a nasty hack to get a smaller fitting font size: use a larger font, increase the label size, then zoom it down #}
                 <animation effect="zoom" start="{{ count_zoom }}" end="{{ count_zoom }}" time="0" reversible="false" center="auto" condition="true">Conditional</animation>
                 <visible>String.IsEmpty({{ itemref|default("ListItem") }}.Property(unwatched.count.large))</visible>

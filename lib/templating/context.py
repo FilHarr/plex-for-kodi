@@ -16,17 +16,6 @@ TEMPLATE_CONTEXTS = {
             "use_unwatched": True,
             "show": False
         },
-        "classic": {
-            "INHERIT": "base",
-            "use_unwatched": True,
-            "hide_aw_bg": None,
-            "watched_bg": None,
-            "unwatched_count_bg": "FFCC7B19",
-            "textcolor": "FF000000",
-            "assets": {
-                "unwatched": "unwatched.png"
-            }
-        },
         "modern": {
             "INHERIT": "base",
             "use_unwatched": False,
