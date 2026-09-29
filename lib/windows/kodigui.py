@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 
+import atexit
 import gc
 import threading
 import time
@@ -1640,8 +1641,14 @@ def _logGcPause(phase, info):
                        info.get('collected'))
 
 
+# gc.callbacks is shared by every Python instance Kodi runs on Python 3.8 (the PC; later versions,
+# like the AM6B's 3.13, keep one per instance). Left in after we exit, our callback runs on every
+# collection anywhere in Kodi with this module's globals already cleared - two tracebacks per
+# collection, and one more dead callback per run. atexit runs before that teardown (realExit()'s
+# REALLY FINISHED is logged ahead of the errors).
 if _logGcPause not in gc.callbacks:
     gc.callbacks.append(_logGcPause)
+    atexit.register(gc.callbacks.remove, _logGcPause)
 
 
 # F3 in the navigation review: plexnet signals run their handlers on whichever thread triggers
