@@ -277,10 +277,6 @@ def getQueryItemType(section, item_type, fallback_to_section_type=False, force_i
 
 # Roughly a screenful of grid items: the first chunk's timing line says when this many were written.
 CHUNK_SCREENFUL = 30
-# TEMPORARY (step 12 stage E in the navigation review): how long the worker waits after the first
-# screenful of a grid's first chunk before writing the rest, on the grid opens that pause
-# (LibraryWindow.firstScreenPause).
-FIRST_SCREEN_PAUSE_SECONDS = 0.25
 
 
 class ChunkRequestTask(backgroundthread.Task):
@@ -1977,37 +1973,19 @@ class GridMixin(object):
             self._firstChunkTiming = None
             marks = self._firstChunkMarks = {}
             started = time.time()
-            # TEMPORARY (step 12 stage E): on the grid opens that pause, the first screenful is
-            # written on its own, then the worker waits before writing the rest, so Kodi loads the
-            # visible artwork without those writes queueing for its lock. Two calls, not a wait
-            # inside the loop: the loop holds self.lock, which a swap waits on
-            # (_retireListItems()), and the second call's generation check drops the rest if the
-            # grid has moved on meanwhile.
-            pause = self.firstScreenPause and len(items) > CHUNK_SCREENFUL
             try:
-                if pause:
-                    self._chunkCallback(items[:CHUNK_SCREENFUL], start, generation)
-                    self._firstChunkMarks = None
-                    paused = time.time()
-                    if util.MONITOR.waitForAbort(FIRST_SCREEN_PAUSE_SECONDS):
-                        return
-                    marks['paused'] = time.time()
-                    self._chunkCallback(items[CHUNK_SCREENFUL:], start + CHUNK_SCREENFUL, generation)
-                else:
-                    self._chunkCallback(items, start, generation)
+                self._chunkCallback(items, start, generation)
             finally:
                 self._firstChunkMarks = None
             requested = firstChunk[2]
 
             def since(key):
                 return int((marks[key] - started) * 1000) if key in marks else '-'
-            util.DEBUG_LOG("Library: first chunk ({0} items) bound in {1} ms (background {2}, first {3} items {4},"
-                           " {7}), {5} ms after the placeholders, {6} ms after the request", len(items),
+            util.DEBUG_LOG("Library: first chunk ({0} items) bound in {1} ms (background {2}, first {3} items {4}),"
+                           " {5} ms after the placeholders, {6} ms after the request", len(items),
                            int((time.time() - started) * 1000), since('background'), CHUNK_SCREENFUL,
                            since('screenful'), int((started - firstChunk[1]) * 1000),
-                           int((time.time() - requested) * 1000) if requested else '?',
-                           'paused {0} ms'.format(int((marks['paused'] - paused) * 1000))
-                           if 'paused' in marks else 'no pause')
+                           int((time.time() - requested) * 1000) if requested else '?')
         return callback
 
     def _chunkCallback(self, items, start, generation=None):

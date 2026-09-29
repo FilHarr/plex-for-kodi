@@ -152,10 +152,6 @@ class FakeHostWindow(object):
     NAV_DEFER_SECONDS = 0.0
     NAV_INIT_HOLD_MAX_SECONDS = library.kodigui.MultiWindow.NAV_INIT_HOLD_MAX_SECONDS
 
-    def _flipFirstScreenPause(self):
-        # TEMPORARY (step 12 stage E): the real one shows a notification.
-        pass
-
     def _captureRootRestoreState(self):
         # Real LibraryWindow._captureRootRestoreState() reads contentMode/showPanelControl/
         # visibleHubs, none of which this minimal double carries - stubbed to the "nothing

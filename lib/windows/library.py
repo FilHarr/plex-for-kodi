@@ -339,9 +339,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # the panel (and its ListItems) was replaced while a modal child window was open,
         # so we never touch a freed ListItem afterwards (see showPanelClicked).
         self._listGeneration = 0
-        # TEMPORARY (step 12 stage E in the navigation review): grid opens so far, for the
-        # first-screenful pause's alternation (firstScreenPause).
-        self._gridOpens = 0
         self.subOptionCache = {}
         self._filterTypeByKey = {}
         self.closing = False
@@ -604,20 +601,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         shells define this attribute. See _setupCurrent()'s bifurcation below."""
         return not hasattr(cls, 'MULTI_WINDOW_ID')
 
-    @property
-    def firstScreenPause(self):
-        """TEMPORARY (step 12 stage E): whether this grid's first chunk pauses after its first
-        screenful (library_grid's FIRST_SCREEN_PAUSE_SECONDS). Alternates by grid open."""
-        return self._gridOpens % 2 == 1
-
-    def _flipFirstScreenPause(self):
-        """TEMPORARY (step 12 stage E): each grid open takes the other variant, and says which, so
-        the two can be compared by eye on the AM6B."""
-        self._gridOpens += 1
-        name = 'pause' if self.firstScreenPause else 'no pause'
-        util.DEBUG_LOG('First screen variant: {0} (grid open {1})', name, self._gridOpens)
-        util.showNotification('First screen: {0}'.format(name), time_ms=2000)
-
     def _setupCurrent(self, cls):
         # Swap logging, kept from the hosted-screen crash investigation (hashed-orbiting-pizza.md):
         # with the lines below and in openSection() and MultiWindow._open(), it places a native
@@ -674,8 +657,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             kodigui.MultiWindow._setupCurrent(self, cls)
             if issubclass(cls, RecommendedWindow):
                 self._hideStaleHero()
-            else:
-                self._flipFirstScreenPause()
             util.DEBUG_LOG("Library: _setupCurrent({0}) thin-proxy branch complete", cls)
             return
 
