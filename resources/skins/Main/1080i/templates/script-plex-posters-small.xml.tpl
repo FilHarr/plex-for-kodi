@@ -94,24 +94,26 @@
                             <aspectratio scalediffuse="false">scale</aspectratio>
                         </control>
                         <control type="group">
+                            <!-- The poster grid's progress bar (script-plex-posters.xml.tpl) scaled to this 0.6-size
+                                 poster (2026-09-29): inset 5px, 5px clear of the bottom edge, 5px tall, pill-masked. -->
                             <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
-                            <posx>0</posx>
+                            <posx>5</posx>
                             <posy>{{ vscale(203) }}</posy>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
-                                <width>144</width>
-                                <height>{{ vscale(10) }}</height>
-                                <texture>script.plex/white-square.png</texture>
-                                <colordiffuse>C0000000</colordiffuse>
+                                <width>134</width>
+                                <height>{{ vscale(5) }}</height>
+                                <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                                <colordiffuse>E60A0F1A</colordiffuse>
                             </control>
                             <control type="image">
                                 <posx>0</posx>
-                                <posy>1</posy>
-                                <width>144</width>
-                                <height>{{ vscale(8) }}</height>
-                                <texture>$INFO[ListItem.Property(progress)]</texture>
-                                <colordiffuse>FFCC7B19</colordiffuse>
+                                <posy>0</posy>
+                                <width>134</width>
+                                <height>{{ vscale(5) }}</height>
+                                <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                                <colordiffuse>FFE5A00D</colordiffuse>
                             </control>
                         </control>
                         {% include "includes/watched_indicator.xml.tpl" with xoff=144 & uw_size=29 & wbg_w=20.3 & wbg_h=20.3 & count_zoom=26.2 & with_count=True & scale="small" %}
@@ -205,24 +207,26 @@
                                 <aspectratio scalediffuse="false">scale</aspectratio>
                             </control>
                             <control type="group">
+                                <!-- The poster grid's progress bar (script-plex-posters.xml.tpl) scaled to this 0.6-size
+                                     poster (2026-09-29): inset 5px, 5px clear of the bottom edge, 5px tall, pill-masked. -->
                                 <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
-                                <posx>0</posx>
+                                <posx>5</posx>
                                 <posy>{{ vscale(203) }}</posy>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
-                                    <width>144</width>
-                                    <height>{{ vscale(10) }}</height>
-                                    <texture>script.plex/white-square.png</texture>
-                                    <colordiffuse>C0000000</colordiffuse>
+                                    <width>134</width>
+                                    <height>{{ vscale(5) }}</height>
+                                    <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                                    <colordiffuse>E60A0F1A</colordiffuse>
                                 </control>
                                 <control type="image">
                                     <posx>0</posx>
-                                    <posy>1</posy>
-                                    <width>144</width>
-                                    <height>{{ vscale(8) }}</height>
-                                    <texture>$INFO[ListItem.Property(progress)]</texture>
-                                    <colordiffuse>FFCC7B19</colordiffuse>
+                                    <posy>0</posy>
+                                    <width>134</width>
+                                    <height>{{ vscale(5) }}</height>
+                                    <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                                    <colordiffuse>FFE5A00D</colordiffuse>
                                 </control>
                             </control>
                             {% include "includes/watched_indicator.xml.tpl" with xoff=144 & uw_size=29 & wbg_w=20.3 & wbg_h=20.3 & count_zoom=26.2 & with_count=True & scale="small" %}
