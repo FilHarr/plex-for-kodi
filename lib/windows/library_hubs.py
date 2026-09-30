@@ -1570,9 +1570,9 @@ class HubsMixin(object):
         self.setProperty('duration', ds_type != 'playlist' and duration and util.durationToShortText(duration.asInt(), noSpaces=True) or '')
 
         summary = getattr(ds, 'summary', None)
-        # Capped (util.SUMMARY_BOX_MAX_CHARS) - live-reported lag moving along the Recently
-        # Played Music row (2026-09-20) that the hero-sync timing showed wasn't Python at all;
-        # see that constant's own comment.
+        # Cut to the box's three lines (util.summaryForBox()) - live-reported lag moving along the
+        # Recently Played Music row (2026-09-20) that the hero-sync timing showed wasn't Python at
+        # all; see util.SUMMARY_BOX_WIDTH's own comment.
         self.setProperty('summary', util.summaryForBox(summary))
 
         date_text = ''

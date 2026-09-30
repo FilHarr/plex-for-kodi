@@ -360,38 +360,91 @@ def shortenText(text, size):
     return u'{0}\u2026'.format(text[:size - 1])
 
 
-# Longest summary handed to any screen's 813px/font10, 90px-tall summary textbox (home hero,
-# pre-play, seasons, episodes, artist, album - all the same box): its three visible lines
-# (700 live-measured at just over 9 lines; 230 spilled, 200 ran short), so nothing is left for
-# the autoscroll to reveal. Kodi word-wraps the *whole* string on the render thread every time
-# the property changes, and artist bios run to tens of thousands of characters (The Beatles:
-# 36k / 41 paragraphs), which stalled the home hub row on every focus move (live, 2026-09-20).
-# The popups behind each box's click target (info.showSummary()) read the full text straight
-# off the object, never this property, so nothing is lost.
-SUMMARY_BOX_MAX_CHARS = 215
+# The summary textbox every screen shares (home hero, pre-play, seasons, episodes, artist, album,
+# collection): 813px wide, font10, 90px tall - three lines. summaryForBox() hands it only what
+# those three lines show, so nothing is left for the autoscroll to reveal. Kodi word-wraps the
+# *whole* string on the render thread every time the property changes, and artist bios run to
+# tens of thousands of characters (The Beatles: 36k / 41 paragraphs), which stalled the home hub
+# row on every focus move (live, 2026-09-20). The popups behind each box's click target
+# (info.showSummary()) read the full text straight off the object, never this property, so
+# nothing is lost.
+SUMMARY_BOX_WIDTH = 813
+SUMMARY_BOX_LINES = 3
+# The most of a summary summaryForBox() ever looks at, so a 36k bio costs no more to wrap than a
+# short one: more than three lines can hold. font10's narrowest glyph ('i') is 5.6px, so 813px
+# holds at most 145 characters a line.
+SUMMARY_BOX_SCAN_CHARS = 450
+# Left dangling by a cut, these go before the ellipsis, so it follows a word rather than ",..."
+# (on request, 2026-09-20). Joining words ("and", "of") stay (on request, 2026-09-30).
+SUMMARY_CUT_TRAILING = u',;:-\u2013\u2014 '
 
 
-def summaryForBox(text, size=None):
-    """A Plex summary prepared for one of the small summary textboxes: tabs flattened, capped at
-    SUMMARY_BOX_MAX_CHARS on a word boundary (shortenTextAtWord()), paragraph breaks widened and
-    "--" normalised (widenParagraphBreaks()). '' for None/empty."""
+def summaryForBox(text):
+    """A Plex summary prepared for one of the small summary textboxes: tabs flattened, paragraph
+    breaks widened and "--" normalised (widenParagraphBreaks()), and cut to the box's three lines
+    with an ellipsis ending the third. '' for None/empty.
+
+    The cut is by line, not by character count: a paragraph break ends its line early and
+    widening adds a blank line after it, so a character cap left most of a multi-paragraph
+    summary below the box (live: collection 78714, whose 215-character cut ran to eight lines).
+    Lines are wrapped at 1080p (scale=1.0): FreeType rounds this font's advances up there, so text
+    measured to fit at 1080p fits at any resolution. Only the paragraph breaks are put back - Kodi
+    wraps within them itself - and as the estimate errs wide, Kodi's lines hold at least as much as
+    these did, so what's kept never runs past three."""
+    from lib.windows.mixins.text_metrics import measureTextWidth, FONT10_POINT_SIZE
+
     if not text:
         return ''
-    return widenParagraphBreaks(
-        shortenTextAtWord(str(text).strip().replace('\t', ' '), size or SUMMARY_BOX_MAX_CHARS))
+    text = str(text).strip().replace('\t', ' ')
+    more = len(text) > SUMMARY_BOX_SCAN_CHARS
+    widened = widenParagraphBreaks(text[:SUMMARY_BOX_SCAN_CHARS])
 
+    def width(s):
+        return measureTextWidth(s, FONT10_POINT_SIZE, scale=1.0)
 
-def shortenTextAtWord(text, size):
-    """shortenText() that cuts at the last word boundary before size instead of mid-word
-    (falls back to a hard cut if there's no space in the first size characters). Trailing
-    punctuation left dangling by the cut (",", ";", ":", an open dash) is dropped too, so the
-    ellipsis follows a word rather than ",..." (on request, 2026-09-20)."""
-    if len(text) < size:
-        return text
-    cut = text.rfind(' ', 0, size - 1)
-    if cut < size // 2:
-        cut = size - 1
-    return u'{0}\u2026'.format(text[:cut].rstrip().rstrip(u',;:-\u2013\u2014 '))
+    def fits(line):
+        return width(line) <= SUMMARY_BOX_WIDTH
+
+    # (paragraph index, line) for every line the box would draw, a blank line being ''. Each word
+    # is measured once and a line's width summed as it grows: at scale=1.0 measureTextWidth() is
+    # a plain per-glyph sum, so the sum is exact - and this runs on every home hub move.
+    space = width(u' ')
+    lines = []
+    for para_idx, para in enumerate(widened.split('\n')):
+        current = None
+        current_width = 0
+        for word in para.split(' '):
+            word_width = width(word)
+            if current is None:
+                current, current_width = word, word_width
+            elif current_width + space + word_width > SUMMARY_BOX_WIDTH:
+                lines.append((para_idx, current))
+                current, current_width = word, word_width
+            else:
+                current, current_width = current + u' ' + word, current_width + space + word_width
+        lines.append((para_idx, current or ''))
+
+    if not more and len(lines) <= SUMMARY_BOX_LINES:
+        return widened
+
+    kept = lines[:SUMMARY_BOX_LINES]
+    # Never end on a blank line: the ellipsis goes on the last line with text on it.
+    while len(kept) > 1 and not kept[-1][1].strip():
+        kept.pop()
+    para_idx, last = kept[-1]
+    words = last.rstrip().split(' ')
+    while len(words) > 1 and not fits(u' '.join(words).rstrip(SUMMARY_CUT_TRAILING) + u'\u2026'):
+        words.pop()
+    kept[-1] = (para_idx, u' '.join(words).rstrip(SUMMARY_CUT_TRAILING) + u'\u2026')
+
+    # Lines of one paragraph rejoin with a space; paragraphs (blank ones included) with a break.
+    paragraphs = []
+    for para_idx, line in kept:
+        if paragraphs and paragraphs[-1][0] == para_idx:
+            paragraphs[-1][1].append(line)
+        else:
+            paragraphs.append((para_idx, [line]))
+    return u'\n'.join(u' '.join(parts) for _, parts in paragraphs)
 
 
 def scaleResolution(w, h, by=None):

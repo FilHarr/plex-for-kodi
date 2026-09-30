@@ -173,6 +173,42 @@ class SmallHelpersTest(KodiTestCase):
         self.assertEqual("http://h/p?q=a+b", util.addURLParams("http://h/p", {"q": "a b"}))
 
 
+class SummaryForBoxTest(KodiTestCase):
+    # Collection 78714's own summary (live, 2026-09-30): four paragraphs, blank lines between.
+    STAR_TREK = (u"All 13 Star Trek films. \r\n\r\nThe first six Original Series films starring the "
+                 u"U.S.S. Enterprise's cast and crew from the 1960s TV series of the same name.\r\n\r\n"
+                 u"Four films starring the Next Generation crew.\r\n\r\nAnd J.J. Abrams' cinematic "
+                 u"re-envisioning of the Star Trek universe portrayed by a new cast, and set in an "
+                 u"alternate reality from earlier films and series (referred to as the \"Kelvin\" "
+                 u"timeline).")
+
+    def test_empty(self):
+        self.assertEqual('', util.summaryForBox(None))
+        self.assertEqual('', util.summaryForBox(''))
+
+    def test_what_fits_is_only_widened(self):
+        self.assertEqual(u"One.\n\nTwo.", util.summaryForBox(u"One.\r\nTwo."))
+
+    def test_paragraph_breaks_count_as_lines(self):
+        # A character cap kept 204 characters of this, eight lines deep; the box shows three.
+        self.assertEqual(u"All 13 Star Trek films. \n\nThe first six Original Series films starring the "
+                         u"U.S.S. Enterprise's cast and…", util.summaryForBox(self.STAR_TREK))
+
+    def test_never_ends_on_the_blank_line(self):
+        # Two lines of paragraph, then the blank line would be the box's third.
+        self.assertEqual(u"x " * 70 + u"end.…", util.summaryForBox(u"x " * 70 + u"end.\r\n\r\nSecond."))
+
+    def test_a_long_paragraph_fills_three_lines(self):
+        from lib.windows.mixins.text_metrics import measureTextWidth, FONT10_POINT_SIZE
+        result = util.summaryForBox(u' '.join(u'word%d,' % i for i in range(9000)))
+        self.assertTrue(result.endswith(u'…'))
+        self.assertNotIn(u'\n', result)
+        # Dangling punctuation goes before the ellipsis.
+        self.assertFalse(result.endswith(u',…'))
+        width = measureTextWidth(result, FONT10_POINT_SIZE, scale=1.0)
+        self.assertTrue(2 * util.SUMMARY_BOX_WIDTH < width <= 3 * util.SUMMARY_BOX_WIDTH)
+
+
 class ScalingTest(KodiTestCase):
     def test_scale_resolution_is_identity_at_100_percent(self):
         self.assertEqual((1920, 1080), util.scaleResolution(1920, 1080, by=100))
