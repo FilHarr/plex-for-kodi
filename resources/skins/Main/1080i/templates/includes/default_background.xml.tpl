@@ -252,9 +252,11 @@
          back off when focus returns above the row list, so it gets its own property that does.
          person.py doesn't opt in yet - same onFocus addition would extend this there too, if that
          screen ever gets this same row-scrolling layout. 4D, not 33: dimming increased from 20% to
-         30% on request. -->
+         30% on request. row_dim_condition: a caller whose rows aren't separate controls can key
+         the dim off its own condition instead (the Collection screen: its grid past the first
+         row, the same condition as its page slide). -->
     <control type="image">
-        <visible>!String.IsEmpty(Window.Property(row.focused))</visible>
+        <visible>{{ row_dim_condition|default("!String.IsEmpty(Window.Property(row.focused))") }}</visible>
         <animation effect="fade" start="0" end="100" time="600" reversible="true">VisibleChange</animation>
         <posx>0</posx>
         <posy>0</posy>

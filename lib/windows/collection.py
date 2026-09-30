@@ -7,10 +7,11 @@ from kodi_six import xbmcgui
 
 from lib import util
 from lib.util import T
-from plexnet import plexapp
+from plexnet import plexapp, playqueue
 from . import home
 from . import info
 from . import kodigui
+from . import opener
 from . import pagination
 from . import preplay
 from . import search
@@ -129,6 +130,9 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
     # same id/role as ShowWindow's/ArtistWindow's own (subitems.py). Only CollectionWindow's
     # template declares it; SubDirWindow has no info panel.
     SUMMARY_BUTTON_ID = 305
+    # Play/Shuffle under the summary - again only CollectionWindow's template declares them.
+    PLAY_BUTTON_ID = 301
+    SHUFFLE_BUTTON_ID = 302
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -206,6 +210,8 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
             self.itemClicked()
         elif controlID == self.SUMMARY_BUTTON_ID:
             self.summaryButtonClicked()
+        elif controlID in (self.PLAY_BUTTON_ID, self.SHUFFLE_BUTTON_ID):
+            self.playButtonClicked(shuffle=controlID == self.SHUFFLE_BUTTON_ID)
         elif controlID == self.SECTION_LIST_ID:
             self.sectionClicked()
 
@@ -228,6 +234,10 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         """Full-text summary popup - the same info.showSummary() dialog every other media screen's
         summary click target opens (subitems.py/preplay.py/episodes.py). Only CollectionWindow
         gives it a control to be reached from."""
+        raise NotImplementedError
+
+    def playButtonClicked(self, shuffle=False):
+        """Play/Shuffle - only CollectionWindow has the buttons."""
         raise NotImplementedError
 
     def createListItem(self, data):
@@ -485,6 +495,18 @@ class CollectionWindow(BoundedGridWindow):
         # capped display copy (util.summaryForBox()).
         info.showSummary(self.collection.title, self.collection.get('summary'))
 
+    def playButtonClicked(self, shuffle=False):
+        """The whole collection as a server play queue, in the collection's own order or shuffled -
+        the way Plex's own clients play one. The queue is the collection's children listing
+        (library://<section>/directory//library/collections/<id>/children); PMS expands a show
+        collection into its episodes itself (checked live, 2026-09-30: a one-show collection gave
+        a 12-episode queue)."""
+        pq = playqueue.createPlayQueueForItem(self.collection, options={'shuffle': shuffle})
+        if not pq:
+            util.DEBUG_LOG('CollectionWindow: no play queue for {}', self.collection)
+            return
+        self.processCommand(opener.open(pq, context=self))
+
     def metaLine(self, count):
         """"<n> items" plus, after a bullet, the members' year span "minYear-maxYear" - only when
         it is a span: a single-year collection (live: a one-show TV collection reports
@@ -521,6 +543,10 @@ class CollectionWindow(BoundedGridWindow):
 
         leafCount = self.collection.get('childCount').asInt()
         self.setProperty('collection.meta', self.metaLine(leafCount))
+        # Play/Shuffle only for a collection there's a queue for: something in it, of a type a
+        # play queue can be made from (playqueue.PlayQueueFactory - video or audio here).
+        self.setBoolProperty('collection.playable',
+                             leafCount > 0 and bool(playqueue.PlayQueueFactory().getContentType(self.collection)))
 
         self.paginator = CollectionPaginator(self.gridControl, parent_window=self, leaf_count=leafCount)
         self.paginator.paginate()

@@ -682,11 +682,18 @@ class Collection(media.MediaItem):
         path = "{0}?width={1}&height={2}".format(self.defaultThumb, w, h)
         return self.server.buildUrl(path, includeToken=True)
 
+    def memberType(self):
+        """What the collection holds: its own subtype (movie/show/artist...), which PMS sends on
+        every route - section listings, /library/metadata and /all?type=18 alike (checked live,
+        2026-09-30). The listing's viewGroup only as a fallback: a /library/metadata fetch has none,
+        so a collection reached that way had no play queue content type at all."""
+        return self.get('subtype') or (self.container is not None and self.container.viewGroup) or ''
+
     def isMusicOrDirectoryItem(self):
-        return self.container.viewGroup in ('artist', 'album', 'track')
+        return self.memberType() in ('artist', 'album', 'track')
 
     def isVideoOrDirectoryItem(self):
-        return self.container.viewGroup in ('movie', 'show', 'episode')
+        return self.memberType() in ('movie', 'show', 'episode')
 
     def isCollection(self):
         return True
