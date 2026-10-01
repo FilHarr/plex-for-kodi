@@ -839,19 +839,6 @@
                                         <texture diffuse="script.plex/masks/badge-mask-tr-wide.png">script.plex/white-square.png</texture>
                                         <colordiffuse>{{ indicators.watched_bg|default("CC000000") }}</colordiffuse>
                                     </control>
-                                    <control type="label">
-                                        <posx>12</posx>
-                                        <width>162</width>
-                                        <height>{{ vscale(32) }}</height>
-                                        <font>font8</font>
-                                        <align>center</align>
-                                        <aligny>center</aligny>
-                                        <scroll>true</scroll>
-                                        <scrollspeed>35</scrollspeed>
-                                        <textcolor>DDFFFFFF</textcolor>
-                                        <shadowcolor>66000000</shadowcolor>
-                                        <label>$INFO[ListItem.Property(title)]</label>
-                                    </control>
                                 </control>
                                 <!-- Inset pill, matching itemlayout's own copy above - see that control's own
                                      comment for the full reasoning. -->
@@ -981,6 +968,31 @@
                                 <texture diffuse="script.plex/masks/ring-mask-ar16x9.png">script.plex/white-square.png</texture>
                                 <colordiffuse>FFE9A20D</colordiffuse>
                             </control>
+                        </control>
+                        <!-- Season name, out of the zoom group above (on request, 2026-10-01): Kodi rounds each glyph's
+                             left edge to a whole pixel after the transform (CGUIFontTTF::RenderCharacter()), so under the
+                             104% focus zoom the glyphs land on fractional pixels and round unevenly - "Se as on" pairs,
+                             live-confirmed with InterUI too. A slide moves every glyph by the same amount, so they all
+                             round alike. The slide is where the zoom takes the label's centre: (422, 19) in this frame
+                             (art group 3 + panel 326 + label 12 + half its 162, panel row 3 + half its 32), moved away
+                             from the zoom centre (259, 147) by 4% - (+6.5, -5.1). The text stays 18px while the panel
+                             behind it grows 4%: 0.7px, not noticeable. -->
+                        <control type="label">
+                            <animation effect="slide" start="0,0" end="6.5,{{ vscale(-5.1) }}" time="100" reversible="false">Focus</animation>
+                            <animation effect="slide" start="6.5,{{ vscale(-5.1) }}" end="0,0" time="100" reversible="false">UnFocus</animation>
+                            <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                            <posx>341</posx>
+                            <posy>3</posy>
+                            <width>162</width>
+                            <height>{{ vscale(32) }}</height>
+                            <font>font8</font>
+                            <align>center</align>
+                            <aligny>center</aligny>
+                            <scroll>true</scroll>
+                            <scrollspeed>35</scrollspeed>
+                            <textcolor>DDFFFFFF</textcolor>
+                            <shadowcolor>66000000</shadowcolor>
+                            <label>$INFO[ListItem.Property(title)]</label>
                         </control>
                     </control>
                 </focusedlayout>
