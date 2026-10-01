@@ -1206,17 +1206,37 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 # no matching episode found
                 mli = self.episodeListControl.getSelectedItem()
                 self.setProgress(mli, view_offset=0)
-        elif self.season.isFullyWatched and not self.episode:
-            self.episodeListControl.selectItem(mli.pos())
+        elif self.season.isFullyWatched:
+            # A fully watched season: self.episode when there is one, else the first episode. Used to
+            # be "and not self.episode" with item 0 picked blind - two gaps, live-reported 2026-10-02:
+            # with self.episode set (re-watching an episode of a season that's otherwise all watched -
+            # Plex still counts the season fully watched) neither branch selected anything, so the
+            # row kept its default, episode 1, and the selected episode never got set up (its media
+            # pills stayed at their build-time size); and item 0 is the season card now
+            # (createSeasonCardItem(), dataSource None), so the no-episode case landed on the card
+            # instead of episode 1. The paginator's own early pick of self.episode (selectItem())
+            # doesn't survive the season card's prepend reliably, the native select being queued.
+            target = None
+            for item in self.episodeListControl:
+                if item.dataSource and (not self.episode or item.dataSource == self.episode):
+                    target = item
+                    break
 
-            tries = 0
-            while self.episodeListControl.getSelectedPos() != mli.pos() and tries < util.MONITOR.waitAmount(4, interval=SELECT_POLL_SECONDS):
-                kodigui.sleepForGui(SELECT_POLL_SECONDS)
+            if target:
+                mli = target
                 self.episodeListControl.selectItem(mli.pos())
-                tries += 1
 
-            self.episodesPaginator.setEpisode(mli.dataSource)
-            self.lastItem = mli
+                tries = 0
+                while self.episodeListControl.getSelectedPos() != mli.pos() and tries < util.MONITOR.waitAmount(4, interval=SELECT_POLL_SECONDS):
+                    kodigui.sleepForGui(SELECT_POLL_SECONDS)
+                    self.episodeListControl.selectItem(mli.pos())
+                    tries += 1
+
+                self.episodesPaginator.setEpisode(mli.dataSource)
+                self.lastItem = mli
+                # None: the item's own progress, as the branch above does - a part-watched
+                # re-watch shows its resume state.
+                self.setProgress(mli, view_offset=None)
 
         if from_reinit and had_progress_data:
             # we had progress data for our current season and still have progress data for the current TV show
