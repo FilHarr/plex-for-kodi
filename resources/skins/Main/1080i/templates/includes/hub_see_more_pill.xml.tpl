@@ -15,8 +15,8 @@
 
      The section tabs' (includes/section_tabs.xml.tpl) 50-tall 33FFFFFF rounded focus pill, but
      font10 (23px, on request - was the tabs' font12) and sized to the caption: "See more" at
-     font10 is 102px of InterUI advance width with a 17px cap height, which a 50px pill centres
-     with ~16.5px of clear space above and below the caps - so 136 = 102 + 2 x 17, the same
+     font10 is 103px of Inter advance width (102 in the old InterUI) with a 17px cap height, which
+     a 50px pill centres with ~16.5px of clear space above and below the caps - so 137 = 103 + 2 x 17, the same
      clearance left and right, on request. Unfocused it keeps a fainter fill so the item still
      reads as a control at rest (the tabs are bare text at rest - a text-only "See more" at the
      end of a row of art would read as a stray label). The fill is gated on real control focus,
@@ -30,7 +30,7 @@
         <visible>!Control.HasFocus({{ hub_id }})</visible>
         <posx>0</posx>
         <posy>0</posy>
-        <width>136</width>
+        <width>137</width>
         <height>{{ vscale(50) }}</height>
         <colordiffuse>1AFFFFFF</colordiffuse>
         <texture border="10">script.plex/white-square-rounded.png</texture>
@@ -39,7 +39,7 @@
         <visible>Control.HasFocus({{ hub_id }})</visible>
         <posx>0</posx>
         <posy>0</posy>
-        <width>136</width>
+        <width>137</width>
         <height>{{ vscale(50) }}</height>
         <colordiffuse>33FFFFFF</colordiffuse>
         <texture border="10">script.plex/white-square-rounded.png</texture>
@@ -47,7 +47,7 @@
     <control type="label">
         <posx>0</posx>
         <posy>0</posy>
-        <width>136</width>
+        <width>137</width>
         <height>{{ vscale(50) }}</height>
         <font>font10</font>
         <align>center</align>

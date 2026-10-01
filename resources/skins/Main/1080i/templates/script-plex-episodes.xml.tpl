@@ -1052,7 +1052,7 @@
                         {% include template with name="info" & id=304 & overlay=True & visible="!Container(400).ListItem.Property(is.season.card)" %}
                         {% include ol with id=391 & visible="Control.HasFocus(304)" & name="info" &
                             label="$ADDON[script.plexmod 35059]" & label_suffix_info="" &
-                            label_width=88 & pill_width=150 & group_width=106 &
+                            label_width=92 & pill_width=154 & group_width=110 &
                             onleft=304 & onright=301
                         %}
                         <!-- Play/loading/Resume/Restart are mutually exclusive by state: Play once the
@@ -1082,12 +1082,12 @@
                              property, not a ListItem one: it's resolved per season, not per row. -->
                         {% include ol with id=390 & visible="[Control.HasFocus(301) | Control.HasFocus(306)] + String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="play" &
                             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-                            label_width=50 & pill_width=112 & group_width=68 &
+                            label_width=51 & pill_width=113 & group_width=69 &
                             onleft=301 & onright=305
                         %}
                         {% include ol with id=398 & visible="[Control.HasFocus(301) | Control.HasFocus(306)] + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="play" &
                             label="$ADDON[script.plexmod 33020] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
-                            label_width=160 & pill_width=222 & group_width=178 &
+                            label_width=161 & pill_width=223 & group_width=179 &
                             pill_id=384 & label_id=385 &
                             onleft=301 & onright=305
                         %}
@@ -1102,12 +1102,12 @@
                              estimates below, needs the same precise measurement the other buttons got. -->
                         {% include ol with id=392 & visible="Control.HasFocus(308) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + !String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
                             label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
-                            label_width=207 & pill_width=269 & group_width=225 &
+                            label_width=208 & pill_width=270 & group_width=226 &
                             onleft=308 & onright=305
                         %}
                         {% include ol with id=397 & visible="Control.HasFocus(308) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
                             label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
-                            label_width=236 & pill_width=298 & group_width=254 &
+                            label_width=237 & pill_width=299 & group_width=255 &
                             onleft=308 & onright=305
                         %}
                         <!-- One control for the season card, not the short/long pair above: its
@@ -1115,12 +1115,12 @@
                              episodes.py - the episode number moves the string further than the
                              time-left text does), so the estimate here only has to be the worst
                              case rather than a close fit. That worst case is
-                             "Resume S12E345 <bullet> 1h31m left" = 346 measured (InterUI.ttf at
-                             font10) - the same string ShowWindow's own Resume overlay shows
+                             "Resume S12E345 <bullet> 1h31m left" = 347 measured (Inter-Regular.ttf
+                             at font10; 346 in InterUI.ttf) - the same string ShowWindow's own Resume overlay shows
                              (script-plex-seasons.xml.tpl), where it's now sized to match. -->
                         {% include ol with id=399 & visible="Control.HasFocus(308) + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="resume" &
                             label="$ADDON[script.plexmod 32316] $INFO[Window.Property(play.episode)]" & label_suffix_info="resume.timeleft" &
-                            label_width=346 & pill_width=408 & group_width=364 &
+                            label_width=347 & pill_width=409 & group_width=365 &
                             pill_id=386 & label_id=387 &
                             onleft=308 & onright=305
                         %}
@@ -1135,19 +1135,19 @@
                         %}
                         {% include ol with id=393 & visible="Control.HasFocus(309)" & name="restart" &
                             label="$ADDON[script.plexmod 35061]" & label_suffix_info="" &
-                            label_width=81 & pill_width=143 & group_width=99 &
+                            label_width=82 & pill_width=144 & group_width=100 &
                             onleft=309 & onright=305
                         %}
                         {% include template with name="settings" & id=305 & overlay=True & visible="!Container(400).ListItem.Property(is.season.card)" %}
                         {% include ol with id=394 & visible="Control.HasFocus(305)" & name="settings" &
                             label="$ADDON[script.plexmod 35060]" & label_suffix_info="" &
-                            label_width=162 & pill_width=224 & group_width=180 &
+                            label_width=164 & pill_width=226 & group_width=182 &
                             onleft=305 & onright=303
                         %}
                         {% include template with name="more" & id=303 & overlay=True %}
                         {% include ol with id=395 & visible="Control.HasFocus(303)" & name="more" &
                             label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
-                            label_width=60 & pill_width=122 & group_width=78 &
+                            label_width=61 & pill_width=123 & group_width=79 &
                             onleft=303 & onright=""
                         %}
                         <!-- Season-card-only, not every episode card (on request) - shuffles the whole

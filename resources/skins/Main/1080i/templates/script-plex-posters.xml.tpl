@@ -348,7 +348,7 @@
         {% include template with name="play" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
         {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-            label_width=50 & pill_width=112 & group_width=68 &
+            label_width=51 & pill_width=113 & group_width=69 &
             onleft=301 & onright=302
         %}
         {% include template with name="shuffle" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
@@ -363,15 +363,15 @@
            skipped the track; dropped, the header's now-playing popout covers that now. #}
         {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(no.options))" %}
         {% include template with name="view" & id=304 & overlay=True %}
-        <!-- label_width=144: "Change view" measured at font10/23px via InterUI.ttf (PIL
-             font.getlength, 140px) + the +2px clipping-safety buffer every other call site here
+        <!-- label_width=146: "Change view" measured at font10/23px via Inter-Regular.ttf (PIL
+             font.getlength, 142px; 140 in the old InterUI.ttf) + the +2px clipping-safety buffer every other call site here
              uses, +2px more (2026-09-04 pass, applied to every label_width in this file/
              episodes/seasons - see button-label-overlay-recipe) - pill_width/group_width follow
              the recipe's own +62/+18 formula. No onright: 393 is the last item in this row once
              visible (nothing follows it to route around), same as 304's own bare include above. -->
         {% include ol with id=393 & visible="Control.HasFocus(304)" & name="view" &
             label="$ADDON[script.plexmod 35063]" & label_suffix_info="" &
-            label_width=144 & pill_width=206 & group_width=162 &
+            label_width=146 & pill_width=208 & group_width=164 &
             onleft=304
         %}
     {% endwith %}

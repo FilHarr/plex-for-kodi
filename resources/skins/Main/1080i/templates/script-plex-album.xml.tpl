@@ -180,7 +180,7 @@
             {% include template with name="play" & id=301 & overlay=True %}
             {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
                 label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-                label_width=50 & pill_width=112 & group_width=68 &
+                label_width=51 & pill_width=113 & group_width=69 &
                 onleft=301 & onright=302
             %}
             {% include template with name="shuffle" & id=302 & overlay=True %}
@@ -192,7 +192,7 @@
             {% include template with name="more" & id=303 & overlay=True %}
             {% include ol with id=393 & visible="Control.HasFocus(303)" & name="more" &
                 label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
-                label_width=60 & pill_width=122 & group_width=78 &
+                label_width=61 & pill_width=123 & group_width=79 &
                 onleft=303
             %}
         {% endwith %}

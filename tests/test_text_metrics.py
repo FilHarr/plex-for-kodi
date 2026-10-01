@@ -4,7 +4,8 @@ lib/windows/mixins/text_metrics.measureTextWidth() models Kodi's layout: each gl
 rounded to whole pixels at the size the font is rendered at on this screen, then scaled back to skin
 pixels. Summing exact advances instead under-measured at 1080p: 'English (TrueHD Atmos 7.1)' came to
 238.4 against the 241 Kodi lays out, overflowing its 240px audio-pill label box on the 1080p AM6B
-only (live-reported 2026-09-24).
+only (live-reported 2026-09-24). That was InterUI; the skin's Inter-Regular.ttf (2026-10-01) lays the
+same string out at the same 241 at 1080p and 238.5 (was 239.5) at 2160p.
 """
 
 from __future__ import absolute_import
@@ -23,7 +24,7 @@ ATMOS = 'English (TrueHD Atmos 7.1)'
 class MeasureTextWidthTest(KodiTestCase):
     def test_rounds_per_glyph_at_the_render_size(self):
         self.assertEqual(241, text_metrics.measureTextWidth(ATMOS, text_metrics.FONT8_POINT_SIZE, scale=1.0))
-        self.assertEqual(239.5, text_metrics.measureTextWidth(ATMOS, text_metrics.FONT8_POINT_SIZE, scale=2.0))
+        self.assertEqual(238.5, text_metrics.measureTextWidth(ATMOS, text_metrics.FONT8_POINT_SIZE, scale=2.0))
 
     def test_rounds_half_up_like_freetype(self):
         # '.' is 550 units: 4.834px at 18px -> 5; ' ' likewise. A 1024-unit glyph at 1px/unit-ish
@@ -37,6 +38,18 @@ class MeasureTextWidthTest(KodiTestCase):
             text_metrics.CHAR_WIDTHS.clear()
             text_metrics.CHAR_WIDTHS.update(original)
 
+    def test_bold_measures_inter_bold(self):
+        # The *_title fonts are Inter Bold, its own advances: 'K' 1473 units, 14.38px at 20px -> 14
+        # (InterUI's 1376 would be 13); ' ' 485 units, 4.74px -> 5, but 9.47 -> 9 at 2160p, 4.5.
+        self.assertEqual(14, text_metrics.measureTextWidth('K', 20, scale=1.0, bold=True))
+        self.assertEqual(5, text_metrics.measureTextWidth(' ', 20, scale=1.0, bold=True))
+        self.assertEqual(4.5, text_metrics.measureTextWidth(' ', 20, scale=2.0, bold=True))
+
+    def test_the_ellipsis_is_measured_at_its_own_width(self):
+        # summaryForBox() ends every cut with one; the ASCII-average fallback (1171 units) had it
+        # ~6px narrow at 20pt. Inter Bold's is 2052 units: 20.04px -> 20.
+        self.assertEqual(20, text_metrics.measureTextWidth(u'…', 20, scale=1.0, bold=True))
+
     def test_default_scale_follows_the_display_resolution(self):
         from lib import util
         original = util.DISPLAY_RESOLUTION
@@ -44,7 +57,7 @@ class MeasureTextWidthTest(KodiTestCase):
             util.DISPLAY_RESOLUTION = [1920, 1080]
             self.assertEqual(241, text_metrics.measureTextWidth(ATMOS, 18))
             util.DISPLAY_RESOLUTION = [3840, 2160]
-            self.assertEqual(239.5, text_metrics.measureTextWidth(ATMOS, 18))
+            self.assertEqual(238.5, text_metrics.measureTextWidth(ATMOS, 18))
         finally:
             util.DISPLAY_RESOLUTION = original
 

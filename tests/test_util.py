@@ -192,7 +192,7 @@ class SummaryForBoxTest(KodiTestCase):
     def test_paragraph_breaks_count_as_lines(self):
         # A character cap kept 204 characters of this, eight lines deep; the box shows three.
         self.assertEqual(u"All 13 Star Trek films. \n\nThe first six Original Series films starring the "
-                         u"U.S.S. Enterprise's cast and…", util.summaryForBox(self.STAR_TREK))
+                         u"U.S.S. Enterprise's cast…", util.summaryForBox(self.STAR_TREK))
 
     def test_never_ends_on_the_blank_line(self):
         # Two lines of paragraph, then the blank line would be the box's third.

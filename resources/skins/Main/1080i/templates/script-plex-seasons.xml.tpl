@@ -332,8 +332,8 @@
                          time: the episode number's digit count varies ("Play S1E1" measures 111px,
                          "Play S12E345" 155px), so the widths below are the worst case and
                          setPlayButtonState() shrinks the three controls to the real string.
-                         Resume's own worst case is "Resume S12E345 &#8226; 1h31m left" = 346
-                         measured (InterUI.ttf at font10); it was 290 until 2026-09-11, which is a
+                         Resume's own worst case is "Resume S12E345 &#8226; 1h31m left" = 347
+                         measured (Inter-Regular.ttf at font10; 346 in InterUI.ttf); it was 290 until 2026-09-11, which is a
                          typical string ("Resume S5E14 &#8226; 41m left"), not a worst case. Only
                          ever visible if the resize doesn't land (its own except path), but a
                          too-small start clips where a too-large one just reads roomy. -->
@@ -342,7 +342,7 @@
                     %}
                     {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
                         label="$ADDON[script.plexmod 33020] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
-                        label_width=160 & pill_width=222 & group_width=178 &
+                        label_width=161 & pill_width=223 & group_width=179 &
                         pill_id=396 & label_id=397 &
                         onleft=302 & onright=308
                     %}
@@ -352,7 +352,7 @@
                     {% include ol with id=398 & visible="Control.HasFocus(301)" & name="resume" &
                         label="$ADDON[script.plexmod 32316] $INFO[Window.Property(play.episode)]" &
                         label_suffix_wprop="resume.timeleft" &
-                        label_width=346 & pill_width=408 & group_width=364 &
+                        label_width=347 & pill_width=409 & group_width=365 &
                         pill_id=399 & label_id=307 &
                         onleft=301 & onright=308
                     %}
@@ -360,12 +360,12 @@
                     {% include "includes/wl_add_remove_buttons.xml.tpl" %}
                     {% include ol with id=392 & visible="Control.HasFocus(308)" & name="watchlist" &
                         label="$ADDON[script.plexmod 35062]" & label_suffix_info="" &
-                        label_width=180 & pill_width=242 & group_width=198 &
+                        label_width=181 & pill_width=243 & group_width=199 &
                         onleft=308 & onright=309
                     %}
                     {% include ol with id=393 & visible="Control.HasFocus(309)" & name="watchlisted" &
                         label="$ADDON[script.plexmod 34011]" & label_suffix_info="" &
-                        label_width=251 & pill_width=313 & group_width=269 &
+                        label_width=255 & pill_width=317 & group_width=273 &
                         onleft=309 & onright=303
                     %}
                     {% include template with name="shuffle" & id=303 & overlay=True &
@@ -381,7 +381,7 @@
                     %}
                     {% include ol with id=395 & visible="Control.HasFocus(304)" & name="more" &
                         label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
-                        label_width=60 & pill_width=122 & group_width=78 &
+                        label_width=61 & pill_width=123 & group_width=79 &
                         onleft=304 & onright=""
                     %}
                 {% endwith %}

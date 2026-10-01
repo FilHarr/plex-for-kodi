@@ -6,7 +6,8 @@
    the addon itself resize a control at runtime (already used elsewhere in this codebase - see
    seekdialog.py's seek bar and selection indicator). Dynamic sizing here still can't measure real
    text width through Kodi's own API - it isn't exposed to XML or Python - so MediaInfoPillsMixin
-   measures against real per-character advance widths read from InterUI.ttf instead of an estimate.
+   measures against real per-character advance widths read from the font file (lib/windows/mixins/
+   text_metrics.py) instead of an estimate.
 
    Laid out horizontally (video/audio/subtitles, left to right) - as a plain group, not a
    grouplist: a grouplist's own native flow only ever leaves its first item's position alone and

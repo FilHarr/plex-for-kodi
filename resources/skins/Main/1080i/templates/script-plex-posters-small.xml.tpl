@@ -361,7 +361,7 @@
         {% include template with name="play" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
         {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-            label_width=50 & pill_width=112 & group_width=68 &
+            label_width=51 & pill_width=113 & group_width=69 &
             onleft=301 & onright=302
         %}
         {% include template with name="shuffle" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
@@ -380,7 +380,7 @@
              route around), same as 304's own bare include above. -->
         {% include ol with id=393 & visible="Control.HasFocus(304)" & name="view" &
             label="$ADDON[script.plexmod 35063]" & label_suffix_info="" &
-            label_width=144 & pill_width=206 & group_width=162 &
+            label_width=146 & pill_width=208 & group_width=164 &
             onleft=304
         %}
     {% endwith %}

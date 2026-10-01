@@ -169,7 +169,7 @@
                 {% include template with name="play" & id=301 & overlay=True %}
                 {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
                     label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-                    label_width=50 & pill_width=112 & group_width=68 &
+                    label_width=51 & pill_width=113 & group_width=69 &
                     onleft=301 & onright=302
                 %}
                 {% include template with name="shuffle" & id=302 & overlay=True %}

@@ -79,19 +79,19 @@
 {# off -> "Repeat all" #}
 {% include ol with id=451 & visible="Control.HasFocus(401) + !Playlist.IsRepeatOne + !Playlist.IsRepeat + String.IsEmpty(Window.Property(pq.repeat))" & name="repeat" &
     label="$ADDON[script.plexmod 35082]" & label_suffix_info="" &
-    label_width=110 & pill_width=172 & group_width=128 &
+    label_width=111 & pill_width=173 & group_width=129 &
     onleft=401 & onright_cond="String.IsEmpty(Window.Property(pq.isremote))" & onright=402 & onright_else=422
 %}
 {# all -> "Repeat one" #}
 {% include ol with id=452 & visible="Control.HasFocus(401) + !Playlist.IsRepeatOne + [Playlist.IsRepeat | !String.IsEmpty(Window.Property(pq.repeat))]" & name="repeat" &
     label="$ADDON[script.plexmod 35083]" & label_suffix_info="" &
-    label_width=125 & pill_width=187 & group_width=143 &
+    label_width=127 & pill_width=189 & group_width=145 &
     onleft=401 & onright_cond="String.IsEmpty(Window.Property(pq.isremote))" & onright=402 & onright_else=422
 %}
 {# one -> "Repeat off" #}
 {% include ol with id=462 & visible="Control.HasFocus(401) + Playlist.IsRepeatOne" & name="repeat-one" &
     label="$ADDON[script.plexmod 35084]" & label_suffix_info="" &
-    label_width=116 & pill_width=178 & group_width=134 &
+    label_width=118 & pill_width=180 & group_width=136 &
     onleft=401 & onright_cond="String.IsEmpty(Window.Property(pq.isremote))" & onright=402 & onright_else=422
 %}
 
@@ -116,12 +116,12 @@
 </control>
 {% include ol with id=453 & visible="Control.HasFocus(402) + !Playlist.IsRandom" & name="shuffle" &
     label="$ADDON[script.plexmod 35080]" & label_suffix_info="" &
-    label_width=117 & pill_width=179 & group_width=135 &
+    label_width=118 & pill_width=180 & group_width=136 &
     onleft=402 & onright_cond="MusicPlayer.HasPrevious | !String.IsEmpty(Window.Property(pq.hasprev))" & onright=404 & onright_else=406
 %}
 {% include ol with id=463 & visible="Control.HasFocus(402) + Playlist.IsRandom" & name="shuffle" &
     label="$ADDON[script.plexmod 35081]" & label_suffix_info="" &
-    label_width=121 & pill_width=183 & group_width=139 &
+    label_width=122 & pill_width=184 & group_width=140 &
     onleft=402 & onright_cond="MusicPlayer.HasPrevious | !String.IsEmpty(Window.Property(pq.hasprev))" & onright=404 & onright_else=406
 %}
 
@@ -171,12 +171,12 @@
 </control>
 {% include ol with id=454 & visible="Control.HasFocus(422) + String.IsEmpty(Window.Property(pq.shuffled))" & name="shuffle" &
     label="$ADDON[script.plexmod 35080]" & label_suffix_info="" &
-    label_width=117 & pill_width=179 & group_width=135 &
+    label_width=118 & pill_width=180 & group_width=136 &
     onleft=422 & onright_cond="MusicPlayer.HasPrevious | !String.IsEmpty(Window.Property(pq.hasprev))" & onright=404 & onright_else=406
 %}
 {% include ol with id=464 & visible="Control.HasFocus(422) + !String.IsEmpty(Window.Property(pq.shuffled))" & name="shuffle" &
     label="$ADDON[script.plexmod 35081]" & label_suffix_info="" &
-    label_width=121 & pill_width=183 & group_width=139 &
+    label_width=122 & pill_width=184 & group_width=140 &
     onleft=422 & onright_cond="MusicPlayer.HasPrevious | !String.IsEmpty(Window.Property(pq.hasprev))" & onright=404 & onright_else=406
 %}
 
@@ -186,7 +186,7 @@
 {% include template with name="previous" & id=404 & overlay=True & visible="MusicPlayer.HasPrevious | !String.IsEmpty(Window.Property(pq.hasprev))" %}
 {% include ol with id=455 & visible="Control.HasFocus(404)" & name="previous" &
     label="$ADDON[script.plexmod 32438]" & label_suffix_info="" &
-    label_width=97 & pill_width=159 & group_width=115 &
+    label_width=100 & pill_width=162 & group_width=118 &
     onleft=404 & onright=406
 %}
 <control type="button" id="424">
@@ -222,12 +222,12 @@
 </control>
 {% include ol with id=456 & visible="Control.HasFocus(406) + !Player.Paused + !Player.Forwarding + !Player.Rewinding" & name="pause" &
     label="$ADDON[script.plexmod 35076]" & label_suffix_info="" &
-    label_width=70 & pill_width=132 & group_width=88 &
+    label_width=71 & pill_width=133 & group_width=89 &
     onleft=406 & onright=407
 %}
 {% include ol with id=457 & visible="Control.HasFocus(406) + [Player.Paused | Player.Forwarding | Player.Rewinding]" & name="play" &
     label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-    label_width=50 & pill_width=112 & group_width=68 &
+    label_width=51 & pill_width=113 & group_width=69 &
     onleft=406 & onright=407
 %}
 
@@ -244,7 +244,7 @@
 </control>
 {% include ol with id=458 & visible="Control.HasFocus(407)" & name="stop" &
     label="$ADDON[script.plexmod 35077]" & label_suffix_info="" &
-    label_width=54 & pill_width=116 & group_width=72 &
+    label_width=55 & pill_width=117 & group_width=73 &
     onleft=407 & onright_cond="MusicPlayer.HasNext | !String.IsEmpty(Window.Property(pq.hasnext))" & onright=409 & onright_else=410
 %}
 
@@ -285,7 +285,7 @@
 </control>
 {% include ol with id=460 & visible="Control.HasFocus(410)" & name="pqueue" &
     label="$ADDON[script.plexmod 35079]" & label_suffix_info="" &
-    label_width=124 & pill_width=186 & group_width=142 &
+    label_width=125 & pill_width=187 & group_width=143 &
     onleft=410 & onright=411
 %}
 
@@ -293,7 +293,7 @@
 {% include template with name="more" & id=411 & overlay=True %}
 {% include ol with id=461 & visible="Control.HasFocus(411)" & name="more" &
     label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
-    label_width=60 & pill_width=122 & group_width=78 &
+    label_width=61 & pill_width=123 & group_width=79 &
     onleft=411
 %}
 

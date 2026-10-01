@@ -142,7 +142,7 @@
                 {% include template with name="info" & id=304 & overlay=True %}
                 {% include ol with id=390 & visible="Control.HasFocus(304)" & name="info" &
                     label="$ADDON[script.plexmod 35059]" & label_suffix_info="" &
-                    label_width=88 & pill_width=150 & group_width=106 &
+                    label_width=92 & pill_width=154 & group_width=110 &
                     onleft=304 & onright=302
                 %}
                 <!-- Play / Resume+Restart are mutually exclusive by state, the same split Episodes'
@@ -157,7 +157,7 @@
                 {% include template with name="play" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(in.progress))" %}
                 {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
                     label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
-                    label_width=50 & pill_width=112 & group_width=68 &
+                    label_width=51 & pill_width=113 & group_width=69 &
                     onleft=302 & onright=303
                 %}
                 {% include template with name="resume" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(in.progress))" %}
@@ -168,48 +168,48 @@
                      text is a window property on this screen (see the block comment above). -->
                 {% include ol with id=397 & visible="Control.HasFocus(301) + !String.Contains(Window.Property(resume.timeleft),h)" & name="resume" &
                     label="$ADDON[script.plexmod 32316]" & label_suffix_wprop="resume.timeleft" &
-                    label_width=207 & pill_width=269 & group_width=225 &
+                    label_width=208 & pill_width=270 & group_width=226 &
                     onleft=301 & onright=307
                 %}
                 {% include ol with id=399 & visible="Control.HasFocus(301) + String.Contains(Window.Property(resume.timeleft),h)" & name="resume" &
                     label="$ADDON[script.plexmod 32316]" & label_suffix_wprop="resume.timeleft" &
-                    label_width=236 & pill_width=298 & group_width=254 &
+                    label_width=237 & pill_width=299 & group_width=255 &
                     onleft=301 & onright=307
                 %}
                 {% include template with name="restart" & id=307 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(in.progress))" %}
                 {% include ol with id=398 & visible="Control.HasFocus(307)" & name="restart" &
                     label="$ADDON[script.plexmod 35061]" & label_suffix_info="" &
-                    label_width=81 & pill_width=143 & group_width=99 &
+                    label_width=82 & pill_width=144 & group_width=100 &
                     onleft=307 & onright=303
                 %}
                 {% include "includes/wl_dynamic_buttons.xml.tpl" %}
                 {% include template with name="trailer" & id=303 & overlay=True & visible="!String.IsEmpty(Window.Property(trailer.button))" %}
                 {% include ol with id=392 & visible="Control.HasFocus(303)" & name="trailer" &
                     label="$ADDON[script.plexmod 35064]" & label_suffix_info="" &
-                    label_width=144 & pill_width=206 & group_width=162 &
+                    label_width=145 & pill_width=207 & group_width=163 &
                     onleft=303 & onright=308
                 %}
                 {% include "includes/wl_add_remove_buttons.xml.tpl" %}
                 {% include ol with id=393 & visible="Control.HasFocus(308)" & name="watchlist" &
                     label="$ADDON[script.plexmod 35062]" & label_suffix_info="" &
-                    label_width=180 & pill_width=242 & group_width=198 &
+                    label_width=181 & pill_width=243 & group_width=199 &
                     onleft=308 & onright=309
                 %}
                 {% include ol with id=394 & visible="Control.HasFocus(309)" & name="watchlisted" &
                     label="$ADDON[script.plexmod 34011]" & label_suffix_info="" &
-                    label_width=251 & pill_width=313 & group_width=269 &
+                    label_width=255 & pill_width=317 & group_width=273 &
                     onleft=309 & onright=305
                 %}
                 {% include template with name="settings" & id=305 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback))" %}
                 {% include ol with id=395 & visible="Control.HasFocus(305)" & name="settings" &
                     label="$ADDON[script.plexmod 35060]" & label_suffix_info="" &
-                    label_width=162 & pill_width=224 & group_width=180 &
+                    label_width=164 & pill_width=226 & group_width=182 &
                     onleft=305 & onright=306
                 %}
                 {% include template with name="more" & id=306 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback))" %}
                 {% include ol with id=396 & visible="Control.HasFocus(306)" & name="more" &
                     label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
-                    label_width=60 & pill_width=122 & group_width=78 &
+                    label_width=61 & pill_width=123 & group_width=79 &
                     onleft=306 & onright=""
                 %}
             {% endwith %}

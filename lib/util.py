@@ -361,7 +361,8 @@ def shortenText(text, size):
 
 
 # The summary textbox every screen shares (home hero, pre-play, seasons, episodes, artist, album,
-# collection): 813px wide, font10, 90px tall - three lines. summaryForBox() hands it only what
+# collection): 813px wide, font10 (Inter Regular, 23px - font20_title was tried and dropped,
+# 2026-09-30/10-01), 90px tall - three lines of its ~29px line height. summaryForBox() hands it only what
 # those three lines show, so nothing is left for the autoscroll to reveal. Kodi word-wraps the
 # *whole* string on the render thread every time the property changes, and artist bios run to
 # tens of thousands of characters (The Beatles: 36k / 41 paragraphs), which stalled the home hub
@@ -370,10 +371,17 @@ def shortenText(text, size):
 # nothing is lost.
 SUMMARY_BOX_WIDTH = 813
 SUMMARY_BOX_LINES = 3
+# What summaryForBox() wraps to, short of the box's full width: the modelled widths come within a
+# couple of pixels of Kodi's but not exactly (live, 2026-09-30: lines modelled at 811-813px still
+# wrapped at 4K - hinting, and the last glyph's bitmap overhanging its advance, aren't modelled),
+# and a line Kodi pushes onto a fourth line can show: the 90px box clips to its height, not to
+# whole lines (font10's ~29px lines leave only the top 3px of a fourth inside it, font20_title's
+# ~25px most of one), and the box autoscrolls to reveal it.
+SUMMARY_BOX_MARGIN = 12
 # The most of a summary summaryForBox() ever looks at, so a 36k bio costs no more to wrap than a
-# short one: more than three lines can hold. font10's narrowest glyph ('i') is 5.6px, so 813px
-# holds at most 145 characters a line.
-SUMMARY_BOX_SCAN_CHARS = 450
+# short one: more than three lines can hold. font10's narrowest glyph is 'i', 5.5px at 2160p, so
+# 813px holds at most 147 characters a line, 441 for three.
+SUMMARY_BOX_SCAN_CHARS = 550
 # Left dangling by a cut, these go before the ellipsis, so it follows a word rather than ",..."
 # (on request, 2026-09-20). Joining words ("and", "of") stay (on request, 2026-09-30).
 SUMMARY_CUT_TRAILING = u',;:-\u2013\u2014 '
@@ -387,10 +395,11 @@ def summaryForBox(text):
     The cut is by line, not by character count: a paragraph break ends its line early and
     widening adds a blank line after it, so a character cap left most of a multi-paragraph
     summary below the box (live: collection 78714, whose 215-character cut ran to eight lines).
-    Lines are wrapped at 1080p (scale=1.0): FreeType rounds this font's advances up there, so text
-    measured to fit at 1080p fits at any resolution. Only the paragraph breaks are put back - Kodi
-    wraps within them itself - and as the estimate errs wide, Kodi's lines hold at least as much as
-    these did, so what's kept never runs past three."""
+    Each word is measured at both 1080p and 2160p (the AM6B's and the PC's) and the wider taken:
+    a glyph's advance rounds to whole pixels at each resolution separately, so some come out wider
+    at 2160p and fitting 1080p alone doesn't fit both (live, 2026-09-30, with font20_title). Lines are wrapped SUMMARY_BOX_MARGIN short of the box. Only the
+    paragraph breaks are put back - Kodi wraps within them itself - and as the estimate errs
+    wide, Kodi's lines hold at least as much as these did, so what's kept never runs past three."""
     from lib.windows.mixins.text_metrics import measureTextWidth, FONT10_POINT_SIZE
 
     if not text:
@@ -400,14 +409,17 @@ def summaryForBox(text):
     widened = widenParagraphBreaks(text[:SUMMARY_BOX_SCAN_CHARS])
 
     def width(s):
-        return measureTextWidth(s, FONT10_POINT_SIZE, scale=1.0)
+        return max(measureTextWidth(s, FONT10_POINT_SIZE, scale=scale) for scale in (1.0, 2.0))
+
+    wrap_width = SUMMARY_BOX_WIDTH - SUMMARY_BOX_MARGIN
 
     def fits(line):
-        return width(line) <= SUMMARY_BOX_WIDTH
+        return width(line) <= wrap_width
 
     # (paragraph index, line) for every line the box would draw, a blank line being ''. Each word
-    # is measured once and a line's width summed as it grows: at scale=1.0 measureTextWidth() is
-    # a plain per-glyph sum, so the sum is exact - and this runs on every home hub move.
+    # is measured once and a line's width summed as it grows: measureTextWidth() is a plain
+    # per-glyph sum, so summing words only errs wide (each is the wider of the two resolutions) -
+    # and this runs on every home hub move.
     space = width(u' ')
     lines = []
     for para_idx, para in enumerate(widened.split('\n')):
@@ -417,7 +429,7 @@ def summaryForBox(text):
             word_width = width(word)
             if current is None:
                 current, current_width = word, word_width
-            elif current_width + space + word_width > SUMMARY_BOX_WIDTH:
+            elif current_width + space + word_width > wrap_width:
                 lines.append((para_idx, current))
                 current, current_width = word, word_width
             else:
