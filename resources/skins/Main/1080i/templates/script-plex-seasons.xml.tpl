@@ -483,7 +483,7 @@
                                 <texture background="true" diffuse="script.plex/masks/poster-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false">scale</aspectratio>
                             </control>
-                            {% include "includes/watched_indicator.xml.tpl" with xoff=240 & wbg_w=22.3 & wbg_h=22.3 & count_zoom=28.7 & with_count=True & scale="small" %}
+                            {% include "includes/watched_indicator.xml.tpl" with xoff=240 & uw_size=48 & wbg_w=34.4 & wbg_h=34.4 & with_count=True & scale="medium" %}
                             <!-- No progress bar on a season poster (removed 2026-09-11, on request).
                                  It only ever appeared on one poster per show - fillSeasons()
                                  (mixins/seasons.py) latched the first non-Specials season that
@@ -551,7 +551,7 @@
                                     <texture background="true" diffuse="script.plex/masks/poster-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                     <aspectratio scalediffuse="false">scale</aspectratio>
                                 </control>
-                                {% include "includes/watched_indicator.xml.tpl" with xoff=240 & wbg_w=22.3 & wbg_h=22.3 & count_zoom=28.7 & with_count=True & scale="small" %}
+                                {% include "includes/watched_indicator.xml.tpl" with xoff=240 & uw_size=48 & wbg_w=34.4 & wbg_h=34.4 & with_count=True & scale="medium" %}
                                 <!-- No progress bar here either - see the itemlayout's own comment. -->
                                 <control type="label">
                                     <scroll>Control.HasFocus(400)</scroll>
@@ -938,7 +938,7 @@
                                     <bottom>10</bottom>
                                     <width>auto</width>
                                     <height>26</height>
-                                    <font>font32_title</font>
+                                    <font>font32</font>
                                     <align>center</align>
                                     <aligny>center</aligny>
                                     <textcolor>FFEEEEEE</textcolor>
@@ -1027,7 +1027,7 @@
                                         <bottom>10</bottom>
                                         <width>auto</width>
                                         <height>26</height>
-                                        <font>font32_title</font>
+                                        <font>font32</font>
                                         <align>center</align>
                                         <aligny>center</aligny>
                                         <textcolor>FFEEEEEE</textcolor>

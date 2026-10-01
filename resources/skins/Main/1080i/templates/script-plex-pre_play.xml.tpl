@@ -964,7 +964,7 @@
                                     <bottom>10</bottom>
                                     <width>auto</width>
                                     <height>26</height>
-                                    <font>font32_title</font>
+                                    <font>font32</font>
                                     <align>center</align>
                                     <aligny>center</aligny>
                                     <textcolor>FFEEEEEE</textcolor>
@@ -1072,7 +1072,7 @@
                                         <bottom>10</bottom>
                                         <width>auto</width>
                                         <height>26</height>
-                                        <font>font32_title</font>
+                                        <font>font32</font>
                                         <align>center</align>
                                         <aligny>center</aligny>
                                         <textcolor>FFEEEEEE</textcolor>

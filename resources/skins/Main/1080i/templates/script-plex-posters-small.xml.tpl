@@ -116,7 +116,7 @@
                                 <colordiffuse>FFE5A00D</colordiffuse>
                             </control>
                         </control>
-                        {% include "includes/watched_indicator.xml.tpl" with xoff=144 & uw_size=29 & wbg_w=20.3 & wbg_h=20.3 & count_zoom=26.2 & with_count=True & scale="small" %}
+                        {% include "includes/watched_indicator.xml.tpl" with xoff=144 & uw_size=38.4 & wbg_w=27.5 & wbg_h=27.5 & count_zoom=32 & with_count=True & scale="small" %}
                         <control type="label">
                             <visible>String.IsEmpty(ListItem.Property(subtitle)) + !String.IsEmpty(ListItem.Property(year))</visible>
                             <scroll>false</scroll>
@@ -229,7 +229,7 @@
                                     <colordiffuse>FFE5A00D</colordiffuse>
                                 </control>
                             </control>
-                            {% include "includes/watched_indicator.xml.tpl" with xoff=144 & uw_size=29 & wbg_w=20.3 & wbg_h=20.3 & count_zoom=26.2 & with_count=True & scale="small" %}
+                            {% include "includes/watched_indicator.xml.tpl" with xoff=144 & uw_size=38.4 & wbg_w=27.5 & wbg_h=27.5 & count_zoom=32 & with_count=True & scale="small" %}
                             <control type="label">
                                 <visible>String.IsEmpty(ListItem.Property(subtitle)) + !String.IsEmpty(ListItem.Property(year))</visible>
                                 <scroll>true</scroll>

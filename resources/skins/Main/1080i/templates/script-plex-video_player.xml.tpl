@@ -672,7 +672,7 @@
                                         <colordiffuse>FFE5A00D</colordiffuse>
                                     </control>
                                 </control>
-                                {% include "includes/watched_indicator.xml.tpl" with xoff=240 & uw_size=43 & wbg_w=32 & wbg_h=32 & with_count=True %}
+                                {% include "includes/watched_indicator.xml.tpl" with xoff=240 & uw_size=48 & wbg_w=34.4 & wbg_h=34.4 & with_count=True & scale="medium" %}
                                 <control type="group">
                                     <visible>!String.IsEmpty(ListItem.Property(is.boundary))</visible>
                                     <control type="image">
@@ -782,7 +782,7 @@
                                             <colordiffuse>FFE5A00D</colordiffuse>
                                         </control>
                                     </control>
-                                    {% include "includes/watched_indicator.xml.tpl" with xoff=240 & uw_size=43 & wbg_w=32 & wbg_h=32 & with_count=True %}
+                                    {% include "includes/watched_indicator.xml.tpl" with xoff=240 & uw_size=48 & wbg_w=34.4 & wbg_h=34.4 & with_count=True & scale="medium" %}
                                     <control type="group">
                                         <visible>!String.IsEmpty(ListItem.Property(is.boundary))</visible>
                                         <control type="image">

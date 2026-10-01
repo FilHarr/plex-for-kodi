@@ -43,12 +43,18 @@
                 <texture diffuse="{{ wbg|default('script.plex/masks/badge-mask-tr.png') }}">script.plex/white-square.png</texture>
                 <colordiffuse>{{ indicators.unwatched_count_bg|default("FFCC7B19") }}</colordiffuse>
             </control>
+            {# The count is drawn at font32_title's 32px and zoomed down, so this label has to hold the
+               unzoomed text: a label narrower than it cuts it to "1..." before the zoom. 3 digits are
+               ~63px (Inter Bold, tabular), which wbg_w + 40 didn't hold on the small grid (wbg_w 20.3:
+               60.3 - on request, 2026-10-01). wbg_w + 64 holds them on every caller; the label has no
+               background, and its centre - the zoom's centre - is unchanged (posx moved by half the
+               extra width), so nothing visible moves. #}
             <control type="label">{# this label uses a nasty hack to get a smaller fitting font size: use a larger font, increase the label size, then zoom it down #}
                 <animation effect="zoom" start="{{ count_zoom }}" end="{{ count_zoom }}" time="0" reversible="false" center="auto" condition="true">Conditional</animation>
                 <visible>String.IsEmpty({{ itemref|default("ListItem") }}.Property(unwatched.count.large))</visible>
-                <posx>{{ xoff - wbg_w - 20 }}</posx>
+                <posx>{{ xoff - wbg_w - 32 }}</posx>
                 <posy>{{ (yoff - 8)|vscale }}</posy>
-                <width>{{ wbg_w + 40 }}</width>
+                <width>{{ wbg_w + 64 }}</width>
                 <height>{{ (wbg_h + 16)|vscale }}</height>
                 <font>font32_title</font>
                 <align>center</align>
@@ -56,12 +62,14 @@
                 <textcolor>{{ indicators.textcolor|default("FF000000") }}</textcolor>
                 <label>$INFO[{{ itemref|default("ListItem") }}.Property(unwatched.count)]</label>
             </control>
+            {# 4+ digits (unwatched.count.large, > 999): same reasoning - ~84px for 4, so wbg_w + 96,
+               centred where wbg_w + 56 was (the widened badge's middle, 8px left of the normal one). #}
             <control type="label">{# this label uses a nasty hack to get a smaller fitting font size: use a larger font, increase the label size, then zoom it down #}
                 <animation effect="zoom" start="{{ count_zoom }}" end="{{ count_zoom }}" time="0" reversible="false" center="auto" condition="true">Conditional</animation>
                 <visible>!String.IsEmpty({{ itemref|default("ListItem") }}.Property(unwatched.count.large))</visible>
-                <posx>{{ xoff - wbg_w - 36 }}</posx>
+                <posx>{{ xoff - wbg_w - 56 }}</posx>
                 <posy>{{ (yoff - 8)|vscale }}</posy>
-                <width>{{ wbg_w + 56 }}</width>
+                <width>{{ wbg_w + 96 }}</width>
                 <height>{{ (wbg_h + 16)|vscale }}</height>
                 <font>font32_title</font>
                 <align>center</align>
