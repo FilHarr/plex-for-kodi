@@ -1001,6 +1001,13 @@ class Movie(PlayableVideo):
         return self.get('viewCount').asInt() > 0 or self.get('viewOffset').asInt() > 0
 
     @property
+    def isPlayed(self):
+        """Played at least once - Plex's own "played" (Mark Played/Unplayed), which a re-watch in
+        progress doesn't undo. What the watched tick shows (the official client keeps it through a
+        re-watch); isFullyWatched also needs no resume point, for picking what to play."""
+        return self.get('viewCount').asInt() > 0
+
+    @property
     def isFullyWatched(self):
         return self.get('viewCount').asInt() > 0 and not self.get('viewOffset').asInt()
 
@@ -1040,6 +1047,13 @@ class Show(CachableItemsMixin, Video, media.RelatedMixin, SectionOnDeckMixin):
                     return False
             return True
         return False
+
+    @property
+    def isPlayed(self):
+        """Every episode played at least once - Plex's own "played" (Mark Played/Unplayed), which
+        a re-watch in progress doesn't undo. What the watched tick shows (the official client keeps
+        it through a re-watch); isWatched adds the on-deck re-watch check for selection logic."""
+        return self.viewedLeafCount.asInt() == self.leafCount.asInt()
 
     @property
     def isFullyWatched(self):
@@ -1124,6 +1138,14 @@ class Season(CachableItemsMixin, Video):
     @property
     def isWatched(self):
         return self.viewedLeafCount == self.leafCount
+
+    @property
+    def isPlayed(self):
+        """Every episode played at least once - Plex's own "played" (Mark Played/Unplayed), which
+        a re-watch in progress doesn't undo. What the watched tick shows (the official client keeps
+        it through a re-watch); the same rule as isWatched here - the on-deck re-watch check for a
+        season lives in the Seasons row (lib/windows/mixins/seasons.py), not on this class."""
+        return self.viewedLeafCount.asInt() == self.leafCount.asInt()
 
     @property
     def isFullyWatched(self):
@@ -1224,6 +1246,13 @@ class Episode(PlayableVideo, SectionOnDeckMixin):
         return self.get('viewCount').asInt() > 0 or self.get('viewOffset').asInt() > 0
 
     @property
+    def isPlayed(self):
+        """Played at least once - Plex's own "played" (Mark Played/Unplayed), which a re-watch in
+        progress doesn't undo. What the watched tick shows (the official client keeps it through a
+        re-watch); isFullyWatched also needs no resume point, for picking what to play."""
+        return self.get('viewCount').asInt() > 0
+
+    @property
     def isFullyWatched(self):
         return self.get('viewCount').asInt() > 0 and not self.get('viewOffset').asInt()
 
@@ -1281,6 +1310,13 @@ class Clip(PlayableVideo):
     @property
     def isWatched(self):
         return self.get('viewCount').asInt() > 0 or self.get('viewOffset').asInt() > 0
+
+    @property
+    def isPlayed(self):
+        """Played at least once - Plex's own "played" (Mark Played/Unplayed), which a re-watch in
+        progress doesn't undo. What the watched tick shows (the official client keeps it through a
+        re-watch); isFullyWatched also needs no resume point, for picking what to play."""
+        return self.get('viewCount').asInt() > 0
 
     @property
     def isFullyWatched(self):

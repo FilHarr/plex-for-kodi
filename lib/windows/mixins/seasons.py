@@ -74,9 +74,17 @@ class SeasonsMixin(object):
                         break
                 if has_ondeck_progress and season.viewedLeafCount == season.leafCount:
                     seasonWatched = False
-                mli.setProperty('unwatched.count', not seasonWatched and str(season.unViewedLeafCount) or '')
-                mli.setBoolProperty('unwatched.count.large', not seasonWatched and season.unViewedLeafCount > 999)
-                mli.setBoolProperty('watched', seasonWatched)
+                # The tick and count follow Plex's "played" (season.isPlayed - every episode played),
+                # not seasonWatched: a re-watch in progress keeps the tick, as the official client
+                # does - only Mark Unplayed takes it away (on request, 2026-10-02). seasonWatched's
+                # on-deck override above now only decides which season the row focuses on. It used
+                # to drop the tick for the on-deck re-watch only - one season per show, since Plex
+                # keeps one on-deck episode per show - and showed a "0" count in its place.
+                played = season.isPlayed
+                show_count = not played and season.unViewedLeafCount > 0
+                mli.setProperty('unwatched.count', show_count and str(season.unViewedLeafCount) or '')
+                mli.setBoolProperty('unwatched.count.large', show_count and season.unViewedLeafCount > 999)
+                mli.setBoolProperty('watched', played)
                 # Which season the row lands on when the caller didn't name one: the first
                 # non-Specials season that isn't fully watched. `focus is None` latches it, so only
                 # the first match counts. This used to give that same season a progress bar on its

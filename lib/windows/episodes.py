@@ -143,7 +143,7 @@ class EpisodesPaginator(pagination.MCLPaginator):
         return mli
 
     def prepareListItem(self, data, mli):
-        mli.setBoolProperty('watched', mli.dataSource.isFullyWatched)
+        mli.setBoolProperty('watched', mli.dataSource.isPlayed)
         if not mli.dataSource.isWatched:
             mli.setProperty('unwatched.count', str(mli.dataSource.unViewedLeafCount))
             mli.setBoolProperty('unwatched.count.large', mli.dataSource.unViewedLeafCount.asInt() > 999)
@@ -1149,8 +1149,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                             self.setUserItemInfo(mli, fully_watched=True)
 
                         elif progress > 60000:
-                            # ep has progress
-                            mli.setProperty('watched', '')
+                            # ep has progress - the tick stays if it was played before (a re-watch)
+                            mli.setProperty('watched', mli.dataSource.isPlayed and '1' or '')
                             mli.setProperty('progress', util.getProgressImage(mli.dataSource, view_offset=progress))
                             mli.dataSource.set('viewOffset', progress)
                             self.setUserItemInfo(mli, watched=True)
@@ -2333,7 +2333,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     def updateItems(self, item=None):
         if item:
             item.setProperty('unwatched', not item.dataSource.isWatched and '1' or '')
-            item.setProperty('watched', item.dataSource.isFullyWatched and '1' or '')
+            item.setProperty('watched', item.dataSource.isPlayed and '1' or '')
             self.setProgress(item)
             item.setProperty('progress', util.getProgressImage(item.dataSource))
             # **VIDEO_RELOAD_KW (includeExtras among them), not a bare reload() - pre-existing bug,
@@ -2432,7 +2432,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         if not self.fromWatchlist:
             self.setItemAudioAndSubtitleInfo(video, mli)
             mli.setProperty('unwatched', not video.isWatched and '1' or '')
-            mli.setProperty('watched', video.isFullyWatched and '1' or '')
+            mli.setProperty('watched', video.isPlayed and '1' or '')
             mli.setProperty('video.res', video.resolutionString())
             mli.setProperty('video.codec', video.videoCodecString())
             mli.setProperty('video.rendering', video.videoCodecRendering)
@@ -2496,7 +2496,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.setUserItemInfo(mli, types=("title", "thumbnail"))
         mli.setProperty('episode.number', episode.index and T(32311, 'E').format(episode.index) or '')
         mli.setProperty('unwatched', not episode.isWatched and '1' or '')
-        mli.setProperty('watched', episode.isFullyWatched and '1' or '')
+        mli.setProperty('watched', episode.isPlayed and '1' or '')
         # mli.setProperty('progress', util.getProgressImage(obj))
         return mli
 
@@ -2581,7 +2581,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # when-unwatched int, so setting it here forced the paired (single-corner) mask any time the
         # season had unwatched episodes - even in indicator configs where nothing was actually
         # showing (e.g. checkmark-only style on an unwatched season).
-        mli.setBoolProperty('watched', seasonOrShow.isFullyWatched)
+        mli.setBoolProperty('watched', seasonOrShow.isPlayed)
         if not seasonOrShow.isWatched:
             mli.setProperty('unwatched', '1')
         return mli

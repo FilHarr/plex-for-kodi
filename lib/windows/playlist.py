@@ -455,7 +455,7 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         mli.setThumbnailImage(episode.thumb.asTranscodedImageURL(*self.LI_AR16X9_THUMB_DIM))
         mli.setProperty('track.duration', util.durationToShortText(episode.duration.asInt()))
         mli.setProperty('video', '1')
-        mli.setProperty('watched', episode.isFullyWatched and '1' or '')
+        mli.setProperty('watched', episode.isPlayed and '1' or '')
         mli.setProperty('unwatched', episode.isFullyWatched and '' or '1')
 
     def createMovieListItem(self, mli, movie):
@@ -464,7 +464,7 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         mli.setThumbnailImage(movie.art.asTranscodedImageURL(*self.LI_AR16X9_THUMB_DIM))
         mli.setProperty('track.duration', util.durationToShortText(movie.duration.asInt()))
         mli.setProperty('video', '1')
-        mli.setProperty('watched', movie.isWatched and '1' or '')
+        mli.setProperty('watched', movie.isPlayed and '1' or '')
         mli.setProperty('unwatched', movie.isWatched and '' or '1')
 
 

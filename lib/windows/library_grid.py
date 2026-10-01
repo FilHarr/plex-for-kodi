@@ -1377,12 +1377,12 @@ class GridMixin(object):
 
     def updateUnwatchedAndProgress(self, mli):
         mli.dataSource.reload()
-        if mli.dataSource.isWatched:
+        if mli.dataSource.isPlayed:
             mli.setProperty('unwatched.count', '')
         elif self.section.TYPE == 'show' or mli.dataSource.TYPE == 'show' or mli.dataSource.TYPE == 'season':
             mli.setProperty('unwatched.count', str(mli.dataSource.unViewedLeafCount))
             mli.setBoolProperty('unwatched.count.large', mli.dataSource.unViewedLeafCount > 999)
-        mli.setBoolProperty('watched', mli.dataSource.isFullyWatched)
+        mli.setBoolProperty('watched', mli.dataSource.isPlayed)
         mli.setProperty('progress', util.getProgressImage(mli.dataSource))
 
     def setTitle(self):
@@ -2029,7 +2029,7 @@ class GridMixin(object):
 
                         #mli.setLabel2(util.durationToText(obj.fixedDuration()))
                         mli.setLabel2(subtitle)
-                        mli.setBoolProperty('watched', obj.isFullyWatched)
+                        mli.setBoolProperty('watched', obj.isPlayed)
                     else:
                         mli.clear()
                         if obj is False:
@@ -2128,11 +2128,11 @@ class GridMixin(object):
                         if obj.TYPE != 'collection':
                             if not obj.isDirectory() and obj.get('duration').asInt():
                                 mli.setLabel2(util.durationToText(obj.fixedDuration()))
-                            if not obj.isWatched and obj.TYPE != "Directory":
+                            if not obj.isPlayed and obj.TYPE != "Directory":
                                 if self.section.TYPE == 'show' or obj.TYPE == 'show' or obj.TYPE == 'season':
                                     mli.setProperty('unwatched.count', str(obj.unViewedLeafCount))
                                     mli.setBoolProperty('unwatched.count.large', obj.unViewedLeafCount > 999)
-                            elif obj.isFullyWatched and obj.TYPE != "Directory":
+                            elif obj.isPlayed and obj.TYPE != "Directory":
                                 mli.setBoolProperty('watched', '1')
 
                         mli.setProperty('progress', util.getProgressImage(obj))

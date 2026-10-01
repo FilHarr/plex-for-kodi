@@ -55,7 +55,7 @@ class OnDeckPaginator(pagination.MCLPaginator):
     def prepareListItem(self, data, mli):
         mli.setProperty('progress', util.getProgressImage(mli.dataSource))
         mli.setProperty('unwatched', not mli.dataSource.isWatched and '1' or '')
-        mli.setProperty('watched', mli.dataSource.isFullyWatched and '1' or '')
+        mli.setProperty('watched', mli.dataSource.isPlayed and '1' or '')
 
         # episodes get both caption lines in createListItem(), which knows whether the title is hidden
         if data.type != 'episode':

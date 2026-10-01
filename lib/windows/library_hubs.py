@@ -1159,7 +1159,7 @@ class HubsMixin(object):
         mli.setProperty('episode.number', obj.index and T(32311, 'E').format(obj.index) or '')
         if not obj.isWatched:
             mli.setProperty('unwatched', '1')
-        mli.setBoolProperty('watched', obj.isFullyWatched)
+        mli.setBoolProperty('watched', obj.isPlayed)
         return mli
 
     def createSeasonListItem(self, obj, wide=False):
@@ -1168,10 +1168,10 @@ class HubsMixin(object):
         mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/show.png')
         mli.setLabel2(obj.title)
 
-        if not obj.isWatched:
+        if not obj.isPlayed:
             mli.setProperty('unwatched.count', str(obj.unViewedLeafCount))
             mli.setBoolProperty('unwatched.count.large', obj.unViewedLeafCount > 999)
-        mli.setBoolProperty('watched', obj.isFullyWatched)
+        mli.setBoolProperty('watched', obj.isPlayed)
         return mli
 
     def createMovieListItem(self, obj, wide=False):
@@ -1183,16 +1183,16 @@ class HubsMixin(object):
         mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/movie.png')
         if not obj.isWatched:
             mli.setProperty('unwatched', '1')
-        mli.setBoolProperty('watched', obj.isFullyWatched)
+        mli.setBoolProperty('watched', obj.isPlayed)
         return mli
 
     def createShowListItem(self, obj, wide=False):
         mli = self.createSimpleListItem(obj, *self.THUMB_POSTER_DIM)
         mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/show.png')
-        if not obj.isWatched:
+        if not obj.isPlayed:
             mli.setProperty('unwatched.count', str(obj.unViewedLeafCount))
             mli.setBoolProperty('unwatched.count.large', obj.unViewedLeafCount > 999)
-        mli.setBoolProperty('watched', obj.isFullyWatched)
+        mli.setBoolProperty('watched', obj.isPlayed)
         return mli
 
     def createAlbumListItem(self, obj, wide=False):

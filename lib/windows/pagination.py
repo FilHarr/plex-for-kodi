@@ -359,12 +359,12 @@ class BaseRelatedPaginator(MCLPaginator):
 
     def prepareListItem(self, data, mli):
         if data.type in ('season', 'show'):
-            if not mli.dataSource.isWatched:
+            if not mli.dataSource.isPlayed:
                 mli.setProperty('unwatched.count', str(mli.dataSource.unViewedLeafCount) or '')
                 mli.setBoolProperty('unwatched.count.large', mli.dataSource.unViewedLeafCount > 999)
             else:
-                mli.setBoolProperty('watched', mli.dataSource.isWatched)
+                mli.setBoolProperty('watched', mli.dataSource.isPlayed)
         else:
             mli.setProperty('unwatched', not mli.dataSource.isWatched and '1' or '')
-            mli.setBoolProperty('watched', mli.dataSource.isFullyWatched)
+            mli.setBoolProperty('watched', mli.dataSource.isPlayed)
             mli.setProperty('progress', util.getProgressImage(mli.dataSource))

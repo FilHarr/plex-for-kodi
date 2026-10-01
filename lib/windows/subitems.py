@@ -406,11 +406,11 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.setProperty('season.count', ' '.join(words))
         self.setBoolProperty('disable_playback', self.fromWatchlist)
         self.setPlayButtonState()
-        if not self.mediaItem.isWatched:
+        if not self.mediaItem.isPlayed:
             self.setProperty('unwatched.count', str(self.mediaItem.unViewedLeafCount) or '')
             self.setBoolProperty('unwatched.count.large', self.mediaItem.unViewedLeafCount > 999)
         else:
-            self.setBoolProperty('watched', self.mediaItem.isWatched)
+            self.setBoolProperty('watched', self.mediaItem.isPlayed)
 
         self.setProperty('extras.header', T(32305, 'Extras'))
         self.setProperty('related.header', T(32306, 'Related Shows') if not self.fromWatchlist else T(34018, 'Related Media'))

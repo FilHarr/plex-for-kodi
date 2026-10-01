@@ -513,7 +513,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         item_type = item.type if hasattr(item, 'type') else item.TYPE if hasattr(item, 'TYPE') else ''
         mli.setProperty('media.type', item_type)
 
-        if hasattr(item, 'isWatched') and item.isWatched:
+        if hasattr(item, 'isPlayed') and item.isPlayed:
             mli.setProperty('watched', '1')
 
         mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/{0}.png'.format(

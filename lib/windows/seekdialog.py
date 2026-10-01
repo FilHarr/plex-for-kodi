@@ -2920,7 +2920,7 @@ class PlaylistDialog(kodigui.BaseDialog, SpoilersMixin):
         mli.setProperty('track.duration', util.durationToShortText(episode.duration.asInt()))
         mli.setProperty('video', '1')
         mli.setProperty('unwatched', not episode.isWatched and '1' or '')
-        mli.setProperty('watched', episode.isFullyWatched and '1' or '')
+        mli.setProperty('watched', episode.isPlayed and '1' or '')
         return mli
 
     def createMovieListItem(self, movie):
@@ -2930,7 +2930,7 @@ class PlaylistDialog(kodigui.BaseDialog, SpoilersMixin):
         mli.setProperty('track.duration', util.durationToShortText(movie.duration.asInt()))
         mli.setProperty('video', '1')
         mli.setProperty('unwatched', not movie.isWatched and '1' or '')
-        mli.setProperty('watched', movie.isFullyWatched and '1' or '')
+        mli.setProperty('watched', movie.isPlayed and '1' or '')
         return mli
 
     def playQueueCallback(self, **kwargs):

@@ -283,7 +283,7 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         # itemClicked()'s own note.
         if data.TYPE == 'Directory':
             return
-        if not data.isWatched:
+        if not data.isPlayed:
             if data.TYPE == 'show' or data.TYPE == 'season':
                 # No .asInt() here - unlike Episode's unViewedLeafCount (PlexValue, episodes.py:120
                 # calls .asInt() on it), Show/Season's is a plain Python int already - live-confirmed
@@ -293,7 +293,7 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
                 # of borrowing episodes.py's shape for a different underlying type.
                 mli.setProperty('unwatched.count', str(data.unViewedLeafCount))
                 mli.setBoolProperty('unwatched.count.large', data.unViewedLeafCount > 999)
-        elif data.isFullyWatched:
+        elif data.isPlayed:
             mli.setBoolProperty('watched', '1')
         mli.setProperty('progress', util.getProgressImage(data))
 

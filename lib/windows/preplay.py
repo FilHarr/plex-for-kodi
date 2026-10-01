@@ -83,7 +83,7 @@ class CollectionPaginator(pagination.BaseRelatedPaginator):
 
     def prepareListItem(self, item, mli):
         mli.setProperty('unwatched', not item.isWatched and '1' or '')
-        mli.setBoolProperty('watched', item.isFullyWatched)
+        mli.setBoolProperty('watched', item.isPlayed)
         mli.setProperty('progress', util.getProgressImage(item))
 
 
@@ -979,7 +979,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.setProperty('duration', self.video.duration and util.durationToShortText(self.video.duration.asInt(), noSpaces=True))
         self.setProperty('summary', util.summaryForBox(self.video.summary))
         self.setProperty('unwatched', not self.video.isWatched and '1' or '')
-        self.setBoolProperty('watched', self.video.isFullyWatched)
+        self.setBoolProperty('watched', self.video.isPlayed)
         self.setBoolProperty('disable_playback', self.fromWatchlist)
 
         # Drives the button row's Play -> Resume+Restart split (script-plex-pre_play.xml.tpl).
