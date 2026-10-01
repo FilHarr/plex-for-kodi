@@ -1425,7 +1425,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             if item is None:
                 # "Show" tab - see _goToShow()'s own comment (shared with the options menu's
                 # "Go To Show" entry, optionsButtonClicked()).
-                self._goToShow(parent_list=seasonsControl)
+                self._goToShow(parent_list=self.seasonsListControl)
             elif item != self.season:
                 self.switchSeason(item)
             else:
