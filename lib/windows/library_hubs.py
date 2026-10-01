@@ -1548,6 +1548,9 @@ class HubsMixin(object):
             if runtime:
                 parts.append(runtime)
             subtitle = u' \u2022 '.join(parts)
+        elif ds_type == 'album':
+            # Albums (on request): the playlist layout, with the album artist on the second line.
+            subtitle = getattr(ds, 'parentTitle', '') or ''
         self.setProperty('title', util.colorizeEmoji(title))
         self.setProperty('hero.subtitle', util.colorizeEmoji(subtitle))
         self.setProperty('hero.type', ds_type)
@@ -1576,18 +1579,28 @@ class HubsMixin(object):
         self.setProperty('summary', util.summaryForBox(summary))
 
         date_text = ''
-        if ds_type == 'episode':
+        if ds_type in ('episode', 'album'):
+            # Albums (on request, 2026-09-30) show their release date the same way - hub albums
+            # carry originallyAvailableAt on the server (checked live), just not a duration.
             air_date = getattr(ds, 'originallyAvailableAt', None)
             if air_date:
                 try:
-                    # Day without zero-padding ("1 Sep, 2026", not "01 Sep, 2026") - matches
+                    # Day without zero-padding ("1 Sep 2026", not "01 Sep 2026") - matches
                     # EpisodesWindow.setItemInfo()'s own copy of this format (episodes.py), which
                     # this was itself the reference for. strftime always zero-pads %d, so the day
                     # is pulled off the parsed datetime directly instead.
                     parsed = datetime.datetime.strptime(str(air_date), '%Y-%m-%d')
-                    date_text = u'{0} {1}'.format(parsed.day, parsed.strftime('%b, %Y'))
+                    if ds_type == 'album' and (parsed.month, parsed.day) == (1, 1):
+                        # 1 January is what the server stores when only the year is known (a
+                        # fifth of the albums in the live library), so show just the year.
+                        date_text = str(parsed.year)
+                    else:
+                        date_text = u'{0} {1}'.format(parsed.day, parsed.strftime('%b %Y'))
                 except Exception:
                     util.DEBUG_LOG('setHeroInfo: air date parse failed for {}', ds)
+            if not date_text and ds_type == 'album':
+                year = getattr(ds, 'year', None)
+                date_text = year and str(year) or ''
         elif ds_type != 'season':
             # No year for seasons (on request) - the server's own value is inconsistent for them
             # anyway (some carry `year`, others only the show's `parentYear`).

@@ -452,7 +452,7 @@
     <posy>{{ vscale(125) }}</posy>
     <height>{{ vscale(388) }}</height>
     <control type="label">
-        <visible>String.IsEmpty(Window.Property(clear.logo)) + !String.IsEqual(Window.Property(hero.type),playlist) + !String.IsEqual(Window.Property(hero.type),artist)</visible>
+        <visible>String.IsEmpty(Window.Property(clear.logo)) + !String.IsEqual(Window.Property(hero.type),playlist) + !String.IsEqual(Window.Property(hero.type),album) + !String.IsEqual(Window.Property(hero.type),artist)</visible>
         <posx>61</posx>
         <posy>0</posy>
         <width>722</width>
@@ -469,9 +469,9 @@
         <label>$INFO[Window.Property(title)]</label>
     </control>
     <!-- Artist heading (on request, 2026-09-20): the Artist screen's own title control
-         (script-plex-artist.xml.tpl) verbatim - font45_title, FFD2CCCE, top-anchored 708x61 box at
-         y=107 - so a focused artist on Home reads exactly as its own screen does. Artists never
-         have a clearlogo, so this is their only heading. -->
+         (script-plex-artist.xml.tpl) - font45_title, top-anchored 708x61 box at y=107 - but white
+         rather than that screen's FFD2CCCE (on request, 2026-09-30). Artists never have a
+         clearlogo, so this is their only heading. -->
     <control type="label">
         <visible>String.IsEqual(Window.Property(hero.type),artist)</visible>
         <posx>61</posx>
@@ -483,7 +483,7 @@
         <aligny>top</aligny>
         <scroll>true</scroll>
         <scrollspeed>35</scrollspeed>
-        <textcolor>FFD2CCCE</textcolor>
+        <textcolor>FFFFFFFF</textcolor>
         <label>$INFO[Window.Property(title)]</label>
     </control>
     <!-- Playlist heading (on request, 2026-09-20): the episode screen's own no-clearlogo title
@@ -491,11 +491,14 @@
          660 wide), landing at the same absolute bottom edge (125+48+61 = 234) as that screen's
          and as the font45 fallback above. Playlists never have a clearlogo, so this is their
          only heading; the items/runtime line below it sits where the episode title would. -->
+    {% for hero_type, heading_width in (('playlist', 660), ('album', 900)) %}
+    {# Albums (on request, 2026-09-30) take the same heading, 900 wide, with the album artist as
+       the second line below it. #}
     <control type="label">
-        <visible>String.IsEqual(Window.Property(hero.type),playlist)</visible>
+        <visible>String.IsEqual(Window.Property(hero.type),{{ hero_type }})</visible>
         <posx>61</posx>
         <posy>{{ vscale(48) }}</posy>
-        <width>660</width>
+        <width>{{ heading_width }}</width>
         <height>{{ vscale(61) }}</height>
         <font>font45_title</font>
         <align>left</align>
@@ -505,6 +508,7 @@
         <textcolor>FFFFFFFF</textcolor>
         <label>$INFO[Window.Property(title)]</label>
     </control>
+    {% endfor %}
     <control type="image">
         <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEmpty(Window.Property(hero.small_logo))</visible>
         <posx>61</posx>
@@ -546,10 +550,11 @@
         <textcolor>FFD2CCCE</textcolor>
         <label>$INFO[Window.Property(hero.subtitle)]</label>
     </control>
-    <!-- Playlist copy of the line above: same slot, font30_title instead of font32_title (on
-         request) - a separate control only because a font can't be switched per item. -->
+    <!-- Playlist/album copy of the line above: same slot and colour, font30_title instead of
+         font32_title (on request) - a separate control only because a font can't be switched per
+         item. -->
     <control type="label">
-        <visible>String.IsEqual(Window.Property(hero.type),playlist)</visible>
+        <visible>String.IsEqual(Window.Property(hero.type),playlist) | String.IsEqual(Window.Property(hero.type),album)</visible>
         <posx>61</posx>
         <posy>{{ vscale(117) }}</posy>
         <width>660</width>
