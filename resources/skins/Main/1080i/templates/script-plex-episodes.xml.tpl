@@ -163,11 +163,14 @@
             <label>$INFO[Container(400).ListItem.Property(title)]</label>
         </control>
 
-        <!-- Metadata row: matches Recommended's/Pre-play's own includes/pp_meta_row.xml.tpl exactly
-             (position, font, color) - not included directly since that file reads Window.Property, and
-             this row needs to track whichever episode is currently focused in the carousel instead
-             (Container(400).ListItem.Property). Genre is new here, between date and content rating,
-             formatted the same way Pre-play's own genres.short is (first 2 genres, comma-joined - see
+        <!-- Metadata row: matches Recommended's/Pre-play's own includes/pp_meta_row.xml.tpl (font20, each
+             field its own label 23px apart via an inner grouplist, the time-left pill 23px after them,
+             30-tall white-square-rounded pills with textoffsetx 10 - see that file for why; restyled to
+             match it on request, 2026-10-01) - not included directly since that file reads
+             Window.Property, and this row needs to track whichever episode is currently focused in the
+             carousel instead (Container(400).ListItem.Property). No episode code here - this screen
+             shows it elsewhere. Genre sits between date and content rating, formatted the same way
+             Pre-play's own genres.short is (first 2 genres, comma-joined - see
              EpisodesWindow.updateProperties()/setItemInfo(), episodes.py). -->
         <!-- Unavailable replaces the row, as in includes/pp_meta_row.xml.tpl (see there). -->
         <control type="grouplist">
@@ -179,29 +182,37 @@
             <itemgap>0</itemgap>
             <orientation>horizontal</orientation>
             <usecontrolcoords>true</usecontrolcoords>
-            <control type="label">
-                <width>auto</width>
+            <control type="grouplist">
+                <width>708</width>
                 <height>{{ vscale(30) }}</height>
-                <font>font10</font>
-                <align>left</align>
-                <textcolor>FFD2CCCE</textcolor>
-                <shadowcolor>66000000</shadowcolor>
-                <visible>String.IsEmpty(Container(400).ListItem.Property(unavailable))</visible>
-                <label>$INFO[Container(400).ListItem.Property(duration)]$INFO[Container(400).ListItem.Property(date), &#8226; ]$INFO[Container(400).ListItem.Property(genres.short), &#8226; ]$INFO[Container(400).ListItem.Property(content.rating), &#8226; ]</label>
+                <itemgap>23</itemgap>
+                <orientation>horizontal</orientation>
+                {% for prop in ('duration', 'date', 'genres.short', 'content.rating') %}
+                <control type="label">
+                    <visible>String.IsEmpty(Container(400).ListItem.Property(unavailable)) + !String.IsEmpty(Container(400).ListItem.Property({{ prop }}))</visible>
+                    <width>auto</width>
+                    <height>{{ vscale(30) }}</height>
+                    <font>font20</font>
+                    <align>left</align>
+                    <textcolor>FFD2CCCE</textcolor>
+                    <shadowcolor>66000000</shadowcolor>
+                    <label>$INFO[Container(400).ListItem.Property({{ prop }})]</label>
+                </control>
+                {% endfor %}
             </control>
             <control type="button">
                 <visible>!String.IsEmpty(Container(400).ListItem.Property(remainingTime)) + String.IsEmpty(Container(400).ListItem.Property(unavailable))</visible>
-                <posx>10</posx>
+                <posx>23</posx>
                 <width>auto</width>
                 <height>{{ vscale(30) }}</height>
-                <font>font10</font>
+                <font>font20</font>
                 <align>center</align>
                 <aligny>top</aligny>
                 <focusedcolor>FFE5A00D</focusedcolor>
                 <textcolor>FFE5A00D</textcolor>
-                <textoffsetx>15</textoffsetx>
-                <texturefocus colordiffuse="40000000" border="8">script.plex/white-square-rounded-top-padded.png</texturefocus>
-                <texturenofocus colordiffuse="40000000" border="8">script.plex/white-square-rounded-top-padded.png</texturenofocus>
+                <textoffsetx>10</textoffsetx>
+                <texturefocus colordiffuse="40000000" border="8">script.plex/white-square-rounded.png</texturefocus>
+                <texturenofocus colordiffuse="40000000" border="8">script.plex/white-square-rounded.png</texturenofocus>
                 <label>$INFO[Container(400).ListItem.Property(remainingTime)]</label>
             </control>
             <control type="button">
@@ -209,14 +220,14 @@
                 <posx>0</posx>
                 <width>auto</width>
                 <height>{{ vscale(30) }}</height>
-                <font>font10</font>
+                <font>font20</font>
                 <align>center</align>
                 <aligny>top</aligny>
                 <focusedcolor>FFFFFFFF</focusedcolor>
                 <textcolor>FFFFFFFF</textcolor>
-                <textoffsetx>15</textoffsetx>
-                <texturefocus colordiffuse="FFAC3223" border="8">script.plex/white-square-rounded-top-padded.png</texturefocus>
-                <texturenofocus colordiffuse="FFAC3223" border="8">script.plex/white-square-rounded-top-padded.png</texturenofocus>
+                <textoffsetx>10</textoffsetx>
+                <texturefocus colordiffuse="FFAC3223" border="8">script.plex/white-square-rounded.png</texturefocus>
+                <texturenofocus colordiffuse="FFAC3223" border="8">script.plex/white-square-rounded.png</texturenofocus>
                 <label>$ADDON[script.plexmod 32312]</label>
             </control>
         </control>

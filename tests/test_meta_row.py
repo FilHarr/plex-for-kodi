@@ -41,7 +41,11 @@ def keys_written(func):
 class MetaRowTest(KodiTestCase):
     def test_the_list_matches_what_the_template_reads(self):
         with open(os.path.join(TEMPLATE_DIR, 'includes', 'pp_meta_row.xml.tpl'), encoding='utf-8') as fp:
-            read = set(re.findall(r'Window\.Property\(([^)]+)\)', fp.read()))
+            template = fp.read()
+        read = set(re.findall(r'Window\.Property\(([^)]+)\)', template)) - {'{{ prop }}'}
+        # The text fields are one label each, generated from the loop's own list of names.
+        for names in re.findall(r'\{% for prop in \(([^)]*)\) %\}', template):
+            read.update(re.findall(r"'([^']+)'", names))
         self.assertEqual(read, set(CommonMixin.META_ROW_PROPERTIES))
 
     def test_every_screen_showing_the_row_writes_all_of_it(self):

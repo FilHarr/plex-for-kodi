@@ -1564,7 +1564,7 @@ class HubsMixin(object):
             season_num = getattr(ds, 'parentIndex', None)
             episode_num = getattr(ds, 'index', None)
             if season_num is not None and episode_num is not None:
-                episode_code = u'S{0} E{1} • '.format(season_num.asInt(), episode_num.asInt())
+                episode_code = u'S{0} E{1}'.format(season_num.asInt(), episode_num.asInt())
         self.setProperty('episode.code', episode_code)
 
         duration = getattr(ds, 'duration', None)

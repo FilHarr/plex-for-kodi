@@ -2395,14 +2395,14 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         mli.setProperty('video.rendering', video.videoCodecRendering)
         self.setUserItemInfo(mli, video, types=("title", "summary"))
 
-        # "1 Sep, 2026", not the old "September 1, 2026" - day/month order matches Recommended's own
-        # hub-row air date format (HomeWindow.setHeroInfo(), library.py, '%d %b, %Y'), but with the
+        # "1 Sep 2026", not the old "September 1, 2026" - day/month order matches Recommended's own
+        # hub-row air date format (HomeWindow.setHeroInfo(), library.py, '%d %b %Y'), but with the
         # day's leading zero dropped on request - util.cleanLeadingZeros can't do that here since its
         # regex requires a preceding space (built for stripping a zero appearing mid-string, after
         # the month name in the old format); asDatetime() with no format string returns the raw
         # datetime instead of a pre-formatted one, so dt.day (a plain int) is used directly instead.
         air_date = video.originallyAvailableAt.asDatetime()
-        mli.setProperty('date', air_date and u'{0} {1}'.format(air_date.day, air_date.strftime('%b, %Y')) or '')
+        mli.setProperty('date', air_date and u'{0} {1}'.format(air_date.day, air_date.strftime('%b %Y')) or '')
 
         mli.setProperty('content.rating', video.contentRating.split('/', 1)[-1])
         mli.setProperty('genres.short', self.genres_short)
