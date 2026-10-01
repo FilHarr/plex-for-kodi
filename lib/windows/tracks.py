@@ -500,7 +500,7 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         """The header's second meta line: release date, then genres, bullet-separated.
 
         Date and separator both follow the TV episode meta row (setItemInfo(), episodes.py): the
-        date reads "1 Sep, 2026" - day, abbreviated month, year, with no leading zero on the day -
+        date reads "1 Sep 2026" - day, abbreviated month, year, with no leading zero on the day -
         and the fields are joined with " • " rather than a slash, the same bullet that row and
         the photo meta lines use. asDatetime() with no format string returns a real datetime, so
         dt.day drops the leading zero on its own (util.cleanLeadingZeros can't: its regex needs a
@@ -512,8 +512,12 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         date = ''
         try:
             dt = self.album.originallyAvailableAt.asDatetime()
-            if dt:
-                date = u'{0} {1}'.format(dt.day, dt.strftime('%b, %Y'))
+            if dt and (dt.month, dt.day) == (1, 1):
+                # 1 January is what the server stores when only the year is known - the year
+                # alone, as Recommended's album hero shows it (LibraryWindow.setHeroInfo()).
+                date = str(dt.year)
+            elif dt:
+                date = u'{0} {1}'.format(dt.day, dt.strftime('%b %Y'))
         except:
             pass
         if not date:

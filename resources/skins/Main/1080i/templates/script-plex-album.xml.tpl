@@ -45,13 +45,18 @@
     </control>
 
     <!-- HERO TEXT ########################################################################## -->
-    <!-- x=471: the cover's right edge (431) plus a 40px gutter. All three lines share it. -->
+    <!-- x=471: the cover's right edge (431) plus a 40px gutter. All three lines share it.
+         Styled and spaced as Recommended's album hero (script-plex-recommended.xml.tpl, on request
+         2026-09-30): album name font45_title white, artist font30_title FFD2CCCE, then the meta
+         line and summary in font10 - each box the same distance below the name's as there
+         (artist text +69, meta +127, summary +191). The whole block sits 17px higher than the
+         cover's top edge: font45_title (InterUI at 45px) draws its capitals 17.1px below the top
+         of its 64.4px line, so posy=-17 puts the name's capitals level with the top of the cover
+         (computed from the font file, the same method as the "Just watched" heading in
+         script-plex-video_player.xml.tpl). Widths stay this screen's own - it has more room. -->
     <control type="label">
-        <!-- The album name, in the Artist screen's own title treatment (font45_title, FFD2CCCE,
-             top-aligned, marquee) - that screen shows the artist name here, which on this screen
-             moves down to the line below. -->
         <posx>471</posx>
-        <posy>0</posy>
+        <posy>{{ vscale(-17) }}</posy>
         <width>1250</width>
         <height>{{ vscale(61) }}</height>
         <font>font45_title</font>
@@ -59,58 +64,40 @@
         <aligny>top</aligny>
         <scroll>true</scroll>
         <scrollspeed>35</scrollspeed>
-        <textcolor>FFD2CCCE</textcolor>
+        <textcolor>FFFFFFFF</textcolor>
         <label>$INFO[Window.Property(album.title)]</label>
     </control>
-    <control type="label">
-        <!-- The artist, styled exactly as the meta line below it rather than as a second title.
-             posy=68 centres its 30px box in the gap between the title's box (ends at 61) and the
-             meta row (starts at 105): 7px clear above and below. -->
-        <posx>471</posx>
-        <posy>{{ vscale(68) }}</posy>
-        <!-- 700, not the meta row's 1250: this line is a click target (306 below) as well as text,
-             and a target spanning the full column would make most of an empty row clickable. -->
-        <width>700</width>
-        <height>{{ vscale(30) }}</height>
-        <font>font10</font>
-        <align>left</align>
-        <textcolor>FFD2CCCE</textcolor>
-        <shadowcolor>66000000</shadowcolor>
-        <label>$INFO[Window.Property(artist.title)]</label>
-    </control>
-    <!-- Click target over the artist line, opening that artist's own screen (artistButtonClicked(),
-         tracks.py - the same place the More menu's "Go to artist" goes). Same construction as the
-         summary target below and on the Artist/Seasons screens: a real button, since a label has no
-         click or focus of its own, with both textures explicitly "-" so Kodi doesn't fall back to
-         its default button look, and the highlight drawn as a separate image so it can sit proud of
-         the hit area. -->
+    <!-- The artist, and a click target opening that artist's own screen (artistButtonClicked(),
+         tracks.py - the same place the More menu's "Go to artist" goes). One auto-width button that
+         is the text, the hit area and the highlight (on request, 2026-09-30): Kodi measures the
+         label and sizes the button to it plus textoffsetx either side, so the highlight hugs the
+         name. font30_title's 42.9px line centred in the 51px box starts 4px down, at 52 - the
+         +69 below the name Recommended's artist line sits at. 5px in from the left puts the text
+         at x=471 with the rest. max=710 caps it; a longer name marquees while focused. -->
     <control type="button" id="306">
-        <posx>471</posx>
-        <posy>{{ vscale(68) }}</posy>
-        <width>700</width>
-        <height>{{ vscale(30) }}</height>
+        <posx>466</posx>
+        <posy>{{ vscale(48) }}</posy>
+        <width max="710">auto</width>
+        <height>{{ vscale(51) }}</height>
         <onup>200</onup>
         <ondown condition="!String.IsEmpty(Window.Property(summary))">305</ondown>
         <ondown>300</ondown>
         <onleft>9000</onleft>
-        <label> </label>
+        <font>font30_title</font>
+        <align>left</align>
+        <aligny>center</aligny>
+        <textoffsetx>5</textoffsetx>
+        <textcolor>FFD2CCCE</textcolor>
+        <focusedcolor>FFD2CCCE</focusedcolor>
         <texturenofocus>-</texturenofocus>
-        <texturefocus>-</texturefocus>
-    </control>
-    <control type="image">
-        <visible>Control.HasFocus(306)</visible>
-        <posx>466</posx>
-        <posy>{{ vscale(63) }}</posy>
-        <width>710</width>
-        <height>{{ vscale(40) }}</height>
-        <colordiffuse>33FFFFFF</colordiffuse>
-        <texture border="10">script.plex/white-square-rounded.png</texture>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <label>$INFO[Window.Property(artist.title)]</label>
     </control>
     <control type="label">
-        <!-- Release date then genres, both from album.meta (updateProperties(), tracks.py), joined
-             with the same " / " the Artist screen's own genre line uses between genres. -->
+        <!-- Release date then genres, both from album.meta (updateProperties(), tracks.py),
+             bullet-separated. -->
         <posx>471</posx>
-        <posy>{{ vscale(105) }}</posy>
+        <posy>{{ vscale(110) }}</posy>
         <width>1250</width>
         <height>{{ vscale(30) }}</height>
         <font>font10</font>
@@ -121,13 +108,10 @@
     </control>
 
     <!-- Summary, in the Artist screen's own treatment (813x90, font10, FFD2CCCE, autoscrolling
-         rather than scrollbar-driven). posy=207 keeps that screen's exact gap from the genre row:
-         it puts its summary at 277 with the genre line at 175, so 102 below it, and this screen's
-         meta row sits at 105. No invisible info-dialog button over it, unlike that screen - this
-         window has no SUMMARY_BUTTON_ID handler to wire one to. -->
+         rather than scrollbar-driven) - also Recommended's. -->
     <control type="textbox">
         <posx>471</posx>
-        <posy>{{ vscale(207) }}</posy>
+        <posy>{{ vscale(174) }}</posy>
         <width>813</width>
         <height>{{ vscale(90) }}</height>
         <font>font10</font>
@@ -147,7 +131,7 @@
              dead-ending on a control that isn't there (306's ondown and 300's onup below). -->
         <visible>!String.IsEmpty(Window.Property(summary))</visible>
         <posx>471</posx>
-        <posy>{{ vscale(207) }}</posy>
+        <posy>{{ vscale(174) }}</posy>
         <width>813</width>
         <height>{{ vscale(90) }}</height>
         <onup>306</onup>
@@ -160,7 +144,7 @@
     <control type="image">
         <visible>Control.HasFocus(305)</visible>
         <posx>466</posx>
-        <posy>{{ vscale(202) }}</posy>
+        <posy>{{ vscale(169) }}</posy>
         <width>823</width>
         <height>{{ vscale(100) }}</height>
         <colordiffuse>33FFFFFF</colordiffuse>
@@ -170,7 +154,7 @@
     {% block buttons %}
     <!-- The Artist screen's button row verbatim - theme.artist's 70x70 icon boxes and its
          label-on-focus pills, sharing Play's and Shuffle's own measured widths since it's the same
-         text at the same font. Sits under the meta line, in the hero's own column. -->
+         text at the same font. Sits under the summary, in the hero's own column. -->
     <control type="grouplist" id="300">
         <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
         <defaultcontrol>301</defaultcontrol>
