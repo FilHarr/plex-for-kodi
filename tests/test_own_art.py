@@ -112,12 +112,14 @@ class PerWindowSkipTest(SettingsCase):
         window.windowSetBackground('art:x')
         self.assertEqual(2, len(window.writes))
 
-    def test_no_art_shows_the_no_art_image_on_both_layers(self):
+    def test_no_art_clears_both_layers(self):
+        # Cleared, not a placeholder image: the hero box then draws nothing and the colour panel
+        # shows through.
         window = FakeWindow()
         window.windowSetBackground('art:x')
         del window.writes[:]
         window.windowSetBackground(None)
-        self.assertEqual([('background_static', kodigui.BG_NA), ('background', kodigui.BG_NA)], window.writes)
+        self.assertEqual([('background_static', ''), ('background', '')], window.writes)
 
 
 class GridPanelOnlyTest(SettingsCase):

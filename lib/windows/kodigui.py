@@ -146,7 +146,6 @@ class BaseFunctions(object):
         self.setFocusId(control)
 
 
-BG_NA = "script.plex/home/background-fallback_black.png"
 # The size background art is requested at: the hero art box's, which is the only place any screen
 # draws it (the full-screen copies behind search results and Person are going). The box
 # (includes/default_background.xml.tpl) is 1229 wide plus its 61-pixel zoom pad, and a 16:9 image
@@ -582,6 +581,8 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             if candidate:
                 art = candidate
                 break
+        if art and self._borrowsVariousArtistsArt(ds, art):
+            art = None
         # opacity=100: this art is now a focal, vivid box next to its own color panel, not a
         # full-bleed wash with text floating on top anywhere - backgroundArtOpacityAmount2's
         # server-side dimming was designed for that older look and just reads as muddy here.
@@ -591,6 +592,23 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         # >= what was asked (verified live: 1920x1440 requested -> 2560x1440 returned), so asking
         # for a non-16:9 size here only wastes bandwidth and texture memory.
         return util.backgroundFromArt(art, width=HERO_ART_SIZE[0], height=HERO_ART_SIZE[1], opacity=100)
+
+    # Plex's own Various Artists entry - the same guid on every server, unlike its ratingKey.
+    VARIOUS_ARTISTS_GUID = 'plex://artist/5d07bbfc403c6402904a5ec9'
+
+    def _borrowsVariousArtistsArt(self, ds, art):
+        """Whether art is the Various Artists entry's own background, handed down to one of its
+        albums or tracks (on request, 2026-09-30). That background is a collage of compilation
+        covers (fanart.tv's), which reads as noise behind any one album, so those show the colour
+        panel alone. The server does the handing down: an album or track without a background of
+        its own gets the artist's in its own `art` field (no parentArt - checked live), so the
+        path's metadata id is what tells the two apart. A background set on the album itself
+        carries the album's id and is kept, as is the collage on the Various Artists entry
+        itself."""
+        for guid_key, key_key in (('parentGuid', 'parentRatingKey'), ('grandparentGuid', 'grandparentRatingKey')):
+            if ds.get(guid_key) == self.VARIOUS_ARTISTS_GUID:
+                return str(art).startswith('/library/metadata/{0}/'.format(ds.get(key_key)))
+        return False
 
     def updateBackgroundFrom(self, ds):
         # `ds is not None`, not truthiness: an unopened Playlist is falsy (BasePlaylist.__len__()
@@ -654,21 +672,24 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self._panelLayer = target
 
     def windowSetBackground(self, value):
-        """Writes the hero art, or the no-art image when value is empty (an item with no art shows
-        none, not the previous item's). Skips a URL this window already shows: compared with this
-        window's own last write (_bgURL), not a global of the last art shown anywhere, which could
-        match while this window showed something else and skip a write it needed (step 12 stage C
-        in the navigation review)."""
+        """Writes the hero art, or clears it when value is empty (an item with no art shows none,
+        not the previous item's). Cleared, not the black placeholder image it used to write (on request,
+        2026-09-30): that drew a dark vignetted box top right over the colour panel for every
+        item without art - photos, and artists/albums with none - where just the panel should
+        show. Skips a URL this window already shows: compared with this window's own last write
+        (_bgURL), not a global of the last art shown anywhere, which could match while this window
+        showed something else and skip a write it needed (step 12 stage C in the navigation
+        review)."""
         if not util.addonSettings.dbgCrossfade:
-            self.setProperty("background_static", value or BG_NA)
+            self.setProperty("background_static", value or '')
             return value
 
         if not value:
-            if self._bgURL != BG_NA:
-                self.setProperty("background_static", BG_NA)
-                self.setProperty("background", BG_NA)
-                self._bgURL = BG_NA
-            return BG_NA
+            if self._bgURL != '':
+                self.setProperty("background_static", '')
+                self.setProperty("background", '')
+                self._bgURL = ''
+            return ''
 
         if self._bgURL != value:
             # Both layers move together now, on request: the previous item's art should be gone
