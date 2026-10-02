@@ -1645,7 +1645,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 target.setFocusId(self.SERVER_LIST_ID)
 
             if not from_refresh:
-                plexapp.refreshResources()
+                # Forced: opening the list is asking how the servers are now. Unforced, a server
+                # checked reachable in the last minute wasn't retested, so one that had just gone
+                # down still looked fine and could be picked (live, 2026-10-02).
+                plexapp.refreshResources(True)
 
     def selectServer(self, uuid=None):
         """Ported from HomeWindow.selectServer() (home.py). One addition HomeWindow never

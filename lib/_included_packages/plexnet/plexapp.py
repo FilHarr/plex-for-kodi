@@ -56,35 +56,21 @@ class App(signalsmixin.SignalsMixin):
     def startRequest(self, request, context, body=None, contentType=None):
         context.request = request
 
+        # Listed before the thread starts: one that fails fast (a name lookup) can finish and
+        # unlist itself before startAsync() even returns.
+        requestID = request.getIdentity()
+        self.pendingRequests[requestID] = context
         started = request.startAsync(body=body, contentType=contentType, context=context)
 
-        if started:
-            requestID = context.request.getIdentity()
-            self.pendingRequests[requestID] = context
-        elif context.callback:
-            context.callback(None, context)
+        if not started:
+            self.pendingRequests.pop(requestID, None)
+            if context.callback:
+                context.callback(None, context)
 
         return started
 
-    def onRequestTimeout(self, context):
-        requestID = context.request.getIdentity()
-
-        if requestID not in self.pendingRequests:
-            return
-
-        context.request.cancel()
-
-        util.WARN_LOG("Request to {0} timed out after {1} sec".format(util.cleanToken(context.request.url), context.timeout))
-
-        if context.callback:
-            context.callback(None, context)
-
     def delRequest(self, request):
-        requestID = request.getIdentity()
-        if requestID not in self.pendingRequests:
-            return
-
-        del self.pendingRequests[requestID]
+        self.pendingRequests.pop(request.getIdentity(), None)
 
     def addInitializer(self, name):
         self.initializers[name] = True
@@ -421,7 +407,7 @@ def refreshResources(force=False):
         # without the plex.tv resource response nothing else kicks reachability testing;
         # do it ourselves so the server search can settle on a local connection
         if force:
-            SERVERMANAGER.resetReachabilityState()
+            SERVERMANAGER.resetLastTest()
         SERVERMANAGER.updateReachability(force, True)
     else:
         util.MANAGER.refreshResources(force)

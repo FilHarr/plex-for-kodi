@@ -34,7 +34,7 @@ class Library(plexobjects.PlexObject):
         items = []
 
         path = '/library/sections'
-        for elem in self.server.query(path):
+        for elem in self.server.query(path) or ():
             stype = elem.attrib['type']
             if stype in SECTION_TYPES:
                 cls = SECTION_TYPES[stype]

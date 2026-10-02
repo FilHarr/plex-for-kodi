@@ -73,6 +73,10 @@ class EpisodesReloadTask(backgroundthread.Task):
                 epMap = {str(ep.ratingKey): ep for ep, _ in self.episodes}
                 data = plexobjects.listItems(self.episodes[0][0].server, '/library/metadata/{0}'.format(",".join(list(e.ratingKey for e, _ in self.episodes))), return_data=True,
                                              checkFiles=1, includeChapters=1, includeMarkers=1)
+                if not data:
+                    # the fetch failed: the server answers for every episode it still has, so
+                    # nothing at all means no answer (a read timeout used to raise to here instead)
+                    raise util.NoDataException
                 rl_cnt = 0
                 for d in data:
                     ep = epMap.get(d.attrib.get("ratingKey"), None)
@@ -86,7 +90,7 @@ class EpisodesReloadTask(backgroundthread.Task):
             if self.isCanceled():
                 return
             self.callback(self, self.episodes, set_item_info=self.setItemInfo)
-        except (requests.exceptions.RequestException, IndexError):
+        except (requests.exceptions.RequestException, IndexError, util.NoDataException):
             raise util.NoDataException
         except:
             util.ERROR()

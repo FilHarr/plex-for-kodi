@@ -640,21 +640,6 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         for uuid in list(self.serversByUuid.keys()):
             self.serversByUuid[uuid].resetLastTest()
 
-    def resetReachabilityState(self):
-        # clear stale pending flags left behind by reachability requests that died without
-        # ever delivering a response (e.g. connection timeouts cut short by a re-init)
-        for uuid in list(self.serversByUuid.keys()):
-            server = self.serversByUuid[uuid]
-            server.pendingReachabilityRequests = 0
-            server.pendingSecureRequests = 0
-            for i in range(len(server.connections)):
-                try:
-                    conn = server.connections[i]
-                except IndexError:
-                    continue
-                conn.hasPendingRequest = False
-                conn.lastTestedAt = None
-
     def clearServers(self):
         self.cancelReachability()
         self.serversByUuid = {}
@@ -706,7 +691,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             port = conn.port or "32400"
             serverAddress = "{0}://{1}:{2}".format(proto, conn.connection, port)
 
-            request = http.HttpRequest(serverAddress + "/identity")
+            request = http.HttpRequest(serverAddress + "/identity", retries=0)
             context = request.createRequestContext("manual_connections",
                                                    callback.Callable(self.onManualConnectionsResponse),
                                                    timeout=util.CONN_CHECK_TIMEOUT)

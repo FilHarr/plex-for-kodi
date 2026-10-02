@@ -4,6 +4,7 @@ from __future__ import absolute_import
 import time
 import re
 import json
+import threading
 
 import six
 import urllib3.exceptions
@@ -26,6 +27,11 @@ from six.moves import range
 
 
 TOTAL_QUERIES = 0
+
+# what query() treats as "no answer" (not programming errors such as an invalid URL)
+TRANSPORT_ERRORS = (http.requests.exceptions.ConnectionError, http.requests.exceptions.Timeout,
+                    http.requests.exceptions.ChunkedEncodingError,
+                    http.requests.exceptions.ContentDecodingError, urllib3.exceptions.ProtocolError)
 DEFAULT_BASEURI = 'http://localhost:32400'
 
 CACHE_MAP = {}
@@ -54,6 +60,7 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
 
         self.pendingReachabilityRequests = 0
         self.pendingSecureRequests = 0
+        self._reachabilityLock = threading.RLock()
 
         self.features = {}
         self.librariesByUuid = {}
@@ -272,10 +279,11 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
 
         url = self.buildUrl(path, includeToken=True)
 
-        # If URL is empty, try refresh resources and return empty set for now
+        # No active connection: the server is already known to be unreachable. This used to start a
+        # forced plex.tv resource refresh as well, once per query, which turned every query against
+        # an unreachable server into a refresh storm (mvanbaak/plex-for-kodi ee7c68f5).
         if not url:
-            util.WARN_LOG("Empty server url, returning None and refreshing resources")
-            util.MANAGER.refreshResources(True)
+            util.WARN_LOG("No connection to {0}, returning None", repr(self.name))
             return None
 
         # add offset/limit
@@ -320,14 +328,13 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                         util.DEBUG_LOG('Storing URL for cached response in {0}: {1}: {2}'.format(base_key, cache_ref, url))
 
             data = response.text.encode('utf8')
-        except asyncadapter.TimeoutException:
-            util.ERROR()
-            util.MANAGER.refreshResources(True)
-            return None
-        except (http.requests.ConnectionError, urllib3.exceptions.ProtocolError):
-            util.ERROR()
-            return None
         except asyncadapter.CanceledException:
+            return None
+        except TRANSPORT_ERRORS as e:
+            # Every way of not getting an answer ends the same: None. A read timeout used to raise
+            # instead, while a connect failure returned None.
+            util.WARN_LOG("Query failed ({0}): {1}", http.describeFailure(e),
+                          re.sub('X-Plex-Token=[^&]+', 'X-Plex-Token=****', url))
             return None
 
         if raw:
@@ -485,64 +492,109 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         minSeconds = 10
         for i in range(len(self.connections)):
             conn = self.connections[i]
-            diff = epoch - (conn.lastTestedAt or 0)
-            if conn.hasPendingRequest:
+            if conn.hasPendingRequest and not self.settleStaleTest(conn, epoch):
                 util.DEBUG_LOG("Skip reachability test for {0} (has pending request)", conn)
-            elif (diff < minSeconds or (not self.isSecondary() and self.isReachable() and diff < retrySeconds)) and \
+                continue
+            diff = epoch - (conn.lastTestedAt or 0)
+            if (diff < minSeconds or (not self.isSecondary() and self.isReachable() and diff < retrySeconds)) and \
                     not conn.state == "unauthorized":
                 util.DEBUG_LOG("Skip reachability test for {0} (checked {1} secs ago)", conn, diff)
-            elif conn.testReachability(self, allowFallback):
-                self.pendingReachabilityRequests += 1
-                if conn.isSecure:
-                    self.pendingSecureRequests += 1
-
-                if self.pendingReachabilityRequests == 1:
-                    self.trigger("started:reachability")
+            else:
+                conn.testReachability(self, allowFallback)
 
         if self.pendingReachabilityRequests <= 0:
             self.trigger("completed:reachability")
 
+    def onReachabilityTestStarting(self, connection):
+        """Counts a test in before it can possibly answer - PlexConnection.testReachability() calls
+        this ahead of starting the request. Counting after it had started let a quick answer count
+        down first (going negative, completing the round early) and then be marked pending again,
+        for good."""
+        with self._reachabilityLock:
+            connection.hasPendingRequest = True
+            connection.pendingSince = time.time()
+            self.pendingReachabilityRequests += 1
+            if connection.isSecure:
+                self.pendingSecureRequests += 1
+            first = self.pendingReachabilityRequests == 1
+
+        if first:
+            self.trigger("started:reachability")
+
+    def settleStaleTest(self, conn, now):
+        """A test still pending long after it could possibly have finished lost its answer
+        somewhere: count it as unreachable rather than skip the connection for the rest of the
+        session. Returns whether it did."""
+        since = getattr(conn, 'pendingSince', None)
+        if not since or now - since < staleTestSeconds():
+            return False
+        if conn.request is not None and not conn.request.cancel():
+            return False  # its answer is being delivered right now
+
+        util.WARN_LOG("Reachability test for {0} lost its answer ({1:.0f}s), counting it as unreachable",
+                      conn.address, now - since)
+        conn.state = conn.STATE_UNREACHABLE
+        conn.getScore(True)
+        self.onReachabilityResult(conn)
+        return True
+
     def cancelReachability(self):
-        for i in range(len(self.connections)):
-            conn = self.connections[i]
-            conn.cancelReachability()
+        canceled = False
+        with self._reachabilityLock:
+            for i in range(len(self.connections)):
+                conn = self.connections[i]
+                if conn.cancelReachability():
+                    canceled = True
+                    self.pendingReachabilityRequests -= 1
+                    if conn.isSecure:
+                        self.pendingSecureRequests -= 1
+            settled = canceled and self.pendingReachabilityRequests <= 0
+
+        if settled:
+            self.trigger("completed:reachability")
 
     def onReachabilityResult(self, connection):
-        connection.lastTestedAt = time.time()
-        connection.hasPendingRequest = None
-        self.pendingReachabilityRequests -= 1
-        if connection.isSecure:
-            self.pendingSecureRequests -= 1
+        # Results arrive on one HTTP thread per connection, often several at once: the counts and
+        # the pick of the active connection are made under the lock, the signals after it.
+        with self._reachabilityLock:
+            connection.lastTestedAt = time.time()
+            connection.hasPendingRequest = None
+            connection.pendingSince = None
+            self.pendingReachabilityRequests -= 1
+            if connection.isSecure:
+                self.pendingSecureRequests -= 1
 
-        util.DEBUG_LOG("Reachability result for {0}: {1} is {2}", repr(self.name), connection.address, connection.state)
+            util.DEBUG_LOG("Reachability result for {0}: {1} is {2}", repr(self.name), connection.address, connection.state)
 
-        # Noneate active connection if the state is unreachable
-        if self.activeConnection and self.activeConnection.state != plexresource.ResourceConnection.STATE_REACHABLE:
-            self.activeConnection = None
+            # Noneate active connection if the state is unreachable
+            if self.activeConnection and self.activeConnection.state != plexresource.ResourceConnection.STATE_REACHABLE:
+                self.activeConnection = None
 
-        # Pick a best connection. If we already had an active connection and
-        # it's still reachable, stick with it. (replace with local if
-        # available)
-        best = self.activeConnection
-        for i in range(len(self.connections) - 1, -1, -1):
-            try:
-                conn = self.connections[i]
-            except IndexError:
-                continue
+            # Pick a best connection. If we already had an active connection and
+            # it's still reachable, stick with it. (replace with local if
+            # available)
+            best = self.activeConnection
+            for i in range(len(self.connections) - 1, -1, -1):
+                try:
+                    conn = self.connections[i]
+                except IndexError:
+                    continue
 
-            util.DEBUG_LOG("Connection score: {0}, {1}", conn.address, lambda: conn.getScore(True))
+                util.DEBUG_LOG("Connection score: {0}, {1}", conn.address, lambda: conn.getScore(True))
 
-            if not best or conn.getScore() > best.getScore():
-                best = conn
+                if not best or conn.getScore() > best.getScore():
+                    best = conn
 
-        if best and best.state == best.STATE_REACHABLE:
-            if (best.isSecure or util.LOCAL_OVER_SECURE) or self.pendingSecureRequests <= 0:
-                util.DEBUG_LOG("Using connection for {0} for now: {1}", repr(self.name), best.address)
-                self.activeConnection = best
-            else:
-                util.DEBUG_LOG("Found a good connection for {0}, but holding out for better", repr(self.name))
+            if best and best.state == best.STATE_REACHABLE:
+                if (best.isSecure or util.LOCAL_OVER_SECURE) or self.pendingSecureRequests <= 0:
+                    util.DEBUG_LOG("Using connection for {0} for now: {1}", repr(self.name), best.address)
+                    self.activeConnection = best
+                else:
+                    util.DEBUG_LOG("Found a good connection for {0}, but holding out for better", repr(self.name))
 
-        if self.pendingReachabilityRequests <= 0:
+            settled = self.pendingReachabilityRequests <= 0
+
+        if settled:
             # Retest the server with fallback enabled. hasFallback will only
             # be True if there are available insecure connections and fallback
             # is allowed.
@@ -794,6 +846,14 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
             }]
 
         return json.dumps(serverObj)
+
+
+def staleTestSeconds():
+    """Longer than any reachability test can take: every attempt timing out on both connect and
+    read, plus a margin."""
+    timeout = util.CONN_CHECK_TIMEOUT
+    connect = float(timeout.getConnectTimeout()) if hasattr(timeout, 'getConnectTimeout') else float(timeout)
+    return (connect + float(timeout)) * (asyncadapter.MAX_RETRIES + 1) + 5
 
 
 def dummyPlexServer():

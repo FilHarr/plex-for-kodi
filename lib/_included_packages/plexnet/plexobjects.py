@@ -651,7 +651,7 @@ class PlexMediaItemList(PlexItemList):
 
 
 def findItem(server, path, title):
-    for elem in server.query(path):
+    for elem in server.query(path) or ():
         if elem.attrib.get('title').lower() == title.lower():
             return buildItem(server, elem, path)
     raise exceptions.NotFound('Unable to find item: {0}'.format(title))

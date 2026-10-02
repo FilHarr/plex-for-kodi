@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 import time
+import selectors
 import socket
 import six
 import os
@@ -34,12 +35,24 @@ TEMP_PATH = None
 
 WIN_WSAEINVAL = 10022
 WIN_EWOULDBLOCK = 10035
+WIN_EALREADY = 10037
 WIN_ECONNRESET = 10054
 WIN_EISCONN = 10056
 WIN_ENOTCONN = 10057
 WIN_EHOSTUNREACH = 10065
 
+# connect_ex() answers for a non-blocking connect: already done, or under way
+CONNECTED = (errno.EISCONN, WIN_EISCONN)
+CONNECTING = (errno.EINPROGRESS, errno.EWOULDBLOCK, errno.EALREADY, WIN_EWOULDBLOCK, WIN_EALREADY)
+# how long each wait for the connect lasts before checking for a cancel or the deadline
+CONNECT_POLL = 0.05
+# connect failures that are already an answer (see isDefinitiveConnectFailure())
+DEFINITIVE_CONNECT_ERRNOS = frozenset((errno.ECONNREFUSED, errno.EHOSTUNREACH, errno.ENETUNREACH,
+                                       10061, WIN_EHOSTUNREACH, 10051))
+
 MAX_RETRIES = 3
+# of those, how many may go to connect timeouts
+CONNECT_RETRIES = 1
 REQUESTS_CACHE_EXPIRY = 72
 
 
@@ -50,10 +63,6 @@ def ABORT_FLAG_FUNCTION():
 
 
 class CanceledException(Exception):
-    pass
-
-
-class TimeoutException(ConnectTimeoutError):
     pass
 
 
@@ -149,31 +158,35 @@ class AsyncConnectionMixin:
             raise socket.error("getaddrinfo returns an empty list")
 
     def _connect(self, sock, sa):
-        while not self._canceled and not ABORT_FLAG_FUNCTION():
-            time.sleep(0.01)
-            self._check_timeout()  # this should be done at the beginning of each loop
-            status = sock.connect_ex(sa)
-            if not status or status in (errno.EISCONN, WIN_EISCONN):
-                break
-            elif status in (errno.EINPROGRESS, WIN_EWOULDBLOCK):
-                # extend the deadline once at most, otherwise count towards our connect timeout
-                if not self.deadline_extended:
-                    self.deadline = time.time() + self._timeout.getConnectTimeout()
-                    self.deadline_extended = True
+        """Starts a non-blocking connect and waits for the OS to finish it, a slice at a time so
+        cancels and the deadline are honoured. It used to poll connect_ex() instead, which can't
+        tell a failed connect from one still trying (on Windows both read WSAEINVAL), so a refused
+        or unreachable address always ran to the deadline - each retry again. The selector reports
+        a failed connect too (on Windows through select()'s exception set, which SelectSelector
+        folds into writable), and SO_ERROR says which."""
+        status = sock.connect_ex(sa)
+        if not status or status in CONNECTED:
+            return
+        if status not in CONNECTING:
+            raise socket.error(status, errno.errorcode.get(status, 'connect failed'))
 
-            # elif status in (errno.EWOULDBLOCK, errno.EALREADY) or (os.name == 'nt' and status == errno.WSAEINVAL):
-            #     pass
-            yield
+        selector = selectors.DefaultSelector()
+        try:
+            selector.register(sock, selectors.EVENT_WRITE)
+            while not self._canceled and not ABORT_FLAG_FUNCTION():
+                self._check_timeout()
+                if selector.select(CONNECT_POLL):
+                    error = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+                    if error:
+                        raise socket.error(error, errno.errorcode.get(error, 'connect failed'))
+                    return
+                yield
+        finally:
+            selector.close()
 
-        if self._canceled or ABORT_FLAG_FUNCTION():
-            if DEBUG_REQUESTS:
-                xbmc.log('{1}._connect: Canceled: {0}'.format(self.identifier, self.__class__.__name__), xbmc.LOGINFO)
-            raise CanceledException('Request canceled: {0}'.format(str(self)))
-
-        error = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
-        if error:
-            # TODO: determine when this case can actually happen
-            raise socket.error((error,))
+        if DEBUG_REQUESTS:
+            xbmc.log('{1}._connect: Canceled: {0}'.format(self.identifier, self.__class__.__name__), xbmc.LOGINFO)
+        raise CanceledException('Request canceled: {0}'.format(str(self)))
 
     def _new_conn(self):
         sock = self.create_connection(
@@ -377,17 +390,57 @@ class AsyncHTTPAdapter(HTTPAdapter):
 STOP_RETRYING_REQUESTS = False
 
 
+def connectFailureCause(error):
+    """The socket error behind a failed request when it was a definite no - refused (nothing
+    listening), no route to the host or network, or no such name (a socket.gaierror) - else None.
+    urllib3 and requests wrap it (a refused connect arrives as ProtocolError("Connection aborted.",
+    ConnectionRefusedError)), so this follows the wrapping down."""
+    pending = [error]
+    seen = set()
+    while pending:
+        err = pending.pop()
+        if err is None or id(err) in seen or len(seen) > 12:
+            continue
+        seen.add(id(err))
+        if isinstance(err, socket.gaierror):
+            return err
+        if isinstance(err, OSError) and getattr(err, 'errno', None) in DEFINITIVE_CONNECT_ERRNOS:
+            return err
+        pending.extend(a for a in getattr(err, 'args', ()) if isinstance(a, BaseException))
+        pending.extend((getattr(err, 'reason', None), getattr(err, 'original_error', None),
+                        err.__cause__, err.__context__))
+    return None
+
+
+def isDefinitiveConnectFailure(error):
+    """Whether a failed request already got a definite no (see connectFailureCause()). Asking
+    again gets the same answer, so it isn't retried. A connect timeout (a lost packet, say) or a
+    connection dropped mid-answer still is."""
+    return connectFailureCause(error) is not None
+
+
 class StoppableRetry(Retry):
-    def increment(self, *args, **kwargs):
-        if STOP_RETRYING_REQUESTS:
-            self.total = 0
-        return super(StoppableRetry, self).increment(*args, **kwargs)
+    """Retries that give up at once when retrying is switched off (STOP_RETRYING_REQUESTS, while
+    a screen closes) or the failure is already a definite answer. It never changes itself: the
+    adapter hands this same object to every request through it, so setting total = 0 here (as it
+    once did) took the retries away from the whole session for good."""
+    def increment(self, method=None, url=None, response=None, error=None, _pool=None, _stacktrace=None):
+        if STOP_RETRYING_REQUESTS or (error is not None and isDefinitiveConnectFailure(error)):
+            return Retry.increment(self.new(total=0), method, url, response, error, _pool, _stacktrace)
+        return super(StoppableRetry, self).increment(method, url, response, error, _pool, _stacktrace)
 
 
 class AsyncSessionMixin(object):
-    def mountAsyncAdapters(self):
-        self.mount('https://', AsyncHTTPAdapter(max_retries=StoppableRetry(MAX_RETRIES)))
-        self.mount('http://', AsyncHTTPAdapter(max_retries=StoppableRetry(MAX_RETRIES)))
+    def mountAsyncAdapters(self, retries=None):
+        """retries: None for the user's max_retries setting, of which at most CONNECT_RETRIES go
+        to connect timeouts (a server that never answers would otherwise hold the caller for
+        every attempt); a number to override both."""
+        if retries is None:
+            make = lambda: StoppableRetry(total=MAX_RETRIES, connect=min(CONNECT_RETRIES, MAX_RETRIES))
+        else:
+            make = lambda: StoppableRetry(total=retries, connect=retries)
+        self.mount('https://', AsyncHTTPAdapter(max_retries=make()))
+        self.mount('http://', AsyncHTTPAdapter(max_retries=make()))
 
     def cancel(self):
         for v in self.adapters.values():
@@ -399,9 +452,9 @@ class PlainSession(AsyncSessionMixin, requests.Session):
     """A session without the request cache, for http.HttpRequest's one-off requests, which never
     use it: a cached session opens the SQLite cache and creates its three tables each time one is
     built, once per request (E8 in the navigation review)."""
-    def __init__(self):
+    def __init__(self, retries=None):
         requests.Session.__init__(self)
-        self.mountAsyncAdapters()
+        self.mountAsyncAdapters(retries)
 
     def request(self, method, url, *args, **kwargs):
         kwargs.pop('with_cache', None)

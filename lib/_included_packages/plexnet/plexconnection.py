@@ -86,6 +86,7 @@ class PlexConnection(object):
 
         self.lastTestedAt = 0
         self.hasPendingRequest = False
+        self.pendingSince = None
 
         self.isSecureButLocal = False
 
@@ -246,6 +247,7 @@ class PlexConnection(object):
             else:
                 util.LOG("Insecure connections not allowed. Ignore insecure connection test for {0}", server)
                 self.state = self.STATE_INSECURE
+                server.onReachabilityTestStarting(self)
                 callable = callback.Callable(server.onReachabilityResult, [self], random.randint(0, 256))
                 callable.deferCall()
                 return True
@@ -259,32 +261,40 @@ class PlexConnection(object):
                 server.activeConnection.isSecure
             ):
                 util.DEBUG_LOG("Invalid insecure connection test in progress")
-            self.request = http.HttpRequest(self.buildUrl(server, "/"))
+            self.request = http.HttpRequest(self.buildUrl(server, "/"), retries=0)
             context = self.request.createRequestContext("reachability", callback.Callable(self.onReachabilityResponse),
                                                         timeout=util.CONN_CHECK_TIMEOUT)
             context.server = server
             util.addPlexHeaders(self.request, server.getToken())
-            self.hasPendingRequest = util.APP.startRequest(self.request, context)
-            util.DEBUG_LOG("Testing insecure connection for: {0}", server)
+            # Counted in before it starts: the answer can come back before startRequest() returns.
+            # A request that can't start answers at once, inside startRequest(), and settles itself.
+            server.onReachabilityTestStarting(self)
+            util.APP.startRequest(self.request, context)
+            util.DEBUG_LOG("Testing connection {0} for: {1}", self.address, server)
             return True
 
         return False
 
     def cancelReachability(self):
-        if self.request:
-            self.request.ignoreResponse = True
-            self.request.cancel()
+        """True when this stopped a test still in flight, whose result will now never arrive -
+        the caller settles the server's pending counts for it."""
+        if not self.request or not self.hasPendingRequest:
+            return False
+        self.request.ignoreResponse = True
+        if self.request.cancel():
+            self.hasPendingRequest = False
+            return True
+        return False
 
     def onReachabilityResponse(self, request, response, context):
         self.hasPendingRequest = False
-        # It's possible we may have a result pending before we were able
-        # to cancel it, so we'll just ignore it.
-
-        # if request.ignoreResponse:
-        #     return
 
         if response.isSuccess():
-            data = response.getBodyXml()
+            try:
+                data = response.getBodyXml()
+            except Exception:
+                # e.g. a captive portal's HTML page
+                data = None
             if data is not None and context.server.collectDataFromRoot(data):
                 self.state = self.STATE_REACHABLE
             else:

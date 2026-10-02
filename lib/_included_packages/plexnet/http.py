@@ -1,10 +1,12 @@
 from __future__ import absolute_import
+import errno
 import sys
 import os
 import re
 import traceback
 import requests
 import socket
+import threading
 import urllib3
 import datetime
 from . import threadutils
@@ -74,6 +76,26 @@ def Session():
     return s
 
 
+def describeFailure(e):
+    """A short, log-friendly name for why a request failed."""
+    if isinstance(e, requests.exceptions.ConnectTimeout):
+        return "connect timeout"
+    if isinstance(e, requests.exceptions.ReadTimeout):
+        return "read timeout"
+    if isinstance(e, requests.exceptions.SSLError):
+        return "TLS error"
+    if isinstance(e, requests.exceptions.ConnectionError):
+        cause = asyncadapter.connectFailureCause(e)
+        if isinstance(cause, socket.gaierror):
+            return "name lookup failed"
+        if cause is not None:
+            return {errno.ECONNREFUSED: "refused", 10061: "refused"}.get(cause.errno, "no route to host")
+        return "connection failed"
+    if isinstance(e, urllib3.exceptions.ProtocolError):
+        return "connection dropped"
+    return type(e).__name__
+
+
 class RequestContext(dict):
     def __getattr__(self, attr):
         return self.get(attr)
@@ -89,18 +111,22 @@ class HttpRequest(object):
 
     USE_SYSTEM_CERT_BUNDLE = False
 
-    def __init__(self, url, method=None):
+    def __init__(self, url, method=None, *, retries=None):
+        """retries: connection retries for this request, when it shouldn't use the user's
+        max_retries setting - a reachability test is itself the retry, so it makes none."""
         self.server = None
         self.path = None
         self.hasParams = '?' in url
         self.ignoreResponse = False
         # Never cached, so no cache backend to open per request (E8 in the navigation review).
-        self.session = asyncadapter.PlainSession()
+        self.session = asyncadapter.PlainSession(retries=retries)
         self.session.headers = util.BASE_HEADERS.copy()
         self.currentResponse = None
         self.method = method
         self.url = url
         self.thread = None
+        self._answered = False
+        self._answerLock = threading.Lock()
 
         # Use a specific CA cert bundle if applicable
         if not self.USE_SYSTEM_CERT_BUNDLE and util.USE_CERT_BUNDLE != "system" and url[:5] == "https":
@@ -131,51 +157,58 @@ class HttpRequest(object):
         return True
 
     def _startAsync(self, body=None, contentType=None, context=None):
+        """Every request that gets this far answers its callback exactly once - with an empty
+        (status 0) response when it failed - unless it was canceled first. Requests that failed
+        to connect used to return without calling back, so anything counting on the answer
+        (reachability tests, plex.tv resources) waited for the rest of the session."""
         timeout = context and context.timeout or DEFAULT_TIMEOUT
         self.logRequest(body, timeout)
-        if self._cancel:
-            return
+        res = None
         try:
-            if self.method == 'PUT':
-                res = self.session.put(self.url, timeout=timeout, stream=True)
-            elif self.method == 'DELETE':
-                res = self.session.delete(self.url, timeout=timeout, stream=True)
-            elif self.method == 'HEAD':
-                res = self.session.head(self.url, timeout=timeout, stream=True)
-            elif self.method == 'OPTIONS':
-                res = self.session.options(self.url, timeout=timeout, stream=True)
-            elif self.method == 'POST' or body is not None:
-                if not contentType:
-                    self.session.headers["Content-Type"] = "application/x-www-form-urlencoded"
-                else:
-                    self.session.headers["Content-Type"] = mimetypes.guess_type(contentType)
-
-                res = self.session.post(self.url, data=body or None, timeout=timeout, stream=True)
-            else:
-                res = self.session.get(self.url, timeout=timeout, stream=True)
-            self.currentResponse = res
-
             if self._cancel:
                 return
-        except asyncadapter.TimeoutException:
-            from . import plexapp
-            plexapp.util.APP.onRequestTimeout(context)
-            self.removeAsPending()
-            return
-        except asyncadapter.CanceledException:
-            return
-        except (urllib3.exceptions.ProtocolError, requests.exceptions.ConnectionError):
-            self.removeAsPending()
-            return
-        except Exception as e:
-            util.ERROR('Request failed {0}'.format(util.cleanToken(self.url)))
-            if not hasattr(e, 'response'):
+            try:
+                if self.method == 'PUT':
+                    res = self.session.put(self.url, timeout=timeout, stream=True)
+                elif self.method == 'DELETE':
+                    res = self.session.delete(self.url, timeout=timeout, stream=True)
+                elif self.method == 'HEAD':
+                    res = self.session.head(self.url, timeout=timeout, stream=True)
+                elif self.method == 'OPTIONS':
+                    res = self.session.options(self.url, timeout=timeout, stream=True)
+                elif self.method == 'POST' or body is not None:
+                    if not contentType:
+                        self.session.headers["Content-Type"] = "application/x-www-form-urlencoded"
+                    else:
+                        self.session.headers["Content-Type"] = mimetypes.guess_type(contentType)
+
+                    res = self.session.post(self.url, data=body or None, timeout=timeout, stream=True)
+                else:
+                    res = self.session.get(self.url, timeout=timeout, stream=True)
+                self.currentResponse = res
+            except asyncadapter.CanceledException:
                 return
-            res = e.response
+            except Exception as e:
+                util.WARN_LOG("Request failed ({0}) after {1}: {2}", describeFailure(e), timeout,
+                              util.cleanToken(self.url))
+                res = getattr(e, 'response', None)
 
-        self.onResponse(res, context)
+            if self._cancel or not self.claimAnswer():
+                return
+            try:
+                self.onResponse(res, context)
+            except Exception:
+                util.ERROR('Response handler failed for {0}'.format(util.cleanToken(self.url)))
+        finally:
+            self.removeAsPending()
 
-        self.removeAsPending()
+    def claimAnswer(self):
+        """True for exactly one caller: the response delivery or cancel(), whichever is first."""
+        with self._answerLock:
+            if self._answered:
+                return False
+            self._answered = True
+            return True
 
     def getWithTimeout(self, timeout=DEFAULT_TIMEOUT):
         return HttpObjectResponse(self.getPostWithTimeout(timeout), self.path, self.server)
@@ -280,10 +313,14 @@ class HttpRequest(object):
             util.ERROR(err=e)
 
     def cancel(self):
+        """Returns whether this cancel stopped the answer: False when the callback had already
+        been (or is being) delivered."""
         self._cancel = True
+        stopped = self.claimAnswer()
         self.session.cancel()
         self.removeAsPending()
         self.killSocket()
+        return stopped
 
     def addParam(self, encodedName, value):
         if self.hasParams:
