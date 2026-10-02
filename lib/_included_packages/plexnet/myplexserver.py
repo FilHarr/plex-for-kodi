@@ -28,6 +28,11 @@ class MyPlexServer(plexserver.PlexServer):
     def getToken(self):
         return plexapp.ACCOUNT.authToken
 
+    def markSuspect(self):
+        # plex.tv isn't one of the servers the manager tracks: a failed plex.tv query says
+        # nothing about them, and retesting it would report it to the manager as one
+        pass
+
     def buildUrl(self, path, includeToken=False):
         if "://node.plexapp.com" in path:
             # Locate the best fit server that supports channels, otherwise we'll

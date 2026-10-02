@@ -297,21 +297,28 @@ class ServerSignalsTest(KodiTestCase):
             host = Host()
             calls = []
             for name in ('onNewServer', 'onRemoveServer', 'onReachableServer', 'displayServerAndUser',
-                         'onSelectedServerChange'):
+                         'onSelectedServerChange', 'onServerOffline', 'onServerOnline', 'onSelectedServerGone'):
                 setattr(host, name, (lambda n: lambda **kw: calls.append((n, kw)))(name))
             host._postedHandler = library.LibraryWindow._postedHandler.__get__(host)
             library.LibraryWindow.hookSignals(host)
 
             manager.trigger('reachable:server', server='oscar')
             app.trigger('change:selectedServer')
+            manager.trigger('offline:server', server='animal')
+            manager.trigger('online:server', server='animal')
+            manager.trigger('gone:selectedServer', server='animal', replacement='oscar')
             self.assertEqual([], calls, 'nothing may run on the signalling thread')
-            self.assertEqual(['onReachableServer', 'displayServerAndUser', 'onSelectedServerChange'],
+            self.assertEqual(['onReachableServer', 'displayServerAndUser', 'onSelectedServerChange',
+                              'onServerOffline', 'onServerOnline', 'onSelectedServerGone'],
                              [u[0] for u in host._uiPending])
 
             host.runPendingNav(View())
             self.assertEqual([('onReachableServer', {'server': 'oscar'}),
                               ('displayServerAndUser', {'server': 'oscar'}),
-                              ('onSelectedServerChange', {})], calls)
+                              ('onSelectedServerChange', {}),
+                              ('onServerOffline', {'server': 'animal'}),
+                              ('onServerOnline', {'server': 'animal'}),
+                              ('onSelectedServerGone', {'server': 'animal', 'replacement': 'oscar'})], calls)
 
             library.LibraryWindow.unhookSignals(host)
             self.assertEqual([], [h for hs in manager.handlers.values() for h in hs])

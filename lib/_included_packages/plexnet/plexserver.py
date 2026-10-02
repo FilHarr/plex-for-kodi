@@ -28,6 +28,11 @@ from six.moves import range
 
 TOTAL_QUERIES = 0
 
+# statuses a reverse proxy gives when the server behind it doesn't answer
+GATEWAY_ERRORS = (502, 503, 504)
+# at most one retest per this many seconds per server for queries that got no answer (markSuspect())
+SUSPECT_RETEST_SECONDS = 30
+
 # what query() treats as "no answer" (not programming errors such as an invalid URL)
 TRANSPORT_ERRORS = (http.requests.exceptions.ConnectionError, http.requests.exceptions.Timeout,
                     http.requests.exceptions.ChunkedEncodingError,
@@ -61,6 +66,12 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         self.pendingReachabilityRequests = 0
         self.pendingSecureRequests = 0
         self._reachabilityLock = threading.RLock()
+        # Known to be unreachable: its last reachability round ended with no working connection
+        # (PlexServerManager.setServerOnline())
+        self.offline = False
+        # No longer on the account - plex.tv stopped listing it (PlexServerManager.onSelectedServerGone())
+        self.gone = False
+        self._lastSuspectRetest = 0
 
         self.features = {}
         self.librariesByUuid = {}
@@ -286,6 +297,7 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         # an unreachable server into a refresh storm (mvanbaak/plex-for-kodi ee7c68f5).
         if not url:
             util.WARN_LOG("No connection to {0}, returning None", repr(self.name))
+            self.markSuspect()
             return None
 
         # add offset/limit
@@ -303,6 +315,9 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         try:
             response = method(url, **kwargs)
             if response.status_code not in (200, 201):
+                if response.status_code in GATEWAY_ERRORS:
+                    # a proxy in front of the server answering for it: the server itself may be down
+                    self.markSuspect()
                 codename = http.status_codes.get(response.status_code, ['Unknown'])[0]
                 raise exceptions.BadRequest('({0}) {1}'.format(response.status_code, codename))
 
@@ -337,6 +352,7 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
             # instead, while a connect failure returned None.
             util.WARN_LOG("Query failed ({0}): {1}", http.describeFailure(e),
                           re.sub('X-Plex-Token=[^&]+', 'X-Plex-Token=****', url))
+            self.markSuspect()
             return None
 
         if raw:
@@ -506,6 +522,19 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
 
         if self.pendingReachabilityRequests <= 0:
             self.trigger("completed:reachability")
+
+    def markSuspect(self):
+        """A query to this server got no answer: retest its connections now rather than whenever
+        something next happens to, so a server that went down shows as offline (and one that came
+        back as online) - at most every SUSPECT_RETEST_SECONDS. Nothing else noticed a server dying
+        mid-session; queries against it just kept failing."""
+        now = time.time()
+        if now - self._lastSuspectRetest < SUSPECT_RETEST_SECONDS:
+            return
+        self._lastSuspectRetest = now
+        util.LOG("A query to {0} got no answer, retesting its connections", repr(self.name))
+        self.resetLastTest()
+        self.updateReachability(True)
 
     def onReachabilityTestStarting(self, connection):
         """Counts a test in before it can possibly answer - PlexConnection.testReachability() calls

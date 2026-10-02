@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 import json
+import threading
 
 import six.moves.urllib.parse
 
@@ -33,6 +34,10 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         self.channelServer = None
         self.deferReachabilityTimer = None
         self.reachabilityNeverTested = True
+        # Retests the selected server while it's offline (see scheduleOfflineRetry())
+        self.offlineRetryTimer = None
+        self.offlineRetryStep = 0
+        self._stateLock = threading.Lock()
 
         self.startSelectedServerSearch()
         self.loadState()
@@ -65,17 +70,27 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         if not self.selectedServer or force:
             util.LOG("Setting selected server to {0}", server)
             self.selectedServer = server
+            self.cancelOfflineRetry()
 
             if server:
-                if server.owned:
-                    util.LOG("Getting and storing server prefs for {0}", server.name)
-                    prefs = server.getPrefs()
+                # The search for a server to start with is over: from here on, only the user
+                # changes servers. A later reachability result settling for the "best" server
+                # found would otherwise switch servers under them.
+                if self.searchContext:
+                    self.searchContext.active = False
+
+                prefs = server.getPrefs() if server.owned else None
+                if prefs:
+                    util.LOG("Got and stored server prefs for {0}", server.name)
                     for pref in prefs:
                         if pref.get("id") in ("LibraryVideoPlayedThreshold", "LibraryVideoPlayedAtBehaviour"):
                             server.prefs[str(pref.get("id"))] = pref.get("value").asInt()
                     util.INTERFACE.setRegistry("PlexServerPrefs", json.dumps(server.prefs), sec=server.uuid[-8:])
                 else:
-                    util.LOG("Server isn't owned by the current user. Trying to reuse cached server prefs for {0}", server.name)
+                    # not owned, or the server didn't answer (an owned server always has prefs;
+                    # storing the empty answer used to wipe the cached ones)
+                    util.LOG("{0}: no prefs from the server ({1}), trying cached ones",
+                             server.name, server.owned and "no answer" or "not owned")
                     try:
                         server.prefs = json.loads(util.INTERFACE.getRegistry("PlexServerPrefs", sec=server.uuid[-8:]))
                         util.DEBUG_LOG("Cached server prefs loaded for {0}", server.name)
@@ -125,14 +140,25 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
         return False
 
-    def removeServer(self, server):
+    def removeServer(self, server, source=None):
+        """A server none of the sources lists any more. For the selected one, only plex.tv's list
+        (with the account signed in) means the account no longer has it: that's gone - see
+        onSelectedServerGone(). Any other way of losing it - a GDM broadcast that went unanswered
+        once, a manual entry removed, signing out - keeps it selected, offline, and retested; the
+        selection is never cleared under the UI, which can't survive having none."""
+        if server == self.selectedServer:
+            if source != plexresource.ResourceConnection.SOURCE_MYPLEX or not plexapp.ACCOUNT.isSignedIn:
+                util.LOG("The selected server {0} is no longer listed by {1}, keeping it as offline",
+                         repr(server.name), source)
+                self.setServerOnline(server, False)
+                return
+
         del self.serversByUuid[server.uuid]
 
         self.trigger('remove:server')
 
         if server == self.selectedServer:
-            util.LOG("The selected server went away")
-            self.setSelectedServer(None, force=True)
+            self.onSelectedServerGone(server)
 
         if server == self.transcodeServer:
             util.LOG("The selected transcode server went away")
@@ -141,6 +167,27 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         if server == self.channelServer:
             util.LOG("The selected channel server went away")
             self.channelServer = None
+
+    def onSelectedServerGone(self, server):
+        """plex.tv no longer lists the selected server: the account doesn't have it any more
+        (removed, or the share revoked), so it won't be back - unlike an offline one, it isn't
+        retested. Switches to the best server that answers, saying so ('gone:selectedServer',
+        server=, replacement=), or with none keeps the gone one selected until the user picks
+        another (the UI can't survive having none)."""
+        util.LOG("The selected server {0} is no longer on this account", repr(server.name))
+        server.gone = True
+        self.cancelOfflineRetry()
+        with self._stateLock:
+            server.offline = True
+
+        replacement = None
+        for candidate in self.getServers():
+            if candidate.isReachable() and self.compareServers(replacement, candidate) < 0:
+                replacement = candidate
+
+        self.trigger('gone:selectedServer', server=server, replacement=replacement)
+        if replacement:
+            self.setSelectedServer(replacement, force=True)
 
     def updateFromConnectionType(self, servers, source):
         self.markDevicesAsRefreshing()
@@ -182,6 +229,18 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             existing.merge(server)
             util.DEBUG_LOG("Merged {0}", repr(server.name))
             return existing
+        elif self.selectedServer is not None and self.selectedServer.gone and self.selectedServer.uuid == server.uuid:
+            # The gone server is still selected (nothing else answered) and plex.tv lists it again
+            # (a share restored): take that same object back. A new one beside it would read as
+            # "already selected" to setSelectedServer() (it compares uuid and owner), so it could
+            # never be picked.
+            existing = self.selectedServer
+            existing.gone = False
+            existing.merge(server)
+            self.serversByUuid[server.uuid] = existing
+            util.LOG("The selected server {0} is back on this account", repr(server.name))
+            self.trigger("new:server", server=existing)
+            return existing
         else:
             self.serversByUuid[server.uuid] = server
             util.DEBUG_LOG("Added new server {0}", repr(server.name))
@@ -203,7 +262,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
             util.DEBUG_LOG("Server {0} has no more connections - removing", repr(server.name))
             # self.notifyAboutDevice(server, False)
-            self.removeServer(server)
+            self.removeServer(server, source)
 
     def updateReachability(self, force=False, preferSearch=False, defer=False):
         # We don't need to test any servers unless we are signed in and authenticated.
@@ -245,12 +304,84 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         if self.deferReachabilityTimer:
             self.deferReachabilityTimer.cancel()
             self.deferReachabilityTimer = None
+        self.cancelOfflineRetry()
 
         for uuid in list(self.serversByUuid.keys()):
             self.serversByUuid[uuid].cancelReachability()
 
+    # Seconds between retests of the selected server while it's offline: the first few soon (a
+    # restart, a Wi-Fi blip), then once a minute for as long as it stays down.
+    OFFLINE_RETRY_DELAYS = (5, 10, 30, 60)
+
+    def setServerOnline(self, server, online):
+        """Records whether a server can be reached and, when that changes, says so: 'online:server'
+        or 'offline:server' (server=). Results arrive on one HTTP thread per connection, hence the
+        lock - only the call that actually changes the state signals."""
+        with self._stateLock:
+            if server.offline != (not online):
+                server.offline = not online
+                changed = True
+            else:
+                changed = False
+
+        if server is self.selectedServer:
+            if online:
+                self.cancelOfflineRetry()
+            elif not self.offlineRetryTimer and not server.gone:
+                # a retest round that ended still offline schedules the next one
+                self.scheduleOfflineRetry()
+
+        if changed:
+            util.LOG("{0} is {1}", repr(server.name), online and "online again" or "offline")
+            self.trigger(online and 'online:server' or 'offline:server', server=server)
+
+    def scheduleOfflineRetry(self):
+        delay = self.OFFLINE_RETRY_DELAYS[min(self.offlineRetryStep, len(self.OFFLINE_RETRY_DELAYS) - 1)]
+        self.offlineRetryStep += 1
+        util.DEBUG_LOG("Retesting {0} in {1}s", repr(self.selectedServer and self.selectedServer.name), delay)
+        self.offlineRetryTimer = plexapp.createTimer(delay * 1000, callback.Callable(self.onOfflineRetryTimer))
+        util.APP.addTimer(self.offlineRetryTimer)
+
+    def cancelOfflineRetry(self):
+        """Stops retesting (the server is back, another was selected, or the device is going to
+        sleep) and starts the delays from the beginning next time."""
+        if self.offlineRetryTimer:
+            self.offlineRetryTimer.cancel()
+            self.offlineRetryTimer = None
+        self.offlineRetryStep = 0
+
+    def onOfflineRetryTimer(self):
+        self.offlineRetryTimer = None
+        server = self.selectedServer
+        if not server or not server.offline:
+            return
+
+        if server.gone:
+            return  # off the account: retesting can't bring it back (onSelectedServerGone())
+
+        if not server.connections:
+            # dropped by a source other than plex.tv (see removeServer()): only a fresh list -
+            # discovery included - can bring its connections back
+            util.LOG("Offline server {0} has no connections, asking for the server lists again", repr(server.name))
+            plexapp.refreshResources(True)
+        else:
+            util.LOG("Retesting offline server {0}", repr(server.name))
+            server.resetLastTest()
+            server.updateReachability(True)
+
+        if server.pendingReachabilityRequests <= 0 and server.offline and not self.offlineRetryTimer:
+            # nothing got started, so no round will end to schedule the next try
+            self.scheduleOfflineRetry()
+
     def updateReachabilityResult(self, server, reachable=False):
-        searching = not self.selectedServer and self.searchContext
+        searching = not self.selectedServer and self.searchContext and self.searchContext.active
+
+        if reachable:
+            self.setServerOnline(server, True)
+        elif server.pendingReachabilityRequests <= 0:
+            # Offline only once the round has settled: a single connection's failure (and the
+            # active connection's own retest) can come in while the rest are still being tried.
+            self.setServerOnline(server, False)
 
         if reachable:
             # If we're in the middle of a search for our selected server, see if
@@ -271,9 +402,8 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             if searching and server.uuid == self.searchContext.preferredServer and server.pendingReachabilityRequests <= 0:
                 self.searchContext.preferredServer = None
 
-            if server == self.selectedServer:
-                util.LOG("Selected server is not reachable")
-                self.setSelectedServer(None, True)
+            # The selected server stays selected while unreachable (it's offline - see
+            # setServerOnline()); clearing it, as this once did, left the UI with no server.
 
             if server == self.transcodeServer:
                 util.LOG("The selected transcode server is not reachable")
@@ -289,7 +419,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
     def checkSelectedServerSearch(self, skip_preferred=False, skip_owned=False):
         if self.selectedServer:
             return self.selectedServer
-        elif self.searchContext:
+        elif self.searchContext and self.searchContext.active:
             # If we're still waiting on the resources response then there's no
             # reason to settle, so don't even iterate over our servers.
 
@@ -543,7 +673,9 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         self.searchContext = SearchContext({
             'bestServer': None,
             'preferredServer': pServ,
-            'waitingForResources': plexapp.ACCOUNT.isSignedIn
+            'waitingForResources': plexapp.ACCOUNT.isSignedIn,
+            # until a server is selected (setSelectedServer())
+            'active': True
         })
 
         util.LOG("Starting selected server search, hoping for {0}", self.searchContext.preferredServer)

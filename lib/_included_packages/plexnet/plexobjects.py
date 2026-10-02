@@ -36,6 +36,10 @@ def registerLibFactory(ftype):
     return wrap
 
 
+class NoAnswer(Exception):
+    """reload(): the server gave no answer at all (unreachable)."""
+
+
 class PlexValue(six.text_type):
     __slots__ = ("parent", "NA")
 
@@ -345,13 +349,17 @@ class PlexObject(Checks):
                                              params=kwargs)
                 else:
                     data = self.server.query(self.key, params=kwargs)
+                if data is None:
+                    # no answer - query() has logged why, and an indexing traceback adds nothing
+                    raise NoAnswer
                 data = data[0]
                 self._reloaded = True
                 self.reloadFailed = False
             except Exception as e:
-                import traceback
-                traceback.print_exc()
-                util.ERROR(err=e)
+                if not isinstance(e, NoAnswer):
+                    import traceback
+                    traceback.print_exc()
+                    util.ERROR(err=e)
                 self.reloadFailed = True
                 self.initpath = self.key
                 self.clearCache()

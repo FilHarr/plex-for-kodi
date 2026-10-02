@@ -1563,6 +1563,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
              self._postedHandler('displayServerAndUser', self.displayServerAndUser)),
             (plexapp.util.APP, 'change:selectedServer',
              self._postedHandler('onSelectedServerChange', self.onSelectedServerChange)),
+            (plexapp.SERVERMANAGER, 'offline:server', self._postedHandler('onServerOffline', self.onServerOffline)),
+            (plexapp.SERVERMANAGER, 'online:server', self._postedHandler('onServerOnline', self.onServerOnline)),
+            (plexapp.SERVERMANAGER, 'gone:selectedServer',
+             self._postedHandler('onSelectedServerGone', self.onSelectedServerGone)),
         )
         for emitter, signal, handler in self._serverSignalHandlers:
             emitter.on(signal, handler)
@@ -1728,6 +1732,42 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 return
         else:
             self.onNewServer()
+
+    def onServerOffline(self, server=None, **kwargs):
+        """The selected server stopped answering: it stays selected (plexnet retests it, backing
+        off) and the sidebar shows it as unreachable. Opening the server list retests at once.
+        Interim - the libraries-from-any-server sidebar replaces this with per-library state."""
+        if server is None or server is not plexapp.SERVERMANAGER.selectedServer:
+            return
+        self.displayServerAndUser()
+        util.showNotification(T(35125, '{0} is unavailable. Retrying...').format(server.name), time_ms=5000)
+
+    def onSelectedServerGone(self, server=None, replacement=None, **kwargs):
+        """plex.tv no longer lists the selected server: the account doesn't have it any more. With
+        a replacement, plexnet has already switched to it (change:selectedServer follows and
+        refreshes as for any switch); with none, it stays selected, shown unreachable, until the
+        user picks another."""
+        if server is None:
+            return
+        if replacement is not None:
+            message = T(35127, '{0} is no longer available to this account. Switched to {1}.').format(
+                server.name, replacement.name)
+        else:
+            self.displayServerAndUser()
+            message = T(35128, '{0} is no longer available to this account. Choose another server.').format(
+                server.name)
+        util.showNotification(message, time_ms=8000)
+
+    def onServerOnline(self, server=None, **kwargs):
+        """The selected server answers again: show it so, and reload what's on screen - its rows
+        came back empty while it was gone. Not with a screen chain open on top (the item screens
+        handle their own failed loads), and only the section's own view is reloaded, in place."""
+        if server is None or server is not plexapp.SERVERMANAGER.selectedServer:
+            return
+        self.displayServerAndUser()
+        util.showNotification(T(35126, '{0} is back').format(server.name), time_ms=3000)
+        if not self._backStack and not self._shuttingDown:
+            self.openSection(self.section, force=True, fresh=False)
 
     def onSelectedServerChange(self, **kwargs):
         if self.serverRefresh():
@@ -3031,7 +3071,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                                                                        thumb=plexapp.ACCOUNT.thumb))
         self.setProperty('user.avatar.letter', title[0].upper())
 
-        if plexapp.SERVERMANAGER.selectedServer:
+        if plexapp.SERVERMANAGER.selectedServer and plexapp.SERVERMANAGER.selectedServer.offline:
+            # still selected, but not answering (PlexServerManager.setServerOnline())
+            self.setProperty('server.name', plexapp.SERVERMANAGER.selectedServer.name)
+            self.setProperty('server.icon', 'script.plex/home/device/error.png')
+            self.setProperty('server.iconmod', '')
+            self.setProperty('server.iconmod2', '')
+        elif plexapp.SERVERMANAGER.selectedServer:
             self.setProperty('server.name', plexapp.SERVERMANAGER.selectedServer.name)
             self.setProperty('server.icon', 'script.plex/home/device/plex.png')
             self.setProperty('server.iconmod',

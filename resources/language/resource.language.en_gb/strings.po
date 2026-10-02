@@ -3640,3 +3640,19 @@ msgstr ""
 msgctxt "#35124"
 msgid "Update now"
 msgstr ""
+
+msgctxt "#35125"
+msgid "{0} is unavailable. Retrying..."
+msgstr ""
+
+msgctxt "#35126"
+msgid "{0} is back"
+msgstr ""
+
+msgctxt "#35127"
+msgid "{0} is no longer available to this account. Switched to {1}."
+msgstr ""
+
+msgctxt "#35128"
+msgid "{0} is no longer available to this account. Choose another server."
+msgstr ""
