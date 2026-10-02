@@ -194,7 +194,8 @@ class GDMDiscovery(object):
             return
 
         from . import plexserver
-        conn = plexconnection.PlexConnection(plexconnection.PlexConnection.SOURCE_DISCOVERED, "http://" + hostname + ":" + port, True, None, bool(secureHost))
+        conn = plexconnection.PlexConnection(plexconnection.PlexConnection.SOURCE_DISCOVERED,
+                                             "http://" + util.hostPort(hostname, port), True, None, bool(secureHost))
         server = plexserver.createPlexServerForConnection(conn)
         server.uuid = machineID
         server.name = name

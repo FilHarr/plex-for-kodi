@@ -399,7 +399,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
                     # manually added IPs.
                     try:
                         pUrl = six.moves.urllib.parse.urlparse(address)
-                        address = 'http://{0}:{1}'.format(util.parsePlexDirectHost(pUrl.hostname), pUrl.port)
+                        address = 'http://' + util.hostPort(util.parsePlexDirectHost(pUrl.hostname), pUrl.port)
                         util.DEBUG_LOG("[LOCAL] synthesized {0} from {1}", address, conn['address'])
                     except:
                         continue
@@ -689,7 +689,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
             proto = "http"
             port = conn.port or "32400"
-            serverAddress = "{0}://{1}:{2}".format(proto, conn.connection, port)
+            serverAddress = "{0}://{1}".format(proto, util.hostPort(conn.connection, port))
 
             request = http.HttpRequest(serverAddress + "/identity", retries=0)
             context = request.createRequestContext("manual_connections",

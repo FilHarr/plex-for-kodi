@@ -40,7 +40,9 @@ def probe(ip, port, token=None):
     /identity answers unauthenticated; the root endpoint tells us whether the
     given token (or no token) is enough for actual library access.
     """
-    base = 'http://{0}:{1}'.format(ip, port)
+    from plexnet import util as pnUtil
+
+    base = 'http://' + pnUtil.hostPort(ip, port)
     try:
         r = requests.get(base + '/identity', timeout=PROBE_TIMEOUT)
         if r.status_code != 200:

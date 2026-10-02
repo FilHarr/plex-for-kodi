@@ -486,7 +486,8 @@ class MyPlexAccount(object):
         self.isSecure = False
         self.isExpired = expired
 
-        # Clear the saved resources
+        # Clear the saved resources (both endpoints' caches - see myplexmanager.cachedResources())
+        util.INTERFACE.clearRegistry("mpaResources2", "xml_cache")
         util.INTERFACE.clearRegistry("mpaResources", "xml_cache")
 
         # Clear harvested local mode user tokens

@@ -10,6 +10,10 @@ from . import callback
 from . import util
 
 
+RESOURCES_CACHE = "mpaResources2"         # /api/v2/resources
+LEGACY_RESOURCES_CACHE = "mpaResources"   # /pms/resources, before 2026-10
+
+
 class MyPlexManager(object):
     gotResources = False
 
@@ -34,14 +38,25 @@ class MyPlexManager(object):
         if force:
             plexapp.SERVERMANAGER.resetLastTest()
 
-        request = myplexrequest.MyPlexRequest("/pms/resources")
+        # v2: the older /pms/resources ignores includeIPv6 (checked 2026-10-02), so servers only
+        # reachable over IPv6 away from home looked like they had no remote connection at all
+        request = myplexrequest.MyPlexRequest("/api/v2/resources")
         context = request.createRequestContext("resources", callback.Callable(self.onResourcesResponse),
                                                timeout=util.PLEXTV_TIMEOUT)
 
         if plexapp.ACCOUNT.isSecure:
             request.addParam("includeHttps", "1")
+        request.addParam("includeIPv6", "1")
 
         util.APP.startRequest(request, context)
+
+    @staticmethod
+    def cachedResources():
+        """The last good resources answer: the v2 one, or else one the older endpoint left. v2
+        answers get their own key, so an older build never reads one (it would find no
+        connections in it)."""
+        return (util.INTERFACE.getRegistry(RESOURCES_CACHE, None, "xml_cache") or
+                util.INTERFACE.getRegistry(LEGACY_RESOURCES_CACHE, None, "xml_cache"))
 
     def onResourcesResponse(self, request, response, context):
         servers = []
@@ -50,11 +65,11 @@ class MyPlexManager(object):
 
         # Save the last successful response to cache
         if response.isSuccess() and response.event:
-            util.INTERFACE.setRegistry("mpaResources", response.event.text.encode('utf-8'), "xml_cache")
+            util.INTERFACE.setRegistry(RESOURCES_CACHE, response.event.text.encode('utf-8'), "xml_cache")
             util.DEBUG_LOG("Saved resources response to registry")
         # Load the last successful response from cache
-        elif util.INTERFACE.getRegistry("mpaResources", None, "xml_cache"):
-            data = ElementTree.fromstring(util.INTERFACE.getRegistry("mpaResources", None, "xml_cache"))
+        elif self.cachedResources():
+            data = ElementTree.fromstring(self.cachedResources())
             response.parseFakeXMLResponse(data)
             util.DEBUG_LOG("Using cached resources")
         else:

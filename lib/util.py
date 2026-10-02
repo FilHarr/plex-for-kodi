@@ -1186,9 +1186,11 @@ def dumpSettings():
             all_settings.remove(s)
             continue
 
-    remove_keys = ("xml_cache.mpaResources",)
+    # the cached plex.tv resources: large, and full of access tokens (v2 and older endpoint)
+    remove_keys = ("xml_cache.mpaResources2", "xml_cache.mpaResources")
     for key in remove_keys:
-        all_settings.remove(key)
+        if key in all_settings:
+            all_settings.remove(key)
 
     def decode(v):
         try:

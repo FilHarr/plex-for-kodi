@@ -346,6 +346,15 @@ def parsePlexDirectHost(hostname):
     return v6 and base.replace("-", ":") or base.replace("-", ".")
 
 
+def hostPort(host, port):
+    """host:port as a URL wants it: an IPv6 address goes in brackets, or its own colons would read
+    as the port separator."""
+    host = str(host)
+    if ':' in host and not host.startswith('['):
+        host = '[{0}]'.format(host)
+    return '{0}:{1}'.format(host, port)
+
+
 # stolen from icmplib
 def resolve(name, family=None, use_orig=False):
     '''

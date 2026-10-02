@@ -85,7 +85,9 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         if data is None:
             return
 
-        self.owner = data.attrib.get('sourceTitle')
+        # or None: /api/v2/resources gives your own servers an empty sourceTitle where the older
+        # endpoint left it out, and owner takes part in __eq__
+        self.owner = data.attrib.get('sourceTitle') or None
         self.owned = data.attrib.get('owned') == '1'
         self.synced = data.attrib.get('synced') == '1'
         self.sameNetwork = data.attrib.get('publicAddressMatches') == '1'

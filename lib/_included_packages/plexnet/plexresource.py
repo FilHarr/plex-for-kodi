@@ -35,13 +35,17 @@ class PlexResource(object):
 
         hasSecureConn = False
 
-        for conn in data.findall('Connection'):
+        # /api/v2/resources nests them (<resource><connections><connection>); the older
+        # /pms/resources lists them directly (<Device><Connection>), and the cache may hold either
+        conns = data.findall('Connection') or data.findall('connections/connection')
+
+        for conn in conns:
             if conn.attrib.get('protocol') == "https":
                 hasSecureConn = True
                 break
 
         addLocalConsFound = []
-        for conn in data.findall('Connection'):
+        for conn in conns:
             connection = plexconnection.PlexConnection(
                 plexconnection.PlexConnection.SOURCE_MYPLEX,
                 conn.attrib.get('uri'),
@@ -69,7 +73,7 @@ class PlexResource(object):
                 self.connections.append(
                     plexconnection.PlexConnection(
                         plexconnection.PlexConnection.SOURCE_MYPLEX,
-                        "http://{0}:{1}".format(conn.attrib.get('address'), conn.attrib.get('port')),
+                        "http://" + util.hostPort(conn.attrib.get('address'), conn.attrib.get('port')),
                         conn.attrib.get('local') == '1',
                         self.accessToken,
                         True
@@ -82,16 +86,16 @@ class PlexResource(object):
             if not port:
                 continue
 
-            address = "http://" + ip + ":" + str(port)
-            for conn in self.connections:
-                if conn.address == address:
-                    continue
+            address = "http://" + util.hostPort(ip, port)
+            # (this was a `continue` inside the loop below, which skipped nothing)
+            if any(conn.address == address for conn in self.connections):
+                continue
 
             util.DEBUG_LOG(
                 "Secure connection {0} has a locally reachable IP, add it to the checklist".format(origAddress))
             lcon = plexconnection.PlexConnection(
                 plexconnection.PlexConnection.SOURCE_DISCOVERED,
-                "http://" + ip + ":" + str(port),
+                address,
                 True,
                 self.accessToken,
                 not util.LOCAL_OVER_SECURE,
@@ -132,7 +136,7 @@ class ResourceConnection(plexobjects.PlexObject):
 
     @property
     def http_uri(self):
-        return 'http://{0}:{1}'.format(self.address, self.port)
+        return 'http://' + util.hostPort(self.address, self.port)
 
     @property
     def URL(self):

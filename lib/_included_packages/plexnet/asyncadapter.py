@@ -46,9 +46,11 @@ CONNECTED = (errno.EISCONN, WIN_EISCONN)
 CONNECTING = (errno.EINPROGRESS, errno.EWOULDBLOCK, errno.EALREADY, WIN_EWOULDBLOCK, WIN_EALREADY)
 # how long each wait for the connect lasts before checking for a cancel or the deadline
 CONNECT_POLL = 0.05
-# connect failures that are already an answer (see isDefinitiveConnectFailure())
+# connect failures that are already an answer (see isDefinitiveConnectFailure()): refused, no route
+# to the host or network, and - on a device without IPv6 - an address or family it can't use
 DEFINITIVE_CONNECT_ERRNOS = frozenset((errno.ECONNREFUSED, errno.EHOSTUNREACH, errno.ENETUNREACH,
-                                       10061, WIN_EHOSTUNREACH, 10051))
+                                       errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT,
+                                       10061, WIN_EHOSTUNREACH, 10051, 10049, 10047))
 
 MAX_RETRIES = 3
 # of those, how many may go to connect timeouts
