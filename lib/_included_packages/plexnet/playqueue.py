@@ -225,6 +225,7 @@ class PlayQueue(signalsmixin.SignalsMixin):
 
         self.canceled = False
         self.responded = False
+        self.failed = False
         self.initialized = False
 
         self.composite = plexobjects.PlexValue('', parent=self)
@@ -247,7 +248,7 @@ class PlayQueue(signalsmixin.SignalsMixin):
         start = time.time()
         timeout = util.TIMEOUT
         util.DEBUG_LOG('Waiting for playQueue to initialize...')
-        while not self.canceled and not self.initialized:
+        while not self.canceled and not self.initialized and not self.failed:
             if not self.responded and time.time() - start > timeout:
                 util.DEBUG_LOG('PlayQueue timed out wating for initialization')
                 return self.initialized
@@ -271,6 +272,7 @@ class PlayQueue(signalsmixin.SignalsMixin):
 
         if wait:
             self.responded = False
+            self.failed = False
             self.initialized = False
         # We refresh our play queue if the caller insists or if we only have a
         # portion of our play queue loaded. In particular, this means that we don't
@@ -523,6 +525,12 @@ class PlayQueue(signalsmixin.SignalsMixin):
 
             if itemsChanged:
                 self.trigger("items.changed", just_added=justAdded)
+        else:
+            # An error status, or no answer at all, is still a response: without this,
+            # waitForInitialization() would see responded set and spin until canceled.
+            util.WARN_LOG('playQueue: {0} request failed (status {1})',
+                          getattr(context, 'requestType', None), response.getStatus())
+            self.failed = True
 
     def windowHolds(self):
         """How many items the window we last asked for can return: 2N+1, measured exactly."""

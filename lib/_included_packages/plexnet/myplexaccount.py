@@ -556,6 +556,10 @@ class MyPlexAccount(object):
         completionCallback from an async request
         """
         if response:
+            if not response.isSuccess():
+                util.DEBUG_LOG("Home users request failed (status {0}), keeping the known list",
+                               response.getStatus())
+                return
             data = response.getBodyXml()
         else:
             xml = request.getToStringWithTimeout(timeout=util.PLEXTV_TIMEOUT)

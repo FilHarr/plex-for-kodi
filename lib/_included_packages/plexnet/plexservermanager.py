@@ -156,6 +156,13 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             self.updateReachability(True, True)
             self.saveState()
 
+    def resourcesUnavailable(self):
+        """plex.tv couldn't give us resources: stop waiting for them and test the servers we
+        already know (stored, discovered, manual) instead."""
+        if self.searchContext:
+            self.searchContext.waitingForResources = False
+        self.updateReachability(True, True)
+
     def updateFromDiscovery(self, server):
         merged = self.mergeServer(server)
 

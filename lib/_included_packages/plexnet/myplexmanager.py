@@ -57,6 +57,13 @@ class MyPlexManager(object):
             data = ElementTree.fromstring(util.INTERFACE.getRegistry("mpaResources", None, "xml_cache"))
             response.parseFakeXMLResponse(data)
             util.DEBUG_LOG("Using cached resources")
+        else:
+            # No answer and nothing cached. Passing an empty list on would strip every plex.tv
+            # connection (and its token) from the servers we already know, so keep them.
+            util.WARN_LOG("No plex.tv resources (status {0}) and none cached, keeping known servers",
+                          response.getStatus())
+            plexapp.SERVERMANAGER.resourcesUnavailable()
+            return
 
         if response.container:
             for resource in response.container:
