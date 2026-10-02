@@ -59,30 +59,32 @@ class PlaybackManager(object):
 
     def __init__(self):
         self.reset()
+        # The handlers are kept so deinit() can hand APP the same objects: off() with a new
+        # lambda (as it used to) matches nothing, so nothing was ever unhooked.
+        self._signalHandlers = []
         # bind settings change signals
         for k, v in ATTR_MAP.items():
             if k in VIRTUAL_ATTRS:
                 continue
-            plexapp.util.APP.on('change:{}'.format(v), lambda **kwargs: self.setGlob(**kwargs))
+            self._hook('change:{}'.format(v), self.setGlob)
 
-        plexapp.util.APP.on('change:selectedServer', lambda **kwargs: self.setServerUUID(**kwargs))
-        plexapp.util.APP.on('change:tempServer', lambda **kwargs: self.setServerUUID(**kwargs))
-        plexapp.util.APP.on("loaded:cached_user", lambda **kwargs: self.setUserID(**kwargs))
-        plexapp.util.APP.on("change:user", lambda **kwargs: self.setUserID(**kwargs))
-        plexapp.util.APP.on('init', lambda **kwargs: self.setUserID(**kwargs))
+        self._hook('change:selectedServer', self.setServerUUID)
+        self._hook('change:tempServer', self.setServerUUID)
+        self._hook("loaded:cached_user", self.setUserID)
+        self._hook("change:user", self.setUserID)
+        self._hook('init', self.setUserID)
+
+    def _hook(self, signal, fn):
+        # wrapped: a slot must take **kwargs, and these don't all
+        handler = lambda **kwargs: fn(**kwargs)
+        plexapp.util.APP.on(signal, handler)
+        self._signalHandlers.append((signal, handler))
 
     def deinit(self):
         # unbind settings change signals
-        for k, v in ATTR_MAP.items():
-            if k in VIRTUAL_ATTRS:
-                continue
-            plexapp.util.APP.off('change:{}'.format(v), lambda **kwargs: self.setGlob(**kwargs))
-
-        plexapp.util.APP.off('change:selectedServer', lambda **kwargs: self.setServerUUID(**kwargs))
-        plexapp.util.APP.off('change:tempServer', lambda **kwargs: self.setServerUUID(**kwargs))
-        plexapp.util.APP.off("loaded:cached_user", lambda **kwargs: self.setUserID(**kwargs))
-        plexapp.util.APP.off("change:user", lambda **kwargs: self.setUserID(**kwargs))
-        plexapp.util.APP.off('init', lambda **kwargs: self.setUserID(**kwargs))
+        for signal, handler in self._signalHandlers:
+            plexapp.util.APP.off(signal, handler)
+        self._signalHandlers = []
 
     def __call__(self, obj, key=None, value=None, kv_dict=None):
         # shouldn't happen

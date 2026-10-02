@@ -367,3 +367,220 @@ class LibraryWindowTest(KodiTestCase):
         self.win.onServerOnline(server=make_server(OSCAR, "Oscar"))
         self.win.openSection.assert_not_called()
         self.assertEqual({}, self.props)
+
+
+class TickTest(KodiTestCase):
+    """LibraryWindow.tick(), sleep and wake - ported from HomeWindow, which took them with it when
+    it was retired (12675d11): the periodic reachability check was a setting that did nothing, and
+    waking did nothing at all. Refreshing hubs is wake-only until rows can be rebound in place."""
+
+    def setUp(self):
+        KodiTestCase.setUp(self)
+        ensure_plex_interface()
+        self.servers = mock.Mock()
+        self.posted = []
+        for patcher in (mock.patch.object(library.plexapp, "SERVERMANAGER", self.servers),
+                        mock.patch.object(library.time, "time", return_value=10000.0)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.win = library.LibraryWindow.__new__(library.LibraryWindow)
+        self.win._shuttingDown = False
+        self.win._ignoreTick = False
+        self.win._lastReachabilityCheck = 10000.0 - library.LibraryWindow.REACHABILITY_CHECK_INTERVAL - 1
+        self.win._backStack = []
+        self.win.contentMode = 'recommended'
+        self.win.section = "the section"
+        self.win.openSection = mock.Mock()
+        self.win._captureRootRestoreState = lambda: {'_restoreHubId': 'movie.recentlyadded'}
+        self.win.postUI = lambda name, fn, args=(), kwargs=None: self.posted.append((name, fn, args))
+        ENV.settings["recheck_server_connections"] = "true"
+
+    def test_it_is_a_whole_cron_receiver(self):
+        # util.CRON calls halfHour() and day() on every receiver as well as tick(); without them
+        # the call fell through MultiWindow.__getattr__() to the view and raised (live, 20:00)
+        self.assertIsInstance(self.win, library.util.CronReceiver)
+        self.assertFalse(self.win.halfHour())
+        self.assertFalse(self.win.day())
+        self.assertIs(library.LibraryWindow.tick, type(self.win).tick)
+
+    def test_the_periodic_check_runs_when_due(self):
+        self.win.tick()
+        self.servers.periodicReachabilityCheck.assert_called_once_with()
+        self.win.tick()  # not again until another interval has passed
+        self.assertEqual(1, self.servers.periodicReachabilityCheck.call_count)
+
+    def test_the_periodic_check_follows_its_setting(self):
+        ENV.settings["recheck_server_connections"] = "false"
+        self.win.tick()
+        self.servers.periodicReachabilityCheck.assert_not_called()
+
+    def test_nothing_ticks_while_paused_or_playing(self):
+        self.win._ignoreTick = True
+        self.win.tick()
+        self.win._ignoreTick = False
+        import xbmc
+        xbmc.Player.playing_video = True
+        self.win.tick()
+        self.servers.periodicReachabilityCheck.assert_not_called()
+
+    def test_the_tick_does_not_refresh_hubs(self):
+        # HomeWindow's 5-minute refresh waits for a rebind-in-place refresh (the plan's Phase 7)
+        self.win._hubsBoundAt = 0.0
+        ENV.cond_visibility["System.IdleTime(60)"] = True
+        self.win.tick()
+        self.assertEqual([], self.posted)
+
+    def test_a_refresh_reloads_the_recommended_view_in_place(self):
+        self.win.refreshLastSection()
+        self.win.openSection.assert_called_once_with("the section", force=True, fresh=False)
+        self.servers.resumeOfflineRetry.assert_called_once_with()
+
+    def test_a_refresh_lands_back_on_the_same_hub_row(self):
+        # the rebuilt view starts on the first row unless told otherwise, as Back tells it
+        seen = []
+        self.win.openSection = mock.Mock(side_effect=lambda *a, **kw: seen.append(self.win._pendingRestoreHubId) or True)
+        self.win.refreshLastSection()
+        self.assertEqual(['movie.recentlyadded'], seen)
+
+    def test_a_declined_refresh_drops_the_pending_row(self):
+        self.win.openSection = mock.Mock(return_value=False)
+        self.win.refreshLastSection()
+        self.assertIsNone(self.win._pendingRestoreHubId)
+
+    def test_a_refresh_leaves_a_grid_a_chain_or_a_video_alone(self):
+        import xbmc
+        for setup in (lambda: setattr(self.win, 'contentMode', 'library'),
+                      lambda: setattr(self.win, '_backStack', [("entry", {})]),
+                      lambda: setattr(xbmc.Player, 'playing_video', True)):
+            self.win.contentMode, self.win._backStack, xbmc.Player.playing_video = 'recommended', [], False
+            setup()
+            self.win.refreshLastSection()
+        self.win.openSection.assert_not_called()
+
+    def test_sleep_pauses_ticks_and_offline_retests(self):
+        self.win._onSleep()
+        self.assertTrue(self.win._ignoreTick)
+        self.servers.cancelOfflineRetry.assert_called_once_with()
+
+    def test_waking_checks_the_server_then_refreshes(self):
+        self.win._ignoreTick = True
+        self.win._afterWake(0)
+        self.servers.periodicReachabilityCheck.assert_called_once_with()
+        self.servers.resumeOfflineRetry.assert_called_once_with()
+        self.assertEqual(['refresh after wake'], [p[0] for p in self.posted])
+
+    def test_waking_can_restart_instead(self):
+        ENV.settings["action_on_wake"] = "restart"
+        self.win._onWake()
+        self.assertEqual([('restart on wake', self.win._closeSessionWithOption, ('restart',))], self.posted)
+
+    def test_waking_waits_on_its_own_thread(self):
+        ENV.settings["action_on_wake"] = "wait_5"
+        with mock.patch.object(library.threading, "Thread") as thread:
+            self.win._onWake()
+        self.assertEqual((5,), thread.call_args[1]["args"])
+        thread.return_value.start.assert_called_once_with()
+
+
+class ResumeRetryTest(ManagerTestCase):
+    def test_resuming_retests_an_offline_selected_server(self):
+        self.select(self.animal)
+        self.round_ended(self.animal, False)
+        self.manager.cancelOfflineRetry()  # gone to sleep
+        self.manager.resumeOfflineRetry()
+        self.assertEqual([5, 5], self.delays())
+
+    def test_resuming_leaves_an_online_or_gone_server_alone(self):
+        self.select(self.animal)
+        self.manager.resumeOfflineRetry()
+        self.animal.offline = self.animal.gone = True
+        self.manager.resumeOfflineRetry()
+        self.assertEqual([], self.delays())
+
+
+class PlaybackManagerSignalsTest(KodiTestCase):
+    def test_deinit_unhooks_everything_it_hooked(self):
+        from lib import playback_utils
+
+        class Emitter(object):
+            def __init__(self):
+                self.hooked = []
+
+            def on(self, signal, handler):
+                self.hooked.append((signal, handler))
+
+            def off(self, signal, handler):
+                self.hooked.remove((signal, handler))
+
+        emitter = Emitter()
+        with mock.patch.object(playback_utils.plexapp.util, "APP", emitter):
+            manager = playback_utils.PlaybackManager()
+            self.assertTrue(emitter.hooked)
+            manager.deinit()
+        self.assertEqual([], emitter.hooked)
+
+
+class UpdatePromptTest(KodiTestCase):
+    """The update checker's questions, answered from LibraryWindow.tick() - HomeWindow's
+    service_responder() went with it in 12675d11, so an update was never offered."""
+
+    def setUp(self):
+        KodiTestCase.setUp(self)
+        ensure_plex_interface()
+        self.props = {}
+        self.posted = []
+        for patcher in (mock.patch.object(library.util, "getGlobalProperty",
+                                          side_effect=lambda key, **kw: self.props.get(key, '')),
+                        mock.patch.object(library.util, "setGlobalProperty",
+                                          side_effect=lambda key, val, **kw: self.props.__setitem__(key, val)),
+                        mock.patch.object(library.util, "waitForConsumption"),
+                        mock.patch.object(library.plexapp, "SERVERMANAGER", mock.Mock())):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.win = library.LibraryWindow.__new__(library.LibraryWindow)
+        self.win._shuttingDown = False
+        self.win._ignoreTick = False
+        self.win._backStack = []
+        self.win._updatePromptPosted = False
+        self.win._updateSourceChanged = None
+        self.win.postUI = lambda name, fn, args=(), kwargs=None: self.posted.append(name)
+        self.win.stopRetryingRequests = mock.Mock()
+        self.win._closeSessionWithOption = mock.Mock()
+
+    def test_an_offered_update_is_asked_about_once(self):
+        self.props['notify_update'] = '1.15.0'
+        self.win.tick()
+        self.win.tick()
+        self.assertEqual(['update available'], self.posted)
+
+    def test_it_waits_while_a_screen_is_open_on_top(self):
+        self.props['notify_update'] = '1.15.0'
+        self.win._backStack = [("entry", {})]
+        self.win.tick()
+        self.assertEqual([], self.posted)
+
+    def answer(self, button):
+        self.props.update(notify_update='1.15.0', update_available='1.15.0')
+        self.win._updatePromptPosted = True
+        with mock.patch.object(library.optionsdialog, "show", return_value=button):
+            self.win._promptUpdate()
+
+    def test_yes_tells_the_checker_and_closes_for_it(self):
+        self.answer(0)
+        self.assertEqual('commence', self.props['update_response'])
+        self.assertEqual('', self.props['notify_update'])
+        self.win._closeSessionWithOption.assert_called_once_with('update')
+        self.win.stopRetryingRequests.assert_called_once_with()
+        self.assertFalse(self.win._updatePromptPosted)
+
+    def test_later_tells_the_checker_and_carries_on(self):
+        self.answer(1)
+        self.assertEqual('cancel', self.props['update_response'])
+        self.win._closeSessionWithOption.assert_not_called()
+        self.assertFalse(self.win._updatePromptPosted)
+
+    def test_a_changed_update_source_is_passed_on(self):
+        self.win._onUpdateSourceChanged(value='beta')
+        self.win.tick()
+        self.assertEqual('beta', self.props['update_source_changed'])
+        self.assertIsNone(self.win._updateSourceChanged)

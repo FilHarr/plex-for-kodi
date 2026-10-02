@@ -21,6 +21,11 @@ from lib.windows import kodigui  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
+try:
+    from unittest import mock
+except ImportError:
+    import mock
+
 
 class Host(object):
     postNav = kodigui.MultiWindow.postNav
@@ -290,14 +295,16 @@ class ServerSignalsTest(KodiTestCase):
 
     def test_handlers_post_instead_of_running_and_unhook_cleanly(self):
         from lib.windows import library
-        manager, app = FakeEmitter(), FakeEmitter()
-        originals = library.plexapp.SERVERMANAGER, library.plexapp.util.APP
-        library.plexapp.SERVERMANAGER, library.plexapp.util.APP = manager, app
+        manager, app, monitor = FakeEmitter(), FakeEmitter(), FakeEmitter()
+        cron = mock.Mock()
+        originals = library.plexapp.SERVERMANAGER, library.plexapp.util.APP, util.MONITOR, util.CRON
+        library.plexapp.SERVERMANAGER, library.plexapp.util.APP, util.MONITOR, util.CRON = manager, app, monitor, cron
         try:
             host = Host()
             calls = []
             for name in ('onNewServer', 'onRemoveServer', 'onReachableServer', 'displayServerAndUser',
-                         'onSelectedServerChange', 'onServerOffline', 'onServerOnline', 'onSelectedServerGone'):
+                         'onSelectedServerChange', 'onServerOffline', 'onServerOnline', 'onSelectedServerGone',
+                         '_onSleep', '_onWake', '_onUpdateSourceChanged'):
                 setattr(host, name, (lambda n: lambda **kw: calls.append((n, kw)))(name))
             host._postedHandler = library.LibraryWindow._postedHandler.__get__(host)
             library.LibraryWindow.hookSignals(host)
@@ -320,11 +327,21 @@ class ServerSignalsTest(KodiTestCase):
                               ('onServerOnline', {'server': 'animal'}),
                               ('onSelectedServerGone', {'server': 'animal', 'replacement': 'oscar'})], calls)
 
+            # sleep and wake: pausing runs in place (it only sets flags), and waking threads its own
+            # wait before it posts the refresh; nothing hooks the screensaver
+            monitor.trigger('system.sleep')
+            monitor.trigger('system.wakeup')
+            self.assertEqual(['_onSleep', '_onWake'], [c[0] for c in calls[-2:]])
+            self.assertEqual(['system.sleep', 'system.wakeup'], sorted(monitor.handlers))
+            cron.registerReceiver.assert_called_once_with(host)
+
             library.LibraryWindow.unhookSignals(host)
             self.assertEqual([], [h for hs in manager.handlers.values() for h in hs])
             self.assertEqual([], [h for hs in app.handlers.values() for h in hs])
+            self.assertEqual([], [h for hs in monitor.handlers.values() for h in hs])
+            cron.cancelReceiver.assert_called_once_with(host)
         finally:
-            library.plexapp.SERVERMANAGER, library.plexapp.util.APP = originals
+            library.plexapp.SERVERMANAGER, library.plexapp.util.APP, util.MONITOR, util.CRON = originals
 
 
 class ServerListItemReachabilityTest(KodiTestCase):

@@ -3569,8 +3569,8 @@ msgid "Periodically check server connections"
 msgstr "Server-Verbindungen regelmäßig prüfen"
 
 msgctxt "#34101"
-msgid "Re-test server connection reachability every 10 minutes to detect network changes (e.g. WiFi to mobile). Useful on mobile devices. Default: Off"
-msgstr "Erreichbarkeit der Server-Verbindungen alle 10 Minuten erneut prüfen, um Netzwerkänderungen zu erkennen (z.B. WLAN zu Mobilfunk). Nützlich auf mobilen Geräten. Standard: Aus"
+msgid "Re-test server connection reachability every 10 minutes to detect network changes (e.g. WiFi to mobile). Default: On"
+msgstr "Erreichbarkeit der Server-Verbindungen alle 10 Minuten erneut prüfen, um Netzwerkänderungen zu erkennen (z.B. WLAN zu Mobilfunk). Standard: An"
 
 msgctxt "#35019"
 msgid "Go local"

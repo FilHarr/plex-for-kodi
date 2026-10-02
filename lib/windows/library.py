@@ -244,7 +244,10 @@ def logHomeReset(window, note=None):
                    ' - ' + note if note else '')
 
 
-class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin, windowutils.SidebarMixin, CommonMixin):
+# util.CronReceiver: tick() (see there) - and its halfHour()/day() no-ops, which util.CRON calls on
+# every receiver too; without them the call fell through MultiWindow.__getattr__() to the view.
+class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin, windowutils.SidebarMixin, CommonMixin,
+                    util.CronReceiver):
     bgXML = 'script-plex-blank.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -1567,9 +1570,27 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             (plexapp.SERVERMANAGER, 'online:server', self._postedHandler('onServerOnline', self.onServerOnline)),
             (plexapp.SERVERMANAGER, 'gone:selectedServer',
              self._postedHandler('onSelectedServerGone', self.onSelectedServerGone)),
+            # Sleep and wake (monitor.py), ported from HomeWindow, which went with it in 12675d11.
+            # Pausing only sets flags, so it runs where it's signalled; waking waits on its own
+            # thread (_onWake()) and posts the refresh. HomeWindow also refreshed when a
+            # screensaver or a blanked display ended (and every 5 minutes); those wait for a
+            # refresh that rebinds rows in place rather than rebuilding the view - see
+            # refreshLastSection().
+            (util.MONITOR, 'system.sleep', self._onSleep),
+            (util.MONITOR, 'system.wakeup', self._onWake),
+            # Settings' update source; passed on to the update checker by tick()
+            (plexapp.util.APP, 'change:update_source', self._onUpdateSourceChanged),
         )
         for emitter, signal, handler in self._serverSignalHandlers:
             emitter.on(signal, handler)
+
+        # tick() - the update checker's hand-offs and the periodic reachability check
+        self._ignoreTick = False
+        self._lastReachabilityCheck = time.time()
+        self._updateSourceChanged = None
+        self._updatePromptPosted = False
+        if util.CRON:
+            util.CRON.registerReceiver(self)
 
     def _postedHandler(self, name, fn):
         """A signal handler that posts fn, with the signal's arguments, to the main thread."""
@@ -1581,6 +1602,143 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         for emitter, signal, handler in getattr(self, '_serverSignalHandlers', ()):
             emitter.off(signal, handler)
         self._serverSignalHandlers = ()
+        if util.CRON:
+            util.CRON.cancelReceiver(self)
+
+    # The recheck_server_connections setting's interval. (Was periodic_reachability_check, renamed
+    # when its default turned on: Kodi keeps a stored value across a default change, and every
+    # install had "false" stored under the old id.)
+    REACHABILITY_CHECK_INTERVAL = 600
+
+    def tick(self):
+        """util.CRON, about once a second, on its own thread - root only (hookSignals()). Ported
+        from HomeWindow.tick(), which went with it in 12675d11, leaving the periodic reachability
+        check a setting that did nothing. HomeWindow's tick also refreshed Home's hubs every 5
+        minutes; that waits for a refresh that rebinds rows in place (see refreshLastSection())."""
+        if self._shuttingDown or self.__dict__.get('_ignoreTick'):
+            return
+
+        self._answerUpdateChecker()
+
+        if xbmc.Player().isPlayingVideo():
+            return
+
+        now = time.time()
+        if (util.getSetting('recheck_server_connections', True) and
+                now - self.__dict__.get('_lastReachabilityCheck', now) > self.REACHABILITY_CHECK_INTERVAL):
+            self._lastReachabilityCheck = now
+            plexapp.SERVERMANAGER.periodicReachabilityCheck()
+
+    def _onUpdateSourceChanged(self, value=None, **kwargs):
+        self._updateSourceChanged = value
+
+    def _answerUpdateChecker(self):
+        """The update checker (update_checker.py, a service) talks to the UI through global
+        properties: a changed update source goes to it as update_source_changed, and when it finds
+        an update it sets notify_update and waits for update_response. HomeWindow's tick did both
+        (its service_responder()); both went with it in 12675d11, so an update was never offered -
+        the checker gave up with "No user response". The question is asked on the main thread,
+        and only with no screen open on top, as HomeWindow only asked on Home."""
+        source = self.__dict__.get('_updateSourceChanged')
+        if source:
+            self._updateSourceChanged = None
+            util.setGlobalProperty('update_source_changed', source, wait=True)
+
+        if (util.getGlobalProperty('notify_update') and not self.__dict__.get('_updatePromptPosted')
+                and not self._backStack):
+            self._updatePromptPosted = True
+            self.postUI('update available', self._promptUpdate)
+
+    def _promptUpdate(self):
+        """Ported from HomeWindow.service_responder()/doUpdate() (develop_kodi21 home.py)."""
+        try:
+            if self._shuttingDown or self._backStack or not util.getGlobalProperty('notify_update'):
+                return
+            is_downgrade = bool(util.getGlobalProperty('update_is_downgrade', consume=True))
+            button = optionsdialog.show(
+                T(33670, 'Update available'),
+                T(33671, 'Current: {current_version}\nNew: {new_version}\n\nChangelog:\n{changelog}').format(
+                    current_version=util.ADDON.getAddonInfo('version'),
+                    new_version=util.getGlobalProperty('update_available'),
+                    changelog=util.getGlobalProperty('update_changelog'),
+                ),
+                T(33683, 'Exit, download and install'),
+                T(33684, 'Later') if not is_downgrade else T(32329, 'No'),
+                delay_buttons=1.8, big=True, close_timeout=3600
+            )
+            resp = "commence" if button == 0 else "cancel"
+            util.setGlobalProperty('update_response', resp, wait=True)
+            util.setGlobalProperty('notify_update', '', wait=True)
+
+            if resp == "commence":
+                # wait for the checker to take the answer before closing
+                try:
+                    util.waitForConsumption('update_response', timeout=200)
+                except Exception:
+                    pass
+                util.LOG("Library: closing for the update")
+                self._ignoreTick = True
+                self.stopRetryingRequests()
+                self._closeSessionWithOption('update')
+        finally:
+            self._updatePromptPosted = False
+
+    def _onSleep(self, *args, **kwargs):
+        """System sleep: no reachability checks or offline retests until wake (_onWake())."""
+        util.LOG("Library: system sleep, pausing updates")
+        self._ignoreTick = True
+        plexapp.SERVERMANAGER.cancelOfflineRetry()
+
+    def _onWake(self, *args, **kwargs):
+        """System wake: wait as action_on_wake says - the network takes a moment to come back, and
+        testing at once would only put the server offline - then retest the server and refresh;
+        or restart, if so set. The wait runs on its own thread: neither the notification thread
+        nor the UI loop should block on it."""
+        if self._shuttingDown:
+            return
+        action = util.getSetting('action_on_wake', util.altSeekRecommended and 'wait_5' or 'wait_1')
+        util.LOG("Library: wake, action: {0}", action)
+        if action == 'restart':
+            self.postUI('restart on wake', self._closeSessionWithOption, args=('restart',))
+            return
+        seconds = int(action.split('_')[1]) if action.startswith('wait_') else 0
+        threading.Thread(target=self._afterWake, args=(seconds,), name='LIBRARY-WAKE').start()
+
+    def _afterWake(self, seconds):
+        if seconds:
+            with busy.ProgressDialog(T(33073, 'Wait after wakeup'), T(33074, 'Waiting {} second(s)').format(seconds)) as pd:
+                waited = 0
+                while waited < seconds:
+                    if util.MONITOR.waitForAbort(0.5):
+                        return
+                    waited += 0.5
+                    pd.update(int(waited * 100 / seconds))
+        if self._shuttingDown:
+            return
+        self._lastReachabilityCheck = time.time()
+        plexapp.SERVERMANAGER.periodicReachabilityCheck()
+        plexapp.SERVERMANAGER.resumeOfflineRetry()
+        self.postUI('refresh after wake', self.refreshLastSection)
+
+    def refreshLastSection(self, *args, **kwargs):
+        """Reload the section's Recommended view after waking from sleep - its hubs were fetched
+        before it, and Continue Watching, On Deck or Recently Added may well have moved on since.
+        Rebuilt by openSection() (the window stays): this view has no refresh that rebinds rows
+        in place like HomeWindow's _bindAllHubSlots() yet, so until it has, wake is the only
+        trigger (HomeWindow's screensaver/blank-display/5-minute ones wait for it - see the plan's
+        Phase 7). Lands back on the same hub row, as Back does, and each row keeps its item
+        position (fresh=False). Not with a screen chain open, a library grid showing (its scroll
+        position would be lost) or a video playing."""
+        self._ignoreTick = False
+        plexapp.SERVERMANAGER.resumeOfflineRetry()
+        if (self._shuttingDown or self._backStack or self.contentMode != 'recommended' or
+                xbmc.Player().isPlayingVideo()):
+            return
+        util.LOG("Library: refreshing {0} after wake/idle", self.section)
+        # without this the rebuilt view starts on the first row (_recommendedHubsCallback())
+        self._pendingRestoreHubId = self._captureRootRestoreState().get('_restoreHubId')
+        if not self.openSection(self.section, force=True, fresh=False):
+            self._pendingRestoreHubId = None
 
     def showServers(self, from_refresh=False, mouse=False):
         """Ported from HomeWindow.showServers() (home.py) - see quiet-orbiting-heron.md's Cold

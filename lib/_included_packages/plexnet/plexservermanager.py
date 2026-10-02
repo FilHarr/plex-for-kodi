@@ -350,6 +350,13 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             self.offlineRetryTimer = None
         self.offlineRetryStep = 0
 
+    def resumeOfflineRetry(self):
+        """Back from sleep or a screensaver (which cancel the retests): retest the selected server
+        again if it's still offline."""
+        server = self.selectedServer
+        if server and server.offline and not server.gone and not self.offlineRetryTimer:
+            self.scheduleOfflineRetry()
+
     def onOfflineRetryTimer(self):
         self.offlineRetryTimer = None
         server = self.selectedServer
@@ -654,7 +661,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
             if self.transcodeServer:
                 transcodeTypeString = transcodeType or ''
-                util.LOG("Found a better {0} transcode server than {1}, using: {2}", transcodeTypeString, self.selectedserver, self.transcodeServer)
+                util.LOG("Found a better {0} transcode server than {1}, using: {2}", transcodeTypeString, self.selectedServer, self.transcodeServer)
                 return self.transcodeServer
 
         return self.selectedServer
@@ -750,7 +757,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
     def periodicReachabilityCheck(self):
         """Re-test reachability on the selected server to detect network changes (e.g. WiFi -> mobile)."""
-        if not plexapp.ACCOUNT.isAuthenticated or not self.selectedServer:
+        if not plexapp.ACCOUNT.isAuthenticated or not self.selectedServer or self.selectedServer.gone:
             return
 
         server = self.selectedServer
@@ -787,24 +794,11 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         plexapp.refreshResources(True)
 
     def onManualConnectionChange(self, value=None):
-        # Clear all manual connections on change. We will keep the selected
-        # server around temporarily if it's a manual connection regardless
-        # if it's been removed.
-
-        # Remember the current server in case it's removed
-        server = self.getSelectedServer()
-        activeConn = []
-        if server and server.activeConnection:
-            activeConn.append(server.activeConnection)
-
-        # Clear all manual connections
+        # Clear all manual connections on change. A selected server that only had a manual
+        # connection isn't unselected meanwhile: removeServer() keeps it, offline. (This used to
+        # try to put such a server back itself, reading .sources off a list - it would have
+        # raised had it ever run.)
         self.updateFromConnectionType([], plexresource.ResourceConnection.SOURCE_MANUAL)
-
-        # Reused the previous selected server if our manual connection has gone away
-        if not self.getSelectedServer() and activeConn.sources == plexresource.ResourceConnection.SOURCE_MANUAL:
-            server.activeConnection = activeConn
-            server.connections.append(activeConn)
-            self.setSelectedServer(server, True)
 
     def refreshManualConnections(self):
         manualConnections = self.getManualConnections()
