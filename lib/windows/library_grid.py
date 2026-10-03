@@ -1679,6 +1679,8 @@ class GridMixin(object):
                     self.setBoolProperty('no.content.filtered', True)
                 else:
                     self.setBoolProperty('no.content', True)
+                # or nothing because the server isn't answering: the panel says so instead
+                self.updateServerUnavailable()
 
                 return
             else:

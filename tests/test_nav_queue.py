@@ -303,19 +303,22 @@ class ServerSignalsTest(KodiTestCase):
             host = Host()
             calls = []
             for name in ('onNewServer', 'onRemoveServer', 'onReachableServer', 'displayServerAndUser',
-                         'onSelectedServerChange', 'onServerOffline', 'onServerOnline', 'onSelectedServerGone',
-                         '_onSleep', '_onWake', '_onUpdateSourceChanged'):
+                         'onSelectedServerChange', 'onServerSuspect', 'onServerRecovered', 'onServerOffline',
+                         'onServerOnline', 'onSelectedServerGone', '_onSleep', '_onWake', '_onUpdateSourceChanged'):
                 setattr(host, name, (lambda n: lambda **kw: calls.append((n, kw)))(name))
             host._postedHandler = library.LibraryWindow._postedHandler.__get__(host)
             library.LibraryWindow.hookSignals(host)
 
             manager.trigger('reachable:server', server='oscar')
             app.trigger('change:selectedServer')
+            manager.trigger('suspect:server', server='animal')
+            manager.trigger('recovered:server', server='animal')
             manager.trigger('offline:server', server='animal')
             manager.trigger('online:server', server='animal')
             manager.trigger('gone:selectedServer', server='animal', replacement='oscar')
             self.assertEqual([], calls, 'nothing may run on the signalling thread')
             self.assertEqual(['onReachableServer', 'displayServerAndUser', 'onSelectedServerChange',
+                              'onServerSuspect', 'onServerRecovered',
                               'onServerOffline', 'onServerOnline', 'onSelectedServerGone'],
                              [u[0] for u in host._uiPending])
 
@@ -323,6 +326,8 @@ class ServerSignalsTest(KodiTestCase):
             self.assertEqual([('onReachableServer', {'server': 'oscar'}),
                               ('displayServerAndUser', {'server': 'oscar'}),
                               ('onSelectedServerChange', {}),
+                              ('onServerSuspect', {'server': 'animal'}),
+                              ('onServerRecovered', {'server': 'animal'}),
                               ('onServerOffline', {'server': 'animal'}),
                               ('onServerOnline', {'server': 'animal'}),
                               ('onSelectedServerGone', {'server': 'animal', 'replacement': 'oscar'})], calls)

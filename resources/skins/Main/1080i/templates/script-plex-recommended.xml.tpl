@@ -398,7 +398,7 @@
 </control>
 
 <control type="group">
-    <visible>String.IsEmpty(Window.Property(busy)) + !String.IsEmpty(Window.Property(no.content))</visible>
+    <visible>String.IsEmpty(Window.Property(busy)) + !String.IsEmpty(Window.Property(no.content)) + String.IsEmpty(Window.Property(server.unavailable))</visible>
     <posx>0</posx>
     <posy>{{ vscale(465) }}</posy>
     <control type="label">
@@ -582,6 +582,8 @@
         <label>$INFO[Window.Property(summary)]</label>
     </control>
 </control>
+
+{% include "includes/server_unavailable.xml.tpl" %}
 
 {% include "includes/sidebar.xml.tpl" %}
 

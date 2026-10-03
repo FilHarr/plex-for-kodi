@@ -293,7 +293,7 @@
 
 {% block no_content %}
 <control type="group">
-    <visible>!String.IsEmpty(Window.Property(no.content))</visible>
+    <visible>!String.IsEmpty(Window.Property(no.content)) + String.IsEmpty(Window.Property(server.unavailable))</visible>
     <posx>0</posx>
     <posy>{{ vscale(465) }}</posy>
     <control type="label">
@@ -321,7 +321,7 @@
 </control>
 
 <control type="group">
-    <visible>!String.IsEmpty(Window.Property(no.content.filtered))</visible>
+    <visible>!String.IsEmpty(Window.Property(no.content.filtered)) + String.IsEmpty(Window.Property(server.unavailable))</visible>
     <posx>0</posx>
     <posy>{{ vscale(465) }}</posy>
     <control type="label">
@@ -376,6 +376,8 @@
     </control>
 </control>
 {% endblock %}
+
+{% include "includes/server_unavailable.xml.tpl" %}
 
 {# Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - declared last, same reasoning as
    script-plex-recommended.xml.tpl's own copy of this include: the server/user dropdown popouts

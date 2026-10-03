@@ -53,8 +53,10 @@ DEFINITIVE_CONNECT_ERRNOS = frozenset((errno.ECONNREFUSED, errno.EHOSTUNREACH, e
                                        10061, WIN_EHOSTUNREACH, 10051, 10049, 10047))
 
 MAX_RETRIES = 3
-# of those, how many may go to connect timeouts
-CONNECT_RETRIES = 1
+# Of those, how many may go to connect failures: none. A connect that timed out is retested across
+# all of the server's connections straight after (PlexServer.markSuspect()), and the user hears at
+# once ("isn't responding"); retrying it here first held the caller for a second timeout.
+CONNECT_RETRIES = 0
 REQUESTS_CACHE_EXPIRY = 72
 
 
@@ -416,8 +418,8 @@ def connectFailureCause(error):
 
 def isDefinitiveConnectFailure(error):
     """Whether a failed request already got a definite no (see connectFailureCause()). Asking
-    again gets the same answer, so it isn't retried. A connect timeout (a lost packet, say) or a
-    connection dropped mid-answer still is."""
+    again gets the same answer, so it isn't retried. A connection dropped mid-answer still is (a
+    connect timeout isn't either, but for a different reason: CONNECT_RETRIES)."""
     return connectFailureCause(error) is not None
 
 
@@ -435,7 +437,7 @@ class StoppableRetry(Retry):
 class AsyncSessionMixin(object):
     def mountAsyncAdapters(self, retries=None):
         """retries: None for the user's max_retries setting, of which at most CONNECT_RETRIES go
-        to connect timeouts (a server that never answers would otherwise hold the caller for
+        to connect failures (a server that never answers would otherwise hold the caller for
         every attempt); a number to override both."""
         if retries is None:
             make = lambda: StoppableRetry(total=MAX_RETRIES, connect=min(CONNECT_RETRIES, MAX_RETRIES))

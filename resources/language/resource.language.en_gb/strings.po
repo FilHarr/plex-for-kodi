@@ -3642,7 +3642,7 @@ msgid "Update now"
 msgstr ""
 
 msgctxt "#35125"
-msgid "{0} is unavailable. Retrying..."
+msgid "{0} isn't responding. Retrying..."
 msgstr ""
 
 msgctxt "#35126"
@@ -3655,4 +3655,16 @@ msgstr ""
 
 msgctxt "#35128"
 msgid "{0} is no longer available to this account. Choose another server."
+msgstr ""
+
+msgctxt "#35129"
+msgid "{0} isn't responding"
+msgstr ""
+
+msgctxt "#35130"
+msgid "Retrying automatically."
+msgstr ""
+
+msgctxt "#35131"
+msgid "Trying again..."
 msgstr ""

@@ -313,11 +313,35 @@ class PlexServerManager(signalsmixin.SignalsMixin):
     # restart, a Wi-Fi blip), then once a minute for as long as it stays down.
     OFFLINE_RETRY_DELAYS = (5, 10, 30, 60)
 
+    def onServerSuspect(self, server):
+        """PlexServer.markSuspect(): a query to server got no answer, and its connections are being
+        retested. Says so at once ('suspect:server', server=), before the retest's verdict, unless
+        it's already known to be offline: the retests are what's running then."""
+        with self._stateLock:
+            if server.offline or server.gone or server.suspect:
+                return
+            server.suspect = True
+        self.trigger('suspect:server', server=server)
+
     def setServerOnline(self, server, online):
         """Records whether a server can be reached and, when that changes, says so: 'online:server'
         or 'offline:server' (server=). Results arrive on one HTTP thread per connection, hence the
-        lock - only the call that actually changes the state signals."""
+        lock - only the call that actually changes the state signals. A suspect server
+        (onServerSuspect()) that turns out to be reachable after all says 'recovered:server': the
+        query that failed has left something empty that's worth loading again. That's decided once
+        the retest round has ended: mid-round, a result counts as reachable while the connection
+        the query failed on is still the active one, untested yet (live-caught on the PC: Oscar
+        "answered after all" 2 ms before the round ended offline)."""
+        settled = server.pendingReachabilityRequests <= 0
         with self._stateLock:
+            recovered = online and settled and server.suspect and not server.offline
+            if settled:
+                server.suspect = False
+            if online and settled:
+                # Answering now, so the next query that goes unanswered is news: retest at once,
+                # not up to 30 s later (PlexServer.markSuspect()). Live on the PC: Plex stopped
+                # again 18 s after it came back, and the empty view that followed said nothing.
+                server._lastSuspectRetest = 0
             if server.offline != (not online):
                 server.offline = not online
                 changed = True
@@ -334,6 +358,9 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         if changed:
             util.LOG("{0} is {1}", repr(server.name), online and "online again" or "offline")
             self.trigger(online and 'online:server' or 'offline:server', server=server)
+        elif recovered:
+            util.LOG("{0} answers after all", repr(server.name))
+            self.trigger('recovered:server', server=server)
 
     def scheduleOfflineRetry(self):
         delay = self.OFFLINE_RETRY_DELAYS[min(self.offlineRetryStep, len(self.OFFLINE_RETRY_DELAYS) - 1)]
@@ -356,6 +383,25 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         server = self.selectedServer
         if server and server.offline and not server.gone and not self.offlineRetryTimer:
             self.scheduleOfflineRetry()
+
+    def retestSelectedServerNow(self):
+        """The user asked ("Try again"): retest the selected server now, not at the next step of
+        the offline backoff. If it's still down, the round's verdict schedules the next step as
+        usual (setServerOnline()). Returns whether a retest is under way."""
+        server = self.selectedServer
+        if not server or server.gone:
+            return False
+        if self.offlineRetryTimer:
+            self.offlineRetryTimer.cancel()
+            self.offlineRetryTimer = None
+        util.LOG("Retesting {0} now, as asked", repr(server.name))
+        server.resetLastTest()
+        server.updateReachability(True)
+        if server.pendingReachabilityRequests <= 0:
+            # nothing to test: no round will end with a verdict, so give it now
+            self.updateReachabilityResult(server, bool(server.activeConnection))
+            return False
+        return True
 
     def onOfflineRetryTimer(self):
         self.offlineRetryTimer = None

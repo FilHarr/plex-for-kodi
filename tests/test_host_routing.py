@@ -333,6 +333,7 @@ class LibraryRouteClickTest(KodiTestCase):
         USER_LIST_ID = library.LibraryWindow.USER_LIST_ID
         SERVER_LIST_ID = library.LibraryWindow.SERVER_LIST_ID
         USER_BUTTON_ID = library.LibraryWindow.USER_BUTTON_ID
+        SERVER_RETRY_BUTTON_ID = library.LibraryWindow.SERVER_RETRY_BUTTON_ID
 
         def __init__(self, screen, moving=None):
             self.screen = screen

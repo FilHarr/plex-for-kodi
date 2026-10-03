@@ -64,6 +64,7 @@ MUSIC_VIEWTYPE_BY_ITEM_TYPE = {
 
 _sectionHasCollectionsCache = {}
 
+
 def _sectionHasCollections(section):
     """Cheap existence probe (X-Plex-Container-Size=0, same shape as collection.py's own
     leafCount probe) for the Collections tab's visibility gate.
@@ -91,6 +92,11 @@ def _sectionHasCollections(section):
     cache_key = (section.server.uuid, section.key)
     if cache_key in _sectionHasCollectionsCache:
         return _sectionHasCollectionsCache[cache_key]
+    if section.server.offline or section.server.suspect:
+        # Not answering (or being retested): no tab, and nothing cached, so the next visit asks
+        # again. This runs on the main thread as a view opens, and live on the AM6B (2026-10-03)
+        # asking a server that had stopped answering held the screen for its connect timeout.
+        return False
     try:
         has = bool(section.all(start=0, size=0, type_=plexobjects.SEARCHTYPES.get('collection')).totalSize.asInt())
     except:
@@ -1590,6 +1596,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
              self._postedHandler('displayServerAndUser', self.displayServerAndUser)),
             (plexapp.util.APP, 'change:selectedServer',
              self._postedHandler('onSelectedServerChange', self.onSelectedServerChange)),
+            (plexapp.SERVERMANAGER, 'suspect:server', self._postedHandler('onServerSuspect', self.onServerSuspect)),
+            (plexapp.SERVERMANAGER, 'recovered:server',
+             self._postedHandler('onServerRecovered', self.onServerRecovered)),
             (plexapp.SERVERMANAGER, 'offline:server', self._postedHandler('onServerOffline', self.onServerOffline)),
             (plexapp.SERVERMANAGER, 'online:server', self._postedHandler('onServerOnline', self.onServerOnline)),
             (plexapp.SERVERMANAGER, 'gone:selectedServer',
@@ -1918,14 +1927,126 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         else:
             self.onNewServer()
 
+    # The "isn't responding" panel's button (includes/server_unavailable.xml.tpl)
+    SERVER_RETRY_BUTTON_ID = 2600
+
+    def onServerSuspect(self, server=None, **kwargs):
+        """A query to the selected server got no answer, and its connections are being retested:
+        say so now, before the verdict - offline (onServerOffline()) or answering after all
+        (onServerRecovered()). Waiting for the verdict, as this once did, kept the user waiting
+        for a second connect timeout and the retest on top."""
+        if server is None or server is not plexapp.SERVERMANAGER.selectedServer:
+            return
+        self._notifyUnavailable(server)
+        self.updateServerUnavailable()
+
     def onServerOffline(self, server=None, **kwargs):
         """The selected server stopped answering: it stays selected (plexnet retests it, backing
-        off) and the sidebar shows it as unreachable. Opening the server list retests at once.
+        off), the sidebar shows it as unreachable, and an empty view says so in place
+        (updateServerUnavailable()). Opening the server list retests at once. The toast only if
+        onServerSuspect() hasn't already shown it - a retest in the background finds it down too.
         Interim - the libraries-from-any-server sidebar replaces this with per-library state."""
         if server is None or server is not plexapp.SERVERMANAGER.selectedServer:
             return
         self.displayServerAndUser()
-        util.showNotification(T(35125, '{0} is unavailable. Retrying...').format(server.name), time_ms=5000)
+        self._notifyUnavailable(server)
+        self.updateServerUnavailable()
+
+    def onServerRecovered(self, server=None, **kwargs):
+        """The selected server answered its retest after all (a blip): a view the failed query left
+        empty is loaded again, quietly - the toast already said it was retrying."""
+        if server is None or server is not plexapp.SERVERMANAGER.selectedServer:
+            return
+        self._unavailableNotified = None
+        self.updateServerUnavailable()
+        if (not self._backStack and not self._shuttingDown and not self._isHostedShell
+                and self._viewIsEmpty()):
+            self._reloadAfterReturn()
+
+    # After a server comes back, a reload that still finds the section empty tries again after
+    # these many seconds: Plex answers its connection test before it has loaded its libraries (live
+    # on the PC, 2026-10-03: 4.5 s after Plex started, its hubs came back with no items in them).
+    RETURN_RELOAD_DELAYS = (3, 10)
+
+    def _reloadAfterReturn(self):
+        """onServerOnline()/onServerRecovered(): reload the section in place, watched by
+        _retryEmptyAfterReturn() in case it comes back empty."""
+        self._returnReload = (self.section, list(self.RETURN_RELOAD_DELAYS))
+        self.openSection(self.section, force=True, fresh=False)
+
+    def _retryEmptyAfterReturn(self):
+        """After a fill or bind: if the server has just come back (_reloadAfterReturn()) and this
+        section is still empty, reload it again shortly - RETURN_RELOAD_DELAYS, then give up. Only
+        while the same section stays on screen with nothing open on top."""
+        pending = self.__dict__.get('_returnReload')
+        if not pending:
+            return
+        section, delays = pending
+        if section is not self.section or not delays or self._isHostedShell or not self._viewIsEmpty():
+            self._returnReload = None
+            return
+        delay = delays.pop(0)
+        due = time.time() + delay
+        util.DEBUG_LOG("Library: {0} still empty after the server came back, reloading in {1}s", section, delay)
+
+        def tick(now):
+            if self.section is not section or self.closing or self._backStack or self._isHostedShell:
+                self._returnReload = None
+                return False
+            if now < due:
+                return True
+            self.postUI('reload after the server came back', self.openSection, args=(section,),
+                        kwargs={'force': True, 'fresh': False})
+            return False
+        self.addTicker(tick)
+
+    def _notifyUnavailable(self, server):
+        """The "isn't responding" toast: once, until the server answers again."""
+        if self.__dict__.get('_unavailableNotified') == server.uuid:
+            return
+        self._unavailableNotified = server.uuid
+        util.showNotification(T(35125, "{0} isn't responding. Retrying...").format(server.name), time_ms=5000)
+
+    def _viewIsEmpty(self):
+        if self.contentMode == 'recommended':
+            return not self.visibleHubs
+        return bool(self.getProperty('no.content') or self.getProperty('no.content.filtered'))
+
+    def updateServerUnavailable(self):
+        """Show or clear the "isn't responding" panel (includes/server_unavailable.xml.tpl): in
+        place of an empty grid or Recommended view while the selected server is suspect (a query got
+        no answer and its connections are being retested) or offline, so the view says why it's
+        empty and offers "Try again". Empty, it used to say nothing, or "no content" for a grid.
+        Returns whether it shows."""
+        server = plexapp.SERVERMANAGER.selectedServer
+        show = bool(server and (server.offline or server.suspect) and not server.gone
+                    and not self._isHostedShell and not self.closing and self._viewIsEmpty())
+        if show:
+            self.setProperty('server.unavailable.detail',
+                             T(35131, 'Trying again...') if self.__dict__.get('_serverRetrying')
+                             else T(35130, 'Retrying automatically.'))
+            self.setProperty('server.unavailable', T(35129, "{0} isn't responding").format(server.name))
+        elif self.getProperty('server.unavailable'):
+            self.setProperty('server.unavailable', '')
+        return show
+
+    def retryServerNow(self):
+        """The panel's "Try again": retest the selected server at once rather than at the next step
+        of the backoff. The panel says so until the round ends (_tickServerRetry()); if the server
+        answers, onServerOnline() reloads the view."""
+        if self.__dict__.get('_serverRetrying') or not plexapp.SERVERMANAGER.retestSelectedServerNow():
+            return
+        self._serverRetrying = True
+        self.updateServerUnavailable()
+        self.addTicker(self._tickServerRetry)
+
+    def _tickServerRetry(self, now):
+        server = plexapp.SERVERMANAGER.selectedServer
+        if server and server.pendingReachabilityRequests > 0 and not self.closing:
+            return True
+        self._serverRetrying = False
+        self.updateServerUnavailable()
+        return False
 
     def onSelectedServerGone(self, server=None, replacement=None, **kwargs):
         """plex.tv no longer lists the selected server: the account doesn't have it any more. With
@@ -1949,10 +2070,12 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         handle their own failed loads), and only the section's own view is reloaded, in place."""
         if server is None or server is not plexapp.SERVERMANAGER.selectedServer:
             return
+        self._unavailableNotified = None
         self.displayServerAndUser()
+        self.updateServerUnavailable()
         util.showNotification(T(35126, '{0} is back').format(server.name), time_ms=3000)
         if not self._backStack and not self._shuttingDown:
-            self.openSection(self.section, force=True, fresh=False)
+            self._reloadAfterReturn()
 
     def onSelectedServerChange(self, **kwargs):
         if self.serverRefresh():
@@ -2055,6 +2178,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         else:
             self.serverList.newControl(self, guard=sidebarGuard)
         timing.mark('controls')
+        # A new view starts without the "isn't responding" panel; its first fill or bind decides
+        # (updateServerUnavailable()). The host carries properties over to each view, so it's
+        # cleared here rather than left to the last view's state.
+        if self.getProperty('server.unavailable'):
+            self.setProperty('server.unavailable', '')
 
         if self.contentMode == 'recommended':
             # RecommendedWindow has none of the poster-grid controls (POSTERS_PANEL_ID/
@@ -2252,7 +2380,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         kodigui.markStep(self.__dict__.get('_gridTiming'), 'refill setup')
         self.fill()
         self.refill = False
-        if self.getProperty('no.content') or self.getProperty('no.content.filtered'):
+        self._retryEmptyAfterReturn()
+        if self.updateServerUnavailable():
+            self.setFocusId(self.SERVER_RETRY_BUTTON_ID)
+        elif self.getProperty('no.content') or self.getProperty('no.content.filtered'):
             self.setFocusId(self.SECTION_LIST_ID)
         else:
             self.setFocusId(self.POSTERS_PANEL_ID)
@@ -2657,6 +2788,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self.doUserOption(target=target)
             target.setBoolProperty('show.options', False)
             target.setFocusId(self.USER_BUTTON_ID)
+            return True
+
+        if controlID == self.SERVER_RETRY_BUTTON_ID:
+            # the "isn't responding" panel, on the grid and Recommended views
+            self.retryServerNow()
             return True
 
         if controlID == self.SERVER_LIST_ID:

@@ -335,9 +335,10 @@ class RetriesTest(KodiTestCase):
     def test_a_request_can_ask_for_no_retries(self):
         self.assertEqual(0, self.retries(http.HttpRequest("http://192.168.1.69:32400/", retries=0)))
 
-    def test_interactive_requests_retry_a_connect_timeout_once(self):
+    def test_interactive_requests_leave_a_connect_timeout_to_the_server_retest(self):
         retry = http.HttpRequest("http://192.168.1.69:32400/").session.get_adapter("http://x/").max_retries
-        self.assertEqual(min(asyncadapter.CONNECT_RETRIES, asyncadapter.MAX_RETRIES), retry.connect)
+        self.assertEqual(0, retry.connect)
+        self.assertEqual(asyncadapter.MAX_RETRIES, retry.total)
 
     def test_reachability_tests_make_one_attempt(self):
         server = plexserver.createPlexServerForName(UUID, "Oscar")

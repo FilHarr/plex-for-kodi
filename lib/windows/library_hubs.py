@@ -2565,6 +2565,14 @@ class HubsMixin(object):
             # line, rather than trying to race a reset against it afterward.
             self.lastFocusID = self._anchorControlId()
             self.setFocusId(self._anchorControlId())
+        elif self.getProperty('server.unavailable'):
+            # no rows because the server isn't answering: the panel's "Try again"
+            self.setFocusId(self.SERVER_RETRY_BUTTON_ID)
+        else:
+            # No rows (nothing in the section): the sidebar, as for an empty grid (no.content) and
+            # _resetHubsToTop(). Left on the hidden anchor row, nothing had focus and only Back
+            # worked - live-caught 2026-10-03 on the AM6B, with Oscar down.
+            self.setFocusId(self.SECTION_LIST_ID)
 
     def _recommendedHubsCallback(self, section, hubs, generation):
         """Bind a section's hub rows into the Recommended view, on the main thread: posted by
@@ -2653,6 +2661,10 @@ class HubsMixin(object):
             # once per entry in onFirstInit() (GROUP51_BASELINE_OFFSET's own comment).
 
             self._bindAllHubSlots()
+            # no rows because the server isn't answering: the view says so (the panel)
+            self.updateServerUnavailable()
+            # or because it has only just come back, and is still loading
+            self._retryEmptyAfterReturn()
             util.DEBUG_LOG("Library: _recommendedHubsCallback() bound {0} hub(s) for {1}, anchor={2}",
                            min(len(sorted_hubs), len(self.hubControls)), section.key,
                            self._anchorControlId())

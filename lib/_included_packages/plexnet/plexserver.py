@@ -71,6 +71,9 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         self.offline = False
         # No longer on the account - plex.tv stopped listing it (PlexServerManager.onSelectedServerGone())
         self.gone = False
+        # A query got no answer and its connections are being retested (markSuspect()); cleared by
+        # the retest's verdict (PlexServerManager.setServerOnline())
+        self.suspect = False
         self._lastSuspectRetest = 0
 
         self.features = {}
@@ -291,6 +294,14 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
             kwargs.clear()
 
         url = self.buildUrl(path, includeToken=True)
+
+        if self.suspect:
+            # A query has just gone unanswered and the connections are being retested
+            # (markSuspect()): fail at once rather than have every query wait out a timeout of its
+            # own meanwhile. The retest decides - and if the server answers after all,
+            # 'recovered:server' gets a view this left empty loaded again.
+            util.WARN_LOG("{0} is being retested, returning None", repr(self.name))
+            return None
 
         # No active connection: the server is already known to be unreachable. This used to start a
         # forced plex.tv resource refresh as well, once per query, which turned every query against
@@ -533,8 +544,13 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
             return
         self._lastSuspectRetest = now
         util.LOG("A query to {0} got no answer, retesting its connections", repr(self.name))
+        from . import plexservermanager
+        plexservermanager.MANAGER.onServerSuspect(self)
         self.resetLastTest()
         self.updateReachability(True)
+        if self.pendingReachabilityRequests <= 0:
+            # nothing to test (no connections): no round will end with a verdict, so give it now
+            plexservermanager.MANAGER.updateReachabilityResult(self, bool(self.activeConnection))
 
     def onReachabilityTestStarting(self, connection):
         """Counts a test in before it can possibly answer - PlexConnection.testReachability() calls
