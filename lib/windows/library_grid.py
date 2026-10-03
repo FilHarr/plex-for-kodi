@@ -1679,11 +1679,14 @@ class GridMixin(object):
                     self.setBoolProperty('no.content.filtered', True)
                 else:
                     self.setBoolProperty('no.content', True)
+                    if not (self.section.server.offline or self.section.server.suspect):
+                        self._noteSectionEmpty(True)  # no tabs row either
                 # or nothing because the server isn't answering: the panel says so instead
                 self.updateServerUnavailable()
 
                 return
             else:
+                self._noteSectionEmpty(False)
                 placeholders = self._placeholderItems(0, totalSize)
 
         self.setProperty("items.count", str(totalSize))
@@ -1836,10 +1839,10 @@ class GridMixin(object):
         # Ported from the Sidebar-Tab-Unification branch's identical method (commit f0e6340f).
         self.setBoolProperty('no.content', False)
         self.setBoolProperty('no.content.filtered', False)
+        self.setBoolProperty('no.content.playlists', False)
         self.setBoolProperty('content.filling', True)
 
-        playlists = [pl for pl in plexapp.SERVERMANAGER.selectedServer.playlists()
-                    if pl.playlistType == self.itemType]
+        playlists = [pl for pl in self._sectionPlaylists() if pl.playlistType == self.itemType]
 
         self.showPanelControl.reset()
         self.keyListControl.reset()
@@ -1848,6 +1851,7 @@ class GridMixin(object):
 
         if not playlists:
             self.setBoolProperty('no.content', True)
+            self.setBoolProperty('no.content.playlists', True)  # its own wording (library.xml.tpl)
             self.setBoolProperty('content.filling', False)
             return
 

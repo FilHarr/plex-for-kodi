@@ -64,6 +64,10 @@ MUSIC_VIEWTYPE_BY_ITEM_TYPE = {
 
 _sectionHasCollectionsCache = {}
 
+# Sections found empty (server uuid, section key): their tab row is hidden as soon as they open
+# next time, rather than shown while loading and then taken away. Dropped the moment one shows
+# content. LibraryWindow._noteSectionEmpty().
+_emptySections = set()
 
 def _sectionHasCollections(section):
     """Cheap existence probe (X-Plex-Container-Size=0, same shape as collection.py's own
@@ -497,6 +501,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # offer 'collection' for) AND an actual existence probe (_sectionHasCollections()), unlike
         # Categories which never checks genre existence.
         self._tabListHasCollections = False
+        # Fourth: which playlist types the Playlists section's tabs are for - only those the
+        # server has (_playlistTypes()).
+        self._tabListPlaylistTypes = ()
 
         # Stage 3 (quiet-orbiting-heron.md's Cold Start plan): user-options dropdown (control 250,
         # includes/sidebar_dropdowns.xml.tpl - shared, generic markup, already wired into every
@@ -2129,14 +2136,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         pnUtil.APP.on("watchlist:modified", self.setWatchlistDirty)
         util.MONITOR.on("library.back_home", self.goHomeRoot)
 
-        # Sections with no library-grid content at all (TYPE == 'mixed' - home_section, so far the
-        # only one) have nothing to switch to - hiding the row entirely rather than showing a lone
-        # "Recommended" tab with nothing to switch between. Set unconditionally, every fresh
-        # onFirstInit() (i.e. every content-mode/section swap, not just once) - section_tabs.xml.tpl
-        # gates control 320's own <visible> on this; hubAction()'s hub-row MOVE_UP interception (library_hubs.py)
-        # also checks it directly before redirecting focus there, since a hidden control can't
-        # usefully receive focus.
-        self.setBoolProperty('hide.section_tabs', self.section.TYPE == 'mixed')
+        # Fetched afresh by each view, before the tabs row below needs them (_sectionPlaylists())
+        self._viewPlaylists = None
 
         # The sidebar lists are bound to this view's controls under the host's guard, which the
         # next swap closes (_sidebarListGuard()).
@@ -2163,6 +2164,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 self.buildTabList()
             else:
                 self.updateActiveTabMarker()
+        # Set every fresh onFirstInit() (every content-mode/section swap) - section_tabs.xml.tpl
+        # gates control 320's own <visible> on this; hubAction()'s hub-row MOVE_UP interception
+        # (library_hubs.py) also checks it directly before redirecting focus there, since a hidden
+        # control can't usefully receive focus.
+        self.setBoolProperty('hide.section_tabs', self._hideSectionTabs())
 
         if self.userList is None:
             self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5, guard=sidebarGuard)
@@ -2178,11 +2184,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         else:
             self.serverList.newControl(self, guard=sidebarGuard)
         timing.mark('controls')
-        # A new view starts without the "isn't responding" panel; its first fill or bind decides
-        # (updateServerUnavailable()). The host carries properties over to each view, so it's
-        # cleared here rather than left to the last view's state.
-        if self.getProperty('server.unavailable'):
-            self.setProperty('server.unavailable', '')
+        # A new view starts without the "isn't responding" panel or the "no content" message; its
+        # first fill or bind decides (updateServerUnavailable(), _recommendedHubsCallback(), the
+        # grid's fill). The host carries properties over to each view, so they're cleared here
+        # rather than left to the last view's state.
+        for key in ('server.unavailable', 'no.content', 'no.content.playlists'):
+            if self.getProperty(key):
+                self.setProperty(key, '')
 
         if self.contentMode == 'recommended':
             # RecommendedWindow has none of the poster-grid controls (POSTERS_PANEL_ID/
@@ -3257,6 +3265,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         the section actually on screen.
         """
         is_playlists = section.TYPE == 'playlists'
+        playlist_types = self._playlistTypes() if is_playlists else ()
+        if playlist_types and self.itemType not in playlist_types:
+            # Open on a tab that has playlists: the remembered one - or Music, on a first visit
+            # (reset()) - may have none.
+            self.librarySettings.setItemType(playlist_types[0])
         has_categories = section.TYPE in ('movie', 'show')
         has_collections = section.TYPE in ('movie', 'show', 'artist') and _sectionHasCollections(section)
         # Guards against the Collections tab vanishing out from under a still-'collection'
@@ -3272,12 +3285,50 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if not has_collections and self.itemType == 'collection':
             self.librarySettings.setItemType(section.TYPE)
         needsRebuild = (is_playlists != self._tabListIsPlaylists
+                         or playlist_types != self._tabListPlaylistTypes
                          or has_categories != self._tabListHasCategories
                          or has_collections != self._tabListHasCollections)
         self._tabListIsPlaylists = is_playlists
+        self._tabListPlaylistTypes = playlist_types
         self._tabListHasCategories = has_categories
         self._tabListHasCollections = has_collections
         return needsRebuild
+
+    # The Playlists section's tabs, in order
+    PLAYLIST_TYPES = ('audio', 'video')
+
+    def _sectionPlaylists(self):
+        """The server's playlists, fetched once per view: the Playlists section's tabs
+        (_tabListNeedsRebuild()) and its grid (fillPlaylists()) both need them."""
+        playlists = self.__dict__.get('_viewPlaylists')
+        if playlists is None:
+            playlists = self._viewPlaylists = list(plexapp.SERVERMANAGER.selectedServer.playlists() or [])
+        return playlists
+
+    def _playlistTypes(self):
+        """The playlist types the server has, in tab order."""
+        present = set(pl.playlistType for pl in self._sectionPlaylists())
+        return tuple(t for t in self.PLAYLIST_TYPES if t in present)
+
+    def _hideSectionTabs(self):
+        """Whether the tabs row has nothing to offer: Home (TYPE 'mixed') has no grid to switch
+        to, Playlists with one type of playlist (or none) has nothing to choose between, and an
+        empty library (_noteSectionEmpty()) nothing to show in any tab."""
+        if self.section.TYPE == 'mixed':
+            return True
+        if self._tabListIsPlaylists:
+            return len(self._tabListPlaylistTypes) < 2
+        return (self.section.server.uuid, self.section.key) in _emptySections
+
+    def _noteSectionEmpty(self, empty):
+        """A fill or bind found this section empty, or not: remembered (_emptySections), and the
+        tabs row follows straight away."""
+        key = (self.section.server.uuid, self.section.key)
+        if empty:
+            _emptySections.add(key)
+        else:
+            _emptySections.discard(key)
+        self.setBoolProperty('hide.section_tabs', self._hideSectionTabs())
 
     def buildTabList(self):
         """Populate the section-tabs row: Recommended/Library normally (plan item 0,
@@ -3300,7 +3351,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         """
         items = []
         if self._tabListIsPlaylists:
-            for item_type, label in (('audio', T(32394, 'Music')), ('video', T(32053, 'Video'))):
+            labels = {'audio': T(32394, 'Music'), 'video': T(32053, 'Video')}
+            for item_type in self._tabListPlaylistTypes:
+                label = labels[item_type]
                 mli = kodigui.ManagedListItem(label)
                 mli.setProperty('item', '1')
                 mli.setProperty('item.type', item_type)

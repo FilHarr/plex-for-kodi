@@ -296,6 +296,7 @@
     <visible>!String.IsEmpty(Window.Property(no.content)) + String.IsEmpty(Window.Property(server.unavailable))</visible>
     <posx>0</posx>
     <posy>{{ vscale(465) }}</posy>
+    {# an empty library, or an empty Playlists section (no.content.playlists, fillPlaylists()) #}
     <control type="label">
         <scroll>false</scroll>
         <posx>60</posx>
@@ -305,7 +306,8 @@
         <font>font13</font>
         <align>center</align>
         <textcolor>FFFFFFFF</textcolor>
-        <label>[B]$ADDON[script.plexmod 32452][/B]</label>
+        <visible>String.IsEmpty(Window.Property(no.content.playlists))</visible>
+        <label>[B]$ADDON[script.plexmod 35132][/B]</label>
     </control>
     <control type="label">
         <scroll>false</scroll>
@@ -316,7 +318,32 @@
         <font>font13</font>
         <align>center</align>
         <textcolor>FFCCCCCC</textcolor>
-        <label>$ADDON[script.plexmod 32453]</label>
+        <visible>String.IsEmpty(Window.Property(no.content.playlists))</visible>
+        <label>$ADDON[script.plexmod 35133]</label>
+    </control>
+    <control type="label">
+        <scroll>false</scroll>
+        <posx>60</posx>
+        <posy>0</posy>
+        <width>1800</width>
+        <height>{{ vscale(35) }}</height>
+        <font>font13</font>
+        <align>center</align>
+        <textcolor>FFFFFFFF</textcolor>
+        <visible>!String.IsEmpty(Window.Property(no.content.playlists))</visible>
+        <label>[B]$ADDON[script.plexmod 35134][/B]</label>
+    </control>
+    <control type="label">
+        <scroll>false</scroll>
+        <posx>60</posx>
+        <posy>{{ vscale(60) }}</posy>
+        <width>1800</width>
+        <height>{{ vscale(35) }}</height>
+        <font>font13</font>
+        <align>center</align>
+        <textcolor>FFCCCCCC</textcolor>
+        <visible>!String.IsEmpty(Window.Property(no.content.playlists))</visible>
+        <label>$ADDON[script.plexmod 35135]</label>
     </control>
 </control>
 

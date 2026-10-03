@@ -151,9 +151,13 @@ class TabListNeedsRebuildTest(KodiTestCase):
 
         def __init__(self):
             self._tabListIsPlaylists = False
+            self._tabListPlaylistTypes = ()
             self._tabListHasCategories = False
             self._tabListHasCollections = False
             self.librarySettings = FakeLibrarySettings()
+
+        def _playlistTypes(self):
+            return ('audio', 'video')
 
     def setUp(self):
         patchSectionHasCollections(self, return_value=False)

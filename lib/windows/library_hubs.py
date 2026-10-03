@@ -2661,6 +2661,16 @@ class HubsMixin(object):
             # once per entry in onFirstInit() (GROUP51_BASELINE_OFFSET's own comment).
 
             self._bindAllHubSlots()
+            # Rows with nothing in any of them: the library is empty (one with anything in it always
+            # has a Recently Added row) - the template's "no content" message, as the grid has, and
+            # no tabs row. A failed fetch also comes back empty, but it marks the server suspect,
+            # and says nothing about the library: the panel below takes the message's place.
+            empty = False
+            if (not is_home and not getattr(hubs, 'invalid', False)
+                    and not (section.server.offline or section.server.suspect)):
+                empty = not any(hub.items for hub in hubs)
+                self._noteSectionEmpty(empty)
+            self.setBoolProperty('no.content', empty)
             # no rows because the server isn't answering: the view says so (the panel)
             self.updateServerUnavailable()
             # or because it has only just come back, and is still loading

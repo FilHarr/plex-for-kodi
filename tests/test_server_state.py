@@ -799,3 +799,140 @@ class UpdatePromptTest(KodiTestCase):
         self.win.tick()
         self.assertEqual('beta', self.props['update_source_changed'])
         self.assertIsNone(self.win._updateSourceChanged)
+
+
+class EmptyLibraryTest(KodiTestCase):
+    """A library section whose rows come back with nothing in any of them is empty, and the
+    Recommended view says so - the grid's "no content" message."""
+
+    class Host(object):
+        _recommendedHubsCallback = library.HubsMixin._recommendedHubsCallback
+        HUB_CONTROL_ID = 400
+        HUB_ROTATION_RING = [401, 400, 402, 403]
+
+        def __init__(self):
+            self.props = {}
+            self._listGeneration = 1
+            self.closing = False
+            self.contentMode = 'recommended'
+            self.lock = library.threading.Lock()
+            self.sectionHubs = {}
+            self._pendingRestoreHubId = None
+            self.hubControls = []
+
+        def setBoolProperty(self, key, value):
+            self.props[key] = value and '1' or ''
+
+        def sortHubsByUserOrder(self, hubs, **kwargs):
+            return list(hubs)
+
+        def isHubHidden(self, *args):
+            return False
+
+        def _bindAllHubSlots(self):
+            pass
+
+        def updateServerUnavailable(self):
+            pass
+
+        def _retryEmptyAfterReturn(self):
+            pass
+
+        def _anchorControlId(self):
+            return 400
+
+        def _noteSectionEmpty(self, empty):
+            self.noted = empty
+
+    def hub(self, items):
+        return mock.Mock(items=items, getCleanHubIdentifier=lambda **kw: 'h')
+
+    def bind(self, hubs, key="1", **server_state):
+        self.host = self.Host()
+        server = mock.Mock(offline=False, suspect=False, uuid=ANIMAL)
+        server.configure_mock(**server_state)
+        self.host._recommendedHubsCallback(mock.Mock(key=key, server=server), hubs, 1)
+        return self.host.props.get('no.content')
+
+    def test_rows_with_nothing_in_them_say_the_library_is_empty(self):
+        self.assertEqual('1', self.bind([self.hub([]), self.hub([])]))
+
+    def test_rows_with_items_do_not(self):
+        self.assertEqual('', self.bind([self.hub([]), self.hub(["an item"])]))
+
+    def test_home_does_not(self):
+        self.assertEqual('', self.bind([], key=None))
+
+    def test_a_failed_fetch_does_not(self):
+        hubs = mock.MagicMock()
+        hubs.__iter__.return_value = iter([])
+        hubs.invalid = True
+        self.assertEqual('', self.bind(hubs))
+
+    def test_it_is_remembered_for_the_tabs_row(self):
+        self.bind([self.hub([])])
+        self.assertTrue(self.host.noted)
+        self.bind([self.hub(["an item"])])
+        self.assertFalse(self.host.noted)
+
+    def test_a_server_being_retested_says_nothing_about_the_library(self):
+        self.assertEqual('', self.bind([], suspect=True))
+        self.assertFalse(hasattr(self.host, 'noted'))
+
+
+class SectionTabsTest(KodiTestCase):
+    """The tabs row only shows when it has something to switch between."""
+
+    def setUp(self):
+        KodiTestCase.setUp(self)
+        self.win = library.LibraryWindow.__new__(library.LibraryWindow)
+        self.props = {}
+        self.win.setProperty = lambda key, value: self.props.__setitem__(key, value)
+        self.win.setBoolProperty = lambda key, value: self.props.__setitem__(key, value and '1' or '')
+        self.win._tabListIsPlaylists = False
+        self.win._tabListPlaylistTypes = ()
+        self.win.section = mock.Mock(TYPE='movie', key='1', server=mock.Mock(uuid=ANIMAL))
+        self.addCleanup(library._emptySections.clear)
+
+    def playlists(self, *types):
+        self.win.section.TYPE = 'playlists'
+        self.win._viewPlaylists = [mock.Mock(playlistType=t) for t in types]
+        self.win._tabListIsPlaylists = True
+        self.win._tabListPlaylistTypes = self.win._playlistTypes()
+
+    def test_a_library_with_content_shows_it(self):
+        self.assertFalse(self.win._hideSectionTabs())
+
+    def test_home_does_not(self):
+        self.win.section.TYPE = 'mixed'
+        self.assertTrue(self.win._hideSectionTabs())
+
+    def test_an_empty_library_does_not_and_hides_it_at_once(self):
+        self.win._noteSectionEmpty(True)
+        self.assertEqual('1', self.props['hide.section_tabs'])
+        self.assertTrue(self.win._hideSectionTabs())
+
+    def test_a_library_that_gains_content_shows_it_again(self):
+        self.win._noteSectionEmpty(True)
+        self.win._noteSectionEmpty(False)
+        self.assertEqual('', self.props['hide.section_tabs'])
+
+    def test_both_kinds_of_playlist_get_a_tab_each(self):
+        self.playlists('video', 'audio', 'video')
+        self.assertEqual(('audio', 'video'), self.win._tabListPlaylistTypes)
+        self.assertFalse(self.win._hideSectionTabs())
+
+    def test_one_kind_of_playlist_gets_no_tabs_row(self):
+        self.playlists('video')
+        self.assertEqual(('video',), self.win._tabListPlaylistTypes)
+        self.assertTrue(self.win._hideSectionTabs())
+
+    def test_playlists_open_on_a_tab_that_has_some(self):
+        self.win.section.TYPE = 'playlists'
+        self.win._viewPlaylists = [mock.Mock(playlistType='video')]
+        self.win._tabListHasCategories = self.win._tabListHasCollections = False
+        settings = mock.Mock(itemType='audio')
+        settings.setItemType.side_effect = lambda t: setattr(settings, 'itemType', t)
+        self.win.librarySettings = settings
+        self.win._tabListNeedsRebuild(self.win.section)
+        self.assertEqual('video', self.win.itemType)

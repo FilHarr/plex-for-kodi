@@ -3668,3 +3668,19 @@ msgstr ""
 msgctxt "#35131"
 msgid "Trying again..."
 msgstr ""
+
+msgctxt "#35132"
+msgid "This library is empty"
+msgstr ""
+
+msgctxt "#35133"
+msgid "Add some media to it on your Plex server."
+msgstr ""
+
+msgctxt "#35134"
+msgid "No playlists yet"
+msgstr ""
+
+msgctxt "#35135"
+msgid "Playlists you make in Plex will show up here."
+msgstr ""

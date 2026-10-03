@@ -410,7 +410,7 @@
         <font>font13</font>
         <align>center</align>
         <textcolor>FFFFFFFF</textcolor>
-        <label>[B]$ADDON[script.plexmod 32452][/B]</label>
+        <label>[B]$ADDON[script.plexmod 35132][/B]</label>
     </control>
     <control type="label">
         <scroll>false</scroll>
@@ -421,7 +421,7 @@
         <font>font13</font>
         <align>center</align>
         <textcolor>FFCCCCCC</textcolor>
-        <label>$ADDON[script.plexmod 32453]</label>
+        <label>$ADDON[script.plexmod 35133]</label>
     </control>
 </control>
 
