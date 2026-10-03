@@ -612,6 +612,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         util.DEBUG_LOG("Library: _setupCurrent({0}) real_shell_count={1} isHostedShell(before)={2}",
                         cls, getattr(self, '_realShellHostCount', 0), self._isHostedShell)
 
+        # The sidebar lists' native controls belong to the outgoing window (_sidebarListGuard())
+        self._closeSidebarGuard()
+
         # Hosted shells reach the host only through weak references (_hostRef, _chainHost -
         # windowutils.UtilMixin; I8 in the navigation review routes their input by name through
         # them). They used to hold it strongly (_chainHost, plus the host's bound
@@ -1306,6 +1309,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._shuttingDown = True
         self.stopRetryingRequests()
         self.unhookSignals()
+        self._closeSidebarGuard()
 
     def processCommand(self, command):
         """UtilMixin.processCommand() (windowutils.py), for the result of a blocking open. At Home, a
@@ -1381,6 +1385,26 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         to whichever native control target.getControl() actually reaches, immediately before use."""
         return self._current if self._isHostedShell else self
 
+    def _sidebarListGuard(self):
+        """The WriteGuard (kodigui) for binding the shared sidebar lists - sectionList, tabList,
+        userList, serverList - to the current window's native controls. These lists outlive
+        every swap; the controls don't, and the objects getControl() and getListItem() hand back
+        don't keep them alive (only constructors take a reference - Kodi's
+        PythonSwig.cpp.template), so a write after the swap reaches freed memory. Live-caught
+        2026-10-03 (AM6B crash log): the reachability check after wake updated a server list
+        item, bound on Home, with an Episodes screen open - a segfault in GuiLock on the main
+        thread. _setupCurrent() closes the guard before each swap, and shutdown() at the end;
+        from then on writes raise kodigui.ScreenClosed, until the next binding gets a new one."""
+        guard = self.__dict__.get('_sidebarGuard')
+        if guard is None or guard.closed:
+            guard = self._sidebarGuard = kodigui.WriteGuard()
+        return guard
+
+    def _closeSidebarGuard(self):
+        guard = self.__dict__.get('_sidebarGuard')
+        if guard is not None:
+            guard.close()
+
     def showUserMenu(self, mouse=False):
         """Ported from HomeWindow.showUserMenu() (home.py) - see quiet-orbiting-heron.md's Cold
         Start plan, Stage 3. Builds/shows the shared user-options dropdown (control 250,
@@ -1430,7 +1454,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # own .control currently points at, so this has to land before them. newControlEmpty(), not
         # newControl(): about to repaint via addItems() anyway, so skip newControl()'s own redundant
         # repaint-then-immediately-discard of whatever this list held from its last showing.
-        self.userList.newControlEmpty(target)
+        self.userList.newControlEmpty(target, guard=self._sidebarListGuard())
         self.userList.reset()
         self.userList.addItems(items)
         itemHeight = util.vscale(66, r=0)
@@ -1748,7 +1772,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         with self.lock:
             selection = None
             if from_refresh:
-                mli = self.serverList.getSelectedItem()
+                try:
+                    mli = self.serverList.getSelectedItem()
+                except kodigui.ScreenClosed:
+                    mli = None  # bound to a window a swap has closed (_sidebarListGuard())
                 if mli:
                     selection = mli.uuid
 
@@ -1782,7 +1809,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # showUserMenu()'s unconditional reset()+addItems(), replaceItems() above only
             # repaints when the item count actually changed - newControlEmpty()'s own repaint-skip
             # would leave a stale/empty list on screen in the common case where it doesn't.
-            self.serverList.newControl(target)
+            self.serverList.newControl(target, guard=self._sidebarListGuard())
             self.serverList.replaceItems(items)
             itemHeight = util.vscale(100, r=0)
 
@@ -1988,42 +2015,45 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # usefully receive focus.
         self.setBoolProperty('hide.section_tabs', self.section.TYPE == 'mixed')
 
+        # The sidebar lists are bound to this view's controls under the host's guard, which the
+        # next swap closes (_sidebarListGuard()).
+        sidebarGuard = self._sidebarListGuard()
         if self.sectionList is None:
             self.loadNavSettings()
-            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15, guard=sidebarGuard)
             self.buildSectionList()
             self.displayServerAndUser()
         else:
-            self.sectionList.newControl(self)
+            self.sectionList.newControl(self, guard=sidebarGuard)
         # newControl() re-adds the items to a fresh native control whose selection starts at index
         # 0 (Search) - reselect the active section so the collapsed rail shows it from the first
         # frame (SidebarMixin._selectActiveSection()'s rule).
         self._selectActiveSection()
 
         if self.tabList is None:
-            self.tabList = kodigui.ManagedControlList(self, self.TAB_LIST_ID, 5)
+            self.tabList = kodigui.ManagedControlList(self, self.TAB_LIST_ID, 5, guard=sidebarGuard)
             self._tabListNeedsRebuild(self.section)  # just to set the tracked flags - always builds below regardless
             self.buildTabList()
         else:
-            self.tabList.newControl(self)
+            self.tabList.newControl(self, guard=sidebarGuard)
             if self._tabListNeedsRebuild(self.section):
                 self.buildTabList()
             else:
                 self.updateActiveTabMarker()
 
         if self.userList is None:
-            self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5)
+            self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5, guard=sidebarGuard)
         else:
-            self.userList.newControl(self)
+            self.userList.newControl(self, guard=sidebarGuard)
 
         if self.serverList is None:
-            self.serverList = kodigui.ManagedControlList(self, self.SERVER_LIST_ID, 10)
+            self.serverList = kodigui.ManagedControlList(self, self.SERVER_LIST_ID, 10, guard=sidebarGuard)
             if self is windowutils.HOME:
                 # Only the true root reacts to server-list-relevant signals - see hookSignals()'s
                 # own comment for why a nested instance's dropdown still works without them.
                 self.hookSignals()
         else:
-            self.serverList.newControl(self)
+            self.serverList.newControl(self, guard=sidebarGuard)
         timing.mark('controls')
 
         if self.contentMode == 'recommended':

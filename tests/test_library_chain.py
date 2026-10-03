@@ -137,6 +137,7 @@ class FakeHostWindow(object):
     _isRealShell = staticmethod(library.LibraryWindow._isRealShell)
     _setupCurrent = library.LibraryWindow._setupCurrent
     _retireListItems = library.LibraryWindow._retireListItems
+    _closeSidebarGuard = library.LibraryWindow._closeSidebarGuard
     swapTo = library.LibraryWindow.swapTo
     popBack = library.LibraryWindow.popBack
     swapToSection = library.LibraryWindow.swapToSection
@@ -973,6 +974,7 @@ class FakeSwitchTabHost(object):
     instance. See module docstring."""
 
     _retireListItems = library.LibraryWindow._retireListItems
+    _closeSidebarGuard = library.LibraryWindow._closeSidebarGuard
     itemType = library.LibraryWindow.itemType
 
     def __init__(self):

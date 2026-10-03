@@ -144,3 +144,83 @@ class WriteGuardTest(ScreenTasksTest):
         window = type('W', (), {'getControl': lambda self, cid: control})()
         plain = tasks_mixin.kodigui.ManagedControlList(window, 100, 5)
         self.assertIs(control, plain.control)
+
+
+class FakeListControl(object):
+    """A native list control: the list items it holds, and every call that reached it."""
+    def __init__(self):
+        self.listItems = []
+        self.calls = []
+
+    def addItems(self, items):
+        self.calls.append('addItems')
+        self.listItems.extend(items)
+
+    def getListItem(self, idx):
+        self.calls.append('getListItem')
+        return self.listItems[idx]
+
+
+class FakeListWindow(object):
+    def __init__(self, guard=None):
+        if guard is not None:
+            self._writeGuard = guard
+        self.control = FakeListControl()
+
+    def getControl(self, control_id):
+        return self.control
+
+
+class SharedListGuardTest(ScreenTasksTest):
+    """The host's sidebar lists outlive the views they're bound to, whose native controls Kodi
+    frees with them (LibraryWindow._sidebarListGuard()): each binding has a guard, closed by the
+    next swap, and a write after that is recorded, not sent."""
+
+    def setUp(self):
+        super(SharedListGuardTest, self).setUp()
+        self.kodigui = tasks_mixin.kodigui
+        self.guard = self.kodigui.WriteGuard()
+        self.view = FakeListWindow()
+        self.list = self.kodigui.ManagedControlList(self.view, 260, 10, guard=self.guard)
+        self.item = self.kodigui.ManagedListItem('Animal')
+        self.list.addItems([self.item])
+        self.view.control.calls = []
+
+    def test_an_item_write_reaches_kodi_while_bound(self):
+        self.item.setProperty('status', 'secure.png')
+        self.assertEqual('secure.png', self.view.control.listItems[0].getProperty('status'))
+
+    def test_after_the_swap_an_item_write_is_recorded_not_sent(self):
+        self.guard.close()
+        with self.assertRaises(self.kodigui.ScreenClosed):
+            self.item.setProperty('status', 'refreshing.gif')
+        self.assertEqual([], self.view.control.calls)
+        self.assertEqual('refreshing.gif', self.item.getProperty('status'))
+
+    def test_the_next_binding_shows_what_was_recorded(self):
+        self.guard.close()
+        with self.assertRaises(self.kodigui.ScreenClosed):
+            self.item.setProperty('status', 'refreshing.gif')
+        nextView = FakeListWindow()
+        self.list.newControl(nextView, guard=self.kodigui.WriteGuard())
+        self.assertEqual('refreshing.gif', nextView.control.listItems[0].getProperty('status'))
+        self.item.setProperty('status', 'secure.png')
+        self.assertEqual('secure.png', nextView.control.listItems[0].getProperty('status'))
+
+    def test_a_hosted_screen_rebinding_it_takes_its_own_guard(self):
+        self.guard.close()
+        screen = Screen()
+        shellWindow = FakeListWindow(screen._writeGuard)
+        self.list.newControl(shellWindow)
+        self.assertIs(screen._writeGuard, self.list._guard)
+        self.item.setProperty('status', 'secure.png')
+        self.assertEqual('secure.png', shellWindow.control.listItems[0].getProperty('status'))
+
+    def test_a_server_list_item_survives_the_swap(self):
+        from lib.windows import home
+        item = home.ServerListItem('Animal')
+        self.list.addItems([item])
+        self.guard.close()
+        self.assertFalse(item.safeSetProperty('status', 'refreshing.gif'))
+        self.assertFalse(item.safeSetLabel('Oscar'))
+        self.assertEqual('refreshing.gif', item.getProperty('status'))

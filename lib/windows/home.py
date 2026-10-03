@@ -618,11 +618,13 @@ class ServerListItem(kodigui.ManagedListItem):
         self.safeSetProperty('status', 'refreshing.gif')
 
     def safeSetProperty(self, key, value):
-        # For if we catch the item in the middle of being removed
+        # For if we catch the item in the middle of being removed, or its list's window has gone
+        # (ScreenClosed - LibraryWindow._sidebarListGuard()): setProperty() has still recorded the
+        # value, and the list's next binding (newControl()) shows it.
         try:
             self.setProperty(key, value)
             return True
-        except AttributeError:
+        except (AttributeError, kodigui.ScreenClosed):
             pass
 
         return False
@@ -633,7 +635,7 @@ class ServerListItem(kodigui.ManagedListItem):
         try:
             getattr(self, func)(value)
             return True
-        except AttributeError:
+        except (AttributeError, kodigui.ScreenClosed):
             pass
 
         return False
@@ -657,8 +659,11 @@ class ServerListItem(kodigui.ManagedListItem):
         return self.onUpdate(**kwargs)
 
     def onUpdate(self, **kwargs):
-        if not self.listItem:  # ex. can happen on Kodi shutdown
-            return
+        try:
+            if not self.listItem:  # ex. can happen on Kodi shutdown
+                return
+        except kodigui.ScreenClosed:
+            pass  # its list's window has gone: the setters below only record (safeSetProperty())
 
         if self.dataSource == kodigui.DUMMY_DATA_SOURCE:
             return

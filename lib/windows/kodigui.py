@@ -1176,11 +1176,12 @@ class ManagedControlList(object):
     __slots__ = ("controlID", "control", "items", "_sortKey", "_idCounter", "_maxViewIndex", "_properties",
                  "dataSource", "_guard")
 
-    def __init__(self, window, control_id, max_view_index, data_source=None):
+    def __init__(self, window, control_id, max_view_index, data_source=None, guard=None):
         self.controlID = control_id
-        # The creating screen's WriteGuard, if it has one. Not applied by newControl(): the host's
-        # shared lists (the sidebar) are rebound to each screen that way, and outlive it.
-        self._guard = getattr(window, '_writeGuard', None)
+        # The WriteGuard of the screen whose control this is, if it has one, or the one given -
+        # newControl() takes a new one with each control. The host's shared lists (the sidebar)
+        # are bound to views without one, so the host gives its own (LibraryWindow._sidebarListGuard()).
+        self._guard = guard if guard is not None else getattr(window, '_writeGuard', None)
         self.control = self._guardedControl(window.getControl(control_id))
         self.items = []
         self._sortKey = None
@@ -1529,13 +1530,17 @@ class ManagedControlList(object):
         for item in self.items:
             item._listItem = DUMMY_LIST_ITEM
 
-    def newControl(self, window=None, control_id=None):
+    def newControl(self, window=None, control_id=None, guard=None):
+        """Rebind to window's native control, re-adding the items. The list takes the WriteGuard
+        that goes with that control, as in __init__: guard, or else window's own - a hosted
+        screen rebinding the host's sectionList gets its own, not the host's."""
         self.controlID = control_id or self.controlID
-        self.control = window.getControl(self.controlID)
+        self._guard = guard if guard is not None else getattr(window, '_writeGuard', None)
+        self.control = self._guardedControl(window.getControl(self.controlID))
         self.control.addItems([xbmcgui.ListItem() for i in range(self.size())])
         self._updateItems()
 
-    def newControlEmpty(self, window=None, control_id=None):
+    def newControlEmpty(self, window=None, control_id=None, guard=None):
         """Like newControl(), but rebinds to the fresh native control without repainting
         whatever ManagedListItems this list was still holding - for a caller whose items are
         about to be replaced wholesale anyway (replaceItems()/reset()), where newControl()'s
@@ -1543,7 +1548,8 @@ class ManagedControlList(object):
         construction and the real replacement landing.
         """
         self.controlID = control_id or self.controlID
-        self.control = window.getControl(self.controlID)
+        self._guard = guard if guard is not None else getattr(window, '_writeGuard', None)
+        self.control = self._guardedControl(window.getControl(self.controlID))
         for i in self.items:
             i.onDestroy()
             i.invalidate()
