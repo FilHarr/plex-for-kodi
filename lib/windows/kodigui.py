@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 
 import atexit
+import functools
 import gc
 import threading
 import time
@@ -164,9 +165,41 @@ def setNavHidden(hidden):
     util.setGlobalProperty('nav_hidden', hidden and '1' or '')
 
 
+# A remote button mapped to a builtin (the power key's ShutDown(), say) reaches the top window as
+# this action before Kodi runs the builtin itself, on its main thread (CApplication::OnAction()).
+ACTION_BUILT_IN_FUNCTION = getattr(xbmcgui, 'ACTION_BUILT_IN_FUNCTION', 122)
+
+
+def _skippingBuiltins(onAction):
+    """onAction, minus builtin actions (XMLBase.__init_subclass__()). Live-caught 2026-10-03 on
+    the AM6B: the power key on an Episodes screen froze Kodi. Its onAction() asked the episode list
+    for its selection while Kodi was running the suspend, and the two waited on each other - the
+    list call holds the GIL while it waits for Kodi's main thread (a control from getControl() has
+    no language hook, so nothing releases it: Kodi's PythonSwig.cpp.template sets one up for
+    constructors and module functions only), and Kodi's main thread waited for the GIL. Kodi
+    handles a builtin itself, and none of our windows act on one."""
+    @functools.wraps(onAction)
+    def onActionSkippingBuiltins(self, action):
+        # getattr: our own code passes a bare action ID now and then (EpisodesWindow)
+        getId = getattr(action, 'getId', None)
+        if getId is not None and getId() == ACTION_BUILT_IN_FUNCTION:
+            return
+        return onAction(self, action)
+    onActionSkippingBuiltins._skipsBuiltins = True
+    return onActionSkippingBuiltins
+
+
 class XMLBase(object):
     defer_init = False
     defer_init_time = 0.25
+
+    def __init_subclass__(cls, **kwargs):
+        # Every window's onAction, its own or inherited (a view's comes from MultiWindowView, which
+        # isn't one of these), skips builtin actions - see _skippingBuiltins().
+        super(XMLBase, cls).__init_subclass__(**kwargs)
+        onAction = getattr(cls, 'onAction', None)
+        if onAction is not None and not getattr(onAction, '_skipsBuiltins', False):
+            cls.onAction = _skippingBuiltins(onAction)
 
     # A hidden list in base.xml.tpl, given one item at a window's first init. On stock Kodi 21 a skin
     # reload (a skin add-on update, or a manual reload) rebuilds our open windows' controls from the

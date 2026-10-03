@@ -66,3 +66,52 @@ class RestoreTest(KodiTestCase):
 
     def test_without_a_base_window_the_screen_replaces_kodis_home(self):
         self.assertEqual([('ReplaceWindow(13004)',)], self._restore(base=None))
+
+
+class FakeAction(object):
+    def __init__(self, actionId):
+        self.actionId = actionId
+
+    def getId(self):
+        return self.actionId
+
+
+class SkipsBuiltinsTest(KodiTestCase):
+    """A builtin (the power key's ShutDown(), say) reaches the window as an action while Kodi runs
+    it on its main thread; touching a control then could deadlock the two over the GIL, so every
+    window's onAction skips it (kodigui._skippingBuiltins())."""
+
+    def setUp(self):
+        super(SkipsBuiltinsTest, self).setUp()
+        seen = self.seen = []
+
+        class Screen(kodigui.ControlledWindow):
+            def __init__(self):
+                pass
+
+            def onAction(self, action):
+                seen.append(action.getId())
+
+        class ViewMixin(object):
+            def onAction(self, action):
+                seen.append(('view', action.getId()))
+
+        class View(ViewMixin, kodigui.ControlledWindow):
+            def __init__(self):
+                pass
+
+        self.screen = Screen()
+        self.view = View()
+
+    def test_a_builtin_never_reaches_the_window(self):
+        self.screen.onAction(FakeAction(kodigui.ACTION_BUILT_IN_FUNCTION))
+        self.assertEqual([], self.seen)
+
+    def test_other_actions_do(self):
+        self.screen.onAction(FakeAction(kodigui.xbmcgui.ACTION_NAV_BACK))
+        self.assertEqual([kodigui.xbmcgui.ACTION_NAV_BACK], self.seen)
+
+    def test_an_inherited_onaction_skips_it_too(self):
+        self.view.onAction(FakeAction(kodigui.ACTION_BUILT_IN_FUNCTION))
+        self.view.onAction(FakeAction(kodigui.xbmcgui.ACTION_NAV_BACK))
+        self.assertEqual([('view', kodigui.xbmcgui.ACTION_NAV_BACK)], self.seen)

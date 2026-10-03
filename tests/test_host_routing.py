@@ -182,7 +182,8 @@ class MultiWindowViewTest(KodiTestCase):
             self.assertLess(mro.index(kodigui.MultiWindowView), mro.index(kodigui.ControlledWindow),
                             '{0}: MultiWindowView must come before ControlledWindow'.format(cls.__name__))
             for name in ('onFirstInit', 'onReInit', 'onClick', 'onFocus', 'onAction'):
-                self.assertIs(getattr(kodigui.MultiWindowView, name), getattr(cls, name),
+                # unwrap: onAction comes wrapped, to skip builtins (kodigui._skippingBuiltins())
+                self.assertIs(getattr(kodigui.MultiWindowView, name), inspect.unwrap(getattr(cls, name)),
                               '{0}.{1} overrides the forward'.format(cls.__name__, name))
             for name in ('viewAction', 'viewClick', 'viewFocus'):
                 self.assertIsNot(getattr(kodigui.MultiWindowView, name), getattr(cls, name),
