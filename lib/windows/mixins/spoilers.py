@@ -30,8 +30,8 @@ class SpoilersMixin(object):
     def noSpoilers(self):
         return self.getNoSpoilers()
 
-    def getCachedGenres(self, rating_key):
-        genres = dcm.getCacheData("show_genres", rating_key)
+    def getCachedGenres(self, rating_key, server=None):
+        genres = dcm.getCacheData("show_genres", rating_key, server=server)
         if genres:
             return [pnUtil.AttributeDict(tag=g) for g in genres]
 
@@ -55,7 +55,8 @@ class SpoilersMixin(object):
             # a cached value instead
             genres = []
             if item or show:
-                genres = self.getCachedGenres(item and item.grandparentRatingKey or show.ratingKey)
+                genres = self.getCachedGenres(item and item.grandparentRatingKey or show.ratingKey,
+                                              server=(item or show).server)
 
             if not genres:
                 show = getattr(self, "show_", show or (item and item.show()) or None)

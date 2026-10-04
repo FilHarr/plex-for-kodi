@@ -559,7 +559,8 @@ class PhotoWindow(kodigui.BaseWindow):
             "containerKey": str(item.container.address)
         })
 
-        plexapp.util.APP.nowplayingmanager.updatePlaybackState(self.timelineType, data, state, time, self.playQueue)
+        plexapp.util.APP.nowplayingmanager.updatePlaybackState(self.timelineType, data, state, time, self.playQueue,
+                                                               server=item.server)
 
     def showOSD(self):
         self.osdTimer.reset(init=False)

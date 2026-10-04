@@ -267,7 +267,7 @@ class Video(media.MediaItem, AudioCodecMixin):
                         data = ['external', str(stream.languageCode or ''), str(stream.codec or '')]
                     else:
                         data = ['embedded', str(stream.id)]
-                    dcm.setCacheData('audio_selection', _audioSelectionCacheId(rating_key), data)
+                    dcm.setCacheData('audio_selection', _audioSelectionCacheId(rating_key), data, server=self.server)
                     util.DEBUG_LOG('Cached audio selection for {}: {}', rating_key, data)
         elif stream.streamType.asInt() == plexstream.PlexStream.TYPE_SUBTITLE:
             self._current_subtitle_idx = None
@@ -795,14 +795,14 @@ class Movie(PlayableVideo):
         # back as Home's hero overlay saw permanently empty genres for any movie they hadn't
         # already reloaded elsewhere (e.g. by visiting pre_play first). Mirroring Show's own
         # lazy-reload-once pattern fixes that at the source instead of in each caller.
-        genres = dcm.getCacheData("movie_genres", self.ratingKey)
+        genres = dcm.getCacheData("movie_genres", self.ratingKey, server=self.server)
         if genres:
             return [media.Genre(util.AttributeDict(tag="genre", attrib={"tag": g}, virtual=True)) for g in genres]
 
         if not self.isFullObject():
             self.reload(soft=True)
 
-        dcm.setCacheData("movie_genres", self.ratingKey, [g.tag for g in self._genres])
+        dcm.setCacheData("movie_genres", self.ratingKey, [g.tag for g in self._genres], server=self.server)
         return self._genres
 
     @property
@@ -958,7 +958,8 @@ class Movie(PlayableVideo):
         if ext_streams and util.INTERFACE.getPreference('use_external_audio', False):
             match = None
             rating_key = str(self.ratingKey) if self.ratingKey else None
-            cached = dcm.getCacheData('audio_selection', _audioSelectionCacheId(rating_key)) if rating_key else None
+            cached = (dcm.getCacheData('audio_selection', _audioSelectionCacheId(rating_key), server=self.server)
+                      if rating_key else None)
 
             if cached:
                 kind = cached[0]
@@ -1099,14 +1100,14 @@ class Show(CachableItemsMixin, Video, media.RelatedMixin, SectionOnDeckMixin):
         return self.episodes(watched=False)
 
     def genres(self):
-        genres = dcm.getCacheData("show_genres", self.ratingKey)
+        genres = dcm.getCacheData("show_genres", self.ratingKey, server=self.server)
         if genres:
             return [media.Genre(util.AttributeDict(tag="genre", attrib={"tag": g}, virtual=True)) for g in genres]
 
         if not self.isFullObject():
             self.reload(soft=True)
 
-        dcm.setCacheData("show_genres", self.ratingKey, [g.tag for g in self._genres])
+        dcm.setCacheData("show_genres", self.ratingKey, [g.tag for g in self._genres], server=self.server)
         return self._genres
 
     def getImmediateChildren(self):

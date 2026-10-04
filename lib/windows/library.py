@@ -2874,7 +2874,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self.postNav('switchTab', self.switchTab, args=(mode,), kwargs={'item_type': item_type})
 
     def searchButtonClicked(self):
-        self.processCommand(search.dialog(self, section_id=self.section.key))
+        # Watchlist's own server is plex.tv's, which isn't searched here
+        server = None if self.section == home.watchlist_section else self.section.server
+        self.processCommand(search.dialog(self, section_id=self.section.key, server=server))
 
     def buildSectionList(self):
         """The shared sidebar build (windowutils.SidebarMixin), with Watchlist made afresh first:
@@ -2993,7 +2995,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         else:
             options = []
 
-            if plexapp.ACCOUNT.isAdmin and section not in (home.watchlist_section, home.playlists_section):
+            # the server's own admin only: a shared server refuses these
+            if (plexapp.ACCOUNT.isAdmin and section not in (home.watchlist_section, home.playlists_section)
+                    and section.server.owned):
                 options = [{'key': 'refresh', 'display': T(33082, "Scan Library Files")},
                            {'key': 'emptyTrash', 'display': T(33083, "Empty Trash")},
                            {'key': 'analyze', 'display': T(33084, "Analyze")},
@@ -3053,7 +3057,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 d = xbmcgui.Dialog().browse(0, T(33031, "Select Kodi source for {}").format(choice["path"]), "files")
                 if not d:
                     return
-                pmm.addPathMapping(d, choice["path"])
+                pmm.addPathMapping(d, choice["path"], server=section.server)
                 return self.section
         elif choice["key"] == "hide":
             self.navSettings.setdefault(section_ids.sectionId(section), {})['show'] = False

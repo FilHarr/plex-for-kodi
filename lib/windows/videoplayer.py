@@ -13,7 +13,6 @@ from lib import kodijsonrpc
 from lib import player
 from lib import util
 from lib.util import T
-from plexnet import plexapp
 from plexnet.serverdecision import DecisionFailure
 from . import busy
 from . import kodigui
@@ -701,7 +700,7 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
 
 def librarySectionOf(item):
     section_id = str(item.getLibrarySectionId())
-    for section in plexapp.SERVERMANAGER.selectedServer.library.sections():
+    for section in item.server.library.sections():
         if str(section.key) == section_id:
             return section
     return None

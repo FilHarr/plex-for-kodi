@@ -29,7 +29,6 @@ class DataCacheManager(object):
     def __init__(self):
         self._currentServerUUID = None
         plexapp.util.APP.on('change:selectedServer', self.setServerUUID)
-        plexapp.util.APP.on('change:tempServer', self.setServerUUID)
         if self.USE_GZ:
             self.DC_PATH += "z"
         if xbmcvfs.exists(self.DC_PATH):
@@ -62,29 +61,35 @@ class DataCacheManager(object):
 
     def deinit(self):
         plexapp.util.APP.off('change:selectedServer', self.setServerUUID)
-        plexapp.util.APP.off('change:tempServer', self.setServerUUID)
 
-    def getCacheData(self, context, identifier):
-        ret = self.DATA_CACHES["cache"].get(self._currentServerUUID, {}).get(context, {}).get(identifier, {})
+    def _scope(self, server):
+        """The cache's per-server part: the item's own server, else the selected one."""
+        uuid = getattr(server, 'uuid', None)
+        return uuid[-8:] if uuid else self._currentServerUUID
+
+    def getCacheData(self, context, identifier, server=None):
+        scope = self._scope(server)
+        ret = self.DATA_CACHES["cache"].get(scope, {}).get(context, {}).get(identifier, {})
         if "data" in ret and ret["data"]:
             # purge old data (> X days last updated)
             if ret["updated"] < time.time() - self.DC_LRUP_TIMEOUT * 3600 * 24:
-                del self.DATA_CACHES["cache"][self._currentServerUUID][context][identifier]
+                del self.DATA_CACHES["cache"][scope][context][identifier]
                 return None
 
-            self.DATA_CACHES["cache"][self._currentServerUUID][context][identifier]["last_access"] = time.time()
+            self.DATA_CACHES["cache"][scope][context][identifier]["last_access"] = time.time()
             return ret["data"]
 
-    def setCacheData(self, context, identifier, value):
-        if self._currentServerUUID not in self.DATA_CACHES["cache"]:
-            self.DATA_CACHES["cache"][self._currentServerUUID] = {}
-        if context not in self.DATA_CACHES["cache"][self._currentServerUUID]:
-            self.DATA_CACHES["cache"][self._currentServerUUID][context] = {}
-        if identifier not in self.DATA_CACHES["cache"][self._currentServerUUID][context]:
-            self.DATA_CACHES["cache"][self._currentServerUUID][context][identifier] = {}
+    def setCacheData(self, context, identifier, value, server=None):
+        scope = self._scope(server)
+        if scope not in self.DATA_CACHES["cache"]:
+            self.DATA_CACHES["cache"][scope] = {}
+        if context not in self.DATA_CACHES["cache"][scope]:
+            self.DATA_CACHES["cache"][scope][context] = {}
+        if identifier not in self.DATA_CACHES["cache"][scope][context]:
+            self.DATA_CACHES["cache"][scope][context][identifier] = {}
         t = time.time()
         self.DATA_CACHES["general"]["updated"] = t
-        self.DATA_CACHES["cache"][self._currentServerUUID][context][identifier] = {
+        self.DATA_CACHES["cache"][scope][context][identifier] = {
             "updated": t,
             "last_access": t,
             "data": value

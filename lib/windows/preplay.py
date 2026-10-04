@@ -452,7 +452,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         util.MONITOR.watchStatusChanged()
 
     def searchButtonClicked(self):
-        self.processCommand(search.dialog(self, section_id=self.video.getLibrarySectionId() or None))
+        self.processCommand(search.dialog(self, section_id=self.video.getLibrarySectionId() or None,
+                                          server=self.video.server))
 
     def roleSectionId(self):
         return self.entrySectionId
@@ -511,7 +512,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         if self.video.type in ('episode', 'movie'):
             options.append({'key': 'to_section', 'display': T(32324, u'Go to {0}').format(self.video.getLibrarySectionTitle())})
 
-        if plexapp.ACCOUNT.isAdmin:
+        if plexapp.ACCOUNT.isAdmin and self.video.server.owned:
             options.append(dropdown.SEPARATOR)
             options.append({'key': 'refresh', 'display': T(33719, 'Refresh metadata')})
 

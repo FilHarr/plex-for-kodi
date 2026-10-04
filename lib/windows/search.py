@@ -78,6 +78,8 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         windowutils.UtilMixin.__init__(self)
         self.parentWindow = kwargs.get('parent_window')
         self.sectionID = kwargs.get('section_id')
+        # A search from inside a library asks that library's server; otherwise the selected one.
+        self.server = kwargs.get('server')
         self.resultsThread = None
         self.updateResultsTimeout = 0
         self.isActive = True
@@ -185,7 +187,8 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         query = self.edit.getText()
         if query:
             with self.propertyContext('searching'):
-                hubs = plexapp.SERVERMANAGER.selectedServer.hubs(count=10, search_query=query, section=self.sectionID)
+                server = self.server or plexapp.SERVERMANAGER.selectedServer
+                hubs = server.hubs(count=10, search_query=query, section=self.sectionID)
                 self.showHubs(hubs)
         else:
             self.showSearchHistory()
@@ -444,11 +447,11 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
             pass
 
 
-def dialog(parent_window, section_id=None):
+def dialog(parent_window, section_id=None, server=None):
     parent_window.setProperty('search.dialog.hasresults', '')
     with parent_window.propertyContext('search.dialog'):
         try:
-            w = SearchDialog.open(parent_window=parent_window, section_id=section_id)
+            w = SearchDialog.open(parent_window=parent_window, section_id=section_id, server=server)
             w.wait()
             command = w.exitCommand or ''
             del w

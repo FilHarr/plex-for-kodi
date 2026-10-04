@@ -234,25 +234,11 @@ class WatchlistUtilsMixin(object):
         item_meta = selected_item or self.wl_availability[0][1]
         rk = item_meta.get("rating_key", None)
         if rk:
-            server_differs = item_meta["server_uuid"] != plexapp.SERVERMANAGER.selectedServer.uuid
-            server = orig_srv = plexapp.SERVERMANAGER.selectedServer
-
-            if server_differs:
-                server = plexapp.SERVERMANAGER.getServer(item_meta["server_uuid"])
-
-            try:
-                if server_differs:
-                    # fire event to temporarily change server
-                    util.LOG("Temporarily changing server source to: {}", server.name)
-                    plexapp.util.APP.trigger('change:tempServer', server=server)
-
-                item_open_callback(item=rk, inherit_from_watchlist=False, server=server, is_watchlisted=True,
-                                   directly_from_watchlist=True,
-                                   came_from=self.wl_ref)
-            finally:
-                if server_differs:
-                    util.LOG("Reverting to server source: {}", orig_srv.name)
-                    plexapp.util.APP.trigger('change:tempServer', server=orig_srv)
+            # the item opens on the server it's on; what it plays with follows it (item.server)
+            server = plexapp.SERVERMANAGER.getServer(item_meta["server_uuid"])
+            item_open_callback(item=rk, inherit_from_watchlist=False, server=server, is_watchlisted=True,
+                               directly_from_watchlist=True,
+                               came_from=self.wl_ref)
 
             self.checkIsWatchlisted(ref)
 

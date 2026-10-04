@@ -210,8 +210,11 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self._selectActiveSection()
         self.displayServerAndUser()
 
+        # Credits are looked up in the library of the server the role came from. A Discover
+        # role's server is plex.tv's, which has no library: the selected server's stands in.
         local_server = plexapp.SERVERMANAGER.selectedServer
-        if local_server and self.role.server != local_server:
+        role_server = self.role.server
+        if local_server and not (role_server and role_server.uuid in plexapp.SERVERMANAGER.serversByUuid):
             self.role.server = local_server
 
         self.setProperty('person.name', self.role.tag or '')
@@ -453,9 +456,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         if not item.ratingKey:
             return
 
-        from plexnet import plexapp, util as pnUtil
+        from plexnet import util as pnUtil
         from plexnet.compat import quote_plus
-        local_server = plexapp.SERVERMANAGER.selectedServer
+        local_server = self.role.server
         if local_server and item.guid in self.libraryGuids:
             try:
                 # Resolve plex:// guid against the local PMS — getObject builds a proper PlexObject

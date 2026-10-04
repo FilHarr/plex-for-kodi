@@ -1246,7 +1246,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 # we've probably watched something in the next season
                 ns = progress_data[list(progress_data.keys())[-1]]
                 key = '/library/metadata/{0}'.format(list(ns.keys())[-1])
-                ep = plexapp.SERVERMANAGER.selectedServer.getObject(key)
+                ep = self.show_.server.getObject(key)
                 if ep.parentIndex != self.season.index and ep.grandparentRatingKey == self.show_.ratingKey:
                     util.LOG("Progress data left for TV show, going to season of "
                              "remaining episode with progress data: {}", ep)
@@ -1692,7 +1692,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     def searchButtonClicked(self):
         section_id = self.show_.getLibrarySectionId()
-        self.processCommand(search.dialog(self, section_id=section_id or None))
+        self.processCommand(search.dialog(self, section_id=section_id or None, server=self.show_.server))
 
     def playButtonClicked(self, force_episode=None, from_auto_play=False, start_over=False,
                           force_resume=False):
@@ -1934,7 +1934,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             options.append({'key': 'playback_settings', 'display': T(32925, 'Playback Settings')})
             options.append(dropdown.SEPARATOR)
 
-        if plexapp.ACCOUNT.isAdmin:
+        if plexapp.ACCOUNT.isAdmin and mli.dataSource.server.owned:
             options.append({'key': 'refresh', 'display': T(33719, 'Refresh metadata')})
 
             # Delete stays episode-only: the confirmation dialog below (delete()) is worded for a

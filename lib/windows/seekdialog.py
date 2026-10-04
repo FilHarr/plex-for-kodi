@@ -1213,7 +1213,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 elapsed += 0.5
 
             # fill attributes
-            info = VideoSessionInfo(videoSession, currentVideo, plexapp.SERVERMANAGER.selectedServer.anyLANConnection)
+            info = VideoSessionInfo(videoSession, currentVideo, currentVideo.server.anyLANConnection)
 
         except ServerNotOwned:
             # timeline response data fallback
@@ -1227,7 +1227,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                     elapsed += 0.1
 
                 info = VideoSessionInfo(None, currentVideo,
-                                        plexapp.SERVERMANAGER.selectedServer.anyLANConnection,
+                                        currentVideo.server.anyLANConnection,
                                         incompleteSessionData=self.lastTimelineResponse)
             except NotFound:
                 self.setProperty('ppi.Status', 'Info not available (data not found)')

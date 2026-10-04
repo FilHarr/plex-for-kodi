@@ -69,7 +69,6 @@ class PlaybackManager(object):
             self._hook('change:{}'.format(v), self.setGlob)
 
         self._hook('change:selectedServer', self.setServerUUID)
-        self._hook('change:tempServer', self.setServerUUID)
         self._hook("loaded:cached_user", self.setUserID)
         self._hook("change:user", self.setUserID)
         self._hook('init', self.setUserID)
@@ -87,14 +86,16 @@ class PlaybackManager(object):
         self._signalHandlers = []
 
     def __call__(self, obj, key=None, value=None, kv_dict=None):
+        # the item's own server's settings; the selected server's for one without a server
+        csid = getattr(getattr(obj, 'server', None), 'uuid', None) or self._currentServerUUID
+        cuid = self._currentUserID
+
         # shouldn't happen
-        if not self._currentServerUUID:
+        if not csid:
             util.DEBUG_LOG("APP.PlaybackManager, something's wrong: ServerUUID: {}, UserID: {}",
-                           self._currentServerUUID, self._currentUserID)
+                           csid, cuid)
             return
 
-        csid = self._currentServerUUID
-        cuid = self._currentUserID
 
         # set
         if (key is not None and value is not None) or kv_dict is not None:

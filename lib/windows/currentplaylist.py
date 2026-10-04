@@ -457,9 +457,9 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
             return
 
         if choice['key'] == 'to_album':
-            self.processCommand(opener.open(track.parentRatingKey))
+            self.processCommand(opener.open(track.parentRatingKey, server=track.server))
         elif choice['key'] == 'to_artist':
-            self.processCommand(opener.open(track.grandparentRatingKey))
+            self.processCommand(opener.open(track.grandparentRatingKey, server=track.server))
         elif choice['key'] == 'to_section':
             # force: the section's start, even when it's the one showing under the player - Home
             # otherwise counted Music as already showing and left the Artist screen up.
