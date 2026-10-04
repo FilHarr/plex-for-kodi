@@ -84,3 +84,46 @@ class DropdownContextMenuTest(KodiTestCase):
 
         self.assertEqual([xbmcgui.ACTION_NAV_BACK], seen)
         self.assertEqual([], dlg.closed)
+
+
+class SkipHeadingsTest(KodiTestCase):
+    """A heading row (the Libraries picker's server names) is shown but never selected: moving onto
+    one carries on to the next row in the same direction, or back at the end of the list."""
+
+    class Row(object):
+        def __init__(self, heading=False):
+            self.heading = heading
+
+        def getProperty(self, key):
+            return '1' if key == 'heading' and self.heading else ''
+
+    class Rows(object):
+        def __init__(self, rows):
+            self.items = rows
+            self.selected = None
+
+        def setSelectedItemByPos(self, pos):
+            self.selected = pos
+
+    def dialog(self, *headings):
+        win = dropdown.DropdownDialog.__new__(dropdown.DropdownDialog)
+        win.optionsList = self.Rows([self.Row(heading=h) for h in headings])
+        return win
+
+    def test_down_onto_a_heading_goes_on_to_the_row_below(self):
+        win = self.dialog(False, True, False)
+        self.assertEqual(2, win._skipHeadings(1, xbmcgui.ACTION_MOVE_DOWN))
+        self.assertEqual(2, win.optionsList.selected)
+
+    def test_up_onto_a_heading_goes_on_to_the_row_above(self):
+        win = self.dialog(False, True, True, False)
+        self.assertEqual(0, win._skipHeadings(2, xbmcgui.ACTION_MOVE_UP))
+
+    def test_a_heading_first_sends_up_back_down(self):
+        win = self.dialog(True, False)
+        self.assertEqual(1, win._skipHeadings(0, xbmcgui.ACTION_MOVE_UP))
+
+    def test_a_row_is_left_alone(self):
+        win = self.dialog(False, True, False)
+        self.assertEqual(2, win._skipHeadings(2, xbmcgui.ACTION_MOVE_DOWN))
+        self.assertIsNone(win.optionsList.selected)

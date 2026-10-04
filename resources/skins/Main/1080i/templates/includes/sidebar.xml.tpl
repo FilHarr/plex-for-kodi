@@ -192,9 +192,12 @@
                     <texture>script.plex/white-square-rounded-4r.png</texture>
                     <colordiffuse>FFCC2222</colordiffuse>
                 </control>
-                <!-- Section label (expanded only) -->
+                <!-- Section label (expanded only): one line, or - when the account has more than one
+                     server (ListItem.Property(server.name), set for libraries only) - the library over
+                     its server's name. Kodi labels only centre vertically, so each line's box is
+                     placed: together they centre on the row like the single line (y=44). -->
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0)</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name))</visible>
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
@@ -204,6 +207,30 @@
                     <aligny>center</aligny>
                     <textcolor>99FFFFFF</textcolor>
                     <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <posx>68</posx>
+                    <posy>{{ vscale(19) }}</posy>
+                    <width>220</width>
+                    <height>{{ vscale(28) }}</height>
+                    <font>font10</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>99FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <posx>68</posx>
+                    <posy>{{ vscale(48) }}</posy>
+                    <width>220</width>
+                    <height>{{ vscale(20) }}</height>
+                    <font>font8</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>66FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Property(server.name)]</label>
                 </control>
             </control>
         </itemlayout>
@@ -284,9 +311,12 @@
                     <texture>script.plex/white-square-rounded-4r.png</texture>
                     <colordiffuse>FFFF4444</colordiffuse>
                 </control>
-                <!-- Section label (expanded only) -->
+                <!-- Section label (expanded only): one line, or - when the account has more than one
+                     server (ListItem.Property(server.name), set for libraries only) - the library over
+                     its server's name. Kodi labels only centre vertically, so each line's box is
+                     placed: together they centre on the row like the single line (y=44). -->
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0)</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name))</visible>
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
@@ -297,6 +327,31 @@
                     <textcolor>FFFFFFFF</textcolor>
                     <focusedcolor>FFFFFFFF</focusedcolor>
                     <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <posx>68</posx>
+                    <posy>{{ vscale(19) }}</posy>
+                    <width>220</width>
+                    <height>{{ vscale(28) }}</height>
+                    <font>font10</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <focusedcolor>FFFFFFFF</focusedcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <posx>68</posx>
+                    <posy>{{ vscale(48) }}</posy>
+                    <width>220</width>
+                    <height>{{ vscale(20) }}</height>
+                    <font>font8</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>99FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Property(server.name)]</label>
                 </control>
             </control>
         </focusedlayout>

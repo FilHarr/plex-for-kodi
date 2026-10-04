@@ -199,7 +199,6 @@ class SidebarMixin():
         entries = sidebar_model.sections(self.sidebarNavSettings(), onChange=self._sidebarEntriesChanged)
         active = self.sidebarActiveSection([home.home_section] + entries)
         active_pos = None
-        labels = sidebar_model.labels(entries)
 
         searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
         searchmli.setProperty('is.search', '1')
@@ -212,9 +211,12 @@ class SidebarMixin():
                                               data_source=section)
                 mli.setProperty('is.home', '1')
             else:
-                mli = kodigui.ManagedListItem(labels.get(sidebar_model.sectionId(section), section.title),
+                mli = kodigui.ManagedListItem(section.title,
                                               iconImage='script.plex/home/type/{0}.png'.format(section.type),
                                               data_source=section)
+                server = sidebar_model.serverName(section)
+                if server:
+                    mli.setProperty('server.name', server)
                 if section == home.playlists_section:
                     mli.setProperty('is.playlists', '1')
                     mli.setIconImage('script.plex/home/type/playlists.png')

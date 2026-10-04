@@ -129,7 +129,7 @@
                 <label>$INFO[ListItem.Label]</label>
             </control>
             <control type="group">
-                <visible>!String.IsEmpty(ListItem.Property(with.indicator))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(with.indicator)) + String.IsEmpty(ListItem.Property(indicator.right))</visible>
                 <!-- Label: narrow when submenu chevron is shown, full-width otherwise -->
                 <control type="label">
                     <visible>String.IsEmpty(ListItem.Property(has.submenu))</visible>
@@ -175,6 +175,70 @@
                     <width>26</width>
                     <height>{{ vscale(26) }}</height>
                     <texture colordiffuse="FFFFFFFF">$INFO[ListItem.Thumb]</texture>
+                    <aspectratio>keep</aspectratio>
+                </control>
+            </control>
+            <!-- Indicator on the right (indicator_right, the Libraries picker): headings - shown, never
+                 selected (DropdownDialog._skipHeadings()) - and rows, set in under a heading ('inset'),
+                 their indicator full white or dimmed ('indicator.dim': the picker's unpinned pin) -->
+            <control type="group">
+                <visible>!String.IsEmpty(ListItem.Property(indicator.right))</visible>
+                <control type="label">
+                    <visible>!String.IsEmpty(ListItem.Property(heading))</visible>
+                    <posx>20</posx>
+                    <posy>0</posy>
+                    <width>560</width>
+                    <height>{{ vscale(66) }}</height>
+                    <font>font10</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>99FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>String.IsEmpty(ListItem.Property(heading)) + String.IsEmpty(ListItem.Property(inset))</visible>
+                    <posx>20</posx>
+                    <posy>0</posy>
+                    <width>510</width>
+                    <height>{{ vscale(66) }}</height>
+                    <font>font12</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <scroll>true</scroll>
+                    <scrollspeed>20</scrollspeed>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>String.IsEmpty(ListItem.Property(heading)) + !String.IsEmpty(ListItem.Property(inset))</visible>
+                    <posx>50</posx>
+                    <posy>0</posy>
+                    <width>480</width>
+                    <height>{{ vscale(66) }}</height>
+                    <font>font12</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <scroll>true</scroll>
+                    <scrollspeed>20</scrollspeed>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="image">
+                    <visible>String.IsEmpty(ListItem.Property(heading)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
+                    <posx>554</posx>
+                    <posy>{{ vscale(20) }}</posy>
+                    <width>26</width>
+                    <height>{{ vscale(26) }}</height>
+                    <texture colordiffuse="FFFFFFFF">$INFO[ListItem.Thumb]</texture>
+                    <aspectratio>keep</aspectratio>
+                </control>
+                <control type="image">
+                    <visible>String.IsEmpty(ListItem.Property(heading)) + !String.IsEmpty(ListItem.Property(indicator.dim))</visible>
+                    <posx>554</posx>
+                    <posy>{{ vscale(20) }}</posy>
+                    <width>26</width>
+                    <height>{{ vscale(26) }}</height>
+                    <texture colordiffuse="66FFFFFF">$INFO[ListItem.Thumb]</texture>
                     <aspectratio>keep</aspectratio>
                 </control>
             </control>
@@ -283,7 +347,7 @@
                 <label>$INFO[ListItem.Label]</label>
             </control>
             <control type="group">
-                <visible>!String.IsEmpty(ListItem.Property(with.indicator))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(with.indicator)) + String.IsEmpty(ListItem.Property(indicator.right))</visible>
                 <!-- Label: narrow when submenu chevron is shown, full-width otherwise -->
                 <control type="label">
                     <visible>String.IsEmpty(ListItem.Property(has.submenu))</visible>
@@ -329,6 +393,70 @@
                     <width>26</width>
                     <height>{{ vscale(26) }}</height>
                     <texture colordiffuse="FF000000">$INFO[ListItem.Thumb]</texture>
+                    <aspectratio>keep</aspectratio>
+                </control>
+            </control>
+            <!-- Indicator on the right (indicator_right, the Libraries picker): headings - shown, never
+                 selected (DropdownDialog._skipHeadings()) - and rows, set in under a heading ('inset'),
+                 their indicator full white or dimmed ('indicator.dim': the picker's unpinned pin) -->
+            <control type="group">
+                <visible>!String.IsEmpty(ListItem.Property(indicator.right))</visible>
+                <control type="label">
+                    <visible>!String.IsEmpty(ListItem.Property(heading))</visible>
+                    <posx>20</posx>
+                    <posy>0</posy>
+                    <width>560</width>
+                    <height>{{ vscale(66) }}</height>
+                    <font>font10</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>99000000</textcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>String.IsEmpty(ListItem.Property(heading)) + String.IsEmpty(ListItem.Property(inset))</visible>
+                    <posx>20</posx>
+                    <posy>0</posy>
+                    <width>510</width>
+                    <height>{{ vscale(66) }}</height>
+                    <font>font12</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>FF000000</textcolor>
+                    <scroll>true</scroll>
+                    <scrollspeed>20</scrollspeed>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>String.IsEmpty(ListItem.Property(heading)) + !String.IsEmpty(ListItem.Property(inset))</visible>
+                    <posx>50</posx>
+                    <posy>0</posy>
+                    <width>480</width>
+                    <height>{{ vscale(66) }}</height>
+                    <font>font12</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>FF000000</textcolor>
+                    <scroll>true</scroll>
+                    <scrollspeed>20</scrollspeed>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="image">
+                    <visible>String.IsEmpty(ListItem.Property(heading)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
+                    <posx>554</posx>
+                    <posy>{{ vscale(20) }}</posy>
+                    <width>26</width>
+                    <height>{{ vscale(26) }}</height>
+                    <texture colordiffuse="FFFFFFFF">$INFO[ListItem.Thumb]</texture>
+                    <aspectratio>keep</aspectratio>
+                </control>
+                <control type="image">
+                    <visible>String.IsEmpty(ListItem.Property(heading)) + !String.IsEmpty(ListItem.Property(indicator.dim))</visible>
+                    <posx>554</posx>
+                    <posy>{{ vscale(20) }}</posy>
+                    <width>26</width>
+                    <height>{{ vscale(26) }}</height>
+                    <texture colordiffuse="66000000">$INFO[ListItem.Thumb]</texture>
                     <aspectratio>keep</aspectratio>
                 </control>
             </control>

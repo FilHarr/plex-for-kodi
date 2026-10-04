@@ -107,6 +107,8 @@ class SidebarCase(KodiTestCase):
         self.account = mock.Mock(title='Phil', username='phil', ID='1', thumb='', isOffline=False)
         self.account.safeUserThumb.return_value = 'avatar.png'
         self.manager = mock.Mock(selectedServer=self.server, serversByUuid={UUID: self.server, OTHER: OSCAR})
+        # one server on the account unless a test says otherwise
+        self.manager.getServers.return_value = [self.server]
         self.watchlist = Watchlist('/library/sections/watchlist', 'Watchlist')
         self.startedChecks = []
         self.startedFetches = []
@@ -239,10 +241,21 @@ class EntriesTest(SidebarCase):
         self.assertEqual(['Search', 'Home', 'Films'], self.labels(self.build(Shell())))
         self.assertEqual('Films', json.loads(self.settings['sidebar.1'])['libraries'][UUID + ':1']['title'])
 
-    def test_two_libraries_with_one_title_name_their_servers(self):
+    @staticmethod
+    def serverLines(sectionList):
+        return [mli.getProperty('server.name') for mli in sectionList.items]
+
+    def test_with_one_server_entries_are_one_line(self):
+        self.assertEqual([''] * 6, self.serverLines(self.build(Shell())))
+
+    def test_with_more_than_one_server_libraries_name_theirs_under_the_title(self):
+        self.manager.getServers.return_value = [self.server, OSCAR]
         self.listed(OTHER, [Section('1', 'Movies', server=OSCAR)])
-        self.store('1', 'other:1')
-        self.assertEqual(['Search', 'Home', 'Movies · Animal', 'Movies · Oscar'], self.labels(self.build(Shell())))
+        self.store('watchlist', '1', 'other:1', 'other:7')
+        sectionList = self.build(Shell())
+        self.assertEqual(['Search', 'Home', 'Watchlist', 'Movies', 'Movies', 'Library 7'], self.labels(sectionList))
+        # Watchlist isn't one server's; Oscar's library 7 is a placeholder, named from what's stored
+        self.assertEqual(['', '', '', 'Animal', 'Oscar', 'Oscar'], self.serverLines(sectionList))
 
 
 class HighlightTest(SidebarCase):
@@ -494,22 +507,37 @@ class PickerTest(SidebarCase):
 
     @staticmethod
     def rows(options):
-        return [(o['display'], bool(o.get('indicator'))) if o else '--' for o in options]
+        """'--' a separator, '# name' a heading, '  name' a row set in under one; ' [x]' if pinned."""
+        def row(o):
+            if not o:
+                return '--'
+            if o.get('heading'):
+                return '# ' + o['display']
+            pinned = o['indicator'] == library.LibraryWindow.PICKER_PINNED
+            assert o['indicator_dim'] is not pinned, 'pinned full white, unpinned dimmed'
+            return (o.get('inset') and '  ' or '') + o['display'] + (pinned and ' [x]' or '')
+        return [row(o) for o in options]
 
-    def test_every_server_with_its_libraries_ticked_when_in_the_sidebar(self):
+    def test_each_server_a_heading_over_its_libraries_ticked_when_in_the_sidebar(self):
         win = self.window([(self.server, [MOVIES, TV, MUSIC]), (OSCAR, [Section('7', 'Films', server=OSCAR)])])
         self.store('watchlist', '1', '3')
-        self.assertEqual([('Watchlist', True), ('Playlists', False), '--',
-                          ('Movies [Animal]', True), ('TV Shows [Animal]', False), ('Music [Animal]', True), '--',
-                          ('Films [Oscar]', False)],
+        self.assertEqual(['Watchlist [x]', 'Playlists', '--',
+                          '# Animal', '  Movies [x]', '  TV Shows', '  Music [x]', '--',
+                          '# Oscar', '  Films'],
                          self.rows(win._libraryPickerOptions()))
 
     def test_a_server_that_does_not_answer_says_so_and_keeps_its_entries_removable(self):
         win = self.window([(self.server, [MOVIES]), (OSCAR, None)])
         self.store('1', 'other:7', other_7=('Films', 'movie'))
-        self.assertEqual([('Watchlist', False), ('Playlists', False), '--', ('Movies [Animal]', True), '--',
-                          ("Oscar isn't responding", False), ('Films [Oscar]', True)],
+        self.assertEqual(['Watchlist', 'Playlists', '--', '# Animal', '  Movies [x]', '--',
+                          "# Oscar isn't responding", '  Films [x]'],
                          self.rows(win._libraryPickerOptions()))
+
+    def test_a_heading_does_nothing(self):
+        win = self.window([(self.server, [MOVIES])])
+        headingRow = [o for o in win._libraryPickerOptions() if o and o.get('heading')][0]
+        self.assertIsNone(win._onLibraryPickerToggle(mock.Mock(), mock.Mock(dataSource=headingRow)))
+        self.assertFalse(win._pickerChanged)
 
     def test_toggling_adds_and_removes(self):
         films = Section('7', 'Films', server=OSCAR)

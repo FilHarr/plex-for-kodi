@@ -2755,13 +2755,15 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         util.showNotification(message, time_ms=5000)
         return None
 
-    # The Libraries picker's tick (the dropdown's indicator)
-    PICKER_TICK = 'script.plex/indicators/circle-19.png'
+    # The Libraries picker's pins (the dropdown's indicator): in the sidebar, full white; not, dimmed
+    PICKER_PINNED = 'script.plex/indicators/pin-selected.png'
+    PICKER_UNPINNED = 'script.plex/indicators/pin-unselected.png'
 
     def showLibraryPicker(self):
-        """The Libraries button: which libraries the sidebar shows. Every server on the account -
-        owned first - with its libraries, ticked when they're in the sidebar, plus Watchlist and
-        Playlists. Ticking adds to the end of the sidebar, unticking removes; the sidebar is rebuilt
+        """The Libraries button: which libraries the sidebar shows. Watchlist and Playlists, then
+        every server on the account - owned first - as a heading with its libraries set in under it,
+        each with a pin on the right: full white when it's in the sidebar, an outline dimmed when it
+        isn't. Ticking adds to the end of the sidebar, unticking removes; the sidebar is rebuilt
         when the picker closes. The servers are asked for their libraries as it opens, together; one
         that doesn't answer says so, and its libraries already in the sidebar stay listed to be
         removed."""
@@ -2797,6 +2799,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 close_only_with_back=True,
                 options_callback=self._onLibraryPickerToggle,
                 dialog_props=getattr(self, 'carriedProps', None),
+                indicator_right=True,
             )
         finally:
             self._pickerServers = None
@@ -2808,36 +2811,44 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         nav = self.sidebarNavSettings()
         inSidebar = set(nav['entries'])
 
-        def option(sid, display, section=None):
-            return {'key': 'toggle', 'sid': sid, 'section': section, 'display': display,
-                    'indicator': self.PICKER_TICK if sid in inSidebar else ''}
+        def option(sid, display, section=None, inset=True):
+            pinned = sid in inSidebar
+            return {'key': 'toggle', 'sid': sid, 'section': section, 'display': display, 'inset': inset,
+                    'indicator': self.PICKER_PINNED if pinned else self.PICKER_UNPINNED,
+                    'indicator_dim': not pinned}
+
+        def heading(display):
+            return {'key': 'heading', 'heading': True, 'display': display}
 
         options = []
         if util.getUserSetting("use_watchlist", True) and not plexapp.ACCOUNT.isOffline:
-            options.append(option(section_ids.WATCHLIST_ID, T(34000, 'Watchlist')))
-        options.append(option(section_ids.PLAYLISTS_ID, T(32333, 'Playlists')))
+            options.append(option(section_ids.WATCHLIST_ID, T(34000, 'Watchlist'), inset=False))
+        options.append(option(section_ids.PLAYLISTS_ID, T(32333, 'Playlists'), inset=False))
 
         shownUuids = set()
         for server, sections in self._pickerServers:
             shownUuids.add(server.uuid)
             options.append(dropdown.SEPARATOR)
             if sections is None:
-                options.append({'key': 'unanswered', 'display': T(35129, "{0} isn't responding").format(server.name)})
+                options.append(heading(T(35129, "{0} isn't responding").format(server.name)))
                 sections = [sidebar_model.LibraryPlaceholder(sid, nav['libraries'].get(sid, {}), server)
                             for sid in nav['entries'] if sid.startswith(server.uuid + ':')]
             elif not sections:
-                options.append({'key': 'none', 'display': T(35138, '{0} has no libraries').format(server.name)})
+                options.append(heading(T(35138, '{0} has no libraries').format(server.name)))
+            else:
+                options.append(heading(server.name))
             for section in sections:
-                options.append(option(section_ids.sectionId(section),
-                                      u'{0} [{1}]'.format(section.title, server.name), section))
+                options.append(option(section_ids.sectionId(section), section.title, section))
 
         # libraries in the sidebar from a server the account no longer lists, to be removed
         gone = [sid for sid in nav['entries'] if ':' in sid and sid.partition(':')[0] not in shownUuids]
-        if gone:
+        for serverName in sorted(set(nav['libraries'].get(sid, {}).get('server', '') for sid in gone)):
             options.append(dropdown.SEPARATOR)
+            options.append(heading(serverName))
             for sid in gone:
                 meta = nav['libraries'].get(sid, {})
-                options.append(option(sid, u'{0} [{1}]'.format(meta.get('title', sid), meta.get('server', ''))))
+                if meta.get('server', '') == serverName:
+                    options.append(option(sid, meta.get('title', sid)))
         return options
 
     def _onLibraryPickerToggle(self, optionsList, mli):

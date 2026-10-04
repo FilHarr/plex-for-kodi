@@ -37,6 +37,10 @@ class DropdownDialog(kodigui.BaseDialog):
         self.closeDirection = kwargs.get('close_direction')
         self.setDropdownProp = kwargs.get('set_dropdown_prop', False)
         self.withIndicator = kwargs.get('with_indicator', False)
+        # The indicator on the right of the row rather than the left, and option rows can be headings
+        # ('heading': shown, never selected), set in under one ('inset'), or show their indicator
+        # dimmed ('indicator_dim'). The header dropdown's template only.
+        self.indicatorRight = kwargs.get('indicator_right', False)
         self.suboptionCallback = kwargs.get('suboption_callback')
         self.closeOnPlaybackEnded = kwargs.get('close_on_playback_ended', False)
         self.closeOnlyWithBack = kwargs.get('close_only_with_back', False)
@@ -175,7 +179,7 @@ class DropdownDialog(kodigui.BaseDialog):
                     self.lastSelectedItem = to_pos
                     return
 
-                self.lastSelectedItem = self.optionsList.control.getSelectedPosition()
+                self.lastSelectedItem = self._skipHeadings(self.optionsList.control.getSelectedPosition(), action)
         elif self.suboptionCallback and action == xbmcgui.ACTION_MOVE_RIGHT:
             if self.optionsList.getSelectedItem().dataSource.get("is_sub_list"):
                 self.setChoice()
@@ -189,6 +193,30 @@ class DropdownDialog(kodigui.BaseDialog):
             return
 
         kodigui.BaseDialog.onAction(self, action)
+
+    def _skipHeadings(self, pos, action):
+        """Kodi has already moved the list (a Python window's onAction runs after the control's):
+        if that landed on a heading, carry on in the same direction to the next row that isn't
+        one, or back the other way at the end of the list."""
+        items = self.optionsList.items
+
+        def heading(i):
+            return 0 <= i < len(items) and items[i].getProperty('heading')
+
+        if not heading(pos):
+            return pos
+        step = -1 if action == xbmcgui.ACTION_MOVE_UP else 1
+        target = pos
+        while heading(target):
+            target += step
+        if not 0 <= target < len(items):
+            target = pos
+            while heading(target):
+                target -= step
+        if 0 <= target < len(items):
+            self.optionsList.setSelectedItemByPos(target)
+            return target
+        return pos
 
     def enterMoveMode(self, mli, skip_first_select=True):
         """Enter moving mode for the given list item."""
@@ -447,6 +475,10 @@ class DropdownDialog(kodigui.BaseDialog):
                 item.setProperty('with.indicator', self.withIndicator and '1' or '')
                 item.setProperty('has.submenu', '1' if o.get('has_submenu') else '')
                 item.setProperty('align', self.alignItems)
+                item.setProperty('indicator.right', self.indicatorRight and '1' or '')
+                item.setProperty('heading', '1' if o.get('heading') else '')
+                item.setProperty('inset', '1' if o.get('inset') else '')
+                item.setProperty('indicator.dim', '1' if o.get('indicator_dim') else '')
                 items.append(item)
                 options.append(o)
             else:
@@ -521,7 +553,8 @@ def showDropdown(
     is_sub_list=False,
     onclose_callback=None,
     dialog_props=None,
-    move_mode_callback=None
+    move_mode_callback=None,
+    indicator_right=False
 ):
 
     if header:
@@ -545,6 +578,7 @@ def showDropdown(
             onclose_callback=onclose_callback,
             dialog_props=dialog_props,
             move_mode_callback=move_mode_callback,
+            indicator_right=indicator_right,
         )
     else:
         pos = pos or (810, 400)
@@ -567,6 +601,7 @@ def showDropdown(
             onclose_callback=onclose_callback,
             dialog_props=dialog_props,
             move_mode_callback=move_mode_callback,
+            indicator_right=indicator_right,
         )
     choice = w.choice
     ref = util.windowRef(w)

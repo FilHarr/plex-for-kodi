@@ -14,7 +14,8 @@ section_ids.sidebarKey():
 
 A library is shown from its server's own list (serverSections(), fetched on a worker and kept),
 and until its server has answered, by a LibraryPlaceholder made from what's stored, which looks
-the same. Watchlist and Playlists aren't one server's; Playlists is still the selected server's.
+the same. Watchlist and Playlists aren't one server's; Playlists is still the selected server's. With more than one
+server on the account, each library shows its server's name under its title (serverName()).
 """
 from __future__ import absolute_import
 
@@ -404,21 +405,15 @@ def _libraryEntry(nav, sid, onChange):
     return LibraryPlaceholder(sid, meta, server, missing=known is not None)
 
 
-def labels(entries):
-    """Each entry's label in the sidebar: its title, with " · <server>" when another library in it
-    has the same title (D2)."""
-    titles = {}
-    for section in entries:
-        titles.setdefault((section.title or '').lower(), []).append(section)
-    out = {}
-    for section in entries:
-        title = section.title or ''
-        if len(titles[title.lower()]) > 1 and section.server is not None:
-            title = u'{0} · {1}'.format(title, section.server.name)
-        elif len(titles[title.lower()]) > 1 and getattr(section, 'serverName', None):
-            title = u'{0} · {1}'.format(title, section.serverName)
-        out[sectionId(section) if section.key is not None else None] = title
-    return out
+def serverName(section):
+    """The server a library entry is from, for the second line under its title - only when the
+    account has more than one server, and only for libraries (Watchlist and Playlists aren't one
+    server's). Empty otherwise: the entry keeps its one line."""
+    if len(plexapp.SERVERMANAGER.getServers()) < 2 or ':' not in (sectionId(section) or ''):
+        return ''
+    if section.server is not None:
+        return section.server.name
+    return section.__dict__.get('serverName') or ''
 
 
 def matchSection(entries, key, fromWatchlist=False, server=None):
