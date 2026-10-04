@@ -77,7 +77,11 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         kodigui.BaseDialog.__init__(self, *args, **kwargs)
         windowutils.UtilMixin.__init__(self)
         self.parentWindow = kwargs.get('parent_window')
-        self.sectionID = kwargs.get('section_id')
+        # Only a library's own id narrows the search. Playlists' and Watchlist's ("playlists",
+        # "/library/sections/watchlist") and a collection's key aren't libraries; the server used to
+        # ignore whatever was sent, so those always searched everything.
+        section_id = kwargs.get('section_id')
+        self.sectionID = section_id if section_id and str(section_id).isdigit() else None
         # A search from inside a library asks that library's server; otherwise the selected one.
         self.server = kwargs.get('server')
         self.resultsThread = None

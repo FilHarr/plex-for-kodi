@@ -175,7 +175,9 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
             q = '/hubs/search'
             params['query'] = search_query.lower()
             if section:
-                params['sectionId'] = section
+                # what limits a search to one library: PMS ignores sectionId here, and
+                # librarySectionID and pinnedContentDirectoryID too (checked live, PMS 1.43.4)
+                params['contentDirectoryID'] = section
 
             if count is not None:
                 params['limit'] = count
