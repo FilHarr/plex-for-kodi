@@ -302,9 +302,10 @@ class ServerSignalsTest(KodiTestCase):
         try:
             host = Host()
             calls = []
-            for name in ('displayServerAndUser',
+            for name in ('displayServerAndUser', 'onServerReachable',
                          'onSelectedServerChange', 'onServerSuspect', 'onServerRecovered', 'onServerOffline',
-                         'onServerOnline', 'onSelectedServerGone', '_onSleep', '_onWake', '_onUpdateSourceChanged'):
+                         'onServerOnline', 'onSelectedServerGone', 'onServerGone', '_onSleep', '_onWake',
+                         '_onUpdateSourceChanged'):
                 setattr(host, name, (lambda n: lambda **kw: calls.append((n, kw)))(name))
             host._postedHandler = library.LibraryWindow._postedHandler.__get__(host)
             library.LibraryWindow.hookSignals(host)
@@ -316,20 +317,23 @@ class ServerSignalsTest(KodiTestCase):
             manager.trigger('offline:server', server='animal')
             manager.trigger('online:server', server='animal')
             manager.trigger('gone:selectedServer', server='animal', replacement='oscar')
+            manager.trigger('gone:server', server='oscar')
             self.assertEqual([], calls, 'nothing may run on the signalling thread')
-            self.assertEqual(['displayServerAndUser', 'onSelectedServerChange',
+            self.assertEqual(['displayServerAndUser', 'onServerReachable', 'onSelectedServerChange',
                               'onServerSuspect', 'onServerRecovered',
-                              'onServerOffline', 'onServerOnline', 'onSelectedServerGone'],
+                              'onServerOffline', 'onServerOnline', 'onSelectedServerGone', 'onServerGone'],
                              [u[0] for u in host._uiPending])
 
             host.runPendingNav(View())
             self.assertEqual([('displayServerAndUser', {'server': 'oscar'}),
+                              ('onServerReachable', {'server': 'oscar'}),
                               ('onSelectedServerChange', {}),
                               ('onServerSuspect', {'server': 'animal'}),
                               ('onServerRecovered', {'server': 'animal'}),
                               ('onServerOffline', {'server': 'animal'}),
                               ('onServerOnline', {'server': 'animal'}),
-                              ('onSelectedServerGone', {'server': 'animal', 'replacement': 'oscar'})], calls)
+                              ('onSelectedServerGone', {'server': 'animal', 'replacement': 'oscar'}),
+                              ('onServerGone', {'server': 'oscar'})], calls)
 
             # sleep and wake: pausing runs in place (it only sets flags), and waking threads its own
             # wait before it posts the refresh; nothing hooks the screensaver

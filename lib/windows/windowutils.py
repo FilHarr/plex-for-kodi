@@ -217,6 +217,8 @@ class SidebarMixin():
                 server = sidebar_model.serverName(section)
                 if server:
                     mli.setProperty('server.name', server)
+                if sidebar_model.isOffline(section):
+                    mli.setProperty('is.offline', '1')
                 if section == home.playlists_section:
                     mli.setProperty('is.playlists', '1')
                     mli.setIconImage('script.plex/home/type/playlists.png')

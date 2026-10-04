@@ -28,7 +28,7 @@ OTHER = 'other-uuid-0000bbbb'
 
 
 def fakeServer(uuid, name):
-    server = mock.Mock(uuid=uuid, offline=False)
+    server = mock.Mock(uuid=uuid, offline=False, gone=False)
     server.name = name
     return server
 
@@ -65,6 +65,7 @@ class Server(object):
         self.uuid = uuid
         self.name = 'Animal'
         self.offline = False
+        self.gone = False
         self.suspect = False
         self.isSecure = True
         self.isLocal = False
@@ -218,6 +219,15 @@ class EntriesTest(SidebarCase):
         # Oscar is asked on a worker; the build doesn't wait
         self.assertEqual([OSCAR], [task.server for task in self.startedFetches])
 
+    def test_a_server_still_on_its_first_test_is_not_asked_yet(self):
+        testing = fakeServer(OTHER, 'Oscar')
+        testing.activeConnection = None
+        self.manager.serversByUuid[OTHER] = testing
+        self.store('1', 'other:7')
+        self.build(Shell())
+        self.assertEqual([], self.startedFetches)
+        self.assertFalse(sidebar_model.hasListed(testing))
+
     def test_a_server_answering_rebuilds(self):
         self.store('1', 'other:7')
         changed = []
@@ -244,6 +254,29 @@ class EntriesTest(SidebarCase):
     @staticmethod
     def serverLines(sectionList):
         return [mli.getProperty('server.name') for mli in sectionList.items]
+
+    @staticmethod
+    def offline(sectionList):
+        return [mli.getLabel() for mli in sectionList.items if mli.getProperty('is.offline')]
+
+    def test_a_library_whose_server_is_offline_dims(self):
+        self.listed(OTHER, [Section('7', 'Films', server=OSCAR)])
+        self.store('watchlist', '1', 'other:7', 'other:8')
+        OSCAR.offline = True
+        try:
+            self.assertEqual(['Films', 'Library 8'], self.offline(self.build(Shell())))
+        finally:
+            OSCAR.offline = False
+
+    def test_a_library_whose_server_is_not_on_the_account_dims(self):
+        self.manager.serversByUuid = {UUID: self.server}
+        self.store('1', 'other:7')
+        self.assertEqual(['Library 7'], self.offline(self.build(Shell())))
+
+    def test_the_sidebars_servers_are_watched(self):
+        self.store('watchlist', '1', 'other:7', '2')
+        sidebar_model.loadNavSettings()
+        self.manager.setWatchedServers.assert_called_with(set([UUID, OTHER]))
 
     def test_with_one_server_entries_are_one_line(self):
         self.assertEqual([''] * 6, self.serverLines(self.build(Shell())))

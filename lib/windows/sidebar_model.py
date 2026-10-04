@@ -77,6 +77,7 @@ def loadNavSettings():
     section_ids.migrate()
     nav = section_ids.loadJson(section_ids.sidebarKey())
     if nav.get('version') == SIDEBAR_VERSION:
+        watchServers(nav)
         return nav
     migrated = migrateToList(nav, plexapp.SERVERMANAGER.selectedServer)
     if migrated is None:
@@ -89,9 +90,24 @@ def loadNavSettings():
 
 
 def saveNavSettings(nav):
+    watchServers(nav)
     if nav.get('unsaved'):
         return
     util.setSetting(section_ids.sidebarKey(), json.dumps(nav))
+
+
+def watchServers(nav):
+    """Tell plexnet which servers the sidebar has libraries from: it retests those while they're
+    offline, and takes one as gone only when plex.tv drops it (PlexServerManager.serverMatters())."""
+    plexapp.SERVERMANAGER.setWatchedServers(set(sid.partition(':')[0] for sid in nav.get('entries', ()) if ':' in sid))
+
+
+def isOffline(section):
+    """A library entry whose server isn't answering, or isn't on the account any more: it dims."""
+    if ':' not in (sectionId(section) or ''):
+        return False
+    server = section.server
+    return server is None or server.offline or server.gone
 
 
 def migrateToList(nav, server):
@@ -222,8 +238,16 @@ def serverSections(server, onChange=None):
     return known[1] if known else None
 
 
+def hasListed(server):
+    """Whether the server has listed its libraries since the add-on started."""
+    return _knownSections(server.uuid) is not None
+
+
 def _fetchLater(server, known, onChange):
-    if server.offline:
+    # Not before its first connection test has found a connection: the query would fail at once
+    # and have it retested (PlexServer.markSuspect()) while that test is still running.
+    # LibraryWindow.onServerReachable() rebuilds once it answers, which asks then.
+    if server.offline or not server.activeConnection:
         return
     with _sectionsLock:
         if server.uuid in _sectionsFetching:

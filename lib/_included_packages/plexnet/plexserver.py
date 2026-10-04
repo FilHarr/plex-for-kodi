@@ -20,6 +20,7 @@ from . import plexobjects
 from . import plexresource
 from . import plexlibrary
 from . import asyncadapter
+from . import callback
 from six.moves import range
 
 # from plexapi.client import Client
@@ -69,7 +70,8 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         # Known to be unreachable: its last reachability round ended with no working connection
         # (PlexServerManager.setServerOnline())
         self.offline = False
-        # No longer on the account - plex.tv stopped listing it (PlexServerManager.onSelectedServerGone())
+        # No longer on the account - plex.tv stopped listing it (PlexServerManager.onSelectedServerGone(),
+        # onServerGone())
         self.gone = False
         # A query got no answer and its connections are being retested (markSuspect()); cleared by
         # the retest's verdict (PlexServerManager.setServerOnline())
@@ -553,6 +555,31 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         if self.pendingReachabilityRequests <= 0:
             # nothing to test (no connections): no round will end with a verdict, so give it now
             plexservermanager.MANAGER.updateReachabilityResult(self, bool(self.activeConnection))
+
+    def checkAlive(self):
+        """A light check that the server still answers, between full reachability rounds: one
+        request on the connection in use, for /identity - the smallest thing it serves, no token
+        needed. Only a failure costs more: it retests every connection (markSuspect()), which puts the
+        server offline if none answers. A gateway error counts as a failure - a reverse proxy in front
+        of the server keeps accepting connections while the server behind it is down. Skipped while
+        the server is offline, gone, suspect or already being tested: those have their own retests.
+        Returns whether a check was started."""
+        conn = self.activeConnection
+        if conn is None or self.offline or self.gone or self.suspect or self.pendingReachabilityRequests > 0:
+            return False
+        request = http.HttpRequest(conn.buildUrl(self, "/identity"), retries=0)
+        context = request.createRequestContext("alive", callback.Callable(self.onAliveResponse),
+                                               timeout=util.CONN_CHECK_TIMEOUT)
+        context.server = self
+        util.addPlexHeaders(request, self.getToken())
+        util.APP.startRequest(request, context)
+        return True
+
+    def onAliveResponse(self, request, response, context):
+        if getattr(context, "canceled", False) or response.isSuccess():
+            return
+        util.LOG("{0} didn't answer a check ({1})", repr(self.name), response.getStatus())
+        self.markSuspect()
 
     def onReachabilityTestStarting(self, connection):
         """Counts a test in before it can possibly answer - PlexConnection.testReachability() calls

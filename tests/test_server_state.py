@@ -135,14 +135,14 @@ class OfflineTest(ManagerTestCase):
         self.assertFalse(self.animal.offline)
         self.assertEqual([('offline', 'Animal'), ('online', 'Animal')], self.signals)
         self.assertTrue(self.timers[0].canceled)
-        self.assertEqual(0, self.manager.offlineRetryStep)
+        self.assertNotIn(ANIMAL, self.manager.offlineRetries)
 
     def test_retests_back_off(self):
         self.select(self.animal)
         self.round_ended(self.animal, False)
         with mock.patch.object(self.animal, "updateReachability"):
             for _ in range(5):
-                self.manager.onOfflineRetryTimer()  # starts nothing, so it schedules the next itself
+                self.manager.onOfflineRetryTimer(self.animal)  # starts nothing, so it schedules the next itself
         self.assertEqual([5, 10, 30, 60, 60, 60], self.delays())
 
     def test_a_retest_round_ending_offline_schedules_the_next(self):
@@ -150,7 +150,7 @@ class OfflineTest(ManagerTestCase):
         self.round_ended(self.animal, False)
         with mock.patch.object(self.animal, "updateReachability",
                                side_effect=lambda force: setattr(self.animal, "pendingReachabilityRequests", 2)):
-            self.manager.onOfflineRetryTimer()
+            self.manager.onOfflineRetryTimer(self.animal)
         self.assertEqual([5], self.delays())  # the round is under way; its end schedules the next
         self.round_ended(self.animal, False)
         self.assertEqual([5, 10], self.delays())
@@ -162,12 +162,112 @@ class OfflineTest(ManagerTestCase):
         self.assertEqual([('offline', 'Oscar')], self.signals)
         self.assertEqual([], self.delays())
 
+    def test_a_server_the_sidebar_has_libraries_from_is_retested_too(self):
+        self.select(self.animal)
+        self.manager.setWatchedServers([OSCAR])
+        self.round_ended(self.oscar, False)
+        self.assertEqual([5], self.delays())
+        with mock.patch.object(self.oscar, "updateReachability"):
+            self.manager.onOfflineRetryTimer(self.oscar)
+        self.assertEqual([5, 10], self.delays())
+
+    def test_each_server_backs_off_on_its_own(self):
+        self.select(self.animal)
+        self.manager.setWatchedServers([OSCAR])
+        self.round_ended(self.animal, False)
+        with mock.patch.object(self.animal, "updateReachability"):
+            self.manager.onOfflineRetryTimer(self.animal)
+        self.round_ended(self.oscar, False)
+        self.assertEqual([5, 10, 5], self.delays())
+
+    def test_a_server_newly_in_the_sidebar_that_is_offline_is_retested(self):
+        self.select(self.animal)
+        self.round_ended(self.oscar, False)
+        self.assertEqual([], self.delays())
+        self.manager.setWatchedServers([OSCAR])
+        self.assertEqual([5], self.delays())
+
+    def test_one_leaving_the_sidebar_stops_being_retested(self):
+        self.select(self.animal)
+        self.manager.setWatchedServers([OSCAR])
+        self.round_ended(self.oscar, False)
+        self.manager.setWatchedServers([])
+        self.assertTrue(self.timers[0].canceled)
+        self.assertNotIn(OSCAR, self.manager.offlineRetries)
+
+    def test_the_periodic_check_covers_the_sidebars_servers(self):
+        self.select(self.animal)
+        self.manager.setWatchedServers([OSCAR])
+        with mock.patch.object(self.animal, "updateReachability") as animal, \
+                mock.patch.object(self.oscar, "updateReachability") as oscar:
+            self.manager.periodicReachabilityCheck()
+        animal.assert_called_once_with(True)
+        oscar.assert_called_once_with(True)
+
     def test_no_switch_to_another_server_mid_session(self):
         self.select(self.animal)
         self.round_ended(self.animal, False)
         self.manager.searchContext.bestServer = self.oscar
         self.round_ended(self.oscar, True)
         self.assertIs(self.animal, self.manager.selectedServer)
+
+
+class AliveCheckTest(ManagerTestCase):
+    """The light check between full rounds (PlexServer.checkAlive()): one /identity request on the
+    connection in use, for every server that matters; only a failure retests all its connections."""
+
+    def started(self):
+        started = []
+        patcher = mock.patch.object(pnUtil.APP, "startRequest",
+                                    side_effect=lambda request, context: started.append((request, context)))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return started
+
+    def test_one_request_on_the_connection_in_use(self):
+        started = self.started()
+        self.assertTrue(self.animal.checkAlive())
+        self.assertEqual(["http://192.168.1.7:32400/identity"], [r.url for r, c in started])
+
+    def test_not_while_offline_suspect_untested_or_mid_round(self):
+        started = self.started()
+        for setup in (lambda: setattr(self.animal, "offline", True),
+                      lambda: setattr(self.animal, "suspect", True),
+                      lambda: setattr(self.animal, "activeConnection", None),
+                      lambda: setattr(self.animal, "pendingReachabilityRequests", 1)):
+            server = make_server(ANIMAL, "Animal")
+            self.animal = server
+            setup()
+            self.assertFalse(server.checkAlive())
+        self.assertEqual([], started)
+
+    def answer(self, response):
+        started = self.started()
+        self.animal.checkAlive()
+        request, context = started[0]
+        with mock.patch.object(self.animal, "markSuspect") as suspect:
+            context.completionCallback(request, response, context)
+        return suspect
+
+    def test_an_answer_is_all(self):
+        self.answer(mock.Mock(isSuccess=lambda: True)).assert_not_called()
+
+    def test_no_answer_retests_every_connection(self):
+        self.answer(mock.Mock(isSuccess=lambda: False, getStatus=lambda: 0)).assert_called_once_with()
+
+    def test_a_gateway_error_counts(self):
+        # a reverse proxy answering for a server that's down
+        self.answer(mock.Mock(isSuccess=lambda: False, getStatus=lambda: 502)).assert_called_once_with()
+
+    def test_every_server_that_matters_is_checked(self):
+        self.select(self.animal)
+        with mock.patch.object(self.animal, "checkAlive") as animal, mock.patch.object(self.oscar, "checkAlive") as oscar:
+            self.manager.checkServersAlive()
+            oscar.assert_not_called()
+            self.manager.setWatchedServers([OSCAR])
+            self.manager.checkServersAlive()
+        self.assertEqual(2, animal.call_count)
+        oscar.assert_called_once_with()
 
 
 class SuspectSignalTest(ManagerTestCase):
@@ -243,7 +343,7 @@ class SuspectSignalTest(ManagerTestCase):
         self.round_ended(self.animal, False)
         with mock.patch.object(self.animal, "updateReachability",
                                side_effect=lambda force: setattr(self.animal, "pendingReachabilityRequests", 2)):
-            self.assertTrue(self.manager.retestSelectedServerNow())
+            self.assertTrue(self.manager.retestServerNow(self.animal))
         self.assertTrue(self.timers[0].canceled)
         self.round_ended(self.animal, False)
         self.assertEqual([5, 10], self.delays())  # still offline: the backoff carries on
@@ -270,6 +370,25 @@ class SelectionTest(ManagerTestCase):
         self.select(self.animal)
         self.manager.removeServer(self.oscar, MYPLEX)
         self.assertNotIn(OSCAR, self.manager.serversByUuid)
+
+    def test_a_sidebar_server_missing_from_discovery_is_kept_offline(self):
+        self.select(self.animal)
+        self.manager.setWatchedServers([OSCAR])
+        self.manager.removeServer(self.oscar, DISCOVERED)
+        self.assertIn(OSCAR, self.manager.serversByUuid)
+        self.assertTrue(self.oscar.offline)
+        self.assertFalse(self.oscar.gone)
+
+    def test_a_sidebar_server_plex_tv_drops_is_gone(self):
+        self.select(self.animal)
+        self.manager.setWatchedServers([OSCAR])
+        gone = []
+        self.manager.on('gone:server', lambda server=None, **kw: gone.append(server))
+        self.manager.removeServer(self.oscar, MYPLEX)
+        self.assertNotIn(OSCAR, self.manager.serversByUuid)
+        self.assertTrue(self.oscar.gone)
+        self.assertEqual([self.oscar], gone)
+        self.assertIs(self.animal, self.manager.selectedServer)
 
 
 MYPLEX = plexconnection.PlexConnection.SOURCE_MYPLEX
@@ -409,14 +528,17 @@ class SuspectTest(KodiTestCase):
 
 
 class LibraryWindowTest(KodiTestCase):
-    """The interim UI: the sidebar shows the selected server unreachable, and coming back reloads
-    the section in place."""
+    """A server not answering, coming back, or leaving the account, as the Library window shows it:
+    the "isn't responding" panel and toasts follow the server of what's on screen, the sidebar dims a
+    library whose server is offline, and a server gone from the account takes its libraries out of
+    the sidebar."""
 
     def setUp(self):
         KodiTestCase.setUp(self)
         ensure_plex_interface()
         self.server = make_server(ANIMAL, "Animal")
         servers = mock.Mock(selectedServer=self.server)
+        servers.getServers.return_value = [self.server]
         account = mock.Mock(title="Phil", username="phil", ID="1", thumb="")
         for patcher in (mock.patch.object(library.plexapp, "SERVERMANAGER", servers),
                         mock.patch.object(library.plexapp, "ACCOUNT", account),
@@ -427,7 +549,9 @@ class LibraryWindowTest(KodiTestCase):
         self.props = {}
         self.win.setProperty = lambda key, value: self.props.__setitem__(key, value)
         self.win.getProperty = lambda key: self.props.get(key, '')
-        self.win.section = "the section"
+        # a library of the selected server's on screen
+        self.section = mock.Mock(server=self.server)
+        self.win.section = self.section
         self.win._backStack = []
         self.win._shuttingDown = False
         self.win._isHostedShell = False
@@ -445,7 +569,7 @@ class LibraryWindowTest(KodiTestCase):
 
     def test_coming_back_reloads_the_section_in_place(self):
         self.win.onServerOnline(server=self.server)
-        self.win.openSection.assert_called_once_with("the section", force=True, fresh=False)
+        self.win.openSection.assert_called_once_with(self.win.section, force=True, fresh=False)
         self.assertEqual('script.plex/home/device/plex.png', self.props['server.icon'])
 
     def test_coming_back_leaves_an_open_screen_chain_alone(self):
@@ -453,17 +577,55 @@ class LibraryWindowTest(KodiTestCase):
         self.win.onServerOnline(server=self.server)
         self.win.openSection.assert_not_called()
 
-    def test_a_gone_server_says_where_it_switched_to(self):
-        self.win.onSelectedServerGone(server=self.server, replacement=make_server(OSCAR, "Oscar"))
-        message = library.util.showNotification.call_args[0][0]
-        self.assertIn("Animal", message)
-        self.assertIn("Oscar", message)
+    def gone_setup(self):
+        oscar = OSCAR
+        self.win.navSettings = {'version': 2, 'entries': ['playlists', ANIMAL + ':1', oscar + ':2', ANIMAL + ':3'],
+                                'libraries': {ANIMAL + ':1': {}, oscar + ':2': {}, ANIMAL + ':3': {}}}
+        self.win.hubSettings = {ANIMAL + ':1': {}, ANIMAL + ':__home__': {}, oscar + ':2': {}, 'playlists': {}}
+        self.win.saveNavSettings = mock.Mock()
+        self.win.saveHubSettings = mock.Mock()
+        self.win._rebuildSidebar = mock.Mock()
 
-    def test_a_gone_server_with_nothing_to_switch_to_asks_for_another(self):
+    def test_a_gone_server_leaves_the_sidebar_with_its_hub_settings(self):
+        self.gone_setup()
+        self.win.onServerGone(server=self.server)
+        self.assertEqual(['playlists', OSCAR + ':2'], self.win.navSettings['entries'])
+        self.assertEqual({OSCAR + ':2': {}, 'playlists': {}}, self.win.hubSettings)
+        self.win.saveNavSettings.assert_called_once_with()
+        self.win.saveHubSettings.assert_called_once_with()
+        self.win._rebuildSidebar.assert_called_once_with()
+        self.assertEqual(["Animal is no longer available to this account. Its libraries were removed from the sidebar."],
+                         self.toasts())
+
+    def test_the_selected_server_gone_leaves_the_sidebar_too(self):
+        self.gone_setup()
         self.server.offline = True
         self.win.onSelectedServerGone(server=self.server, replacement=None)
-        self.assertIn("Choose another server", library.util.showNotification.call_args[0][0])
+        self.assertEqual(['playlists', OSCAR + ':2'], self.win.navSettings['entries'])
         self.assertEqual('script.plex/home/device/error.png', self.props['server.icon'])
+
+    def test_a_gone_server_with_nothing_in_the_sidebar_says_nothing(self):
+        self.gone_setup()
+        self.win.onServerGone(server=make_server("someone-else", "Elsewhere"))
+        self.assertEqual([], self.toasts())
+
+    def test_another_servers_library_on_screen_follows_that_server(self):
+        oscar = make_server(OSCAR, "Oscar")
+        self.win.section = mock.Mock(server=oscar)
+        oscar.suspect = True
+        self.win.onServerSuspect(server=oscar)
+        self.assertEqual("Oscar isn't responding", self.props['server.unavailable'])
+        self.win.onServerSuspect(server=self.server)
+        self.assertEqual(["Oscar isn't responding. Retrying..."], self.toasts())
+
+    def test_a_sidebar_server_going_offline_or_coming_back_rebuilds_the_sidebar(self):
+        oscar = make_server(OSCAR, "Oscar")
+        self.win.navSettings = {'version': 2, 'entries': [OSCAR + ':2'], 'libraries': {}}
+        self.win._rebuildSidebar = mock.Mock()
+        self.win.onServerOffline(server=oscar)
+        self.win.onServerOnline(server=oscar)
+        self.assertEqual(2, self.win._rebuildSidebar.call_count)
+        self.win.openSection.assert_not_called()
 
     def test_other_servers_are_ignored(self):
         self.win.onServerSuspect(server=make_server(OSCAR, "Oscar"))
@@ -527,7 +689,7 @@ class LibraryWindowTest(KodiTestCase):
         self.win.onServerSuspect(server=self.server)
         self.server.suspect = False
         self.win.onServerRecovered(server=self.server)
-        self.win.openSection.assert_called_once_with("the section", force=True, fresh=False)
+        self.win.openSection.assert_called_once_with(self.win.section, force=True, fresh=False)
         self.assertEqual('', self.props['server.unavailable'])
         self.assertEqual(1, len(self.toasts()))
 
@@ -548,7 +710,7 @@ class LibraryWindowTest(KodiTestCase):
         self.assertTrue(tick(0))  # not due yet
         self.assertFalse(tick(library.time.time() + 4))
         self.win.postUI.assert_called_once_with('reload after the server came back', self.win.openSection,
-                                                args=("the section",), kwargs={'force': True, 'fresh': False})
+                                                args=(self.section,), kwargs={'force': True, 'fresh': False})
 
     def test_rows_end_the_retries(self):
         self.came_back()
@@ -574,7 +736,7 @@ class LibraryWindowTest(KodiTestCase):
     def test_try_again_says_so_until_the_round_ends(self):
         self.server.offline = True
         self.win.updateServerUnavailable()
-        library.plexapp.SERVERMANAGER.retestSelectedServerNow.return_value = True
+        library.plexapp.SERVERMANAGER.retestServerNow.return_value = True
         self.win._tickers = []
         self.server.pendingReachabilityRequests = 2
         self.win.retryServerNow()
@@ -625,6 +787,21 @@ class TickTest(KodiTestCase):
         self.win.tick()  # not again until another interval has passed
         self.assertEqual(1, self.servers.periodicReachabilityCheck.call_count)
 
+    def test_a_light_check_every_minute_between_full_ones(self):
+        self.win.tick()  # the full round is due: it counts as this minute's check too
+        self.servers.checkServersAlive.assert_not_called()
+        with mock.patch.object(library.time, "time", return_value=10000.0 + library.LibraryWindow.SERVER_ALIVE_INTERVAL + 1):
+            self.win.tick()
+            self.win.tick()  # not again within the minute
+        self.servers.checkServersAlive.assert_called_once_with()
+        self.assertEqual(1, self.servers.periodicReachabilityCheck.call_count)
+
+    def test_the_light_check_follows_the_setting_too(self):
+        ENV.settings["recheck_server_connections"] = "false"
+        self.win._lastAliveCheck = 0
+        self.win.tick()
+        self.servers.checkServersAlive.assert_not_called()
+
     def test_the_periodic_check_follows_its_setting(self):
         ENV.settings["recheck_server_connections"] = "false"
         self.win.tick()
@@ -648,7 +825,7 @@ class TickTest(KodiTestCase):
 
     def test_a_refresh_reloads_the_recommended_view_in_place(self):
         self.win.refreshLastSection()
-        self.win.openSection.assert_called_once_with("the section", force=True, fresh=False)
+        self.win.openSection.assert_called_once_with(self.win.section, force=True, fresh=False)
         self.servers.resumeOfflineRetry.assert_called_once_with()
 
     def test_a_refresh_lands_back_on_the_same_hub_row(self):

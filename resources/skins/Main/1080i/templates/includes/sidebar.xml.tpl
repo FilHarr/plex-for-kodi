@@ -143,9 +143,9 @@
                     <texture>script.plex/white-square.png</texture>
                     <colordiffuse>FFE5A00D</colordiffuse>
                 </control>
-                <!-- Section icon - dimmer while sidebar is collapsed -->
+                <!-- Section icon - dimmer while sidebar is collapsed, or while its server isn't answering -->
                 <control type="image">
-                    <visible>!ControlGroup(9000).HasFocus(0)</visible>
+                    <visible>[!ControlGroup(9000).HasFocus(0) | !String.IsEmpty(ListItem.Property(is.offline))]</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
@@ -155,7 +155,7 @@
                 </control>
                 <!-- Section icon - normal while sidebar is expanded -->
                 <control type="image">
-                    <visible>ControlGroup(9000).HasFocus(0)</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
@@ -197,7 +197,7 @@
                      its server's name. Kodi labels only centre vertically, so each line's box is
                      placed: together they centre on the row like the single line (y=44). -->
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
@@ -209,7 +209,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(19) }}</posy>
                     <width>220</width>
@@ -221,7 +221,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(48) }}</posy>
                     <width>220</width>
@@ -230,6 +230,44 @@
                     <align>left</align>
                     <aligny>center</aligny>
                     <textcolor>66FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Property(server.name)]</label>
+                </control>
+                <!-- The same, dimmed: a library whose server isn't answering, or is no longer
+                     on the account (ListItem.Property(is.offline)) -->
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <posx>68</posx>
+                    <posy>0</posy>
+                    <width>220</width>
+                    <height>{{ vscale(88) }}</height>
+                    <font>font10</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>40FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <posx>68</posx>
+                    <posy>{{ vscale(19) }}</posy>
+                    <width>220</width>
+                    <height>{{ vscale(28) }}</height>
+                    <font>font10</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>40FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <posx>68</posx>
+                    <posy>{{ vscale(48) }}</posy>
+                    <width>220</width>
+                    <height>{{ vscale(20) }}</height>
+                    <font>font8</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>33FFFFFF</textcolor>
                     <label>$INFO[ListItem.Property(server.name)]</label>
                 </control>
             </control>
@@ -274,7 +312,7 @@
                 </control>
                 <!-- Section icon - normal when not focused and not active, dimmer while sidebar is collapsed -->
                 <control type="image">
-                    <visible>!ControlGroup(9000).HasFocus(0) + !Control.HasFocus(9001) + String.IsEmpty(ListItem.Property(is.active))</visible>
+                    <visible>[!ControlGroup(9000).HasFocus(0) | !String.IsEmpty(ListItem.Property(is.offline))] + !Control.HasFocus(9001) + String.IsEmpty(ListItem.Property(is.active))</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
@@ -284,7 +322,7 @@
                 </control>
                 <!-- Section icon - normal when not focused and not active, and sidebar is expanded -->
                 <control type="image">
-                    <visible>ControlGroup(9000).HasFocus(0) + !Control.HasFocus(9001) + String.IsEmpty(ListItem.Property(is.active))</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + !Control.HasFocus(9001) + String.IsEmpty(ListItem.Property(is.active)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
@@ -316,7 +354,7 @@
                      its server's name. Kodi labels only centre vertically, so each line's box is
                      placed: together they centre on the row like the single line (y=44). -->
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + [String.IsEmpty(ListItem.Property(is.offline)) | Control.HasFocus(9001)]</visible>
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
@@ -329,7 +367,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + [String.IsEmpty(ListItem.Property(is.offline)) | Control.HasFocus(9001)]</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(19) }}</posy>
                     <width>220</width>
@@ -342,7 +380,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + [String.IsEmpty(ListItem.Property(is.offline)) | Control.HasFocus(9001)]</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(48) }}</posy>
                     <width>220</width>
@@ -351,6 +389,46 @@
                     <align>left</align>
                     <aligny>center</aligny>
                     <textcolor>99FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Property(server.name)]</label>
+                </control>
+                <!-- The same, dimmed: a library whose server isn't answering, or is no longer
+                     on the account (ListItem.Property(is.offline)) -->
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <posx>68</posx>
+                    <posy>0</posy>
+                    <width>220</width>
+                    <height>{{ vscale(88) }}</height>
+                    <font>font10</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>40FFFFFF</textcolor>
+                    <focusedcolor>FFFFFFFF</focusedcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <posx>68</posx>
+                    <posy>{{ vscale(19) }}</posy>
+                    <width>220</width>
+                    <height>{{ vscale(28) }}</height>
+                    <font>font10</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>40FFFFFF</textcolor>
+                    <focusedcolor>FFFFFFFF</focusedcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <posx>68</posx>
+                    <posy>{{ vscale(48) }}</posy>
+                    <width>220</width>
+                    <height>{{ vscale(20) }}</height>
+                    <font>font8</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>33FFFFFF</textcolor>
                     <label>$INFO[ListItem.Property(server.name)]</label>
                 </control>
             </control>

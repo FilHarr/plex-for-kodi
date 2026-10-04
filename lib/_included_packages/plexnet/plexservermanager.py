@@ -34,9 +34,12 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         self.channelServer = None
         self.deferReachabilityTimer = None
         self.reachabilityNeverTested = True
-        # Retests the selected server while it's offline (see scheduleOfflineRetry())
-        self.offlineRetryTimer = None
-        self.offlineRetryStep = 0
+        # Servers that matter besides the selected one: those with libraries in the sidebar
+        # (setWatchedServers()). Each is retested while it's offline, and taken as gone only when
+        # plex.tv stops listing it - see serverMatters().
+        self.watchedServerUuids = frozenset()
+        # The offline retests, by server uuid: [timer, step] (see scheduleOfflineRetry())
+        self.offlineRetries = {}
         self._stateLock = threading.Lock()
 
         self.startSelectedServerSearch()
@@ -69,8 +72,10 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
         if not self.selectedServer or force:
             util.LOG("Setting selected server to {0}", server)
+            previous = self.selectedServer
             self.selectedServer = server
-            self.cancelOfflineRetry()
+            if previous is not None and previous is not server and not self.serverMatters(previous):
+                self.cancelOfflineRetry(previous)
 
             if server:
                 # The search for a server to start with is over: from here on, only the user
@@ -140,16 +145,35 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
         return False
 
+    def serverMatters(self, server):
+        """The selected server, or one with libraries in the sidebar (setWatchedServers())."""
+        return server is not None and (server == self.selectedServer or server.uuid in self.watchedServerUuids)
+
+    def setWatchedServers(self, uuids):
+        """The servers the sidebar has libraries from (the UI says, whenever its list is loaded or
+        changed): retested while they're offline, and gone only when plex.tv drops them. One that
+        stops mattering stops being retested."""
+        uuids = frozenset(uuids)
+        if uuids == self.watchedServerUuids:
+            return
+        dropped = self.watchedServerUuids - uuids
+        self.watchedServerUuids = uuids
+        for uuid in dropped:
+            server = self.serversByUuid.get(uuid)
+            if server is not None and not self.serverMatters(server):
+                self.cancelOfflineRetry(server)
+        self.resumeOfflineRetry()
+
     def removeServer(self, server, source=None):
-        """A server none of the sources lists any more. For the selected one, only plex.tv's list
-        (with the account signed in) means the account no longer has it: that's gone - see
-        onSelectedServerGone(). Any other way of losing it - a GDM broadcast that went unanswered
-        once, a manual entry removed, signing out - keeps it selected, offline, and retested; the
-        selection is never cleared under the UI, which can't survive having none."""
-        if server == self.selectedServer:
+        """A server none of the sources lists any more. For one that matters (serverMatters()), only
+        plex.tv's list (with the account signed in) means the account no longer has it: that's
+        gone - see onServerGone(). Any other way of losing it - a GDM broadcast that went unanswered
+        once, a manual entry removed, signing out - keeps it, offline, and retested; the selection
+        is never cleared under the UI, which can't survive having none."""
+        matters = self.serverMatters(server)
+        if matters:
             if source != plexresource.ResourceConnection.SOURCE_MYPLEX or not plexapp.ACCOUNT.isSignedIn:
-                util.LOG("The selected server {0} is no longer listed by {1}, keeping it as offline",
-                         repr(server.name), source)
+                util.LOG("{0} is no longer listed by {1}, keeping it as offline", repr(server.name), source)
                 self.setServerOnline(server, False)
                 return
 
@@ -159,6 +183,8 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
         if server == self.selectedServer:
             self.onSelectedServerGone(server)
+        elif matters:
+            self.onServerGone(server)
 
         if server == self.transcodeServer:
             util.LOG("The selected transcode server went away")
@@ -176,7 +202,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         another (the UI can't survive having none)."""
         util.LOG("The selected server {0} is no longer on this account", repr(server.name))
         server.gone = True
-        self.cancelOfflineRetry()
+        self.cancelOfflineRetry(server)
         with self._stateLock:
             server.offline = True
 
@@ -188,6 +214,17 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         self.trigger('gone:selectedServer', server=server, replacement=replacement)
         if replacement:
             self.setSelectedServer(replacement, force=True)
+
+    def onServerGone(self, server):
+        """plex.tv no longer lists a server the sidebar has libraries from (not the selected one):
+        the account doesn't have it any more. It isn't retested; 'gone:server' (server=) lets the
+        UI take its libraries out."""
+        util.LOG("{0} is no longer on this account", repr(server.name))
+        server.gone = True
+        self.cancelOfflineRetry(server)
+        with self._stateLock:
+            server.offline = True
+        self.trigger('gone:server', server=server)
 
     def updateFromConnectionType(self, servers, source):
         self.markDevicesAsRefreshing()
@@ -309,7 +346,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         for uuid in list(self.serversByUuid.keys()):
             self.serversByUuid[uuid].cancelReachability()
 
-    # Seconds between retests of the selected server while it's offline: the first few soon (a
+    # Seconds between retests of a server that matters while it's offline: the first few soon (a
     # restart, a Wi-Fi blip), then once a minute for as long as it stays down.
     OFFLINE_RETRY_DELAYS = (5, 10, 30, 60)
 
@@ -348,12 +385,12 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             else:
                 changed = False
 
-        if server is self.selectedServer:
+        if self.serverMatters(server):
             if online:
-                self.cancelOfflineRetry()
-            elif not self.offlineRetryTimer and not server.gone:
+                self.cancelOfflineRetry(server)
+            elif not self._retryTimer(server) and not server.gone:
                 # a retest round that ended still offline schedules the next one
-                self.scheduleOfflineRetry()
+                self.scheduleOfflineRetry(server)
 
         if changed:
             util.LOG("{0} is {1}", repr(server.name), online and "online again" or "offline")
@@ -362,38 +399,43 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             util.LOG("{0} answers after all", repr(server.name))
             self.trigger('recovered:server', server=server)
 
-    def scheduleOfflineRetry(self):
-        delay = self.OFFLINE_RETRY_DELAYS[min(self.offlineRetryStep, len(self.OFFLINE_RETRY_DELAYS) - 1)]
-        self.offlineRetryStep += 1
-        util.DEBUG_LOG("Retesting {0} in {1}s", repr(self.selectedServer and self.selectedServer.name), delay)
-        self.offlineRetryTimer = plexapp.createTimer(delay * 1000, callback.Callable(self.onOfflineRetryTimer))
-        util.APP.addTimer(self.offlineRetryTimer)
+    def _retryTimer(self, server):
+        return self.offlineRetries.get(server.uuid, (None, 0))[0]
 
-    def cancelOfflineRetry(self):
-        """Stops retesting (the server is back, another was selected, or the device is going to
-        sleep) and starts the delays from the beginning next time."""
-        if self.offlineRetryTimer:
-            self.offlineRetryTimer.cancel()
-            self.offlineRetryTimer = None
-        self.offlineRetryStep = 0
+    def scheduleOfflineRetry(self, server):
+        step = self.offlineRetries.get(server.uuid, (None, 0))[1]
+        delay = self.OFFLINE_RETRY_DELAYS[min(step, len(self.OFFLINE_RETRY_DELAYS) - 1)]
+        util.DEBUG_LOG("Retesting {0} in {1}s", repr(server.name), delay)
+        timer = plexapp.createTimer(delay * 1000, callback.Callable(self.onOfflineRetryTimer, forcedArgs=[server]))
+        self.offlineRetries[server.uuid] = [timer, step + 1]
+        util.APP.addTimer(timer)
+
+    def cancelOfflineRetry(self, server=None):
+        """Stops retesting a server (it's back, stopped mattering or is gone), or every server (the
+        device is going to sleep), and starts the delays from the beginning next time."""
+        uuids = [server.uuid] if server is not None else list(self.offlineRetries)
+        for uuid in uuids:
+            timer = self.offlineRetries.pop(uuid, (None, 0))[0]
+            if timer:
+                timer.cancel()
 
     def resumeOfflineRetry(self):
-        """Back from sleep or a screensaver (which cancel the retests): retest the selected server
-        again if it's still offline."""
-        server = self.selectedServer
-        if server and server.offline and not server.gone and not self.offlineRetryTimer:
-            self.scheduleOfflineRetry()
+        """Retests every server that matters and is offline, unless one is already scheduled: back
+        from sleep or a screensaver (which cancel them), or a server newly in the sidebar."""
+        for server in self.getServers():
+            if self.serverMatters(server) and server.offline and not server.gone and not self._retryTimer(server):
+                self.scheduleOfflineRetry(server)
 
-    def retestSelectedServerNow(self):
-        """The user asked ("Try again"): retest the selected server now, not at the next step of
-        the offline backoff. If it's still down, the round's verdict schedules the next step as
-        usual (setServerOnline()). Returns whether a retest is under way."""
-        server = self.selectedServer
+    def retestServerNow(self, server):
+        """The user asked ("Try again"): retest a server now, not at the next step of its offline
+        backoff. If it's still down, the round's verdict schedules the next step as usual
+        (setServerOnline()). Returns whether a retest is under way."""
         if not server or server.gone:
             return False
-        if self.offlineRetryTimer:
-            self.offlineRetryTimer.cancel()
-            self.offlineRetryTimer = None
+        timer = self._retryTimer(server)
+        if timer:
+            timer.cancel()
+            self.offlineRetries[server.uuid][0] = None
         util.LOG("Retesting {0} now, as asked", repr(server.name))
         server.resetLastTest()
         server.updateReachability(True)
@@ -403,14 +445,13 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             return False
         return True
 
-    def onOfflineRetryTimer(self):
-        self.offlineRetryTimer = None
-        server = self.selectedServer
-        if not server or not server.offline:
+    def onOfflineRetryTimer(self, server):
+        retry = self.offlineRetries.get(server.uuid)
+        if retry:
+            retry[0] = None
+        if not server.offline or server.gone or not self.serverMatters(server):
+            # back, off the account (retesting can't bring it back), or no longer of interest
             return
-
-        if server.gone:
-            return  # off the account: retesting can't bring it back (onSelectedServerGone())
 
         if not server.connections:
             # dropped by a source other than plex.tv (see removeServer()): only a fresh list -
@@ -422,9 +463,9 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             server.resetLastTest()
             server.updateReachability(True)
 
-        if server.pendingReachabilityRequests <= 0 and server.offline and not self.offlineRetryTimer:
+        if server.pendingReachabilityRequests <= 0 and server.offline and not self._retryTimer(server):
             # nothing got started, so no round will end to schedule the next try
-            self.scheduleOfflineRetry()
+            self.scheduleOfflineRetry(server)
 
     def updateReachabilityResult(self, server, reachable=False):
         searching = not self.selectedServer and self.searchContext and self.searchContext.active
@@ -801,25 +842,35 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         self.deferReachabilityTimer = None
         self.updateReachability(True, False, False)
 
+    def checkServersAlive(self):
+        """The light, frequent check (PlexServer.checkAlive()) on every server that matters, so one
+        that stops answering while nothing is using it is noticed within a check's interval."""
+        for server in self.getServers():
+            if self.serverMatters(server):
+                server.checkAlive()
+
     def periodicReachabilityCheck(self):
-        """Re-test reachability on the selected server to detect network changes (e.g. WiFi -> mobile)."""
-        if not plexapp.ACCOUNT.isAuthenticated or not self.selectedServer or self.selectedServer.gone:
+        """Re-test reachability on every server that matters (serverMatters()) to detect network
+        changes (e.g. WiFi -> mobile)."""
+        if not plexapp.ACCOUNT.isAuthenticated:
             return
 
-        server = self.selectedServer
-        oldConn = server.activeConnection
-        oldAddr = oldConn and oldConn.address or None
+        for server in self.getServers():
+            if not self.serverMatters(server) or server.gone:
+                continue
+            oldConn = server.activeConnection
+            oldAddr = oldConn and oldConn.address or None
 
-        util.LOG("Periodic reachability check for {0}", repr(server.name))
-        server.resetLastTest()
-        server.updateReachability(True)
+            util.LOG("Periodic reachability check for {0}", repr(server.name))
+            server.resetLastTest()
+            server.updateReachability(True)
 
-        # Log if the connection changed immediately (synchronous connections).
-        # Most changes will be detected asynchronously via onReachabilityResult.
-        newConn = server.activeConnection
-        newAddr = newConn and newConn.address or None
-        if oldAddr and newAddr and oldAddr != newAddr:
-            util.LOG("Periodic reachability: active connection changed from {0} to {1}", oldAddr, newAddr)
+            # Log if the connection changed immediately (synchronous connections).
+            # Most changes will be detected asynchronously via onReachabilityResult.
+            newConn = server.activeConnection
+            newAddr = newConn and newConn.address or None
+            if oldAddr and newAddr and oldAddr != newAddr:
+                util.LOG("Periodic reachability: active connection changed from {0} to {1}", oldAddr, newAddr)
 
     def resetLastTest(self):
         for uuid in list(self.serversByUuid.keys()):

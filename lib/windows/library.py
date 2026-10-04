@@ -1629,6 +1629,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._serverSignalHandlers = (
             (plexapp.SERVERMANAGER, 'reachable:server',
              self._postedHandler('displayServerAndUser', self.displayServerAndUser)),
+            (plexapp.SERVERMANAGER, 'reachable:server', self._postedHandler('onServerReachable', self.onServerReachable)),
             (plexapp.util.APP, 'change:selectedServer',
              self._postedHandler('onSelectedServerChange', self.onSelectedServerChange)),
             (plexapp.SERVERMANAGER, 'suspect:server', self._postedHandler('onServerSuspect', self.onServerSuspect)),
@@ -1638,6 +1639,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             (plexapp.SERVERMANAGER, 'online:server', self._postedHandler('onServerOnline', self.onServerOnline)),
             (plexapp.SERVERMANAGER, 'gone:selectedServer',
              self._postedHandler('onSelectedServerGone', self.onSelectedServerGone)),
+            (plexapp.SERVERMANAGER, 'gone:server', self._postedHandler('onServerGone', self.onServerGone)),
             # Sleep and wake (monitor.py), ported from HomeWindow, which went with it in 12675d11.
             # Pausing only sets flags, so it runs where it's signalled; waking waits on its own
             # thread (_onWake()) and posts the refresh. HomeWindow also refreshed when a
@@ -1654,7 +1656,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         # tick() - the update checker's hand-offs and the periodic reachability check
         self._ignoreTick = False
-        self._lastReachabilityCheck = time.time()
+        self._lastReachabilityCheck = self._lastAliveCheck = time.time()
         self._updateSourceChanged = None
         self._updatePromptPosted = False
         if util.CRON:
@@ -1673,9 +1675,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if util.CRON:
             util.CRON.cancelReceiver(self)
 
-    # The recheck_server_connections setting's interval. (Was periodic_reachability_check, renamed
+    # The recheck_server_connections setting's intervals. (Was periodic_reachability_check, renamed
     # when its default turned on: Kodi keeps a stored value across a default change, and every
-    # install had "false" stored under the old id.)
+    # install had "false" stored under the old id.) Every minute, a light check that the servers
+    # that matter still answer (one small request each, on the connection in use - so one that
+    # stops while nothing uses it dims within the minute); every ten, a full round over all their
+    # connections, which also finds a better one appearing.
+    SERVER_ALIVE_INTERVAL = 60
     REACHABILITY_CHECK_INTERVAL = 600
 
     def tick(self):
@@ -1692,10 +1698,15 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             return
 
         now = time.time()
-        if (util.getSetting('recheck_server_connections', True) and
-                now - self.__dict__.get('_lastReachabilityCheck', now) > self.REACHABILITY_CHECK_INTERVAL):
+        if not util.getSetting('recheck_server_connections', True):
+            return
+        if now - self.__dict__.get('_lastReachabilityCheck', now) > self.REACHABILITY_CHECK_INTERVAL:
             self._lastReachabilityCheck = now
+            self._lastAliveCheck = now
             plexapp.SERVERMANAGER.periodicReachabilityCheck()
+        elif now - self.__dict__.get('_lastAliveCheck', now) > self.SERVER_ALIVE_INTERVAL:
+            self._lastAliveCheck = now
+            plexapp.SERVERMANAGER.checkServersAlive()
 
     def _onUpdateSourceChanged(self, value=None, **kwargs):
         self._updateSourceChanged = value
@@ -1783,7 +1794,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                     pd.update(int(waited * 100 / seconds))
         if self._shuttingDown:
             return
-        self._lastReachabilityCheck = time.time()
+        self._lastReachabilityCheck = self._lastAliveCheck = time.time()
         plexapp.SERVERMANAGER.periodicReachabilityCheck()
         plexapp.SERVERMANAGER.resumeOfflineRetry()
         self.postUI('refresh after wake', self.refreshLastSection)
@@ -1811,32 +1822,59 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     # The "isn't responding" panel's button (includes/server_unavailable.xml.tpl)
     SERVER_RETRY_BUTTON_ID = 2600
 
+    def _viewServer(self):
+        """The server of the section on screen: a library's own; the selected server's for Home and
+        Playlists (home.VirtualSection), which are still its."""
+        section = self.__dict__.get('section')
+        if section is None:
+            return plexapp.SERVERMANAGER.selectedServer
+        return getattr(section, 'server', None)
+
+    def _isViewServer(self, server):
+        view = self._viewServer()
+        return server is not None and view is not None and getattr(view, 'uuid', None) == server.uuid
+
+    def _sidebarHasServer(self, server):
+        nav = self.__dict__.get('navSettings') or {}
+        return any(sid.startswith(server.uuid + ':') for sid in nav.get('entries', ()))
+
+    def onServerReachable(self, server=None, **kwargs):
+        """A server answered a connection test. The sidebar doesn't ask a server for its libraries
+        before its first test has found a connection (sidebar_model.serverSections()), so one it has
+        libraries from, not yet listed, is asked now - by rebuilding."""
+        if server is not None and self._sidebarHasServer(server) and not sidebar_model.hasListed(server):
+            self._rebuildSidebar()
+
     def onServerSuspect(self, server=None, **kwargs):
-        """A query to the selected server got no answer, and its connections are being retested:
-        say so now, before the verdict - offline (onServerOffline()) or answering after all
-        (onServerRecovered()). Waiting for the verdict, as this once did, kept the user waiting
+        """A query to the server of what's on screen got no answer, and its connections are being
+        retested: say so now, before the verdict - offline (onServerOffline()) or answering after
+        all (onServerRecovered()). Waiting for the verdict, as this once did, kept the user waiting
         for a second connect timeout and the retest on top."""
-        if server is None or server is not plexapp.SERVERMANAGER.selectedServer:
+        if not self._isViewServer(server):
             return
         self._notifyUnavailable(server)
         self.updateServerUnavailable()
 
     def onServerOffline(self, server=None, **kwargs):
-        """The selected server stopped answering: it stays selected (plexnet retests it, backing
-        off), the sidebar shows it as unreachable, and an empty view says so in place
-        (updateServerUnavailable()). Opening the server list retests at once. The toast only if
-        onServerSuspect() hasn't already shown it - a retest in the background finds it down too.
-        Interim - the libraries-from-any-server sidebar replaces this with per-library state."""
-        if server is None or server is not plexapp.SERVERMANAGER.selectedServer:
+        """A server stopped answering: plexnet retests it, backing off (one with libraries in the
+        sidebar, or the selected one). Its sidebar entries dim. If it's the server of what's on
+        screen, an empty view says so in place (updateServerUnavailable()), and the toast says so -
+        unless onServerSuspect() already has: a retest in the background finds it down too."""
+        if server is None:
             return
-        self.displayServerAndUser()
+        if self._sidebarHasServer(server):
+            self._rebuildSidebar()
+        if server is plexapp.SERVERMANAGER.selectedServer:
+            self.displayServerAndUser()
+        if not self._isViewServer(server):
+            return
         self._notifyUnavailable(server)
         self.updateServerUnavailable()
 
     def onServerRecovered(self, server=None, **kwargs):
-        """The selected server answered its retest after all (a blip): a view the failed query left
-        empty is loaded again, quietly - the toast already said it was retrying."""
-        if server is None or server is not plexapp.SERVERMANAGER.selectedServer:
+        """The server of what's on screen answered its retest after all (a blip): a view the failed
+        query left empty is loaded again, quietly - the toast already said it was retrying."""
+        if not self._isViewServer(server):
             return
         self._unavailableNotified = None
         self.updateServerUnavailable()
@@ -1895,11 +1933,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
     def updateServerUnavailable(self):
         """Show or clear the "isn't responding" panel (includes/server_unavailable.xml.tpl): in
-        place of an empty grid or Recommended view while the selected server is suspect (a query got
-        no answer and its connections are being retested) or offline, so the view says why it's
-        empty and offers "Try again". Empty, it used to say nothing, or "no content" for a grid.
-        Returns whether it shows."""
-        server = plexapp.SERVERMANAGER.selectedServer
+        place of an empty grid or Recommended view while the server of what's on screen
+        (_viewServer()) is suspect (a query got no answer and its connections are being retested)
+        or offline, so the view says why it's empty and offers "Try again". Empty, it used to say
+        nothing, or "no content" for a grid. Returns whether it shows."""
+        server = self._viewServer()
         show = bool(server and (server.offline or server.suspect) and not server.gone
                     and not self._isHostedShell and not self.closing and self._viewIsEmpty())
         if show:
@@ -1912,17 +1950,17 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         return show
 
     def retryServerNow(self):
-        """The panel's "Try again": retest the selected server at once rather than at the next step
-        of the backoff. The panel says so until the round ends (_tickServerRetry()); if the server
-        answers, onServerOnline() reloads the view."""
-        if self.__dict__.get('_serverRetrying') or not plexapp.SERVERMANAGER.retestSelectedServerNow():
+        """The panel's "Try again": retest the server of what's on screen at once rather than at the
+        next step of the backoff. The panel says so until the round ends (_tickServerRetry()); if
+        the server answers, onServerOnline() reloads the view."""
+        if self.__dict__.get('_serverRetrying') or not plexapp.SERVERMANAGER.retestServerNow(self._viewServer()):
             return
         self._serverRetrying = True
         self.updateServerUnavailable()
         self.addTicker(self._tickServerRetry)
 
     def _tickServerRetry(self, now):
-        server = plexapp.SERVERMANAGER.selectedServer
+        server = self._viewServer()
         if server and server.pendingReachabilityRequests > 0 and not self.closing:
             return True
         self._serverRetrying = False
@@ -1930,29 +1968,59 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         return False
 
     def onSelectedServerGone(self, server=None, replacement=None, **kwargs):
-        """plex.tv no longer lists the selected server: the account doesn't have it any more. With
-        a replacement, plexnet has already switched to it (change:selectedServer follows and
-        refreshes as for any switch); with none, it stays selected, shown unreachable, until the
-        user picks another."""
+        """plex.tv no longer lists the selected server: the account doesn't have it any more. Its
+        libraries leave the sidebar as for any other server (onServerGone()). With a replacement,
+        plexnet has already switched Home to it (change:selectedServer follows and refreshes as for
+        any switch); with none, Home stays on it, shown unreachable."""
         if server is None:
             return
-        if replacement is not None:
-            message = T(35127, '{0} is no longer available to this account. Switched to {1}.').format(
-                server.name, replacement.name)
-        else:
+        if replacement is None:
             self.displayServerAndUser()
-            message = T(35128, '{0} is no longer available to this account. Choose another server.').format(
-                server.name)
-        util.showNotification(message, time_ms=8000)
+        self.onServerGone(server=server)
+
+    def onServerGone(self, server=None, **kwargs):
+        """plex.tv no longer lists a server the sidebar has libraries from: the account doesn't have
+        it any more (D4). Its libraries leave the sidebar and their hub settings go - Home's for it
+        too - with one notice naming it. A library of it on screen stays until the user moves on."""
+        if server is None:
+            return
+        nav = self.sidebarNavSettings()
+        prefix = server.uuid + ':'
+        removed = [sid for sid in nav.get('entries', ()) if sid.startswith(prefix)]
+        for sid in removed:
+            sidebar_model.removeEntry(nav, sid)
+        if removed:
+            self.saveNavSettings()
+        if self.hubSettings is None:
+            self.loadHubSettings()
+        gone = [key for key in self.hubSettings if key and key.startswith(prefix)]
+        for key in gone:
+            del self.hubSettings[key]
+        if gone:
+            self.saveHubSettings()
+        util.LOG('Library: {0} is no longer on the account: removed {1} sidebar libraries, {2} hub settings',
+                 server.name, len(removed), len(gone))
+        self._rebuildSidebar()
+        if removed:
+            util.showNotification(
+                T(35139, '{0} is no longer available to this account. Its libraries were removed from the sidebar.')
+                .format(server.name), time_ms=8000)
 
     def onServerOnline(self, server=None, **kwargs):
-        """The selected server answers again: show it so, and reload what's on screen - its rows
-        came back empty while it was gone. Not with a screen chain open on top (the item screens
-        handle their own failed loads), and only the section's own view is reloaded, in place."""
-        if server is None or server is not plexapp.SERVERMANAGER.selectedServer:
+        """A server answers again: its sidebar entries light up (and its libraries are asked for,
+        if it hadn't listed them). If it's the server of what's on screen, say so and reload the
+        view - its rows came back empty while it was gone. Not with a screen chain open on top (the
+        item screens handle their own failed loads), and only the section's own view is reloaded,
+        in place."""
+        if server is None:
+            return
+        if self._sidebarHasServer(server):
+            self._rebuildSidebar()
+        if server is plexapp.SERVERMANAGER.selectedServer:
+            self.displayServerAndUser()
+        if not self._isViewServer(server):
             return
         self._unavailableNotified = None
-        self.displayServerAndUser()
         self.updateServerUnavailable()
         util.showNotification(T(35126, '{0} is back').format(server.name), time_ms=3000)
         if not self._backStack and not self._shuttingDown:
