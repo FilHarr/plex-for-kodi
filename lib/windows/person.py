@@ -599,7 +599,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         # the screen the role was clicked from is: self.sectionId carries it through
         # (RolesMixin.roleSectionId()). None (nothing highlighted) when reached some other way,
         # e.g. Search.
-        return sidebar_model.matchSection(entries, self.sectionId, self.cameFromWatchlist)
+        return sidebar_model.matchSection(entries, self.sectionId, self.cameFromWatchlist, server=self.role.server)
 
     def formatDate(self, dateStr):
         if not dateStr:

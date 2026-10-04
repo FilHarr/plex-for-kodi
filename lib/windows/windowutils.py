@@ -145,7 +145,7 @@ class GoHomeMixin():
 
 class SidebarMixin():
     """Control ids for the persistent vertical nav rail (includes/sidebar.xml.tpl)
-    and its server/user dropdowns (includes/sidebar_dropdowns.xml.tpl). Any window
+    and its user dropdown (includes/sidebar_dropdowns.xml.tpl) and Libraries button. Any window
     that includes header_sidebar (see default.xml.tpl) can mix this in to reuse the
     same ids instead of redeclaring them.
     """
@@ -156,11 +156,7 @@ class SidebarMixin():
     USER_BUTTON_ID = 202
 
     USER_LIST_ID = 250
-    SERVER_LIST_ID = 260
-    SERVER_LIST_SCROLLBAR_ID = 261
 
-    SERVER_MENU_GROUP_ID = 802
-    SERVER_MENU_BG_ID = 800
     USER_MENU_BG_ID = 801
     USER_MENU_GROUP_ID = 901
 
@@ -168,10 +164,10 @@ class SidebarMixin():
         """Call first, before any other NAV_BACK/PREVIOUS_MENU handling, in every SidebarMixin
         window's own onAction() - not just LibraryWindow's (a real hosted shell's onAction goes
         through the host first, kodigui.BaseWindow.routeActionToHost(), but an *unhosted* real
-        shell still runs its own onAction, so this has to be reachable from both). The user/server dropdowns (includes/sidebar_dropdowns.xml.tpl) are
-        visible off Control.HasFocus(250/260) - remote/keyboard navigation onto the list - OR the
-        show.options/show.servers Window properties (the mouse-click path, which doesn't move
-        focus). Live-confirmed bug otherwise: pressing back while either was open fell through to
+        shell still runs its own onAction, so this has to be reachable from both). The user dropdown
+        (includes/sidebar_dropdowns.xml.tpl) is visible off Control.HasFocus(250) - remote/keyboard
+        navigation onto the list - OR the show.options Window property (the mouse-click path, which
+        doesn't move focus). Live-confirmed bug otherwise: pressing back while it was open fell through to
         this window's normal back-handling instead - popping the descendant chain a step
         (library.py's own _backStack check) or closing the window outright (doClose(), in every
         real shell's own onAction) - rather than just dismissing the popup, like every other
@@ -180,7 +176,7 @@ class SidebarMixin():
         popup (caller should return immediately, doing no further back-handling), False otherwise.
 
         target: LibraryWindow._sidebarTarget() from a LibraryWindow caller - setFocusId() (unlike
-        the show.options/show.servers property writes just below, and unlike getFocusId() itself)
+        the show.options property write just below, and unlike getFocusId() itself)
         is a real control write, and must never land on self while self is a LibraryWindow
         currently hosting a real shell (see _sidebarTarget()'s own comment for the native crash
         that's confirmed to cause). Omitted (defaults to self) from a real shell's own onAction(),
@@ -193,10 +189,6 @@ class SidebarMixin():
             self.setBoolProperty('show.options', False)
             target.setFocusId(self.USER_BUTTON_ID)
             return True
-        if controlID == self.SERVER_LIST_ID or self.getProperty('show.servers'):
-            self.setBoolProperty('show.servers', False)
-            target.setFocusId(self.SERVER_BUTTON_ID)
-            return True
         return False
 
     def buildSectionList(self):
@@ -204,9 +196,10 @@ class SidebarMixin():
         one sidebarActiveSection() picks as is.active and selecting it, so the list's cursor is on
         it the first time focus lands there rather than on Search. Writes go through the list's own
         guard (LibraryWindow's _sidebarListGuard() for its lists)."""
-        entries = sidebar_model.sections(self.sidebarNavSettings(), onPlaylistsChange=self._sidebarPlaylistsChanged)
+        entries = sidebar_model.sections(self.sidebarNavSettings(), onChange=self._sidebarEntriesChanged)
         active = self.sidebarActiveSection([home.home_section] + entries)
         active_pos = None
+        labels = sidebar_model.labels(entries)
 
         searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
         searchmli.setProperty('is.search', '1')
@@ -219,7 +212,7 @@ class SidebarMixin():
                                               data_source=section)
                 mli.setProperty('is.home', '1')
             else:
-                mli = kodigui.ManagedListItem(section.title,
+                mli = kodigui.ManagedListItem(labels.get(sidebar_model.sectionId(section), section.title),
                                               iconImage='script.plex/home/type/{0}.png'.format(section.type),
                                               data_source=section)
                 if section == home.playlists_section:
@@ -239,21 +232,34 @@ class SidebarMixin():
             self.sectionList.selectItem(active_pos)
 
     def sidebarNavSettings(self):
-        """The per-section show/hide/order preferences the sidebar is built with. LibraryWindow
-        keeps them as state its section menu edits."""
+        """The sidebar's stored list (sidebar_model.loadNavSettings()). LibraryWindow keeps it as
+        state its section menu and the Libraries picker edit."""
         return sidebar_model.loadNavSettings()
+
+    # What a screen shows, by the attribute screens keep it under: its server picks between two
+    # servers' libraries with the same key (sidebarServer()).
+    SIDEBAR_ITEM_ATTRS = ('video', 'mediaItem', 'show_', 'season', 'album', 'collection', 'playlist', 'section')
+
+    def sidebarServer(self):
+        """The server of what this screen shows, if it shows something with one."""
+        for name in self.SIDEBAR_ITEM_ATTRS:
+            server = getattr(getattr(self, name, None), 'server', None)
+            if server is not None and getattr(server, 'uuid', None):
+                return server
+        return None
 
     def sidebarActiveSection(self, entries):
         """Which of entries (Home first, then sidebar_model.sections()) is highlighted as the
         section on screen. By default the section this screen was entered from (entrySectionId,
-        inherited down a drill chain or the item's own library), else Watchlist when it came from
-        there. Screens with their own idea override this."""
+        inherited down a drill chain or the item's own library), on this screen's server, else
+        Watchlist when it came from there. Screens with their own idea override this."""
         return sidebar_model.matchSection(entries, getattr(self, 'entrySectionId', None),
-                                          getattr(self, 'entryFromWatchlist', False))
+                                          getattr(self, 'entryFromWatchlist', False), server=self.sidebarServer())
 
-    def _sidebarPlaylistsChanged(self):
-        """The background Playlists check (sidebar_model.hasPlaylists()) found a different answer
-        from the one this sidebar was built with. On a worker thread; LibraryWindow rebuilds."""
+    def _sidebarEntriesChanged(self):
+        """A background check (a server's libraries, sidebar_model.serverSections(); or whether it
+        has playlists, hasPlaylists()) found a different answer from the one this sidebar was built
+        with. On a worker thread; LibraryWindow rebuilds."""
         pass
 
     def displayServerAndUser(self, **kwargs):

@@ -136,7 +136,7 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         self.processCommand(search.dialog(self, section_id=self.section.key, server=self.section.server))
 
     def sidebarActiveSection(self, entries):
-        return sidebar_model.matchSection(entries, self.section.key)
+        return sidebar_model.matchSection(entries, self.section.key, server=self.section.server)
 
     def genreClicked(self):
         mli = self.genreListControl.getSelectedItem()

@@ -534,11 +534,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # pattern as self.sectionList/self.tabList above.
         self.userList = None
 
-        # Stage 3: server-switch dropdown (control 260, same shared include). Same
-        # build-once-in-onFirstInit() pattern as self.userList above. changingServer mirrors
-        # HomeWindow's identical flag (home.py) - selectServer()/onSelectedServerChange() below
-        # use it to suppress the normal back-navigation/exit-confirm handling mid-switch.
-        self.serverList = None
+        # changingServer mirrors HomeWindow's identical flag (home.py): set while the selected
+        # server changes (onSelectedServerChange()), it suppresses the normal back-navigation/
+        # exit-confirm handling mid-switch.
         self.changingServer = False
 
     def onColdStart(self):
@@ -1172,6 +1170,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             util.DEBUG_LOG("Library: openSection() declined - {0} not current window (descendant open, or closing)", self)
             return False
 
+        if isinstance(section, sidebar_model.LibraryPlaceholder):
+            section = self._liveSidebarSection(section)
+            if section is None:
+                return False
+
         if not force and section == self.section:
             return False
 
@@ -1282,27 +1285,26 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if not self.sectionList:
             return
 
+        activeId = section_ids.sectionId(active_section)
         for i in range(self.sectionList.size()):
             mli = self.sectionList[i]
             if not mli:
                 continue
-            if mli.dataSource is not None and mli.dataSource.key == active_section.key:
+            if mli.dataSource is not None and section_ids.sectionId(mli.dataSource) == activeId:
                 mli.setProperty('is.active', '1')
             elif mli.getProperty('is.active'):
                 mli.setProperty('is.active', '')
 
-    def sectionByKey(self, key):
+    def sectionByKey(self, key, server=None):
         """The sidebar's section object for a library section key, or None. For callers that only
         hold a key (getLibrarySectionId()) - resolveSection() resolves those through here, the
-        way HomeWindow's old 'HOME:<key>' handler matched the same list."""
+        way HomeWindow's old 'HOME:<key>' handler matched the same list. Two servers can both have
+        a library with this key: the one on `server`, else the selected server's (Home's)."""
         if not self.sectionList:
             return None
-        key = str(key)
-        for i in range(self.sectionList.size()):
-            mli = self.sectionList[i]
-            if mli and mli.dataSource is not None and mli.dataSource.key is not None                     and str(mli.dataSource.key) == key:
-                return mli.dataSource
-        return None
+        entries = [mli.dataSource for mli in self.sectionList.items if mli.dataSource is not None]
+        return sidebar_model.matchSection(entries, str(key),
+                                          server=server or plexapp.SERVERMANAGER.selectedServer)
 
     def setWatchlistDirty(self, *args, **kwargs):
         if self.section.TYPE == 'movies_shows':
@@ -1625,10 +1627,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         and its section swap out of that context, onto a clean tick of their own.
         """
         self._serverSignalHandlers = (
-            (plexapp.SERVERMANAGER, 'new:server', self._postedHandler('onNewServer', self.onNewServer)),
-            (plexapp.SERVERMANAGER, 'remove:server', self._postedHandler('onRemoveServer', self.onRemoveServer)),
-            (plexapp.SERVERMANAGER, 'reachable:server',
-             self._postedHandler('onReachableServer', self.onReachableServer)),
             (plexapp.SERVERMANAGER, 'reachable:server',
              self._postedHandler('displayServerAndUser', self.displayServerAndUser)),
             (plexapp.util.APP, 'change:selectedServer',
@@ -1809,160 +1807,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._pendingRestoreHubId = self._captureRootRestoreState().get('_restoreHubId')
         if not self.openSection(self.section, force=True, fresh=False):
             self._pendingRestoreHubId = None
-
-    def showServers(self, from_refresh=False, mouse=False):
-        """Ported from HomeWindow.showServers() (home.py) - see quiet-orbiting-heron.md's Cold
-        Start plan, Stage 3. Builds/shows the shared server-switch dropdown (control 260,
-        includes/sidebar_dropdowns.xml.tpl) - same include showUserMenu() above already uses."""
-        target = self._sidebarTarget()
-        with self.lock:
-            selection = None
-            if from_refresh:
-                try:
-                    mli = self.serverList.getSelectedItem()
-                except kodigui.ScreenClosed:
-                    mli = None  # bound to a window a swap has closed (_sidebarListGuard())
-                if mli:
-                    selection = mli.uuid
-
-            servers = sorted(
-                plexapp.SERVERMANAGER.getServers(),
-                key=lambda x: (x.owned and '0' or '1') + x.name.lower()
-            )
-
-            if plexapp.util.LOCAL_MODE:
-                # local mode can only ever use servers with a plain LAN connection
-                servers = [s for s in servers if s.hasLocalModeConnection()]
-
-            items = []
-            for s in servers:
-                item = home.ServerListItem(s.name, not s.owned and s.owner or '', data_source=s)
-                item.uuid = s.uuid
-                item.onUpdate()
-                if plexapp.SERVERMANAGER.selectedServer:
-                    item.setProperty('current', plexapp.SERVERMANAGER.selectedServer.uuid == s.uuid and '1' or '')
-                items.append(item)
-
-            if len(items) > 1:
-                items[0].setProperty('first', '1')
-                items[-1].setProperty('last', '1')
-            elif items:
-                items[0].setProperty('only', '1')
-
-            # Rebind first, not after - see showUserMenu()'s own comment on this same pattern.
-            # newControl(), not newControlEmpty(): from_refresh can reach here with the list
-            # already showing (a live server/reachability update, not a fresh open), and unlike
-            # showUserMenu()'s unconditional reset()+addItems(), replaceItems() above only
-            # repaints when the item count actually changed - newControlEmpty()'s own repaint-skip
-            # would leave a stale/empty list on screen in the common case where it doesn't.
-            self.serverList.newControl(target, guard=self._sidebarListGuard())
-            self.serverList.replaceItems(items)
-            itemHeight = util.vscale(100, r=0)
-
-            listHeight = min(len(items), 9) * itemHeight
-            target.getControl(self.SERVER_MENU_BG_ID).setHeight(listHeight + 80)
-
-            # Position dropdown so it grows upward from the server button area
-            buttonY = util.vscale(990, r=0)
-            dropdownY = buttonY - listHeight
-            target.getControl(self.SERVER_MENU_GROUP_ID).setPosition(80, dropdownY)
-
-            for item in items:
-                if item.dataSource != kodigui.DUMMY_DATA_SOURCE:
-                    item.hookSignals()
-
-            if selection:
-                for mli in self.serverList:
-                    if mli.uuid == selection:
-                        self.serverList.selectItem(mli.pos())
-
-            if not from_refresh and items and not mouse:
-                target.setFocusId(self.SERVER_LIST_ID)
-
-            if not from_refresh:
-                # Forced: opening the list is asking how the servers are now. Unforced, a server
-                # checked reachable in the last minute wasn't retested, so one that had just gone
-                # down still looked fine and could be picked (live, 2026-10-02).
-                plexapp.refreshResources(True)
-
-    def selectServer(self, uuid=None):
-        """Ported from HomeWindow.selectServer() (home.py). One addition HomeWindow never
-        needed: it was always the one true root, so the change:selectedServer signal this
-        triggers (hooked only on windowutils.HOME - see hookSignals()) always landed back on the
-        same object that called this. Here self can be a nested, non-root LibraryWindow instance
-        (e.g. a movie collection) - the busy/focus/reachability calls below still run harmlessly
-        on whichever self invoked this, but once a real switch actually happens, unwind back to
-        the root the same way goHome() already does elsewhere, with_root=True so its own
-        go_root/onReInit() machinery lands on home_section once HOME is current again.
-        serverRefresh() below may fire first (via the signal, synchronously, before this method's
-        own unwind call at the end) while HOME is still backgrounded behind this nested instance -
-        its own openSection() call just declines harmlessly then, the same guard every other
-        in-place section swap already relies on - the goHome(with_root=True) unwind below is what
-        actually completes the landing, once HOME is current again.
-        """
-        if self._shuttingDown:
-            return
-
-        if not uuid:
-            mli = self.serverList.getSelectedItem()
-            if not mli:
-                return
-            server = mli.dataSource
-        else:
-            server = plexapp.SERVERMANAGER.getServer(uuid)
-            if not server:
-                return
-
-        prevUUID = plexapp.SERVERMANAGER.selectedServer.uuid
-
-        self.changingServer = True
-        self._sidebarTarget().setFocusId(self.SECTION_LIST_ID)
-
-        if not self._shuttingDown and not server.isReachable():
-            if server.pendingReachabilityRequests > 0:
-                util.messageDialog(T(32339, 'Server is not accessible'), T(32340, 'Connection tests are in '
-                                                                                  'progress. Please wait.'))
-            else:
-                util.messageDialog(
-                    T(32339, 'Server is not accessible'), T(32341, 'Server is not accessible. Please sign into '
-                                                                   'your server and check your connection.')
-                )
-            self.changingServer = False
-            return
-
-        changed = False
-        try:
-            with busy.BusySignalContext(plexapp.util.APP, "change:selectedServer") as bc:
-                changed = plexapp.SERVERMANAGER.setSelectedServer(server, force=True)
-                if not changed:
-                    bc.ignoreSignal = True
-                    self.changingServer = False
-                else:
-                    util.setSetting('previous_server.{}'.format(plexapp.ACCOUNT.ID), prevUUID)
-        except Exception:
-            # Otherwise left set for the session. The navigation queue logs the exception.
-            self.changingServer = False
-            raise
-
-        if changed and self is not windowutils.HOME:
-            self.goHome(with_root=True)
-
-    def onNewServer(self, **kwargs):
-        self.showServers(from_refresh=True)
-
-    def onRemoveServer(self, **kwargs):
-        self.onNewServer()
-
-    def onReachableServer(self, server=None, **kwargs):
-        for mli in self.serverList:
-            if mli.uuid == server.uuid:
-                mli.unHookSignals()
-                mli.dataSource = server
-                mli.hookSignals()
-                mli.onUpdate()
-                return
-        else:
-            self.onNewServer()
 
     # The "isn't responding" panel's button (includes/server_unavailable.xml.tpl)
     SERVER_RETRY_BUTTON_ID = 2600
@@ -2205,14 +2049,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         else:
             self.userList.newControl(self, guard=sidebarGuard)
 
-        if self.serverList is None:
-            self.serverList = kodigui.ManagedControlList(self, self.SERVER_LIST_ID, 10, guard=sidebarGuard)
-            if self is windowutils.HOME:
-                # Only the true root reacts to server-list-relevant signals - see hookSignals()'s
-                # own comment for why a nested instance's dropdown still works without them.
-                self.hookSignals()
-        else:
-            self.serverList.newControl(self, guard=sidebarGuard)
+        if self is windowutils.HOME and not self.__dict__.get('_signalsHooked'):
+            # Only the true root reacts to the server signals (hookSignals())
+            self._signalsHooked = True
+            self.hookSignals()
         timing.mark('controls')
         # A new view starts without the "isn't responding" panel or the "no content" message; its
         # first fill or bind decides (updateServerUnavailable(), _recommendedHubsCallback(), the
@@ -2313,8 +2153,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # section keys are purely numeric strings (same key.isdigit() distinction already
             # used elsewhere in this file), which naturally excludes the Search/Home/Watchlist/
             # Playlists entries also in this list.
+            # Only the selected server's: Home is still its /hubs (the others' libraries come
+            # with Home's multi-server rows), and another server's key means another library there.
+            selected = plexapp.SERVERMANAGER.selectedServer
             section_keys = [mli.dataSource.key for mli in self.sectionList
-                            if mli.dataSource and mli.dataSource.key and mli.dataSource.key.isdigit()]
+                            if mli.dataSource and mli.dataSource.key and mli.dataSource.key.isdigit()
+                            and mli.dataSource.server is not None and selected is not None
+                            and mli.dataSource.server.uuid == selected.uuid]
             # Fetched on a worker (3d / E2 in the navigation review: inline, a server that stopped
             # answering froze everything, Back included, for 20 s or more), and the bind posted
             # back to this thread (_bindFetchedHubs()) - the bind changes control geometry
@@ -2735,36 +2580,17 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                     self.serverRefresh(section=show_section)
                     return True
             elif controlID == self.SERVER_BUTTON_ID:
-                # Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - ported from HomeWindow's
-                # identical SERVER_BUTTON_ID handling (home.py's onAction()). selectServer() below
-                # is deferred, not called inline: it can end in an openSection()/doClose()-based
-                # swap once the resulting change:selectedServer signal reaches serverRefresh() -
-                # same reentrancy reasoning as switchTab()'s own deferred dispatch (see
-                # windowutils.SKIN_RELOAD_DEFER_SECONDS).
-                #
-                # This whole routeAction() runs for a real hosted shell too (its onAction() calls
-                # routeActionToHost() first - kodigui.BaseWindow), but self here is still the *host* - and the host's own native window has already been
-                # closed (doClose()) in favor of the shell's, once a real shell is showing (see
-                # MultiWindow._open()'s .modal() loop). showServers()/selectServer()/doUserOption()
-                # below are all _sidebarTarget()-aware (see that method's own comment) precisely
-                # because of this - every control write they do lands on self._current, the
-                # genuinely live window, not self.
-                if action == xbmcgui.ACTION_SELECT_ITEM:
-                    self.showServers()
-                    return True
-                elif action == xbmcgui.ACTION_CONTEXT_MENU and util.getUserSetting('previous_server', None):
-                    uuid = util.getUserSetting('previous_server', None)
-                    if uuid != plexapp.SERVERMANAGER.selectedServer.uuid:
-                        self.postNav('selectServer', self.selectServer, args=(uuid,))
-                    return True
-                elif action == xbmcgui.ACTION_MOUSE_LEFT_CLICK:
-                    self.showServers(mouse=True)
-                    self.setBoolProperty('show.servers', True)
+                # The Libraries button below the sidebar: the picker (showLibraryPicker()). This
+                # runs for a hosted screen too, with self the host (its own native window closed
+                # in favour of the screen's - MultiWindow._open()): the picker's writes go to
+                # _sidebarTarget().
+                if action in (xbmcgui.ACTION_SELECT_ITEM, xbmcgui.ACTION_MOUSE_LEFT_CLICK):
+                    self.showLibraryPicker()
                     return True
             elif controlID == self.USER_BUTTON_ID:
                 # Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - ported from HomeWindow's
-                # identical USER_BUTTON_ID handling (home.py's onAction()). See SERVER_BUTTON_ID's
-                # own comment just above on why this is safe against a real hosted shell too.
+                # identical USER_BUTTON_ID handling (home.py's onAction()). Safe against a real hosted
+                # shell too: showUserMenu()/doUserOption() write through _sidebarTarget().
                 if action == xbmcgui.ACTION_SELECT_ITEM:
                     self.showUserMenu()
                     return True
@@ -2782,10 +2608,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 elif action == xbmcgui.ACTION_MOUSE_LEFT_CLICK:
                     self.showUserMenu(mouse=True)
                     self.setBoolProperty('show.options', True)
-                    return True
-            elif controlID == self.SERVER_LIST_ID:
-                if action == xbmcgui.ACTION_SELECT_ITEM:
-                    self.setFocusId(self.SERVER_BUTTON_ID)
                     return True
 
             # The showing view's own controls, when it's one of this window's own views
@@ -2830,14 +2652,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if controlID == self.SERVER_RETRY_BUTTON_ID:
             # the "isn't responding" panel, on the grid and Recommended views
             self.retryServerNow()
-            return True
-
-        if controlID == self.SERVER_LIST_ID:
-            # Stage 3: same as USER_LIST_ID above. Deferred, not called inline - see the
-            # SERVER_BUTTON_ID routeAction() branch's own comment for why selectServer() can't run
-            # synchronously from a native callback.
-            self._sidebarTarget().setBoolProperty('show.servers', False)
-            self.postNav('selectServer', self.selectServer)
             return True
 
         return False
@@ -2907,15 +2721,144 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         else:
             getActiveLibraryId = getattr(self.section, 'getLibrarySectionId', None)
             activeLibraryId = getActiveLibraryId() if getActiveLibraryId else None
+        ownId = section_ids.sectionId(self.section)
         for section in entries:
-            if section.key == self.section.key or (activeLibraryId and section.key == activeLibraryId):
+            if section_ids.sectionId(section) == ownId:
                 return section
+        if activeLibraryId:
+            # the library this collection or folder belongs to, on its server
+            match = sidebar_model.matchSection(entries, str(activeLibraryId), server=self.section.server)
+            if match is not None:
+                return match
         if self.entrySectionId is None and self.entryFromWatchlist:
             return home.watchlist_section
         return None
 
-    def _sidebarPlaylistsChanged(self):
-        self.postUI('sidebar playlists', self._rebuildSidebar)
+    def _sidebarEntriesChanged(self):
+        self.postUI('sidebar entries', self._rebuildSidebar)
+
+    def _liveSidebarSection(self, placeholder):
+        """A sidebar library its server hadn't listed yet, asked for now (sidebar_model.live()). If
+        it can't be had, says why and returns None."""
+        with busy.BusyContext(delay=True, delay_time=0.2):
+            section, problem = sidebar_model.live(placeholder)
+        if section is not None:
+            # the sidebar still holds the placeholder
+            self.postUI('sidebar entries', self._rebuildSidebar)
+            return section
+        serverName = placeholder.server.name if placeholder.server is not None else placeholder.serverName
+        if problem == sidebar_model.MISSING:
+            message = T(35137, '{0} is no longer on {1}').format(placeholder.title, serverName)
+        else:
+            message = T(35129, "{0} isn't responding").format(serverName)
+        util.DEBUG_LOG('Library: sidebar entry {0} unavailable ({1})', placeholder, problem)
+        util.showNotification(message, time_ms=5000)
+        return None
+
+    # The Libraries picker's tick (the dropdown's indicator)
+    PICKER_TICK = 'script.plex/indicators/circle-19.png'
+
+    def showLibraryPicker(self):
+        """The Libraries button: which libraries the sidebar shows. Every server on the account -
+        owned first - with its libraries, ticked when they're in the sidebar, plus Watchlist and
+        Playlists. Ticking adds to the end of the sidebar, unticking removes; the sidebar is rebuilt
+        when the picker closes. The servers are asked for their libraries as it opens, together; one
+        that doesn't answer says so, and its libraries already in the sidebar stay listed to be
+        removed."""
+        servers = sorted(plexapp.SERVERMANAGER.getServers(), key=lambda x: (not x.owned, x.name.lower()))
+        if plexapp.util.LOCAL_MODE:
+            # local mode can only ever use servers with a plain LAN connection
+            servers = [x for x in servers if x.hasLocalModeConnection()]
+
+        listed = {}
+
+        def ask(server):
+            listed[server.uuid] = sidebar_model.fetchServerSections(server)
+
+        with busy.BusyContext(delay=True, delay_time=0.2):
+            threads = [threading.Thread(target=ask, args=(server,), name='libraries.' + server.name)
+                       for server in servers]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(15)
+
+        self._pickerServers = [(server, listed.get(server.uuid)) for server in servers]
+        self._pickerChanged = False
+        try:
+            dropdown.showDropdown(
+                self._libraryPickerOptions(),
+                pos=(460, 200),
+                close_direction='none',
+                set_dropdown_prop=False,
+                with_indicator=True,
+                header=T(33722, 'Libraries'),
+                align_items="left",
+                close_only_with_back=True,
+                options_callback=self._onLibraryPickerToggle,
+                dialog_props=getattr(self, 'carriedProps', None),
+            )
+        finally:
+            self._pickerServers = None
+        if self._pickerChanged:
+            self.saveNavSettings()
+            self._rebuildSidebar()
+
+    def _libraryPickerOptions(self):
+        nav = self.sidebarNavSettings()
+        inSidebar = set(nav['entries'])
+
+        def option(sid, display, section=None):
+            return {'key': 'toggle', 'sid': sid, 'section': section, 'display': display,
+                    'indicator': self.PICKER_TICK if sid in inSidebar else ''}
+
+        options = []
+        if util.getUserSetting("use_watchlist", True) and not plexapp.ACCOUNT.isOffline:
+            options.append(option(section_ids.WATCHLIST_ID, T(34000, 'Watchlist')))
+        options.append(option(section_ids.PLAYLISTS_ID, T(32333, 'Playlists')))
+
+        shownUuids = set()
+        for server, sections in self._pickerServers:
+            shownUuids.add(server.uuid)
+            options.append(dropdown.SEPARATOR)
+            if sections is None:
+                options.append({'key': 'unanswered', 'display': T(35129, "{0} isn't responding").format(server.name)})
+                sections = [sidebar_model.LibraryPlaceholder(sid, nav['libraries'].get(sid, {}), server)
+                            for sid in nav['entries'] if sid.startswith(server.uuid + ':')]
+            elif not sections:
+                options.append({'key': 'none', 'display': T(35138, '{0} has no libraries').format(server.name)})
+            for section in sections:
+                options.append(option(section_ids.sectionId(section),
+                                      u'{0} [{1}]'.format(section.title, server.name), section))
+
+        # libraries in the sidebar from a server the account no longer lists, to be removed
+        gone = [sid for sid in nav['entries'] if ':' in sid and sid.partition(':')[0] not in shownUuids]
+        if gone:
+            options.append(dropdown.SEPARATOR)
+            for sid in gone:
+                meta = nav['libraries'].get(sid, {})
+                options.append(option(sid, u'{0} [{1}]'.format(meta.get('title', sid), meta.get('server', ''))))
+        return options
+
+    def _onLibraryPickerToggle(self, optionsList, mli):
+        choice = mli.dataSource
+        if not choice or choice.get('key') != 'toggle':
+            return
+        nav = self.sidebarNavSettings()
+        sid = choice['sid']
+        section = choice.get('section')
+        if sid in nav['entries']:
+            sidebar_model.removeEntry(nav, sid)
+        elif section is not None and not isinstance(section, sidebar_model.LibraryPlaceholder):
+            sidebar_model.addEntry(nav, section)
+        elif sid in (section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID):
+            nav['entries'].append(sid)
+        else:
+            return
+        # an explicit choice is kept even if the older setting couldn't be moved over yet
+        nav.pop('unsaved', None)
+        self._pickerChanged = True
+        return ('rebuild', self._libraryPickerOptions(), optionsList.getSelectedPos())
 
     def _rebuildSidebar(self):
         """Rebuild the sidebar as it stands, on the main thread (postUI())."""
@@ -2942,11 +2885,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         choice = None
         if not section.key:
             # home section
-            sections = [home.playlists_section] + plexapp.SERVERMANAGER.selectedServer.library.sections()
             options = []
 
             use_sep = False
-            if "order" in self.navSettings and self.navSettings["order"]:
+            reset = {'entries': list(self.navSettings.get('entries', ())),
+                     'libraries': self.navSettings.get('libraries', {})}
+            sidebar_model.resetOrder(reset)
+            if reset['entries'] != self.navSettings.get('entries'):
                 options.append({'key': 'reset_order', 'display': T(33040, "Reset library order")})
                 use_sep = True
 
@@ -2954,28 +2899,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 options.append({'key': 'cache_reset', 'display': T(33720, "Clear all caches")})
                 use_sep = True
 
+            # Add Manage Hubs and Refresh Hubs options (libraries are added back with the Libraries
+            # picker, not here)
             if use_sep:
-                options.append(dropdown.SEPARATOR)
-
-            for s in sections:
-                section_settings = self.navSettings.get(section_ids.sectionId(s))
-                if section_settings and not section_settings.get("show", True):
-                    options.append({'key': 'show',
-                                    'section_id': section_ids.sectionId(s),
-                                    'display': T(33029, "Show library: {}").format(s.title)
-                                    }
-                                   )
-
-            # hack for an inexistant watchlist due to it being hidden
-            if util.getUserSetting("use_watchlist", True) and not self.navSettings.get(
-                    section_ids.WATCHLIST_ID, {}).get("show", True):
-                options.append({'key': 'show',
-                                'section_id': section_ids.WATCHLIST_ID,
-                                'display': T(33029, "Show library: {}").format(T(34000, 'Watchlist'))
-                                })
-
-            # Add Manage Hubs and Refresh Hubs options
-            if options:
                 options.append(dropdown.SEPARATOR)
             options.append({'key': 'manage_hubs', 'display': T(34080, "Manage Hubs")})
             options.append({'key': 'refresh_hubs', 'display': T(34096, "Refresh Hubs")})
@@ -2995,15 +2921,22 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         else:
             options = []
 
+            if isinstance(section, sidebar_model.LibraryPlaceholder):
+                # its server hasn't listed it yet: ask now, for the options that need the library
+                with busy.BusyContext(delay=True, delay_time=0.2):
+                    section = sidebar_model.live(section)[0] or section
+            placeholder = isinstance(section, sidebar_model.LibraryPlaceholder)
+
             # the server's own admin only: a shared server refuses these
-            if (plexapp.ACCOUNT.isAdmin and section not in (home.watchlist_section, home.playlists_section)
+            if (plexapp.ACCOUNT.isAdmin and not placeholder
+                    and section not in (home.watchlist_section, home.playlists_section)
                     and section.server.owned):
                 options = [{'key': 'refresh', 'display': T(33082, "Scan Library Files")},
                            {'key': 'emptyTrash', 'display': T(33083, "Empty Trash")},
                            {'key': 'analyze', 'display': T(33084, "Analyze")},
                            dropdown.SEPARATOR]
 
-            if section.locations and util.getSetting('path_mapping'):
+            if not placeholder and section.locations and util.getSetting('path_mapping'):
                 for loc in section.locations:
                     source, target = section.getMappedPath(loc)
                     loc_is_mapped = source and target
@@ -3016,16 +2949,17 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
                 options.append(dropdown.SEPARATOR)
 
-            options.append({'key': 'hide', 'display': T(33028, "Hide library")})
+            options.append({'key': 'remove', 'display': T(35136, "Remove from sidebar")})
             options.append({'key': 'move', 'display': T(33039, "Move")})
             options.append(dropdown.SEPARATOR)
 
-            if 'libraries' in util.getSetting('cache_requests') and section != home.watchlist_section:
+            if ('libraries' in util.getSetting('cache_requests') and section != home.watchlist_section
+                    and not placeholder):
                 options.append({'key': 'section_cache_reset', 'display': T(33721, "Clear library cache (not items)")})
                 options.append(dropdown.SEPARATOR)
 
             # Add Manage Hubs and Refresh Hubs options (not applicable to watchlist)
-            if section != home.watchlist_section:
+            if section != home.watchlist_section and not placeholder:
                 options.append(dropdown.SEPARATOR)
                 options.append({'key': 'manage_hubs', 'display': T(34080, "Manage Hubs")})
                 options.append({'key': 'refresh_hubs', 'display': T(34096, "Refresh Hubs")})
@@ -3059,23 +2993,16 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                     return
                 pmm.addPathMapping(d, choice["path"], server=section.server)
                 return self.section
-        elif choice["key"] == "hide":
-            self.navSettings.setdefault(section_ids.sectionId(section), {})['show'] = False
+        elif choice["key"] == "remove":
+            sidebar_model.removeEntry(self.navSettings, section_ids.sectionId(item.dataSource))
             self.saveNavSettings()
             return self.sectionList[self.sectionList.prev()].dataSource
-        elif choice["key"] == "show":
-            if "section_id" in choice:
-                if choice["section_id"] in self.navSettings:
-                    self.navSettings[choice["section_id"]]['show'] = True
-                    self.saveNavSettings()
-                    return self.section
         elif choice["key"] == "move":
             self.sectionMover(item, "init")
         elif choice["key"] == "reset_order":
-            if "order" in self.navSettings:
-                del self.navSettings["order"]
-                self.saveNavSettings()
-                return self.section
+            sidebar_model.resetOrder(self.navSettings)
+            self.saveNavSettings()
+            return self.section
         elif choice["key"] == "refresh":
             with busy.BusyContext(delay=True, delay_time=0.2):
                 section.refresh()
@@ -3186,9 +3113,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         elif action == xbmcgui.ACTION_SELECT_ITEM:
             stop_moving()
             # store section order
-            order = [section_ids.sectionId(i.dataSource) for i in self.sectionList.items if i.dataSource]
-            # other servers' libraries keep their places after these
-            self.navSettings["order"] = order + [k for k in self.navSettings.get("order", []) if k not in order]
+            # Home, the first item again, isn't part of it
+            sidebar_model.reorder(self.navSettings, [section_ids.sectionId(i.dataSource)
+                                                     for i in self.sectionList.items
+                                                     if i.dataSource and i.dataSource.key is not None])
             self.saveNavSettings()
 
     def _tabListNeedsRebuild(self, section):

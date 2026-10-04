@@ -331,7 +331,6 @@ class LibraryRouteClickTest(KodiTestCase):
         routeClick = library.LibraryWindow.routeClick
         SECTION_LIST_ID = library.LibraryWindow.SECTION_LIST_ID
         USER_LIST_ID = library.LibraryWindow.USER_LIST_ID
-        SERVER_LIST_ID = library.LibraryWindow.SERVER_LIST_ID
         USER_BUTTON_ID = library.LibraryWindow.USER_BUTTON_ID
         SERVER_RETRY_BUTTON_ID = library.LibraryWindow.SERVER_RETRY_BUTTON_ID
 
@@ -345,9 +344,6 @@ class LibraryRouteClickTest(KodiTestCase):
 
         def doUserOption(self, target=None):
             self.calls.append(('doUserOption', target))
-
-        def selectServer(self):
-            pass
 
         def postNav(self, name, fn, **kwargs):
             self.calls.append(('postNav', name))
@@ -368,13 +364,6 @@ class LibraryRouteClickTest(KodiTestCase):
         self.assertTrue(host.routeClick(library.LibraryWindow.USER_LIST_ID))
         self.assertEqual([('doUserOption', screen)], host.calls)
         self.assertEqual([('show.options', False), ('focus', library.LibraryWindow.USER_BUTTON_ID)], screen.calls)
-
-    def test_the_server_dropdown_posts_the_switch(self):
-        screen = self.Screen()
-        host = self.Host(screen)
-        self.assertTrue(host.routeClick(library.LibraryWindow.SERVER_LIST_ID))
-        self.assertEqual([('postNav', 'selectServer')], host.calls)
-        self.assertEqual([('show.servers', False)], screen.calls)
 
     def test_other_clicks_go_back_to_the_screen(self):
         self.assertFalse(self.Host(self.Screen()).routeClick(101))

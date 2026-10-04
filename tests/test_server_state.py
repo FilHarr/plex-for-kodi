@@ -440,7 +440,8 @@ class LibraryWindowTest(KodiTestCase):
         self.server.offline = True
         self.win.displayServerAndUser()
         self.assertEqual('script.plex/home/device/error.png', self.props['server.icon'])
-        self.assertEqual('Animal', self.props['server.name'])
+        # the button below the sidebar is the Libraries picker's now; its icon still says it
+        self.assertEqual('Libraries', self.props['server.name'])
 
     def test_coming_back_reloads_the_section_in_place(self):
         self.win.onServerOnline(server=self.server)

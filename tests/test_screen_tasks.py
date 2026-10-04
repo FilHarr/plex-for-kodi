@@ -216,11 +216,3 @@ class SharedListGuardTest(ScreenTasksTest):
         self.item.setProperty('status', 'secure.png')
         self.assertEqual('secure.png', shellWindow.control.listItems[0].getProperty('status'))
 
-    def test_a_server_list_item_survives_the_swap(self):
-        from lib.windows import home
-        item = home.ServerListItem('Animal')
-        self.list.addItems([item])
-        self.guard.close()
-        self.assertFalse(item.safeSetProperty('status', 'refreshing.gif'))
-        self.assertFalse(item.safeSetLabel('Oscar'))
-        self.assertEqual('refreshing.gif', item.getProperty('status'))

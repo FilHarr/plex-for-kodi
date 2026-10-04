@@ -34,7 +34,11 @@ HOME_STORAGE_KEY = '__home__'
 
 def sectionId(section):
     """The library's id across servers: None for Home, the fixed id for Playlists and Watchlist,
-    otherwise "<server uuid>:<key>"."""
+    otherwise "<server uuid>:<key>". A sidebar placeholder (sidebar_model.LibraryPlaceholder) carries
+    its own."""
+    stored = section.__dict__.get('sidebarId')
+    if stored:
+        return stored
     key = section.key
     if key is None or key in (PLAYLISTS_ID, WATCHLIST_ID):
         return key

@@ -1,42 +1,281 @@
 """
-What the sidebar shows, apart from which entry is highlighted: its entries (Search, Home,
-Watchlist, Playlists, the libraries), the per-section show/hide/order preferences behind them, and
-the server and user labels below them. windowutils.SidebarMixin turns these into list items and
-window properties; each window keeps only its own highlight rule (sidebarActiveSection()).
+What the sidebar shows, apart from which entry is highlighted: its entries (Search, Home, Watchlist,
+Playlists, the libraries), the stored list behind them, and the labels below them.
+windowutils.SidebarMixin turns these into list items and window properties; each window keeps only
+its own highlight rule (sidebarActiveSection()).
 
-Still the selected server's libraries only. The preferences are the account's, keyed by library id
-(section_ids.sectionId()), so they already hold libraries from any server.
+The sidebar is the libraries the user picked, from any server on the account (the Libraries picker,
+LibraryWindow.showLibraryPicker()), in the user's order: one setting per account,
+section_ids.sidebarKey():
+
+    {"version": 2,
+     "entries": ["/library/sections/watchlist", "playlists", "<server uuid>:<key>", ...],
+     "libraries": {"<server uuid>:<key>": {"title": ..., "type": ..., "server": <server name>}}}
+
+A library is shown from its server's own list (serverSections(), fetched on a worker and kept),
+and until its server has answered, by a LibraryPlaceholder made from what's stored, which looks
+the same. Watchlist and Playlists aren't one server's; Playlists is still the selected server's.
 """
 from __future__ import absolute_import
 
 import json
 import threading
+import time
 
 import plexnet
-from plexnet import plexapp
+from plexnet import plexapp, plexlibrary
 
 from lib import backgroundthread
 from lib import util
 from lib.util import T
 from . import home
 from . import section_ids
-from .section_ids import sectionId
+from .section_ids import sectionId, PLAYLISTS_ID, WATCHLIST_ID
 
+SIDEBAR_VERSION = 2
+
+
+class LibraryPlaceholder(object):
+    """A sidebar library its server hasn't listed (yet): its server hasn't answered since the add-on
+    started, isn't on the account any more, or (missing) no longer has it. Made from the title and
+    type kept in the sidebar setting, so it shows like the library itself; live() swaps it for the
+    real one, asking the server then if need be."""
+    isPlaceholder = True
+
+    def __init__(self, sid, meta, server, missing=False):
+        self.sidebarId = sid
+        self.key = sid.partition(':')[2]
+        self.title = meta.get('title') or ''
+        self.type = meta.get('type') or 'movie'
+        self.serverName = meta.get('server') or ''
+        self.server = server
+        self.missing = missing
+
+    def __eq__(self, other):
+        return isinstance(other, LibraryPlaceholder) and other.sidebarId == self.sidebarId
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __hash__(self):
+        return hash(self.sidebarId)
+
+    def __repr__(self):
+        return '<LibraryPlaceholder {0} {1!r}>'.format(self.sidebarId, self.title)
+
+
+def libraryMeta(section):
+    return {'title': section.title, 'type': section.type, 'server': section.server.name}
+
+
+# The stored list
 
 def loadNavSettings():
-    """The per-library show/hide/order preferences: {library id: {"show": bool}, "order": [library
-    ids]}, one setting per account."""
+    """The sidebar's stored list (see this module's docstring), moved over from the older show/hide
+    dict the first time."""
     section_ids.migrate()
-    return section_ids.loadJson(section_ids.sidebarKey())
+    nav = section_ids.loadJson(section_ids.sidebarKey())
+    if nav.get('version') == SIDEBAR_VERSION:
+        return nav
+    migrated = migrateToList(nav, plexapp.SERVERMANAGER.selectedServer)
+    if migrated is None:
+        # the selected server didn't list its libraries: try again next time, keep nothing now
+        util.LOG('Sidebar: the selected server did not list its libraries, sidebar setting not moved yet')
+        return {'version': SIDEBAR_VERSION, 'entries': [WATCHLIST_ID, PLAYLISTS_ID], 'libraries': {},
+                'unsaved': True}
+    saveNavSettings(migrated)
+    return migrated
 
 
-def saveNavSettings(navSettings):
-    util.setSetting(section_ids.sidebarKey(), json.dumps(navSettings))
+def saveNavSettings(nav):
+    if nav.get('unsaved'):
+        return
+    util.setSetting(section_ids.sidebarKey(), json.dumps(nav))
 
 
-def isShown(navSettings, section):
+def migrateToList(nav, server):
+    """The sidebar as it showed under the older setting ({id: {"show": bool}, "order": [ids]}, the
+    selected server's libraries only, a library shown unless hidden): the same entries in the same
+    order, now as the list of what's in it. A hidden library isn't in it. Needs the selected server's
+    libraries; None if it doesn't list them."""
+    sections = fetchServerSections(server) if server else None
+    if sections is None:
+        return None
+
+    def shown(sid):
+        return sid not in nav or nav[sid].get('show', True)
+
+    ids = [sid for sid in (WATCHLIST_ID, PLAYLISTS_ID) if shown(sid)]
+    libraries = {}
+    for section in sections:
+        sid = sectionId(section)
+        if shown(sid):
+            ids.append(sid)
+            libraries[sid] = libraryMeta(section)
+
+    order = nav.get('order')
+    if order:
+        # as the older sidebar sorted: by the saved order, anything not in it first
+        ids.sort(key=lambda sid: order.index(sid) if sid in order else -1)
+
+    util.LOG('Sidebar: moved to the library list ({0} entries)', len(ids))
+    return {'version': SIDEBAR_VERSION, 'entries': ids, 'libraries': libraries}
+
+
+def addEntry(nav, section):
+    """Add a library (or Watchlist/Playlists) to the end of the sidebar."""
     sid = sectionId(section)
-    return sid not in navSettings or navSettings[sid].get("show", True)
+    if sid not in nav['entries']:
+        nav['entries'].append(sid)
+    if ':' in sid:
+        nav['libraries'][sid] = libraryMeta(section)
+
+
+def removeEntry(nav, sid):
+    if sid in nav['entries']:
+        nav['entries'].remove(sid)
+    nav['libraries'].pop(sid, None)
+
+
+def reorder(nav, shownIds):
+    """The sidebar's new order after a Move: the entries showing, in their new order, then any that
+    aren't showing (Watchlist turned off, no playlists) where they were."""
+    nav['entries'] = list(shownIds) + [sid for sid in nav['entries'] if sid not in shownIds]
+
+
+def resetOrder(nav):
+    """Watchlist, Playlists, then the libraries by server - the selected one first - each server's
+    in its own order."""
+    selected = plexapp.SERVERMANAGER.selectedServer
+    selectedUuid = selected.uuid if selected else None
+
+    def position(sid):
+        if sid == WATCHLIST_ID:
+            return (0, '', 0)
+        if sid == PLAYLISTS_ID:
+            return (1, '', 0)
+        uuid, _, key = sid.partition(':')
+        known = _knownSections(uuid) or []
+        keys = [str(s.key) for s in known]
+        meta = nav['libraries'].get(sid, {})
+        return (2 if uuid == selectedUuid else 3, (meta.get('server') or '').lower(),
+                keys.index(key) if key in keys else len(keys))
+
+    nav['entries'].sort(key=position)
+
+
+# Each server's libraries, kept by server uuid: {uuid: (fetched at, [LibrarySection])}. Fetched on a
+# worker, never on the main thread for a sidebar build, and asked again after SECTIONS_RECHECK s.
+_serverSections = {}
+_sectionsLock = threading.Lock()
+_sectionsFetching = set()
+SECTIONS_RECHECK = 60
+
+
+def fetchServerSections(server):
+    """The server's libraries, asked now: None if it doesn't answer. (plexnet's
+    server.library.sections() answers an empty list then, which would read as "no libraries".)"""
+    if server is None or server.offline:
+        return None
+    path = '/library/sections'
+    try:
+        data = server.query(path)
+    except plexnet.exceptions.BadRequest as e:
+        util.DEBUG_LOG('Sidebar: {0} would not list its libraries: {1}', server.name, e)
+        return None
+    if data is None:
+        return None
+    library = plexlibrary.Library(data, server=server)
+    sections = []
+    for elem in data:
+        cls = plexlibrary.SECTION_TYPES.get(elem.attrib.get('type'))
+        if cls:
+            sections.append(cls(elem, initpath=path, server=server, container=library))
+    _noteSections(server, sections)
+    return sections
+
+
+def _noteSections(server, sections):
+    with _sectionsLock:
+        _serverSections[server.uuid] = (time.time(), sections)
+
+
+def _knownSections(uuid):
+    with _sectionsLock:
+        known = _serverSections.get(uuid)
+    return known[1] if known else None
+
+
+def _signature(sections):
+    return [(str(s.key), s.title, s.type) for s in sections or ()]
+
+
+def serverSections(server, onChange=None):
+    """The server's libraries as last fetched, or None if it hasn't answered yet. Asked again on a
+    worker when that answer is older than SECTIONS_RECHECK s; onChange() runs (on that worker) if
+    the new answer differs - the sidebar is rebuilt then."""
+    with _sectionsLock:
+        known = _serverSections.get(server.uuid)
+    if known is None or time.time() - known[0] > SECTIONS_RECHECK:
+        _fetchLater(server, known and known[1], onChange)
+    return known[1] if known else None
+
+
+def _fetchLater(server, known, onChange):
+    if server.offline:
+        return
+    with _sectionsLock:
+        if server.uuid in _sectionsFetching:
+            return
+        _sectionsFetching.add(server.uuid)
+    SectionsFetchTask(server, known, onChange).start()
+
+
+class SectionsFetchTask(backgroundthread.Task):
+    def __init__(self, server, known, onChange):
+        backgroundthread.Task.__init__(self)
+        self.server = server
+        self.known = known
+        self.onChange = onChange
+
+    def run(self):
+        try:
+            if self.isCanceled():
+                return
+            answer = fetchServerSections(self.server)
+            if answer is None:
+                return
+            if (self.known is None or _signature(answer) != _signature(self.known)) and self.onChange \
+                    and not self.isCanceled():
+                util.DEBUG_LOG('Sidebar: {0} listed its libraries, rebuilding', self.server.name)
+                self.onChange()
+        except:
+            util.ERROR()
+        finally:
+            with _sectionsLock:
+                _sectionsFetching.discard(self.server.uuid)
+
+
+# Why live() couldn't give a placeholder's library
+UNANSWERED = 'unanswered'
+MISSING = 'missing'
+
+
+def live(section):
+    """(the real section for a sidebar entry, None) - itself, unless it's a placeholder: its
+    server is asked now. (None, UNANSWERED) if the server isn't on the account any more or doesn't
+    answer; (None, MISSING) if it answers without the library."""
+    if not isinstance(section, LibraryPlaceholder):
+        return section, None
+    if section.server is None:
+        return None, UNANSWERED
+    sections = fetchServerSections(section.server)
+    if sections is None:
+        return None, UNANSWERED
+    for candidate in sections:
+        if str(candidate.key) == section.key:
+            return candidate, None
+    return None, MISSING
 
 
 def refreshWatchlistSection():
@@ -44,7 +283,6 @@ def refreshWatchlistSection():
     each sidebar it builds; the other screens show the one it made."""
     if plexapp.ACCOUNT.isOffline or not util.getUserSetting("use_watchlist", True):
         return
-    from plexnet import plexlibrary
     try:
         section = plexlibrary.WatchlistSection(None, server=plexapp.SERVERMANAGER.getDiscoverServer())
     except plexnet.exceptions.BadRequest as e:
@@ -124,54 +362,86 @@ class PlaylistsCheckTask(backgroundthread.Task):
                 _playlistsChecking.discard(self.server.uuid)
 
 
-def sections(navSettings, onPlaylistsChange=None):
-    """The sidebar's entries after Search and Home, in the user's order with hidden ones dropped:
-    Watchlist, Playlists, then the selected server's libraries."""
-    server = plexapp.SERVERMANAGER.selectedServer
+def sections(nav, onChange=None):
+    """The sidebar's entries after Search and Home, in the user's order: Watchlist and Playlists when
+    they're in it and there's something to show, and the libraries - live where their server has
+    listed them, placeholders where it hasn't. onChange() (on a worker) when a server's answer
+    changes what this showed."""
+    manager = plexapp.SERVERMANAGER
     entries = []
-
-    if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True) and home.watchlist_section
-            and home.watchlist_section.has_data()
-            and isShown(navSettings, home.watchlist_section)):
-        entries.append(home.watchlist_section)
-
-    if isShown(navSettings, home.playlists_section) and hasPlaylists(server, onChange=onPlaylistsChange):
-        entries.append(home.playlists_section)
-
-    for section in server.library.sections():
-        if isShown(navSettings, section):
-            entries.append(section)
-
-    if "order" in navSettings:
-        order = navSettings["order"]
-
-        def orderPos(s):
-            sid = sectionId(s)
-            if sid in order:
-                return order.index(sid), 0
-            return -1, 0
-
-        entries = sorted(entries, key=orderPos)
-
+    renamed = False
+    for sid in nav.get('entries', ()):
+        if sid == WATCHLIST_ID:
+            if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True)
+                    and home.watchlist_section and home.watchlist_section.has_data()):
+                entries.append(home.watchlist_section)
+        elif sid == PLAYLISTS_ID:
+            server = manager.selectedServer
+            if server and hasPlaylists(server, onChange=onChange):
+                entries.append(home.playlists_section)
+        elif sid:
+            entry = _libraryEntry(nav, sid, onChange)
+            if entry.__dict__.get('sidebarId') is None:
+                meta = libraryMeta(entry)
+                if nav['libraries'].get(sid) != meta:
+                    nav['libraries'][sid] = meta
+                    renamed = True
+            entries.append(entry)
+    if renamed:
+        saveNavSettings(nav)
     return entries
 
 
-def matchSection(entries, sectionId, fromWatchlist=False):
-    """The entry for sectionId; failing that, Watchlist when the screen was reached from it.
-    sectionId can be a real section's key, empty, or "watchlist" (what discover items report),
-    which matches no entry and so falls through to the Watchlist check."""
-    if sectionId:
-        for section in entries:
-            if section.key == sectionId:
+def _libraryEntry(nav, sid, onChange):
+    uuid, _, key = sid.partition(':')
+    server = plexapp.SERVERMANAGER.serversByUuid.get(uuid)
+    meta = nav.get('libraries', {}).get(sid, {})
+    known = serverSections(server, onChange) if server else None
+    if known is not None:
+        for section in known:
+            if str(section.key) == key:
                 return section
+    return LibraryPlaceholder(sid, meta, server, missing=known is not None)
+
+
+def labels(entries):
+    """Each entry's label in the sidebar: its title, with " · <server>" when another library in it
+    has the same title (D2)."""
+    titles = {}
+    for section in entries:
+        titles.setdefault((section.title or '').lower(), []).append(section)
+    out = {}
+    for section in entries:
+        title = section.title or ''
+        if len(titles[title.lower()]) > 1 and section.server is not None:
+            title = u'{0} · {1}'.format(title, section.server.name)
+        elif len(titles[title.lower()]) > 1 and getattr(section, 'serverName', None):
+            title = u'{0} · {1}'.format(title, section.serverName)
+        out[sectionId(section) if section.key is not None else None] = title
+    return out
+
+
+def matchSection(entries, key, fromWatchlist=False, server=None):
+    """The entry for a library key; failing that, Watchlist when the screen was reached from it.
+    key can be a real section's key, empty, or "watchlist" (what discover items report), which
+    matches no entry and so falls through to the Watchlist check. Two servers can both have a
+    library with this key: the one on `server` then, if given."""
+    if key:
+        matches = [section for section in entries if section.key == key]
+        if server is not None:
+            matches = [section for section in matches
+                       if section.server is not None and section.server.uuid == server.uuid] or matches
+        if matches:
+            return matches[0]
     if fromWatchlist:
         return home.watchlist_section
     return None
 
 
 def serverAndUserProperties():
-    """The window properties for the user's avatar and name and the selected server's icon and
-    name, in the order they're set."""
+    """The window properties for the user's avatar and name, and the Libraries button below the
+    sidebar (it opens the picker). Its icon says when the selected server - Home's, still - isn't
+    answering."""
     account = plexapp.ACCOUNT
     title = account.title or account.username or ' '
     props = [
@@ -182,19 +452,11 @@ def serverAndUserProperties():
 
     server = plexapp.SERVERMANAGER.selectedServer
     if server and server.offline:
-        # still selected, but not answering (PlexServerManager.setServerOnline())
-        props += [('server.name', server.name),
-                  ('server.icon', 'script.plex/home/device/error.png'),
-                  ('server.iconmod', ''),
-                  ('server.iconmod2', '')]
-    elif server:
-        props += [('server.name', server.name),
-                  ('server.icon', 'script.plex/home/device/plex.png'),
-                  ('server.iconmod', server.isSecure and 'script.plex/home/device/lock.png' or ''),
-                  ('server.iconmod2', server.isLocal and 'script.plex/home/device/home_small.png' or '')]
+        icon = 'script.plex/home/device/error.png'
     else:
-        props += [('server.name', T(32338, 'No Servers Found')),
-                  ('server.icon', 'script.plex/home/device/error.png'),
-                  ('server.iconmod', ''),
-                  ('server.iconmod2', '')]
+        icon = 'script.plex/home/device/plex.png'
+    props += [('server.name', T(33722, 'Libraries')),
+              ('server.icon', icon),
+              ('server.iconmod', ''),
+              ('server.iconmod2', '')]
     return props

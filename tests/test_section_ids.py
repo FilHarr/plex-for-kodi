@@ -18,7 +18,7 @@ from unittest import mock
 from kodienv import ENV
 
 ENV.abort_requested = True
-from lib.windows import library_hubs, section_ids, sidebar_model  # noqa: E402
+from lib.windows import library_hubs, section_ids  # noqa: E402
 from plexnet import plexlibrary  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
@@ -347,8 +347,10 @@ class SameAsBeforeTest(MigrateCase):
         self.assertFalse(win.isHubHidden(genre, other))
 
     def test_sidebar_hidden_and_ordered_as_before(self):
-        nav = sidebar_model.loadNavSettings()
-        movies, tv, music = (Section(k, self.animal) for k in ('1', '2', '3'))
-        self.assertFalse(sidebar_model.isShown(nav, tv))
-        self.assertTrue(sidebar_model.isShown(nav, movies))
+        # the account-wide show/hide setting this move writes (sidebar_model turns it into the
+        # list of picked libraries next, sidebar_model.migrateToList())
+        section_ids.migrate()
+        nav = section_ids.loadJson(section_ids.sidebarKey())
+        self.assertEqual({'show': False}, nav[ANIMAL + ':2'])
+        self.assertNotIn(ANIMAL + ':1', nav)
         self.assertEqual([ANIMAL + ':3', ANIMAL + ':1'], nav['order'][1:])

@@ -415,6 +415,12 @@ class HubsMixin(object):
         except:
             return
 
+        # the sidebar's libraries on other servers too, so one of them can manage its own hubs
+        selected = plexapp.SERVERMANAGER.selectedServer
+        for section in self._sidebarLibraries():
+            if section.server.uuid != selected.uuid:
+                sections_to_query.append(section)
+
         try:
             pl = plexapp.SERVERMANAGER.selectedServer.playlists()
             if pl:
@@ -426,7 +432,9 @@ class HubsMixin(object):
         allSections = {}
 
         for section in sections_to_query:
-            if section.key is not None:
+            # Home's hub titles name a library by key (homeHubDisplayTitle()): the selected
+            # server's, which is Home's
+            if section.key is not None and section.server is not None and section.server.uuid == selected.uuid:
                 allSections[str(section.key)] = section
             try:
                 section_key = section.key
@@ -486,6 +494,15 @@ class HubsMixin(object):
 
         self.availableHubs = availableHubs
         self.allSections = allSections
+
+    def _sidebarLibraries(self):
+        """The sidebar's live library entries (not Watchlist/Playlists, nor a placeholder whose
+        server hasn't listed it)."""
+        sectionList = getattr(self, 'sectionList', None)
+        entries = [mli.dataSource for mli in sectionList.items if mli.dataSource is not None] if sectionList else []
+        return [section for section in entries
+                if ':' in (section_ids.sectionId(section) or '')
+                and not isinstance(section, sidebar_model.LibraryPlaceholder)]
 
     def _ensureCustomConfigExists(self, section):
         """Ensure custom hub config exists for a section, initializing with defaults if needed.

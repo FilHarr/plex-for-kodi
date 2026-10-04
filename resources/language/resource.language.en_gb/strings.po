@@ -3684,3 +3684,15 @@ msgstr ""
 msgctxt "#35135"
 msgid "Playlists you make in Plex will show up here."
 msgstr ""
+
+msgctxt "#35136"
+msgid "Remove from sidebar"
+msgstr ""
+
+msgctxt "#35137"
+msgid "{0} is no longer on {1}"
+msgstr ""
+
+msgctxt "#35138"
+msgid "{0} has no libraries"
+msgstr ""

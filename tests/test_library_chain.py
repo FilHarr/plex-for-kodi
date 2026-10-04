@@ -1410,7 +1410,6 @@ class OnActionHandleBackTest(KodiTestCase):
         host.SECTION_LIST_ID = 1
         host.SERVER_BUTTON_ID = 2
         host.USER_BUTTON_ID = 3
-        host.SERVER_LIST_ID = 4
         host.getFocusId = lambda: 999  # matches none of the above
         dispatchCalls = []
         host._dispatchNativeAction = lambda action: dispatchCalls.append(action)
@@ -1444,7 +1443,6 @@ class ViewActionTest(KodiTestCase):
         host.SECTION_LIST_ID = 1
         host.SERVER_BUTTON_ID = 2
         host.USER_BUTTON_ID = 3
-        host.SERVER_LIST_ID = 4
         host.getFocusId = lambda: focus_id
         host._current = current
         host.dispatched = []
@@ -1474,12 +1472,14 @@ class ViewActionTest(KodiTestCase):
 
     def test_a_shared_control_never_reaches_the_view(self):
         view = self.FakeView(used=True)
-        host = self._host(view, focus_id=4)  # the server list
+        host = self._host(view, focus_id=2)  # the Libraries button
         host.setFocusId = lambda control_id: None
+        host.showLibraryPicker = lambda: host.dispatched.append('picker')
 
         self.assertTrue(routeAction(host, FakeAction(xbmcgui.ACTION_SELECT_ITEM)))
 
         self.assertEqual([], view.actions)
+        self.assertEqual(['picker'], host.dispatched)
 
     def test_a_hosted_pre_plays_lists_never_reach_hub_code(self):
         """Pre-play's ROLES/REVIEWS/EXTRA/RELATED/collection lists are 400-406, inside the hub

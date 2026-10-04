@@ -2,7 +2,9 @@
 """
 The one sidebar builder (windowutils.SidebarMixin.buildSectionList(), sidebar_model.py) that
 replaced ten copies: its entries and their order, each screen's highlight rule, the server and
-user labels, and the cached Playlists check that keeps a query off the main thread.
+user labels, and the cached Playlists check that keeps a query off the main thread. Since the
+sidebar became the libraries picked from any server: the stored list, its migration from the
+show/hide setting, placeholders for libraries a server hasn't listed yet, and the picker's ticks.
 
 Importing lib.windows.windowutils starts lib.player's monitor thread unless abort_requested is set
 first - same guard the other lib.windows.* tests use for the same reason.
@@ -10,6 +12,7 @@ first - same guard the other lib.windows.* tests use for the same reason.
 
 from __future__ import absolute_import
 
+import json
 from unittest import mock
 
 from kodienv import ENV
@@ -21,16 +24,29 @@ from .base import KodiTestCase  # noqa: E402
 
 
 UUID = 'server-uuid-0000aaaa'
+OTHER = 'other-uuid-0000bbbb'
+
+
+def fakeServer(uuid, name):
+    server = mock.Mock(uuid=uuid, offline=False)
+    server.name = name
+    return server
+
+
+ANIMAL = fakeServer(UUID, 'Animal')
+OSCAR = fakeServer(OTHER, 'Oscar')
 
 
 class Section(object):
-    server = mock.Mock(uuid=UUID)
+    server = ANIMAL
 
-    def __init__(self, key, title, type_='movie', library_id=None):
+    def __init__(self, key, title, type_='movie', library_id=None, server=None):
         self.key = key
         self.title = title
         self.type = type_
         self._libraryId = library_id
+        if server is not None:
+            self.server = server
 
     def getLibrarySectionId(self):
         return self._libraryId
@@ -45,7 +61,7 @@ MUSIC = Section('3', 'Music', 'artist')
 
 
 class Server(object):
-    def __init__(self, uuid=UUID, playlists=(), sections=(MOVIES, TV, MUSIC)):
+    def __init__(self, uuid=UUID, playlists=()):
         self.uuid = uuid
         self.name = 'Animal'
         self.offline = False
@@ -53,10 +69,7 @@ class Server(object):
         self.isSecure = True
         self.isLocal = False
         self._playlists = list(playlists)
-        self._sections = list(sections)
         self.playlistQueries = 0
-        self.library = mock.Mock()
-        self.library.sections = lambda: list(self._sections)
 
     def playlists(self):
         self.playlistQueries += 1
@@ -83,6 +96,9 @@ class Watchlist(Section):
         return True
 
 
+NAMES = {'1': ('Movies', 'movie'), '2': ('TV Shows', 'show'), '3': ('Music', 'artist')}
+
+
 class SidebarCase(KodiTestCase):
     def setUp(self):
         super(SidebarCase, self).setUp()
@@ -90,28 +106,55 @@ class SidebarCase(KodiTestCase):
         self.settings = {}
         self.account = mock.Mock(title='Phil', username='phil', ID='1', thumb='', isOffline=False)
         self.account.safeUserThumb.return_value = 'avatar.png'
-        manager = mock.Mock(selectedServer=self.server)
+        self.manager = mock.Mock(selectedServer=self.server, serversByUuid={UUID: self.server, OTHER: OSCAR})
         self.watchlist = Watchlist('/library/sections/watchlist', 'Watchlist')
         self.startedChecks = []
+        self.startedFetches = []
         for patcher in (
-                mock.patch.object(sidebar_model.plexapp, 'SERVERMANAGER', manager),
+                mock.patch.object(sidebar_model.plexapp, 'SERVERMANAGER', self.manager),
                 mock.patch.object(sidebar_model.plexapp, 'ACCOUNT', self.account),
                 mock.patch.object(sidebar_model.util, 'getSetting',
                                   lambda key, default=None: self.settings.get(key, default)),
+                mock.patch.object(sidebar_model.util, 'setSetting',
+                                  lambda key, value: self.settings.__setitem__(key, value)),
                 mock.patch.object(sidebar_model.util, 'getUserSetting', lambda key, default=None: default),
                 mock.patch.object(home, 'watchlist_section', self.watchlist),
                 mock.patch.object(section_ids, 'migrate', lambda: None),
                 mock.patch.object(sidebar_model.PlaylistsCheckTask, 'start',
                                   lambda task: self.startedChecks.append(task)),
                 mock.patch.dict(sidebar_model._hasPlaylists, clear=True),
-                mock.patch.object(sidebar_model, '_playlistsChecking', set())):
+                mock.patch.object(sidebar_model, '_playlistsChecking', set()),
+                mock.patch.object(sidebar_model.SectionsFetchTask, 'start',
+                                  lambda task: self.startedFetches.append(task)),
+                mock.patch.dict(sidebar_model._serverSections, clear=True),
+                mock.patch.object(sidebar_model, '_sectionsFetching', set())):
             patcher.start()
             self.addCleanup(patcher.stop)
+        # Animal has listed its libraries
+        self.listed(UUID, [MOVIES, TV, MUSIC])
+        self.store('watchlist', 'playlists', '1', '2', '3')
 
-    def navSettings(self, value):
-        """Stored as the sidebar settings, written with bare section keys for short."""
-        import json
-        self.settings['sidebar.1'] = json.dumps(section_ids.rekeyNavSettings(value, UUID))
+    @staticmethod
+    def listed(uuid, sections):
+        sidebar_model._serverSections[uuid] = (sidebar_model.time.time(), list(sections))
+
+    def store(self, *keys, **titles):
+        """Store the sidebar as these entries: 'watchlist', 'playlists', a library key on Animal
+        ('1'), or one on Oscar ('other:1'; titles: other_1=('Films', 'movie'))."""
+        entries, libraries = [], {}
+        for key in keys:
+            if key == 'watchlist':
+                entries.append(section_ids.WATCHLIST_ID)
+            elif key == 'playlists':
+                entries.append(section_ids.PLAYLISTS_ID)
+            else:
+                other = key.startswith('other:')
+                bare = key.partition(':')[2] if other else key
+                sid = '{0}:{1}'.format(OTHER if other else UUID, bare)
+                entries.append(sid)
+                title, type_ = titles.get(key.replace(':', '_')) or NAMES.get(bare, ('Library ' + bare, 'movie'))
+                libraries[sid] = {'title': title, 'type': type_, 'server': 'Oscar' if other else 'Animal'}
+        self.settings['sidebar.1'] = json.dumps({'version': 2, 'entries': entries, 'libraries': libraries})
 
     def build(self, win):
         win.sectionList = FakeList()
@@ -148,10 +191,9 @@ class EntriesTest(SidebarCase):
         self.server._playlists = ['a playlist']
         self.assertIn('Playlists', self.labels(self.build(Shell())))
 
-    def test_hidden_entries_are_dropped_and_the_order_kept(self):
-        self.navSettings({'2': {'show': False}, '/library/sections/watchlist': {'show': False},
-                          'order': ['3', '1']})
-        self.assertEqual(['Search', 'Home', 'Music', 'Movies'], self.labels(self.build(Shell())))
+    def test_the_stored_list_is_the_sidebar_in_its_order(self):
+        self.store('3', 'watchlist', '1')
+        self.assertEqual(['Search', 'Home', 'Music', 'Watchlist', 'Movies'], self.labels(self.build(Shell())))
 
     def test_items_carry_their_markers(self):
         self.server._playlists = ['a playlist']
@@ -162,6 +204,45 @@ class EntriesTest(SidebarCase):
         playlists = [mli for mli in items if mli.dataSource is home.playlists_section][0]
         self.assertTrue(playlists.getProperty('is.playlists'))
         self.assertTrue(all(mli.getProperty('item') for mli in items))
+
+    def test_a_library_its_server_has_not_listed_shows_from_what_is_stored(self):
+        self.store('1', 'other:7')
+        sectionList = self.build(Shell())
+        self.assertEqual(['Search', 'Home', 'Movies', 'Library 7'], self.labels(sectionList))
+        placeholder = sectionList.items[3].dataSource
+        self.assertIsInstance(placeholder, sidebar_model.LibraryPlaceholder)
+        self.assertEqual(OTHER + ':7', section_ids.sectionId(placeholder))
+        self.assertIs(OSCAR, placeholder.server)
+        # Oscar is asked on a worker; the build doesn't wait
+        self.assertEqual([OSCAR], [task.server for task in self.startedFetches])
+
+    def test_a_server_answering_rebuilds(self):
+        self.store('1', 'other:7')
+        changed = []
+        sidebar_model.sections(sidebar_model.loadNavSettings(), onChange=lambda: changed.append(1))
+        with mock.patch.object(sidebar_model, 'fetchServerSections',
+                               lambda server: [Section('7', 'Films', server=OSCAR)]):
+            self.startedFetches[0].run()
+        self.assertEqual([1], changed)
+
+    def test_a_server_that_does_not_answer_changes_nothing(self):
+        self.store('1', 'other:7')
+        changed = []
+        sidebar_model.sections(sidebar_model.loadNavSettings(), onChange=lambda: changed.append(1))
+        with mock.patch.object(sidebar_model, 'fetchServerSections', lambda server: None):
+            self.startedFetches[0].run()
+        self.assertEqual([], changed)
+
+    def test_a_renamed_library_updates_what_is_stored(self):
+        self.listed(UUID, [Section('1', 'Films')])
+        self.store('1')
+        self.assertEqual(['Search', 'Home', 'Films'], self.labels(self.build(Shell())))
+        self.assertEqual('Films', json.loads(self.settings['sidebar.1'])['libraries'][UUID + ':1']['title'])
+
+    def test_two_libraries_with_one_title_name_their_servers(self):
+        self.listed(OTHER, [Section('1', 'Movies', server=OSCAR)])
+        self.store('1', 'other:1')
+        self.assertEqual(['Search', 'Home', 'Movies · Animal', 'Movies · Oscar'], self.labels(self.build(Shell())))
 
 
 class HighlightTest(SidebarCase):
@@ -175,6 +256,15 @@ class HighlightTest(SidebarCase):
                                                                      entryFromWatchlist=True))))
         self.assertEqual(['Movies'], self.active(self.build(Shell(entrySectionId='1', entryFromWatchlist=True))))
 
+    def test_a_key_on_two_servers_follows_the_screens_server(self):
+        self.listed(OTHER, [Section('1', 'Films', server=OSCAR)])
+        self.store('1', 'other:1')
+        shell = Shell(entrySectionId='1')
+        shell.video = mock.Mock(server=OSCAR)
+        self.assertEqual(['Films'], self.active(self.build(shell)))
+        shell.video = mock.Mock(server=ANIMAL)
+        self.assertEqual(['Movies'], self.active(self.build(shell)))
+
     def test_nothing_highlighted_without_an_entry_section(self):
         sectionList = self.build(Shell())
         self.assertEqual([], self.active(sectionList))
@@ -182,6 +272,7 @@ class HighlightTest(SidebarCase):
 
     def test_a_person_follows_the_screen_the_role_came_from(self):
         win = person.PersonWindow.__new__(person.PersonWindow)
+        win.role = mock.Mock(server=ANIMAL)
         win.sectionId, win.cameFromWatchlist = '3', False
         self.assertEqual(['Music'], self.active(self.build(win)))
         win.sectionId, win.cameFromWatchlist = None, True
@@ -204,7 +295,7 @@ class LibraryHighlightTest(SidebarCase):
         win.section = section
         win.entrySectionId = entrySectionId
         win.entryFromWatchlist = entryFromWatchlist
-        win.navSettings = {}
+        win.navSettings = None
         return win
 
     def build(self, win):
@@ -220,6 +311,11 @@ class LibraryHighlightTest(SidebarCase):
     def test_a_library(self):
         self.assertEqual(['TV Shows'], self.active(self.build(self.window(TV))))
 
+    def test_the_same_key_on_another_server_is_another_library(self):
+        self.listed(OTHER, [Section('2', 'Films', server=OSCAR)])
+        self.store('2', 'other:2')
+        self.assertEqual(['Films'], self.active(self.build(self.window(Section('2', 'Films', server=OSCAR)))))
+
     def test_a_collection_highlights_its_library(self):
         collection = Section('/library/collections/9', 'A collection', library_id='1')
         self.assertEqual(['Movies'], self.active(self.build(self.window(collection))))
@@ -234,8 +330,8 @@ class LibraryHighlightTest(SidebarCase):
 
     def test_its_own_nav_settings_are_used(self):
         win = self.window(home.home_section)
-        win.navSettings = {UUID + ':1': {'show': False}}
-        self.assertNotIn('Movies', self.labels(self.build(win)))
+        win.navSettings = {'version': 2, 'entries': [UUID + ':2'], 'libraries': {}}
+        self.assertEqual(['Search', 'Home', 'TV Shows'], self.labels(self.build(win)))
 
 
 class PlaylistsCheckTest(SidebarCase):
@@ -298,8 +394,8 @@ class ServerAndUserTest(SidebarCase):
         win = Shell()
         win.displayServerAndUser()
         self.assertEqual({'user.name': 'Phil', 'user.avatar': 'avatar.png', 'user.avatar.letter': 'P',
-                          'server.name': 'Animal', 'server.icon': 'script.plex/home/device/plex.png',
-                          'server.iconmod': 'script.plex/home/device/lock.png', 'server.iconmod2': ''},
+                          'server.name': 'Libraries', 'server.icon': 'script.plex/home/device/plex.png',
+                          'server.iconmod': '', 'server.iconmod2': ''},
                          win.props)
 
     def test_an_offline_server_shows_the_error_icon_on_every_screen(self):
@@ -307,3 +403,123 @@ class ServerAndUserTest(SidebarCase):
         win = Shell()
         win.displayServerAndUser()
         self.assertEqual('script.plex/home/device/error.png', win.props['server.icon'])
+
+
+class MigrationTest(SidebarCase):
+    """The show/hide setting (Phase 5's: the selected server's libraries, each shown unless hidden)
+    becomes the list of what's in the sidebar, showing the same entries in the same order."""
+
+    def migrate(self, old, sections=(MOVIES, TV, MUSIC)):
+        with mock.patch.object(sidebar_model, 'fetchServerSections', lambda server: list(sections)):
+            return sidebar_model.migrateToList(old, self.server)
+
+    def test_everything_shown_in_the_servers_order(self):
+        new = self.migrate({})
+        self.assertEqual([section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID, UUID + ':1', UUID + ':2', UUID + ':3'],
+                         new['entries'])
+        self.assertEqual({'title': 'TV Shows', 'type': 'show', 'server': 'Animal'}, new['libraries'][UUID + ':2'])
+
+    def test_hidden_ones_are_left_out_and_the_order_kept(self):
+        new = self.migrate({UUID + ':2': {'show': False}, section_ids.WATCHLIST_ID: {'show': False},
+                            'order': [None, section_ids.PLAYLISTS_ID, UUID + ':3', UUID + ':1']})
+        self.assertEqual([section_ids.PLAYLISTS_ID, UUID + ':3', UUID + ':1'], new['entries'])
+        self.assertNotIn(UUID + ':2', new['libraries'])
+
+    def test_not_in_the_order_comes_first_as_it_did(self):
+        new = self.migrate({'order': [UUID + ':3', UUID + ':1']})
+        self.assertEqual([section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID, UUID + ':2', UUID + ':3', UUID + ':1'],
+                         new['entries'])
+
+    def test_no_answer_means_try_again_later(self):
+        with mock.patch.object(sidebar_model, 'fetchServerSections', lambda server: None):
+            self.assertIsNone(sidebar_model.migrateToList({}, self.server))
+
+    def test_loading_moves_it_once(self):
+        self.settings['sidebar.1'] = json.dumps({UUID + ':2': {'show': False}})
+        with mock.patch.object(sidebar_model, 'fetchServerSections', lambda server: [MOVIES, TV, MUSIC]):
+            nav = sidebar_model.loadNavSettings()
+        self.assertEqual(2, nav['version'])
+        self.assertNotIn(UUID + ':2', nav['entries'])
+        self.assertEqual(nav, json.loads(self.settings['sidebar.1']))
+
+    def test_while_it_cannot_be_moved_nothing_is_saved(self):
+        self.settings['sidebar.1'] = old = json.dumps({UUID + ':2': {'show': False}})
+        with mock.patch.object(sidebar_model, 'fetchServerSections', lambda server: None):
+            nav = sidebar_model.loadNavSettings()
+            sidebar_model.saveNavSettings(nav)
+        self.assertEqual([section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID], nav['entries'])
+        self.assertEqual(old, self.settings['sidebar.1'])
+
+
+class ListEditTest(SidebarCase):
+    def nav(self):
+        return sidebar_model.loadNavSettings()
+
+    def test_add_goes_to_the_end_with_its_details(self):
+        nav = self.nav()
+        sidebar_model.addEntry(nav, Section('7', 'Films', server=OSCAR))
+        self.assertEqual(OTHER + ':7', nav['entries'][-1])
+        self.assertEqual({'title': 'Films', 'type': 'movie', 'server': 'Oscar'}, nav['libraries'][OTHER + ':7'])
+
+    def test_remove(self):
+        nav = self.nav()
+        sidebar_model.removeEntry(nav, UUID + ':2')
+        self.assertNotIn(UUID + ':2', nav['entries'])
+        self.assertNotIn(UUID + ':2', nav['libraries'])
+
+    def test_a_move_keeps_entries_not_showing_after_it(self):
+        nav = self.nav()
+        sidebar_model.reorder(nav, [UUID + ':3', UUID + ':1', UUID + ':2'])
+        self.assertEqual([UUID + ':3', UUID + ':1', UUID + ':2', section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID],
+                         nav['entries'])
+
+    def test_reset_order(self):
+        self.listed(OTHER, [Section('7', 'Films', server=OSCAR)])
+        self.store('other:7', '3', 'playlists', '1', 'watchlist')
+        nav = self.nav()
+        sidebar_model.resetOrder(nav)
+        self.assertEqual([section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID, UUID + ':1', UUID + ':3', OTHER + ':7'],
+                         nav['entries'])
+
+
+class PickerTest(SidebarCase):
+    """LibraryWindow's Libraries picker: what it lists, and its ticks."""
+
+    def window(self, listed):
+        win = library.LibraryWindow.__new__(library.LibraryWindow)
+        win.navSettings = None
+        win._pickerServers = listed
+        win._pickerChanged = False
+        return win
+
+    @staticmethod
+    def rows(options):
+        return [(o['display'], bool(o.get('indicator'))) if o else '--' for o in options]
+
+    def test_every_server_with_its_libraries_ticked_when_in_the_sidebar(self):
+        win = self.window([(self.server, [MOVIES, TV, MUSIC]), (OSCAR, [Section('7', 'Films', server=OSCAR)])])
+        self.store('watchlist', '1', '3')
+        self.assertEqual([('Watchlist', True), ('Playlists', False), '--',
+                          ('Movies [Animal]', True), ('TV Shows [Animal]', False), ('Music [Animal]', True), '--',
+                          ('Films [Oscar]', False)],
+                         self.rows(win._libraryPickerOptions()))
+
+    def test_a_server_that_does_not_answer_says_so_and_keeps_its_entries_removable(self):
+        win = self.window([(self.server, [MOVIES]), (OSCAR, None)])
+        self.store('1', 'other:7', other_7=('Films', 'movie'))
+        self.assertEqual([('Watchlist', False), ('Playlists', False), '--', ('Movies [Animal]', True), '--',
+                          ("Oscar isn't responding", False), ('Films [Oscar]', True)],
+                         self.rows(win._libraryPickerOptions()))
+
+    def test_toggling_adds_and_removes(self):
+        films = Section('7', 'Films', server=OSCAR)
+        win = self.window([(self.server, [MOVIES]), (OSCAR, [films])])
+        optionsList = mock.Mock()
+        optionsList.getSelectedPos.return_value = 4
+        filmsRow = [o for o in win._libraryPickerOptions() if o and o.get('sid') == OTHER + ':7'][0]
+        result = win._onLibraryPickerToggle(optionsList, mock.Mock(dataSource=filmsRow))
+        self.assertEqual('rebuild', result[0])
+        self.assertEqual(OTHER + ':7', win.navSettings['entries'][-1])
+        self.assertTrue(win._pickerChanged)
+        win._onLibraryPickerToggle(optionsList, mock.Mock(dataSource=filmsRow))
+        self.assertNotIn(OTHER + ':7', win.navSettings['entries'])
