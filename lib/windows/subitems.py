@@ -821,6 +821,12 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                                                  entry_from_watchlist=self.entryFromWatchlist)
             update = True
         elif self.mediaItem.type == 'artist':
+            # Continues the chain like a season poster above. Opened standalone, the Album screen's
+            # Back and sidebar bypassed the host (live, 2026-10-04: every album opened from an
+            # artist built its own sidebar outside the chain).
+            if self._liveChainHost() is not None:
+                self.openItem(item=mli.dataSource, parent_list=self.subItemListControl)
+                return
             w = tracks.AlbumWindow.open(album=mli.dataSource, parent_list=self.subItemListControl,
                                         entry_section_id=self.entrySectionId)
 
@@ -1305,6 +1311,10 @@ class ArtistWindow(ShowWindow):
         # close-the-screen cleanup (this is a secondary row, not the screen's own primary content).
         mli = listControl.getSelectedItem()
         if not mli:
+            return
+        if self._liveChainHost() is not None:
+            # the open is only queued; Back rebuilds this screen, so there's no row to tidy
+            self.openItem(item=mli.dataSource, parent_list=listControl)
             return
         tracks.AlbumWindow.open(album=mli.dataSource, parent_list=listControl,
                                 entry_section_id=self.entrySectionId)
