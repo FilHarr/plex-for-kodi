@@ -126,6 +126,8 @@ class LibrarySettings(object):
         # it used to be the module global library.ITEM_TYPE, which every window and worker shared
         # (3e in the navigation review). Keys getSetting()/setSetting()'s per-type settings.
         self.itemType = None
+        # showWholeLibrary(): an item type for this view only, in place of the saved one
+        self._itemTypeOverride = None
         if isinstance(section_or_server_id, six.string_types):
             self.serverID = section_or_server_id
             self.sectionID = None
@@ -160,6 +162,9 @@ class LibrarySettings(object):
         util.setGlobalProperty('item.type', str(self.itemType))
 
     def getItemType(self):
+        if self._itemTypeOverride:
+            return self._itemTypeOverride
+
         if not self._settings or self.sectionID not in self._settings:
             return None
 
@@ -167,9 +172,20 @@ class LibrarySettings(object):
 
     def setItemType(self, item_type):
         assert item_type is not None, "Invalid type: None"
+        self._itemTypeOverride = None
         self.itemType = item_type
         util.setGlobalProperty('item.type', str(item_type))
         self._mutate(lambda entry: entry.update({'ITEM_TYPE': item_type}))
+
+    def showWholeLibrary(self):
+        """A view filtered by a genre (or director, actor...) shows the whole library's items in it,
+        not the Collections tab's: the section's own type in place of a saved 'collection', for
+        this view only. Not saved, so the section still opens on Collections, and Back returns to
+        it, as before. Live, 2026-10-04: Collections, then Categories, then a genre showed the
+        collections in that genre."""
+        if self.itemType == 'collection' and self.sectionType:
+            self._itemTypeOverride = self.itemType = self.sectionType
+            util.setGlobalProperty('item.type', str(self.itemType))
 
     def getContentMode(self):
         """Persisted per-section tab choice ('library'/'recommended', quiet-orbiting-heron.md plan
@@ -364,6 +380,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         self.cleared = True
         self.librarySettings = LibrarySettings(self.section)
+        if self.filter:
+            self.librarySettings.showWholeLibrary()
 
         # Sections with no library-grid content at all (home_section, so far the only one - see
         # its own TYPE comment, home.py) unconditionally force 'recommended' - 'library' is
@@ -381,6 +399,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         elif kwargs.get('content_mode'):
             self.contentMode = kwargs['content_mode']
         elif self.section and self.section.TYPE == 'playlists':
+            self.contentMode = 'library'
+        elif self.filter:
+            # filtered by a genre etc.: the whole library, as in openSection()
             self.contentMode = 'library'
         else:
             self.contentMode = self.librarySettings.getContentMode() or 'recommended'
@@ -1196,6 +1217,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # persisted tab choice (getContentMode()) has to come from *this* section's settings, not
         # the outgoing one's.
         self.librarySettings = LibrarySettings(self.section)
+        if filter_:
+            self.librarySettings.showWholeLibrary()
 
         if self.section.TYPE == 'mixed':
             # Sections with no library-grid content at all (home_section, so far the only one -
@@ -1223,6 +1246,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # and a black background (that shell doesn't read 'background' the way the
             # playlists grid used to set it). Arriving from an ordinary library section never
             # hit this, since none of them force contentMode to 'recommended' in the first place.
+            self.contentMode = 'library'
+        elif filter_:
+            # A genre (or director, actor...) clicked through to: the whole library filtered by it,
+            # whichever tab the section was last left on - its Collections tab, live, showed the
+            # collections in that genre instead. Not saved as the section's tab.
             self.contentMode = 'library'
         else:
             # Ordinary sections (real library-grid content): restore this section's own last tab

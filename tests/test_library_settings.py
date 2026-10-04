@@ -96,3 +96,28 @@ class LibrarySettingsTest(KodiTestCase):
         LibrarySettings("SERVERUUID").setSetting("sort", "titleSort")
 
         self.assertEqual({"3": {"movie": {"sort": "addedAt"}}}, self.stored())
+
+    def test_a_filtered_view_shows_the_whole_library_without_saving_it(self):
+        LibrarySettings(self.section).setItemType("collection")
+
+        filtered = LibrarySettings(self.section)
+        filtered.showWholeLibrary()
+        self.assertEqual("movie", filtered.itemType)
+        self.assertEqual("movie", filtered.getItemType())
+        self.assertEqual("collection", self.stored()["3"]["ITEM_TYPE"])
+        self.assertEqual("collection", LibrarySettings(self.section).itemType)
+
+    def test_a_filtered_view_keeps_any_other_item_type(self):
+        LibrarySettings(self.section).setItemType("folder")
+
+        filtered = LibrarySettings(self.section)
+        filtered.showWholeLibrary()
+        self.assertEqual("folder", filtered.getItemType())
+
+    def test_choosing_a_type_in_a_filtered_view_ends_the_override(self):
+        LibrarySettings(self.section).setItemType("collection")
+        filtered = LibrarySettings(self.section)
+        filtered.showWholeLibrary()
+
+        filtered.setItemType("collection")
+        self.assertEqual("collection", filtered.getItemType())
