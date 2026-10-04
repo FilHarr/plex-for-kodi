@@ -1725,54 +1725,6 @@ class OnFocusGoRootWaitTest(KodiTestCase):
         self.assertEqual(self.SIDEBAR_ID, host.lastFocusID)
 
 
-class MigrateOldContinueWatchingTest(KodiTestCase):
-    """LibraryWindow._migrateOldContinueWatching() - the one-time rewrite loadHubSettings() runs
-    on a saved hub config: the server's old separate home.continue/home.ondeck home hubs no longer
-    exist (plexserver.hubs() always substitutes the combined continueWatching hub), so a custom
-    config still listing them must list continueWatching instead or the row vanishes."""
-
-    migrate = library.LibraryWindow._migrateOldContinueWatching
-
-    def test_old_pair_becomes_one_continue_watching_entry_at_the_earliest_position(self):
-        settings = {None: {'custom': True, 'hubs': [
-            {'catalog_id': 'home.movies.recent', 'order': 0},
-            {'catalog_id': 'home.continue', 'order': 1},
-            {'catalog_id': 'home.ondeck', 'order': 2},
-            {'catalog_id': 'home.music.recent', 'order': 3},
-        ]}}
-        self.assertTrue(self.migrate(settings))
-        self.assertEqual(
-            [('home.movies.recent', 0), ('continueWatching', 1), ('home.music.recent', 2)],
-            [(h['catalog_id'], h['order']) for h in settings[None]['hubs']])
-
-    def test_old_entries_just_drop_when_continue_watching_is_already_listed(self):
-        settings = {None: {'custom': True, 'hubs': [
-            {'catalog_id': 'continueWatching', 'order': 0},
-            {'catalog_id': 'home.ondeck', 'order': 1},
-        ]}}
-        self.assertTrue(self.migrate(settings))
-        self.assertEqual(['continueWatching'], [h['catalog_id'] for h in settings[None]['hubs']])
-
-    def test_every_section_is_rewritten_not_just_home(self):
-        settings = {'3': {'custom': True, 'hubs': [
-            {'catalog_id': 'home.continue', 'order': 0},
-            {'catalog_id': '3:movie.recentlyadded', 'order': 1},
-        ]}}
-        self.assertTrue(self.migrate(settings))
-        self.assertEqual(['continueWatching', '3:movie.recentlyadded'],
-                         [h['catalog_id'] for h in settings['3']['hubs']])
-
-    def test_a_config_without_the_old_ids_is_left_alone(self):
-        hubs = [{'catalog_id': 'home.movies.recent', 'order': 0}]
-        settings = {None: {'custom': True, 'hubs': hubs}, '3': {'custom': False}}
-        self.assertFalse(self.migrate(settings))
-        self.assertIs(hubs, settings[None]['hubs'])
-
-    def test_empty_or_missing_settings_are_fine(self):
-        self.assertFalse(self.migrate({}))
-        self.assertFalse(self.migrate(None))
-
-
 class _TitledHub(object):
     def __init__(self, title, hub_identifier):
         self.title = title

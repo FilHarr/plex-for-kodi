@@ -18,6 +18,7 @@ from . import home
 from . import kodigui
 from . import opener
 from . import optionsdialog
+from . import section_ids
 from . import sidebar_model
 from . import navintent
 
@@ -339,139 +340,36 @@ class HubsMixin(object):
             sidebar_model.saveNavSettings(self.navSettings)
 
     def loadHubSettings(self):
-        # NOTE: setting key is scoped by server uuid + account ID, not by window class - hub
-        # visibility/order preferences are meant to be user+server-wide, shared between Home and
-        # any section's Recommended tab, not per-window. Ported verbatim from HomeWindow; the key
-        # itself has no "home"-specific prefix (it's 'hub.settings.*', distinct from
-        # 'home.settings.*' used by loadLibrarySettings/saveLibrarySettings, which is NOT ported
-        # here since it's unrelated to hub rendering).
-        setting_key = 'hub.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID)
-        data = util.getSetting(setting_key, '')
-        self.hubSettings = {}
-        try:
-            loaded = json.loads(data)
-
-            # Convert "__home__" key back to None (JSON doesn't support None keys)
-            for key, value in loaded.items():
-                if key == '_version':
-                    continue  # Skip legacy version key
-                if key == '__home__':
-                    self.hubSettings[None] = value
-                else:
-                    self.hubSettings[key] = value
-        except ValueError:
-            pass
-        except:
-            util.ERROR()
-
-        if self._migrateOldContinueWatching(self.hubSettings):
-            self.saveHubSettings()
-
-    # The server's old separate Continue Watching / On Deck home hubs, dropped outright
-    # (2026-09-21) in favour of the combined continueWatching hub the modern clients show -
-    # plexserver.hubs() no longer yields them, so a saved hub config still naming one would
-    # leave the user with no Continue Watching row at all (a custom config only shows what it
-    # lists). Was previously a per-mode choice (hubs_use_new_continue_watching), toggled by a
-    # both-ways mapping in getEnabledHubsForSection()/sortHubsByUserOrder()/showHubSettingsDialog();
-    # now a one-way, one-time rewrite of the saved config on load instead.
-    OLD_CONTINUE_WATCHING_IDS = ('home.continue', 'home.ondeck')
-
-    @classmethod
-    def _migrateOldContinueWatching(cls, hub_settings):
-        """Rewrites every section's saved hub list in place: the old home.continue/home.ondeck
-        entries become one continueWatching entry at the earliest of their positions (or just
-        disappear if continueWatching is already listed), orders renumbered. Every section, not
-        just Home - a library's custom config can pull Home's hubs in cross-section, under the
-        same catalog ids. Returns whether anything changed (the caller saves)."""
-        changed = False
-        for section_config in (hub_settings or {}).values():
-            hubs = section_config.get('hubs') if isinstance(section_config, dict) else None
-            if not hubs:
-                continue
-            old = [h for h in hubs if h.get('catalog_id', h.get('identifier')) in cls.OLD_CONTINUE_WATCHING_IDS]
-            if not old:
-                continue
-            kept = [h for h in hubs if h not in old]
-            if not any(h.get('catalog_id', h.get('identifier')) == 'continueWatching' for h in kept):
-                kept.append({'catalog_id': 'continueWatching',
-                             'order': min(h.get('order', 999) for h in old)})
-            kept.sort(key=lambda h: h.get('order', 999))
-            for i, h in enumerate(kept):
-                h['order'] = i
-            section_config['hubs'] = kept
-            changed = True
-        return changed
+        """The account's hub visibility/order preferences (Manage Hubs), keyed by
+        section_ids.hubSettingsId() and shared by Home and every library's Recommended view."""
+        section_ids.migrate()
+        self.hubSettings = section_ids.loadJson(section_ids.hubSettingsKey())
 
     def saveHubSettings(self):
-        setting_key = 'hub.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:],
-                                                  plexapp.ACCOUNT.ID)
-        # Convert None key to "__home__" for JSON storage
-        to_save = {}
-        for key, value in self.hubSettings.items():
-            if key is None:
-                to_save['__home__'] = value
-            else:
-                to_save[key] = value
-        json_str = json.dumps(to_save)
-        util.setSetting(setting_key, json_str)
+        util.setSetting(section_ids.hubSettingsKey(), json.dumps(self.hubSettings))
 
-    def getEnabledHubsForSection(self, section_key):
-        """Get list of enabled hub catalog_ids for a section.
-
-        Not in Stage C's originally-requested method list, but ported alongside isHubHidden()
-        below since isHubHidden() calls self.getEnabledHubsForSection() directly - without this,
-        isHubHidden() would raise AttributeError on every call, not just when hubSettings is
-        unpopulated. Section-generic (reads only self.hubSettings/util.getSetting), same as the
-        methods explicitly requested - no HomeWindow-specific coupling.
-        """
+    def getEnabledHubsForSection(self, section):
+        """The catalog ids a section's custom hub config lists, or None without one."""
         if not self.hubSettings:
             return None
 
-        # Normalize key to string (hubSettings uses string keys)
-        config_key = str(section_key) if section_key is not None else None
-        section_config = self.hubSettings.get(config_key)
+        section_config = self.hubSettings.get(section_ids.hubSettingsId(section))
         if not section_config or not section_config.get('custom'):
             return None
 
-        # No old/new Continue Watching identifier mapping any more - loadHubSettings() migrates
-        # saved configs to continueWatching once, up front.
         return {h.get('catalog_id', h.get('identifier')) for h in section_config.get('hubs', [])}
 
-    def isHubHidden(self, identifier, section_key=None):
-        """Check if user has explicitly hidden this hub.
-
-        Args:
-            identifier: The clean hub identifier (e.g., 'movie.recentlyadded')
-            section_key: The section key to check configuration for
-        """
-        # Normalize key for config lookup
-        config_key = str(section_key) if section_key is not None else None
-        section_config = self.hubSettings.get(config_key) if self.hubSettings else None
-
-        if not section_config or not section_config.get('custom'):
-            # No custom config - show all native hubs from Plex
-            return False
-
-        # Build catalog_id for this hub in this section
-        if section_key is None:
-            catalog_id = identifier
-        else:
-            catalog_id = '{}:{}'.format(section_key, identifier)
-
-        enabled = self.getEnabledHubsForSection(section_key)
+    def isHubHidden(self, hub, section):
+        """Whether the user has hidden this hub of `section`. With no custom config, every hub the
+        server gives is shown."""
+        enabled = self.getEnabledHubsForSection(section)
         if enabled is None:
             return False
-        return catalog_id not in enabled
+        return section_ids.hubCatalogId(hub, section) not in enabled
 
-    def sortHubsByUserOrder(self, hubs, is_home=False, section_key=None):
+    def sortHubsByUserOrder(self, hubs, section):
         """Sort hubs by user-defined order, preserving server order for unordered hubs."""
-        # Normalize key to string (hubSettings uses string keys)
-        config_key = str(section_key) if section_key is not None else None
-
-        # Get section config if available (config_key can be None for Home)
-        section_config = None
-        if self.hubSettings:
-            section_config = self.hubSettings.get(config_key)
+        section_config = self.hubSettings.get(section_ids.hubSettingsId(section)) if self.hubSettings else None
 
         # Build lookup for user-defined order
         user_order = {}
@@ -485,13 +383,7 @@ class HubsMixin(object):
         hub_index = {id(hub): idx for idx, hub in enumerate(hubs_list)}
 
         def get_order(hub):
-            identifier = hub.getCleanHubIdentifier(is_home=is_home)
-
-            # Build catalog_id
-            if section_key is None:
-                catalog_id = identifier
-            else:
-                catalog_id = '{}:{}'.format(section_key, identifier)
+            catalog_id = section_ids.hubCatalogId(hub, section)
 
             # Check user-defined order
             if catalog_id in user_order:
@@ -545,11 +437,7 @@ class HubsMixin(object):
 
                 for hub in hubs:
                     clean_identifier = hub.getCleanHubIdentifier(is_home=(section_key is None))
-
-                    if section_key is None:
-                        catalog_id = clean_identifier
-                    else:
-                        catalog_id = '{}:{}'.format(section_key, clean_identifier)
+                    catalog_id = section_ids.hubCatalogId(hub, section)
 
                     native_display = 'poster'
                     if hub.items:
@@ -567,6 +455,7 @@ class HubsMixin(object):
                             'title': str(hub_title),
                             'hubIdentifier': str(hub.hubIdentifier),
                             'source_section_key': section_key,
+                            'source_section_id': section_ids.hubSettingsId(section),
                             'source_section_title': str(section_title) if section_title else T(32411, 'Unknown'),
                             'source_section_type': str(section_type) if section_type else 'unknown',
                             'native_display': native_display,
@@ -598,34 +487,31 @@ class HubsMixin(object):
         self.availableHubs = availableHubs
         self.allSections = allSections
 
-    def _ensureCustomConfigExists(self, section_key):
+    def _ensureCustomConfigExists(self, section):
         """Ensure custom hub config exists for a section, initializing with defaults if needed.
-        Returns True if config was just created, False if it already existed. Ported verbatim from
+        Returns True if config was just created, False if it already existed. Ported from
         HomeWindow._ensureCustomConfigExists() (home.py)."""
         if not self.hubSettings:
             self.hubSettings = {}
 
-        config_key = str(section_key) if section_key is not None else None
+        sid = section_ids.hubSettingsId(section)
 
-        if config_key in self.hubSettings and self.hubSettings[config_key].get('custom'):
+        if sid in self.hubSettings and self.hubSettings[sid].get('custom'):
             return False
 
-        if config_key not in self.hubSettings:
-            self.hubSettings[config_key] = {'custom': False, 'hubs': []}
+        if sid not in self.hubSettings:
+            self.hubSettings[sid] = {'custom': False, 'hubs': []}
 
-        section_config = self.hubSettings[config_key]
+        section_config = self.hubSettings[sid]
         section_config['custom'] = True
         section_config['hubs'] = []
 
-        is_home = config_key is None
-        cached_hubs = self.sectionHubs.get(section_key, [])
+        is_home = section.key is None
+        cached_hubs = self.sectionHubs.get(sid, [])
 
         for hub in cached_hubs:
             hub_identifier = hub.getCleanHubIdentifier(is_home=is_home)
-            if is_home:
-                cat_id = hub_identifier
-            else:
-                cat_id = '{}:{}'.format(section_key, hub_identifier)
+            cat_id = section_ids.hubCatalogId(hub, section)
 
             section_config['hubs'].append({
                 'catalog_id': cat_id,
@@ -636,18 +522,17 @@ class HubsMixin(object):
             if cat_id not in self.availableHubs:
                 source_title = T(32332, 'Home')
                 source_type = 'home'
-                if section_key is not None:
-                    source_section = self.allSections.get(str(section_key))
-                    if source_section:
-                        source_title = str(source_section.title)
-                        source_type = str(source_section.type)
+                if not is_home:
+                    source_title = str(section.title)
+                    source_type = str(section.type)
 
                 self.availableHubs[cat_id] = {
                     'catalog_id': str(cat_id),
                     'identifier': str(hub_identifier),
                     'title': str(hub.title) if hub.title else home.PLAYLIST_HUB_TITLES.get(hub_identifier, hub_identifier),
                     'hubIdentifier': str(hub.hubIdentifier) if hub.hubIdentifier else hub_identifier,
-                    'source_section_key': section_key,
+                    'source_section_key': section.key,
+                    'source_section_id': sid,
                     'source_section_title': source_title,
                     'source_section_type': source_type,
                     'native_display': self.TYPE_TO_DISPLAY.get(hub.items[0].type, 'poster') if hub.items else 'poster',
@@ -658,14 +543,13 @@ class HubsMixin(object):
         self._hubsSettingsChanged = True
         return True
 
-    def _disableHub(self, catalog_id, section_key):
-        """Disable a hub by removing it from the enabled list. Ported verbatim from
-        HomeWindow._disableHub() (home.py)."""
+    def _disableHub(self, catalog_id, section):
+        """Disable a hub by removing it from the enabled list. Ported from HomeWindow._disableHub()
+        (home.py)."""
         if not self.hubSettings:
             return
 
-        config_key = str(section_key) if section_key is not None else None
-        section_config = self.hubSettings.get(config_key)
+        section_config = self.hubSettings.get(section_ids.hubSettingsId(section))
         if not section_config or not section_config.get('custom'):
             return
 
@@ -680,13 +564,13 @@ class HubsMixin(object):
 
         self.saveHubSettings()
 
-    def _canMoveHub(self, catalog_id, section_key):
-        """Check if a hub can move up or down in the order. Ported verbatim from
-        HomeWindow._canMoveHub() (home.py)."""
-        config_key = str(section_key) if section_key is not None else None
+    def _canMoveHub(self, catalog_id, section):
+        """Check if a hub can move up or down in the order. Ported from HomeWindow._canMoveHub()
+        (home.py)."""
+        sid = section_ids.hubSettingsId(section)
 
         if self.hubSettings:
-            section_config = self.hubSettings.get(config_key)
+            section_config = self.hubSettings.get(sid)
             if section_config and section_config.get('custom'):
                 hubs = section_config.get('hubs', [])
                 if len(hubs) <= 1:
@@ -705,18 +589,17 @@ class HubsMixin(object):
                 can_move_down = current_idx < len(hubs) - 1
                 return can_move_up, can_move_down
 
-        cached_hubs = self.sectionHubs.get(section_key, [])
+        cached_hubs = self.sectionHubs.get(sid, [])
         can_move = len(cached_hubs) > 1
         return can_move, can_move
 
-    def _moveHubToPosition(self, catalog_id, section_key, from_visual_pos, to_visual_pos, optionsList):
-        """Move a hub from one visual position to another - ported verbatim from
+    def _moveHubToPosition(self, catalog_id, section, from_visual_pos, to_visual_pos, optionsList):
+        """Move a hub from one visual position to another - ported from
         HomeWindow._moveHubToPosition() (home.py)."""
         if not self.hubSettings or from_visual_pos == to_visual_pos:
             return
 
-        config_key = str(section_key) if section_key is not None else None
-        section_config = self.hubSettings.get(config_key)
+        section_config = self.hubSettings.get(section_ids.hubSettingsId(section))
         if not section_config or not section_config.get('custom'):
             return
 
@@ -736,26 +619,26 @@ class HubsMixin(object):
         for idx, hub_config in enumerate(hubs):
             hub_config['order'] = idx
 
-    def _restoreHubOrder(self, section_key, optionsList):
+    def _restoreHubOrder(self, section, optionsList):
         """Restore hub order from saved settings after a cancelled move - ported verbatim from
         HomeWindow._restoreHubOrder() (home.py)."""
         self.loadHubSettings()
         if optionsList:
-            self._refreshHubSettingsDialog(optionsList, section_key)
+            self._refreshHubSettingsDialog(optionsList, section)
 
-    def resetSectionHubs(self, section_key):
-        """Reset hub configuration for a section to defaults - ported verbatim from
+    def resetSectionHubs(self, section):
+        """Reset hub configuration for a section to defaults - ported from
         HomeWindow.resetSectionHubs() (home.py)."""
-        config_key = str(section_key) if section_key is not None else None
-        if self.hubSettings and config_key in self.hubSettings:
-            del self.hubSettings[config_key]
+        sid = section_ids.hubSettingsId(section)
+        if self.hubSettings and sid in self.hubSettings:
+            del self.hubSettings[sid]
             self.saveHubSettings()
 
-    def _buildHubSettingsOptions(self, section_key, section_title):
-        """Build the list of option dicts for the hub settings dialog - ported verbatim from
+    def _buildHubSettingsOptions(self, section, section_title):
+        """Build the list of option dicts for the hub settings dialog - ported from
         HomeWindow._buildHubSettingsOptions() (home.py)."""
-        config_key = str(section_key) if section_key is not None else None
-        section_config = self.hubSettings.get(config_key, {}) if self.hubSettings else {}
+        sid = section_ids.hubSettingsId(section)
+        section_config = self.hubSettings.get(sid, {}) if self.hubSettings else {}
         has_custom_config = section_config.get('custom', False)
         configured_hubs = section_config.get('hubs', []) if has_custom_config else []
 
@@ -766,11 +649,8 @@ class HubsMixin(object):
             if has_custom_config:
                 is_enabled = catalog_id in configured_catalog_ids
             else:
-                hub_source_key = hub_info.get('source_section_key')
-                if section_key is None:
-                    is_enabled = (hub_source_key is None)
-                else:
-                    is_enabled = (str(hub_source_key) == str(section_key) if hub_source_key is not None else False)
+                # no config: a section shows its own hubs
+                is_enabled = hub_info.get('source_section_id') == sid
             hub_states[catalog_id] = (is_enabled, hub_info)
 
         def make_option(catalog_id, hub_info, is_enabled, position=None):
@@ -806,14 +686,9 @@ class HubsMixin(object):
                         enabled_hubs_shown.add(cat_id)
         else:
             ordered_catalog_ids = []
-            cached_hubs = self.sectionHubs.get(section_key, [])
-            is_home = section_key is None
+            cached_hubs = self.sectionHubs.get(sid, [])
             for hub in cached_hubs:
-                identifier = hub.getCleanHubIdentifier(is_home=is_home)
-                if is_home:
-                    catalog_id = identifier
-                else:
-                    catalog_id = '{}:{}'.format(section_key, identifier)
+                catalog_id = section_ids.hubCatalogId(hub, section)
                 if catalog_id in hub_states:
                     is_enabled, hub_info = hub_states[catalog_id]
                     if is_enabled:
@@ -859,7 +734,7 @@ class HubsMixin(object):
         HomeWindow.showHubSettingsDialog() (home.py), minus its own trailing showHubs() refresh call
         (no equivalent on this window - sectionMenu()'s 'manage_hubs' caller handles the refresh
         instead, via self._hubsSettingsChanged - see that branch's own comment)."""
-        self._managingHubsForSection = section.key
+        self._managingHubsForSection = section
         self._hubsSettingsChanged = False
 
         if not self.availableHubs:
@@ -868,11 +743,10 @@ class HubsMixin(object):
             if not self.availableHubs:
                 return
 
-        section_key = section.key
         section_title = section.title if hasattr(section, 'title') else 'Home'
         self._managingHubsForSectionTitle = section_title
 
-        options = self._buildHubSettingsOptions(section_key, section_title)
+        options = self._buildHubSettingsOptions(section, section_title)
         if not options:
             return
 
@@ -902,9 +776,9 @@ class HubsMixin(object):
             return None
 
         catalog_id = choice.get('catalog_id')
-        section_key = getattr(self, '_managingHubsForSection', None)
+        section = getattr(self, '_managingHubsForSection', None) or self.section
 
-        can_move_up, can_move_down = self._canMoveHub(catalog_id, section_key)
+        can_move_up, can_move_down = self._canMoveHub(catalog_id, section)
         can_move = can_move_up or can_move_down
 
         options = []
@@ -920,32 +794,31 @@ class HubsMixin(object):
         if not choice:
             return
 
+        section = getattr(self, '_managingHubsForSection', None) or self.section
+
         if choice.get('key') == 'refresh_hubs':
-            section_key = getattr(self, '_managingHubsForSection', self.section.key)
             section_title = getattr(self, '_managingHubsForSectionTitle', '')
             self._discoverHubsSync()
-            options = self._buildHubSettingsOptions(section_key, section_title)
+            options = self._buildHubSettingsOptions(section, section_title)
             return ('rebuild', options, 0)
 
         if choice.get('key') == 'reset_hubs':
-            section_key = getattr(self, '_managingHubsForSection', self.section.key)
             section_title = getattr(self, '_managingHubsForSectionTitle', '')
-            self.resetSectionHubs(section_key)
+            self.resetSectionHubs(section)
             self._hubsSettingsChanged = True
-            options = self._buildHubSettingsOptions(section_key, section_title)
+            options = self._buildHubSettingsOptions(section, section_title)
             return ('rebuild', options, 0)
 
         if choice.get('key') != 'toggle_hub':
             return
 
         catalog_id = choice.get('catalog_id', choice.get('identifier'))
-        section_key = getattr(self, '_managingHubsForSection', self.section.key)
         is_currently_enabled = choice.get('enabled', False)
 
         if is_currently_enabled:
-            config_created = self._ensureCustomConfigExists(section_key)
+            config_created = self._ensureCustomConfigExists(section)
             if config_created:
-                self._refreshHubSettingsDialog(optionsList, section_key)
+                self._refreshHubSettingsDialog(optionsList, section)
 
             sub = choice.get('sub')
             if not sub:
@@ -953,47 +826,44 @@ class HubsMixin(object):
 
             if sub.get('key') == 'move':
                 self._movingHubCatalogId = catalog_id
-                self._movingHubSectionKey = section_key
+                self._movingHubSection = section
                 self._movingHubOptionsList = optionsList
                 return 'enter_move_mode_sub'
 
             elif sub.get('key') == 'disable':
                 focus_pos = optionsList.getSelectedPos()
-                self._disableHub(catalog_id, section_key)
+                self._disableHub(catalog_id, section)
                 self._hubsSettingsChanged = True
                 section_title = getattr(self, '_managingHubsForSectionTitle', '')
-                options = self._buildHubSettingsOptions(section_key, section_title)
+                options = self._buildHubSettingsOptions(section, section_title)
                 return ('rebuild', options, focus_pos)
 
             return None
         else:
             new_enabled = True
 
-        config_key = str(section_key) if section_key is not None else None
+        sid = section_ids.hubSettingsId(section)
 
         if not self.hubSettings:
             self.hubSettings = {}
 
-        need_init = config_key not in self.hubSettings or not self.hubSettings.get(config_key, {}).get('custom')
+        need_init = sid not in self.hubSettings or not self.hubSettings.get(sid, {}).get('custom')
 
-        if config_key not in self.hubSettings:
-            self.hubSettings[config_key] = {'custom': False, 'hubs': []}
+        if sid not in self.hubSettings:
+            self.hubSettings[sid] = {'custom': False, 'hubs': []}
 
-        section_config = self.hubSettings[config_key]
+        section_config = self.hubSettings[sid]
 
         if need_init:
             section_config['custom'] = True
             section_config['hubs'] = []
-            is_home = section_key is None
+            is_home = section.key is None
 
-            cached_hubs = self.sectionHubs.get(section_key, [])
+            cached_hubs = self.sectionHubs.get(sid, [])
 
             for hub in cached_hubs:
                 hub_identifier = hub.getCleanHubIdentifier(is_home=is_home)
-                if is_home:
-                    cat_id = hub_identifier
-                else:
-                    cat_id = '{}:{}'.format(section_key, hub_identifier)
+                cat_id = section_ids.hubCatalogId(hub, section)
 
                 if cat_id in self.availableHubs:
                     section_config['hubs'].append({
@@ -1024,38 +894,38 @@ class HubsMixin(object):
 
         focus_pos = optionsList.getSelectedPos()
         section_title = getattr(self, '_managingHubsForSectionTitle', '')
-        options = self._buildHubSettingsOptions(section_key, section_title)
+        options = self._buildHubSettingsOptions(section, section_title)
         return ('rebuild', options, focus_pos)
 
     def _onHubMoveCallback(self, action, mli, old_pos, new_pos):
         """Handle move-mode callbacks from the dropdown dialog - ported verbatim from
         HomeWindow._onHubMoveCallback() (home.py)."""
-        section_key = getattr(self, '_movingHubSectionKey', None)
+        section = getattr(self, '_movingHubSection', None)
         catalog_id = getattr(self, '_movingHubCatalogId', None)
         optionsList = getattr(self, '_movingHubOptionsList', None)
 
         if action == 'move':
             if catalog_id:
-                self._moveHubToPosition(catalog_id, section_key, old_pos, new_pos, optionsList)
+                self._moveHubToPosition(catalog_id, section, old_pos, new_pos, optionsList)
             return
         elif action == 'confirm':
             if optionsList:
-                self._refreshHubSettingsDialog(optionsList, section_key)
+                self._refreshHubSettingsDialog(optionsList, section)
             self.saveHubSettings()
             self._hubsSettingsChanged = True
         elif action == 'cancel':
             if catalog_id and optionsList:
-                self._restoreHubOrder(section_key, optionsList)
+                self._restoreHubOrder(section, optionsList)
 
         self._movingHubCatalogId = None
-        self._movingHubSectionKey = None
+        self._movingHubSection = None
         self._movingHubOptionsList = None
 
-    def _refreshHubSettingsDialog(self, optionsList, section_key):
-        """Refresh the hub settings dropdown to reflect new order - ported verbatim from
+    def _refreshHubSettingsDialog(self, optionsList, section):
+        """Refresh the hub settings dropdown to reflect new order - ported from
         HomeWindow._refreshHubSettingsDialog() (home.py)."""
-        config_key = str(section_key) if section_key is not None else None
-        section_config = self.hubSettings.get(config_key, {}) if self.hubSettings else {}
+        sid = section_ids.hubSettingsId(section)
+        section_config = self.hubSettings.get(sid, {}) if self.hubSettings else {}
         has_custom_config = section_config.get('custom', False)
         configured_hubs = section_config.get('hubs', []) if has_custom_config else []
 
@@ -1071,15 +941,11 @@ class HubsMixin(object):
 
             catalog_id = ds.get('catalog_id', ds.get('identifier'))
             hub_info = ds.get('hub_info', {})
-            hub_source_key = hub_info.get('source_section_key')
 
             if has_custom_config:
                 is_enabled = catalog_id in enabled_order
             else:
-                if section_key is None:
-                    is_enabled = (hub_source_key is None)
-                else:
-                    is_enabled = (str(hub_source_key) == str(section_key) if hub_source_key is not None else False)
+                is_enabled = hub_info.get('source_section_id') == sid
 
             ds['enabled'] = is_enabled
             indicator = 'script.plex/indicators/circle-19.png' if is_enabled else ''
@@ -2024,8 +1890,8 @@ class HubsMixin(object):
         getLibrarySectionId() legitimately finds nothing real to match (discover items report the
         literal string "watchlist"), so its sidebar has nothing to highlight. Same detection
         showPanelClicked() uses (self.section.TYPE, not per-hub cross-section sourcing -
-        hubMenu()'s own _crossSectionSource - which would be a separate, currently unhandled case
-        even there). Independent of and additive to the per-item is_watchlist redirection below -
+        home.getCombinedHubsForSection(), not wired up - which would be a separate, currently
+        unhandled case even there). Independent of and additive to the per-item is_watchlist redirection below -
         one answers "is this section the Watchlist", the other "is this particular item a
         discover/watchlist item" (a hub on a real library section can still surface one, e.g.
         cross-section hubs), same as HomeWindow kept them separate.
@@ -2168,19 +2034,12 @@ class HubsMixin(object):
 
         ds = mli.dataSource
 
-        # Determine the hub's source section and catalog_id. (HomeWindow's original also computed a
+        # The hub's catalog id, for Manage Hubs. (HomeWindow's original also computed a
         # lastSection-is-home flag here for the 'add_to_home' option's own visibility check
         # - not ported, see this method's own docstring, so only hub_is_home below is needed.)
-        cross_source = hub.__dict__.get('_crossSectionSource')
-        hub_source_key = cross_source if cross_source is not None else self.section.key
-        hub_is_home = hub_source_key is None
+        hub_is_home = self.section.key is None
         clean_identifier = hub.getCleanHubIdentifier(is_home=hub_is_home)
-
-        # Build catalog_id for Manage Hubs integration
-        if hub_is_home:
-            catalog_id = clean_identifier
-        else:
-            catalog_id = '{}:{}'.format(hub_source_key, clean_identifier)
+        catalog_id = section_ids.hubCatalogId(hub, self.section)
 
         hub_title = hub.__dict__.get('_displayTitle') or hub.title or clean_identifier
         if hub_is_home:
@@ -2260,9 +2119,8 @@ class HubsMixin(object):
             # sectionMenu()'s own 'manage_hubs'/'refresh_hubs' choices use - forces the section
             # to reopen, which re-triggers hub fetching/isHubHidden() filtering and so drops the
             # now-disabled hub from view.
-            section_key = self.section.key
-            self._ensureCustomConfigExists(section_key)
-            self._disableHub(catalog_id, section_key)
+            self._ensureCustomConfigExists(self.section)
+            self._disableHub(catalog_id, self.section)
             return self.section
 
         elif choice["key"] in ("mark_watched", "mark_unwatched"):
@@ -2623,9 +2481,9 @@ class HubsMixin(object):
             # explicitly hidden from their real Home screen still showed up here - live-confirmed
             # (pinnedContentDirectoryID is identical between HomeWindow's own requests and this
             # one, so the fetch itself was never the difference; the missing filter was).
-            sorted_hubs = [hub for hub in self.sortHubsByUserOrder(hubs, is_home=is_home, section_key=section.key)
-                          if hub.items and not self.isHubHidden(hub.getCleanHubIdentifier(is_home=is_home), section.key)]
-            self.sectionHubs[section.key] = sorted_hubs
+            sorted_hubs = [hub for hub in self.sortHubsByUserOrder(hubs, section=section)
+                          if hub.items and not self.isHubHidden(hub, section)]
+            self.sectionHubs[section_ids.hubSettingsId(section)] = sorted_hubs
             self.visibleHubs = sorted_hubs
             # One-shot: popBack() asked to land back on a specific hub row (_pendingRestoreHubId,
             # set via _captureRootRestoreState()/popBack()) - find it by its stable identifier,

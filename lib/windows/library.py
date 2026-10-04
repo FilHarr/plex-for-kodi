@@ -30,6 +30,7 @@ from . import home
 from . import kodigui
 from . import optionsdialog
 from . import search
+from . import section_ids
 from . import sidebar_model
 from . import navintent
 from . import windowutils
@@ -2955,19 +2956,19 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 options.append(dropdown.SEPARATOR)
 
             for s in sections:
-                section_settings = self.navSettings.get(s.key)
+                section_settings = self.navSettings.get(section_ids.sectionId(s))
                 if section_settings and not section_settings.get("show", True):
                     options.append({'key': 'show',
-                                    'section_id': s.key,
+                                    'section_id': section_ids.sectionId(s),
                                     'display': T(33029, "Show library: {}").format(s.title)
                                     }
                                    )
 
             # hack for an inexistant watchlist due to it being hidden
             if util.getUserSetting("use_watchlist", True) and not self.navSettings.get(
-                    "/library/sections/watchlist", {}).get("show", True):
+                    section_ids.WATCHLIST_ID, {}).get("show", True):
                 options.append({'key': 'show',
-                                'section_id': "/library/sections/watchlist",
+                                'section_id': section_ids.WATCHLIST_ID,
                                 'display': T(33029, "Show library: {}").format(T(34000, 'Watchlist'))
                                 })
 
@@ -3055,9 +3056,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 pmm.addPathMapping(d, choice["path"])
                 return self.section
         elif choice["key"] == "hide":
-            if section.key not in self.navSettings:
-                self.navSettings[section.key] = {}
-            self.navSettings[section.key]['show'] = False
+            self.navSettings.setdefault(section_ids.sectionId(section), {})['show'] = False
             self.saveNavSettings()
             return self.sectionList[self.sectionList.prev()].dataSource
         elif choice["key"] == "show":
@@ -3183,7 +3182,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         elif action == xbmcgui.ACTION_SELECT_ITEM:
             stop_moving()
             # store section order
-            self.navSettings["order"] = [i.dataSource.key for i in self.sectionList.items if i.dataSource]
+            order = [section_ids.sectionId(i.dataSource) for i in self.sectionList.items if i.dataSource]
+            # other servers' libraries keep their places after these
+            self.navSettings["order"] = order + [k for k in self.navSettings.get("order", []) if k not in order]
             self.saveNavSettings()
 
     def _tabListNeedsRebuild(self, section):

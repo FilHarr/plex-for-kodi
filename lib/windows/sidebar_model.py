@@ -4,8 +4,8 @@ Watchlist, Playlists, the libraries), the per-section show/hide/order preference
 the server and user labels below them. windowutils.SidebarMixin turns these into list items and
 window properties; each window keeps only its own highlight rule (sidebarActiveSection()).
 
-Still the selected server's libraries only (Phase 4 of the libraries-from-every-server plan); the
-sidebar's own stored config replaces navSettingsKey() later.
+Still the selected server's libraries only. The preferences are the account's, keyed by library id
+(section_ids.sectionId()), so they already hold libraries from any server.
 """
 from __future__ import absolute_import
 
@@ -19,29 +19,24 @@ from lib import backgroundthread
 from lib import util
 from lib.util import T
 from . import home
-
-
-def navSettingsKey():
-    """The per-section show/hide/order preferences: one setting per server and account."""
-    return 'home.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID)
+from . import section_ids
+from .section_ids import sectionId
 
 
 def loadNavSettings():
-    try:
-        return json.loads(util.getSetting(navSettingsKey(), '')) or {}
-    except ValueError:
-        return {}
-    except:
-        util.ERROR()
-        return {}
+    """The per-library show/hide/order preferences: {library id: {"show": bool}, "order": [library
+    ids]}, one setting per account."""
+    section_ids.migrate()
+    return section_ids.loadJson(section_ids.sidebarKey())
 
 
 def saveNavSettings(navSettings):
-    util.setSetting(navSettingsKey(), json.dumps(navSettings))
+    util.setSetting(section_ids.sidebarKey(), json.dumps(navSettings))
 
 
-def isShown(navSettings, key):
-    return key not in navSettings or navSettings[key].get("show", True)
+def isShown(navSettings, section):
+    sid = sectionId(section)
+    return sid not in navSettings or navSettings[sid].get("show", True)
 
 
 def refreshWatchlistSection():
@@ -137,22 +132,23 @@ def sections(navSettings, onPlaylistsChange=None):
 
     if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True) and home.watchlist_section
             and home.watchlist_section.has_data()
-            and isShown(navSettings, "/library/sections/watchlist")):
+            and isShown(navSettings, home.watchlist_section)):
         entries.append(home.watchlist_section)
 
-    if isShown(navSettings, "playlists") and hasPlaylists(server, onChange=onPlaylistsChange):
+    if isShown(navSettings, home.playlists_section) and hasPlaylists(server, onChange=onPlaylistsChange):
         entries.append(home.playlists_section)
 
     for section in server.library.sections():
-        if isShown(navSettings, section.key):
+        if isShown(navSettings, section):
             entries.append(section)
 
     if "order" in navSettings:
         order = navSettings["order"]
 
         def orderPos(s):
-            if s.key in order:
-                return order.index(s.key), 0
+            sid = sectionId(s)
+            if sid in order:
+                return order.index(sid), 0
             return -1, 0
 
         entries = sorted(entries, key=orderPos)

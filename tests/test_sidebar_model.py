@@ -15,12 +15,17 @@ from unittest import mock
 from kodienv import ENV
 
 ENV.abort_requested = True
-from lib.windows import genres, home, library, person, playlist, sidebar_model, windowutils  # noqa: E402
+from lib.windows import genres, home, library, person, playlist, section_ids, sidebar_model, windowutils  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
 
+UUID = 'server-uuid-0000aaaa'
+
+
 class Section(object):
+    server = mock.Mock(uuid=UUID)
+
     def __init__(self, key, title, type_='movie', library_id=None):
         self.key = key
         self.title = title
@@ -40,7 +45,7 @@ MUSIC = Section('3', 'Music', 'artist')
 
 
 class Server(object):
-    def __init__(self, uuid='server-uuid-0000aaaa', playlists=(), sections=(MOVIES, TV, MUSIC)):
+    def __init__(self, uuid=UUID, playlists=(), sections=(MOVIES, TV, MUSIC)):
         self.uuid = uuid
         self.name = 'Animal'
         self.offline = False
@@ -95,6 +100,7 @@ class SidebarCase(KodiTestCase):
                                   lambda key, default=None: self.settings.get(key, default)),
                 mock.patch.object(sidebar_model.util, 'getUserSetting', lambda key, default=None: default),
                 mock.patch.object(home, 'watchlist_section', self.watchlist),
+                mock.patch.object(section_ids, 'migrate', lambda: None),
                 mock.patch.object(sidebar_model.PlaylistsCheckTask, 'start',
                                   lambda task: self.startedChecks.append(task)),
                 mock.patch.dict(sidebar_model._hasPlaylists, clear=True),
@@ -103,8 +109,9 @@ class SidebarCase(KodiTestCase):
             self.addCleanup(patcher.stop)
 
     def navSettings(self, value):
+        """Stored as the sidebar settings, written with bare section keys for short."""
         import json
-        self.settings['home.settings.0000aaaa.1'] = json.dumps(value)
+        self.settings['sidebar.1'] = json.dumps(section_ids.rekeyNavSettings(value, UUID))
 
     def build(self, win):
         win.sectionList = FakeList()
@@ -227,7 +234,7 @@ class LibraryHighlightTest(SidebarCase):
 
     def test_its_own_nav_settings_are_used(self):
         win = self.window(home.home_section)
-        win.navSettings = {'1': {'show': False}}
+        win.navSettings = {UUID + ':1': {'show': False}}
         self.assertNotIn('Movies', self.labels(self.build(win)))
 
 
