@@ -30,6 +30,7 @@ from . import home
 from . import kodigui
 from . import optionsdialog
 from . import search
+from . import sidebar_model
 from . import navintent
 from . import windowutils
 from .library_grid import GridMixin, TYPE_PLURAL
@@ -293,7 +294,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # full reasoning. Only ever set when this instance was opened as a drilled-in child (a
         # collection/subDir view) of an ancestor tracking its own inherited entry section - a real
         # top-level section reached directly via the sidebar never passes this, so it stays None
-        # here and buildSectionList() falls back to exactly its pre-existing self.section-based
+        # here and sidebarActiveSection() falls back to exactly its pre-existing self.section-based
         # computation.
         self.entrySectionId = kwargs.get('entry_section_id')
         self.entryFromWatchlist = kwargs.get('entry_from_watchlist', False)
@@ -2273,8 +2274,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # SectionHubsTask's 3rd arg (section_keys, passed to the server as section_ids)
             # restricts which sections' hubs get included in a home_section fetch -
             # HomeWindow.wantedSections's whole purpose (home.py), built from the same
-            # navSettings-based hidden-section check buildSectionList() above already applies
-            # for its own sidebar list. Leaving this unset (server default: no restriction)
+            # navSettings-based hidden-section check the sidebar applies (sidebar_model.sections()). Leaving this unset (server default: no restriction)
             # live-confirmed as sections hidden from the sidebar still contributing hub rows -
             # more rows than the real Home screen shows, one of them empty (a hidden section
             # with no visible content), which native Kodi list-focus can land geometry on but
@@ -2848,143 +2848,52 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.processCommand(search.dialog(self, section_id=self.section.key))
 
     def buildSectionList(self):
-        """Populate the sidebar's section list. Mirrors home.py's showSections(), minus
-        the hub-fetching side effects Home needs and this window doesn't - see the Sidebar
-        rollout plan (Phase B) for why this isn't shared code yet: the two consumers'
-        needs (in-place hub reload vs. plain nav) diverge enough that extracting a shared
-        helper before a third consumer exists risked locking in the wrong shape.
-        """
-        items = []
-        # Native list-control cursor position of whichever item ends up marked is.active below -
-        # set once, after addItems(), so the sidebar's own selected position already reflects the
-        # active section the very first time focus ever lands there (Kodi otherwise defaults an
-        # unset list control's position to 0/Search). Live-confirmed regression without this: at
-        # cold start (self.section is home_section), moving focus into the sidebar for the first
-        # time landed on Search, not Home - is.active was never set on homemli either, in the
-        # cold-start case, since it was only ever set inside the sections-only loop below (which
-        # never includes home_section itself).
-        active_pos = None
+        """The shared sidebar build (windowutils.SidebarMixin), with Watchlist made afresh first:
+        this is the only window that makes it (sidebar_model.refreshWatchlistSection())."""
+        sidebar_model.refreshWatchlistSection()
+        windowutils.SidebarMixin.buildSectionList(self)
 
-        searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
-        searchmli.setProperty('is.search', '1')
-        searchmli.setProperty('item', '1')
-        items.append(searchmli)
-
-        homemli = kodigui.ManagedListItem(T(32332, 'Home'), iconImage='script.plex/home/type/home.png',
-                                          data_source=home.home_section)
-        homemli.setProperty('is.home', '1')
-        homemli.setProperty('item', '1')
-        if home.home_section.key == self.section.key:
-            homemli.setProperty('is.active', '1')
-            active_pos = len(items)
-        items.append(homemli)
-
-        # self.navSettings is real, mutable state (loadNavSettings()/saveNavSettings()) rather than
-        # a fresh read here, so sectionMenu()'s hide/show/pin/order changes are picked up on the
-        # very next rebuild without a redundant settings round-trip. Defensive load if somehow not
-        # populated yet - onFirstInit()/serverRefresh() are the normal call sites.
+    def sidebarNavSettings(self):
+        # Real state the section menu edits (loadNavSettings()/saveNavSettings()), so its changes
+        # show on the next rebuild without reading the setting back. onFirstInit()/serverRefresh()
+        # load it; this only covers a build before either.
         if self.navSettings is None:
             self.loadNavSettings()
-        navSettings = self.navSettings
+        return self.navSettings
 
-        sections = []
-
-        # home.watchlist_section only ever got constructed by HomeWindow.showSections() (home.py) -
-        # dead code on this branch, since HomeWindow is never instantiated once main.py boots
-        # straight into LibraryWindow (Stage 2). Left unfixed, home.watchlist_section stays None
-        # forever, and the check below always short-circuits there regardless of whether the
-        # account's watchlist actually has data - live-confirmed: watchlist never appeared in the
-        # sidebar at all. Constructed fresh here instead, same construction HomeWindow's own
-        # (dead) version used, gated by the same offline/setting checks to avoid a needless network
-        # call when the feature's disabled - this is the only place in the live codebase that reads
-        # home.watchlist_section, so it's also the only place that needs to populate it.
-        if not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True):
-            from plexnet import plexlibrary
-            try:
-                home.watchlist_section = plexlibrary.WatchlistSection(
-                    None, server=plexapp.SERVERMANAGER.getDiscoverServer())
-                home.watchlist_section.title = T(34000, 'Watchlist')
-            except plexnet.exceptions.BadRequest as e:
-                # WatchlistSection.__init__ (plexlibrary.py) queries discover.provider.plex.tv
-                # synchronously, uninsured - live-confirmed: a transient 503 there raised
-                # uncaught all the way out of onFirstInit(), leaving the whole window (sidebar
-                # partially built, no Home content) stuck instead of just missing Watchlist for
-                # this session. Same catch/skip idiom this file already uses elsewhere for
-                # optional, best-effort fetches (see e.g. SectionTask.run() above). Leaving
-                # home.watchlist_section as whatever it already was (usually None) is enough -
-                # the check below already treats a falsy value as "don't show it".
-                util.DEBUG_LOG('Watchlist section unavailable ({0}), skipping for this session', e)
-                home.watchlist_section = None
-
-        if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True) and home.watchlist_section
-                and home.watchlist_section.has_data()
-                and ("/library/sections/watchlist" not in navSettings
-                     or navSettings["/library/sections/watchlist"].get("show", True))):
-            sections.append(home.watchlist_section)
-
-        if "playlists" not in navSettings or navSettings["playlists"].get("show", True):
-            if plexapp.SERVERMANAGER.selectedServer.playlists():
-                sections.append(home.playlists_section)
-
-        for section in plexapp.SERVERMANAGER.selectedServer.library.sections():
-            if section.key in navSettings and not navSettings[section.key].get("show", True):
-                continue
-            sections.append(section)
-
-        if "order" in navSettings:
-            order = navSettings["order"]
-
-            def orderPos(s):
-                if s.key in order:
-                    return order.index(s.key), 0
-                return -1, 0
-
-            sections = sorted(sections, key=orderPos)
-
-        # self.section.key alone only matches a sidebar entry when self.section IS one - a
-        # collection or a folder drilled into via sectionClicked() carries its own key (the
-        # collection's, or the folder's parent's already-collection-shaped key), never a real
-        # section's - live-confirmed regression: opening a collection from a nested LibraryWindow
-        # left nothing highlighted in its own sidebar at all. getLibrarySectionId() (present on
-        # every section-shaped object this window's self.section can be, per its own existing use
-        # a few lines above for viewtype lookups) still resolves back to the real owning library's
-        # key in that case, so fall back to it rather than leaving nothing highlighted. Ported from
-        # the Sidebar-Tab-Unification branch's identical fix (commit f0e6340f), which found the
-        # same bug independently - that branch's own pooled-window architecture isn't ported here,
-        # just this small, self-contained highlight fix.
-        # self.entrySectionId (Sidebar entry-section persistence, ported from Sidebar-Tab-
-        # Unification's mellow-pondering-magpie.md) overrides the fallback above when present: an
-        # ancestor further up the drill chain (PrePlayWindow/ShowWindow/etc - see their own
-        # buildSectionList()) explicitly threaded its own entrySectionId through - a collection
-        # opened from e.g. a cross-section PersonWindow filmography click can genuinely live in a
-        # different real section than the one that should stay highlighted, so that always wins
-        # when present.
+    def sidebarActiveSection(self, entries):
+        """Home for Home; otherwise the entry for this section, or for the real library it belongs
+        to. self.section.key alone only matches when the section IS a sidebar entry: a collection
+        or folder carries its own key, so fall back to getLibrarySectionId() (live-confirmed
+        regression: a collection opened in a nested LibraryWindow highlighted nothing). An
+        entrySectionId threaded down a drill chain wins over that fallback: a collection opened
+        from a cross-section filmography can live in a different section from the one to keep
+        highlighted. Watchlist when entered from it with no section to follow."""
+        if self.section.key == home.home_section.key:
+            return home.home_section
         if self.entrySectionId is not None:
             activeLibraryId = self.entrySectionId
         else:
             getActiveLibraryId = getattr(self.section, 'getLibrarySectionId', None)
             activeLibraryId = getActiveLibraryId() if getActiveLibraryId else None
+        for section in entries:
+            if section.key == self.section.key or (activeLibraryId and section.key == activeLibraryId):
+                return section
+        if self.entrySectionId is None and self.entryFromWatchlist:
+            return home.watchlist_section
+        return None
 
-        for section in sections:
-            mli = kodigui.ManagedListItem(section.title,
-                                          iconImage='script.plex/home/type/{0}.png'.format(section.type),
-                                          data_source=section)
-            mli.setProperty('item', '1')
-            if section == home.playlists_section:
-                mli.setProperty('is.playlists', '1')
-                mli.setIconImage('script.plex/home/type/playlists.png')
-            elif section == home.watchlist_section:
-                mli.setIconImage('script.plex/home/type/watchlist.png')
-            if section.key == self.section.key or (activeLibraryId and section.key == activeLibraryId) or \
-                    (self.entrySectionId is None and self.entryFromWatchlist and section == home.watchlist_section):
-                mli.setProperty('is.active', '1')
-                active_pos = len(items)
-            items.append(mli)
+    def _sidebarPlaylistsChanged(self):
+        self.postUI('sidebar playlists', self._rebuildSidebar)
 
-        self.sectionList.reset()
-        self.sectionList.addItems(items)
-        if active_pos is not None:
-            self.sectionList.selectItem(active_pos)
+    def _rebuildSidebar(self):
+        """Rebuild the sidebar as it stands, on the main thread (postUI())."""
+        if self.closing or self._shuttingDown or self.sectionList is None:
+            return
+        try:
+            windowutils.SidebarMixin.buildSectionList(self)
+        except kodigui.ScreenClosed:
+            pass
 
     def sectionMenu(self):
         """Context menu (ACTION_CONTEXT_MENU) for the sidebar's currently-focused section item -
@@ -3302,7 +3211,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         (_tabListNeedsRebuild()) and its grid (fillPlaylists()) both need them."""
         playlists = self.__dict__.get('_viewPlaylists')
         if playlists is None:
-            playlists = self._viewPlaylists = list(plexapp.SERVERMANAGER.selectedServer.playlists() or [])
+            server = plexapp.SERVERMANAGER.selectedServer
+            playlists = self._viewPlaylists = list(server.playlists() or [])
+            sidebar_model.notePlaylists(server, playlists)
         return playlists
 
     def _playlistTypes(self):
@@ -3436,37 +3347,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     # this window's needs exactly: home_section is just another section value here (LibraryWindow
     # has openSection(), so is.home no longer gets any special treatment - see that method's own
     # is.home-equivalent TYPE == 'mixed' check for how it lands on the right tab).
-
-    def displayServerAndUser(self, **kwargs):
-        """Sidebar avatar/username and server icon/name. Window properties are
-        per-window, so home.py's own displayServerAndUser() (which this mirrors)
-        never reaches this window - see home.py:3622.
-        """
-        title = plexapp.ACCOUNT.title or plexapp.ACCOUNT.username or ' '
-        self.setProperty('user.name', title)
-        self.setProperty('user.avatar', plexapp.ACCOUNT.safeUserThumb(plexapp.ACCOUNT.ID,
-                                                                       thumb=plexapp.ACCOUNT.thumb))
-        self.setProperty('user.avatar.letter', title[0].upper())
-
-        if plexapp.SERVERMANAGER.selectedServer and plexapp.SERVERMANAGER.selectedServer.offline:
-            # still selected, but not answering (PlexServerManager.setServerOnline())
-            self.setProperty('server.name', plexapp.SERVERMANAGER.selectedServer.name)
-            self.setProperty('server.icon', 'script.plex/home/device/error.png')
-            self.setProperty('server.iconmod', '')
-            self.setProperty('server.iconmod2', '')
-        elif plexapp.SERVERMANAGER.selectedServer:
-            self.setProperty('server.name', plexapp.SERVERMANAGER.selectedServer.name)
-            self.setProperty('server.icon', 'script.plex/home/device/plex.png')
-            self.setProperty('server.iconmod',
-                             plexapp.SERVERMANAGER.selectedServer.isSecure and 'script.plex/home/device/lock.png' or '')
-            self.setProperty('server.iconmod2',
-                             plexapp.SERVERMANAGER.selectedServer.isLocal and 'script.plex/home/device/home_small.png'
-                             or '')
-        else:
-            self.setProperty('server.name', T(32338, 'No Servers Found'))
-            self.setProperty('server.icon', 'script.plex/home/device/error.png')
-            self.setProperty('server.iconmod', '')
-            self.setProperty('server.iconmod2', '')
 
     def routeFocus(self, controlID):
         """Every focus event on the grid and Recommended views comes here first

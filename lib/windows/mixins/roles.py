@@ -43,8 +43,8 @@ class RolesMixin(object):
         self.entryFromWatchlist, the same inherited-or-self-resolved flag roleSectionId() above
         uses. Watchlist ("discover") items report the literal string "watchlist" as their library
         section id, which never matches a real section's key - this lets PersonWindow fall back
-        to highlighting the Watchlist rail entry instead of nothing, same as PrePlayWindow's own
-        buildSectionList() does.
+        to highlighting the Watchlist rail entry instead of nothing, same as the sidebar's default
+        rule (SidebarMixin.sidebarActiveSection()) does.
         """
         return getattr(self, 'entryFromWatchlist', False)
 

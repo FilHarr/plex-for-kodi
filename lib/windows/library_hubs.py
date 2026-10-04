@@ -18,6 +18,7 @@ from . import home
 from . import kodigui
 from . import opener
 from . import optionsdialog
+from . import sidebar_model
 from . import navintent
 
 
@@ -327,25 +328,15 @@ class HubsMixin(object):
 
     def loadNavSettings(self):
         """Per-section show/hide/pin/order preferences - ported from HomeWindow.loadLibrarySettings()
-        (home.py) under a new name, see __init__'s own comment for why. Same setting key
-        buildSectionList() used to read directly, every call, as a throwaway local - this makes it
-        real state sectionMenu() can mutate and persist.
+        (home.py) under a new name, see __init__'s own comment for why. Kept as real state
+        sectionMenu() can mutate and persist; the sidebar is built from it
+        (LibraryWindow.sidebarNavSettings()).
         """
-        setting_key = 'home.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID)
-        data = util.getSetting(setting_key, '')
-        self.navSettings = {}
-        try:
-            self.navSettings = json.loads(data)
-        except ValueError:
-            pass
-        except:
-            util.ERROR()
+        self.navSettings = sidebar_model.loadNavSettings()
 
     def saveNavSettings(self):
         if self.navSettings:
-            setting_key = 'home.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:],
-                                                        plexapp.ACCOUNT.ID)
-            util.setSetting(setting_key, json.dumps(self.navSettings))
+            sidebar_model.saveNavSettings(self.navSettings)
 
     def loadHubSettings(self):
         # NOTE: setting key is scoped by server uuid + account ID, not by window class - hub

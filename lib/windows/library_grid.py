@@ -1295,7 +1295,7 @@ class GridMixin(object):
         # (the common case) is exactly equivalent to not passing these at all - only meaningfully
         # differs when this LibraryWindow instance was itself opened as a drilled-in child (a
         # collection/subDir view) inheriting an ancestor's entrySectionId, in which case that keeps
-        # propagating instead of being lost - see this window's own buildSectionList(). Folded into
+        # propagating instead of being lost - see this window's own sidebarActiveSection(). Folded into
         # extra_kwargs (not a separate dict) since every branch below already either uses
         # extra_kwargs or wants these two keys the same way.
         extra_kwargs['entry_section_id'] = self.entrySectionId

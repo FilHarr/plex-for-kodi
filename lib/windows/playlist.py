@@ -1,13 +1,12 @@
 from __future__ import absolute_import
 
-import json
 import threading
 
 import plexnet
 from kodi_six import xbmcgui
 from six.moves import range
 
-from plexnet import signalsmixin, plexapp
+from plexnet import signalsmixin
 from lib import backgroundthread
 from lib import player
 from lib import util
@@ -229,104 +228,10 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     def searchButtonClicked(self):
         self.processCommand(search.dialog(self))
 
-    def buildSectionList(self):
-        """Populate the sidebar's section list. Mirrors library.py's buildSectionList()/
-        home.py's showSections() and preplay.py's own copy - see library.py:675 for why this
-        isn't shared code yet.
-        """
-        items = []
-
-        searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
-        searchmli.setProperty('is.search', '1')
-        searchmli.setProperty('item', '1')
-        items.append(searchmli)
-
-        homemli = kodigui.ManagedListItem(T(32332, 'Home'), iconImage='script.plex/home/type/home.png',
-                                          data_source=home.home_section)
-        homemli.setProperty('is.home', '1')
-        homemli.setProperty('item', '1')
-        items.append(homemli)
-
-        setting_key = 'home.settings.{}.{}'.format(plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID)
-        try:
-            navSettings = json.loads(util.getSetting(setting_key, '')) or {}
-        except ValueError:
-            navSettings = {}
-
-        sections = []
-
-        if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True) and home.watchlist_section
-                and home.watchlist_section.has_data()
-                and ("/library/sections/watchlist" not in navSettings
-                     or navSettings["/library/sections/watchlist"].get("show", True))):
-            sections.append(home.watchlist_section)
-
-        if "playlists" not in navSettings or navSettings["playlists"].get("show", True):
-            if plexapp.SERVERMANAGER.selectedServer.playlists():
-                sections.append(home.playlists_section)
-
-        for section in plexapp.SERVERMANAGER.selectedServer.library.sections():
-            if section.key in navSettings and not navSettings[section.key].get("show", True):
-                continue
-            sections.append(section)
-
-        if "order" in navSettings:
-            order = navSettings["order"]
-
-            def orderPos(s):
-                if s.key in order:
-                    return order.index(s.key), 0
-                return -1, 0
-
-            sections = sorted(sections, key=orderPos)
-
-        for section in sections:
-            mli = kodigui.ManagedListItem(section.title,
-                                          iconImage='script.plex/home/type/{0}.png'.format(section.type),
-                                          data_source=section)
-            mli.setProperty('item', '1')
-            if section == home.playlists_section:
-                mli.setProperty('is.playlists', '1')
-                mli.setIconImage('script.plex/home/type/playlists.png')
-                # A single playlist isn't tied to one library section (its items can span several),
-                # so unlike every other ported screen there's no getLibrarySectionId() to compare
-                # against - just mark the Playlists entry active directly, since that's where this
-                # screen was reached from.
-                mli.setProperty('is.active', '1')
-            elif section == home.watchlist_section:
-                mli.setIconImage('script.plex/home/type/watchlist.png')
-            items.append(mli)
-
-        self.sectionList.reset()
-        self.sectionList.addItems(items)
-
-    # sectionClicked() now provided by SidebarMixin - its default _dispatchSectionOpen() covers
-    # this window's needs exactly.
-
-    def displayServerAndUser(self):
-        """Sidebar avatar/username and server icon/name. Mirrors library.py's/preplay.py's
-        displayServerAndUser() (see library.py:777 for why home.py's own version doesn't
-        reach this window - window properties are per-window).
-        """
-        title = plexapp.ACCOUNT.title or plexapp.ACCOUNT.username or ' '
-        self.setProperty('user.name', title)
-        self.setProperty('user.avatar', plexapp.ACCOUNT.safeUserThumb(plexapp.ACCOUNT.ID,
-                                                                       thumb=plexapp.ACCOUNT.thumb))
-        self.setProperty('user.avatar.letter', title[0].upper())
-
-        if plexapp.SERVERMANAGER.selectedServer:
-            self.setProperty('server.name', plexapp.SERVERMANAGER.selectedServer.name)
-            self.setProperty('server.icon', 'script.plex/home/device/plex.png')
-            self.setProperty('server.iconmod',
-                             plexapp.SERVERMANAGER.selectedServer.isSecure and 'script.plex/home/device/lock.png' or '')
-            self.setProperty('server.iconmod2',
-                             plexapp.SERVERMANAGER.selectedServer.isLocal and 'script.plex/home/device/home_small.png'
-                             or '')
-        else:
-            self.setProperty('server.name', T(32338, 'No Servers Found'))
-            self.setProperty('server.icon', 'script.plex/home/device/error.png')
-            self.setProperty('server.iconmod', '')
-            self.setProperty('server.iconmod2', '')
+    def sidebarActiveSection(self, entries):
+        # A playlist isn't tied to one library section (its items can span several): Playlists
+        # is where this screen was reached from.
+        return home.playlists_section
 
     def playlistListClicked(self, no_item=False, shuffle=False, resume=None, play=False):
         if no_item:

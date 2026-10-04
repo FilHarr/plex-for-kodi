@@ -5,8 +5,11 @@ import weakref
 from lib import util
 from lib.util import T
 from . import dropdown
+from . import home
+from . import kodigui
 from . import navintent
 from . import opener
+from . import sidebar_model
 
 HOME = None
 _restartingForSkinReload = False
@@ -195,6 +198,69 @@ class SidebarMixin():
             target.setFocusId(self.SERVER_BUTTON_ID)
             return True
         return False
+
+    def buildSectionList(self):
+        """Fill self.sectionList with the sidebar's entries (sidebar_model.sections()), marking the
+        one sidebarActiveSection() picks as is.active and selecting it, so the list's cursor is on
+        it the first time focus lands there rather than on Search. Writes go through the list's own
+        guard (LibraryWindow's _sidebarListGuard() for its lists)."""
+        entries = sidebar_model.sections(self.sidebarNavSettings(), onPlaylistsChange=self._sidebarPlaylistsChanged)
+        active = self.sidebarActiveSection([home.home_section] + entries)
+        active_pos = None
+
+        searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
+        searchmli.setProperty('is.search', '1')
+        searchmli.setProperty('item', '1')
+        items = [searchmli]
+
+        for section in [home.home_section] + entries:
+            if section is home.home_section:
+                mli = kodigui.ManagedListItem(T(32332, 'Home'), iconImage='script.plex/home/type/home.png',
+                                              data_source=section)
+                mli.setProperty('is.home', '1')
+            else:
+                mli = kodigui.ManagedListItem(section.title,
+                                              iconImage='script.plex/home/type/{0}.png'.format(section.type),
+                                              data_source=section)
+                if section == home.playlists_section:
+                    mli.setProperty('is.playlists', '1')
+                    mli.setIconImage('script.plex/home/type/playlists.png')
+                elif section == home.watchlist_section:
+                    mli.setIconImage('script.plex/home/type/watchlist.png')
+            mli.setProperty('item', '1')
+            if active is not None and section == active:
+                mli.setProperty('is.active', '1')
+                active_pos = len(items)
+            items.append(mli)
+
+        self.sectionList.reset()
+        self.sectionList.addItems(items)
+        if active_pos is not None:
+            self.sectionList.selectItem(active_pos)
+
+    def sidebarNavSettings(self):
+        """The per-section show/hide/order preferences the sidebar is built with. LibraryWindow
+        keeps them as state its section menu edits."""
+        return sidebar_model.loadNavSettings()
+
+    def sidebarActiveSection(self, entries):
+        """Which of entries (Home first, then sidebar_model.sections()) is highlighted as the
+        section on screen. By default the section this screen was entered from (entrySectionId,
+        inherited down a drill chain or the item's own library), else Watchlist when it came from
+        there. Screens with their own idea override this."""
+        return sidebar_model.matchSection(entries, getattr(self, 'entrySectionId', None),
+                                          getattr(self, 'entryFromWatchlist', False))
+
+    def _sidebarPlaylistsChanged(self):
+        """The background Playlists check (sidebar_model.hasPlaylists()) found a different answer
+        from the one this sidebar was built with. On a worker thread; LibraryWindow rebuilds."""
+        pass
+
+    def displayServerAndUser(self, **kwargs):
+        """The sidebar's avatar, user name and server icon and name. Window properties are
+        per-window, so each window sets its own."""
+        for key, value in sidebar_model.serverAndUserProperties():
+            self.setProperty(key, value)
 
     def _selectActiveSection(self):
         """Select the sidebar entry marked is.active - the section actually on screen. The rule this
