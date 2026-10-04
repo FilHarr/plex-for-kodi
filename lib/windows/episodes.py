@@ -1934,7 +1934,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             options.append({'key': 'playback_settings', 'display': T(32925, 'Playback Settings')})
             options.append(dropdown.SEPARATOR)
 
-        if plexapp.ACCOUNT.isAdmin and mli.dataSource.server.owned:
+        # the show's server: the season card has no dataSource of its own
+        if plexapp.ACCOUNT.isAdmin and seasonCardItem.server.owned:
             options.append({'key': 'refresh', 'display': T(33719, 'Refresh metadata')})
 
             # Delete stays episode-only: the confirmation dialog below (delete()) is worded for a
