@@ -3705,6 +3705,14 @@ msgctxt "#35140"
 msgid "Servers to search"
 msgstr ""
 
+msgctxt "#35141"
+msgid "Your Watchlist isn't available right now"
+msgstr ""
+
 msgctxt "#35142"
 msgid "None of your servers are responding"
+msgstr ""
+
+msgctxt "#35143"
+msgid "Plex is temporarily limiting Watchlist requests. Try again in {0} seconds."
 msgstr ""

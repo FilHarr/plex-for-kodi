@@ -355,12 +355,17 @@ class PlexObject(Checks):
                 data = data[0]
                 self._reloaded = True
                 self.reloadFailed = False
+                self.reloadError = None
             except Exception as e:
-                if not isinstance(e, NoAnswer):
+                if isinstance(e, exceptions.RateLimited):
+                    util.WARN_LOG('Reload of {0} refused: {1}', self.ratingKey, e)
+                elif not isinstance(e, NoAnswer):
                     import traceback
                     traceback.print_exc()
                     util.ERROR(err=e)
                 self.reloadFailed = True
+                # why, for a screen that says so (preplay.setup())
+                self.reloadError = e
                 self.initpath = self.key
                 self.clearCache()
                 return self

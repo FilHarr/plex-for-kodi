@@ -9,6 +9,7 @@ from . import plexobjects
 from . import plexlibrary
 from . import compat
 from . import util
+from . import asyncadapter
 
 from lib.i18n import T
 
@@ -49,12 +50,26 @@ class MyPlexServer(plexserver.PlexServer):
         return plexserver.PlexServer.buildUrl(self, path, includeToken)
 
 
+class DiscoverRetry(asyncadapter.StoppableRetry):
+    """No retry for a 429: urllib3 retries one that has a Retry-After header, sleeping that long first
+    (up to MAX_RETRIES times) on whichever thread asked - for the Watchlist's grid, the UI's. The
+    429 goes to PlexServer.query() instead, which starts a cooldown. From pannal 4f9b12d1."""
+    def is_retry(self, method, status_code, has_retry_after=False):
+        if status_code == 429:
+            return False
+        return super(DiscoverRetry, self).is_retry(method, status_code, has_retry_after)
+
+
 class PlexDiscoverServer(MyPlexServer):
     TYPE = 'PLEXDISCOVERSERVER'
     DEFER_HUBS = True
+    RATE_LIMIT_COOLDOWN = True
 
     def __init__(self):
         MyPlexServer.__init__(self)
+        for adapter in self.session.adapters.values():
+            adapter.max_retries = DiscoverRetry(total=asyncadapter.MAX_RETRIES,
+                                                connect=min(asyncadapter.CONNECT_RETRIES, asyncadapter.MAX_RETRIES))
         self.uuid = 'plexdiscover'
         self.name = 'discover.plex.tv'
 

@@ -2515,6 +2515,10 @@ class HubsMixin(object):
                 empty = not any(hub.items for hub in hubs)
                 self._noteSectionEmpty(empty)
             self.setBoolProperty('no.content', empty)
+            if section.TYPE == 'movies_shows' and getattr(hubs, 'invalid', False):
+                # the Watchlist's rows are plex.tv's, which no server panel covers: when it didn't
+                # answer (a rate limit, say), say so, as its Library view does
+                util.notifyWatchlistUnavailable(getattr(hubs, 'error', None))
             # no rows because the server isn't answering: the view says so (the panel)
             self.updateServerUnavailable()
             # or because it has only just come back, and is still loading

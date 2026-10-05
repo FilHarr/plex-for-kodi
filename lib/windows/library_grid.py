@@ -1664,10 +1664,19 @@ class GridMixin(object):
             if self.itemType == 'folder':
                 sectionAll = self.section.folder(0, 0, self.subDir)
             else:
-                sectionAll = self.section.all(0, 0, filter_=self.getFilterOpts(), sort=self.getSortOpts(),
-                                              type_=type_, bool_filters=bool_filters)
+                try:
+                    sectionAll = self.section.all(0, 0, filter_=self.getFilterOpts(), sort=self.getSortOpts(),
+                                                  type_=type_, bool_filters=bool_filters)
+                except Exception as e:
+                    if self.section.TYPE != 'movies_shows':
+                        raise
+                    # the Watchlist is plex.tv's: when it doesn't answer (a rate limit, say), the
+                    # screen is empty and says why, rather than failing to open
+                    util.LOG('Watchlist: plex.tv did not answer ({0})', e)
+                    util.notifyWatchlistUnavailable(e)
+                    sectionAll = None
 
-            totalSize = sectionAll.totalSize.asInt()
+            totalSize = sectionAll.totalSize.asInt() if sectionAll is not None else 0
             kodigui.markStep(self.__dict__.get('_gridTiming'), 'count')
 
             if not totalSize:

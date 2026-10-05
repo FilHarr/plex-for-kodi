@@ -418,17 +418,13 @@ def live(section):
 
 def refreshWatchlistSection():
     """Build home.watchlist_section afresh, when the watchlist is on. LibraryWindow does this for
-    each sidebar it builds; the other screens show the one it made."""
+    each sidebar it builds; the other screens show the one it made. Nothing is asked of plex.tv
+    (the screen asks when it's opened): the setting and the pin decide whether Watchlist is in the
+    sidebar (the user, 2026-10-05), not whether it has anything in it or plex.tv answered just
+    then."""
     if plexapp.ACCOUNT.isOffline or not util.getUserSetting("use_watchlist", True):
         return
-    try:
-        section = plexlibrary.WatchlistSection(None, server=plexapp.SERVERMANAGER.getDiscoverServer())
-    except plexnet.exceptions.BadRequest as e:
-        # WatchlistSection() asks discover.provider.plex.tv straight away; a 503 there used to
-        # leave the whole window half built. Without it the sidebar just has no Watchlist.
-        util.DEBUG_LOG('Watchlist section unavailable ({0}), skipping for this session', e)
-        home.watchlist_section = None
-        return
+    section = plexlibrary.WatchlistSection(None, server=plexapp.SERVERMANAGER.getDiscoverServer())
     section.title = T(34000, 'Watchlist')
     home.watchlist_section = section
 
@@ -539,7 +535,7 @@ def sections(nav, onChange=None):
     for sid in ids:
         if sid == WATCHLIST_ID:
             if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True)
-                    and home.watchlist_section and home.watchlist_section.has_data()):
+                    and home.watchlist_section):
                 entries.append(home.watchlist_section)
         elif section_ids.isPlaylistsId(sid):
             # a server's Playlists (the old single entry: the old settings' server's), when it has any

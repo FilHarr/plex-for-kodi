@@ -1301,3 +1301,14 @@ def shutdown():
     del MONITOR
     del T
     del ADDON
+
+
+def notifyWatchlistUnavailable(error=None):
+    """The Watchlist, or one of its items, couldn't be loaded from plex.tv: a notice saying so -
+    with the wait when plex.tv is limiting requests (plexnet's RateLimited)."""
+    wait = getattr(error, 'retry_after', None)
+    if wait is not None:
+        message = T(35143, 'Plex is temporarily limiting Watchlist requests. Try again in {0} seconds.').format(wait)
+    else:
+        message = T(35141, "Your Watchlist isn't available right now")
+    showNotification(message, time_ms=5000)

@@ -4,7 +4,9 @@ from __future__ import absolute_import
 import time
 import re
 import json
+import math
 import threading
+from email.utils import parsedate_tz, mktime_tz
 
 import six
 import urllib3.exceptions
@@ -22,6 +24,7 @@ from . import plexlibrary
 from . import asyncadapter
 from . import callback
 from six.moves import range
+from six.moves.urllib.parse import urlsplit, parse_qs
 
 # from plexapi.client import Client
 # from plexapi.playqueue import PlayQueue
@@ -43,8 +46,33 @@ DEFAULT_BASEURI = 'http://localhost:32400'
 CACHE_MAP = {}
 
 
+# A rate-limiting server's 429 (RATE_LIMIT_COOLDOWN): until when it isn't asked again, by
+# (scheme, host, token) - every Discover object shares its limit, another user doesn't. Asking
+# while it's refusing only prolongs it (live 2026-10-05: plex.tv's Discover answered 429 for over
+# half an hour while the sidebar, rows and item checks kept asking). From pannal 4f9b12d1.
+_RATE_LIMIT_UNTIL = {}
+_RATE_LIMIT_LOCK = threading.Lock()
+_cooldownTime = getattr(time, 'monotonic', time.time)
+
+
+def retryAfterSeconds(value, default=60):
+    """A Retry-After header's wait: seconds, or an HTTP date; default when it's missing or bad."""
+    try:
+        value = value.strip()
+        if re.match(r'^[0-9]+$', value):
+            return max(0, int(value))
+        date = parsedate_tz(value)
+        if date is not None:
+            return max(0, int(math.ceil(mktime_tz(date) - time.time())))
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        pass
+    return default
+
+
 class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
     TYPE = 'PLEXSERVER'
+    # a 429 starts a cooldown (_RATE_LIMIT_UNTIL): the Discover server's
+    RATE_LIMIT_COOLDOWN = False
     DEFER_HUBS = False
 
     def __init__(self, data=None):
@@ -329,6 +357,16 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
             self.markSuspect()
             return None
 
+        cooldownKey = None
+        if self.RATE_LIMIT_COOLDOWN:
+            parsed = urlsplit(url)
+            cooldownKey = (parsed.scheme, parsed.netloc, parse_qs(parsed.query).get('X-Plex-Token', [None])[0])
+            with _RATE_LIMIT_LOCK:
+                remaining = _RATE_LIMIT_UNTIL.get(cooldownKey, 0) - _cooldownTime()
+                if remaining > 0:
+                    raise exceptions.RateLimited(int(math.ceil(remaining)), from_cooldown=True)
+                _RATE_LIMIT_UNTIL.pop(cooldownKey, None)
+
         # add offset/limit
         offset = offset or 0
 
@@ -343,6 +381,12 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         util.LOG('{0} (cache enabled: {2}) {1}', method.__name__.upper(), re.sub('X-Plex-Token=[^&]+', 'X-Plex-Token=****', url), with_cache)
         try:
             response = method(url, **kwargs)
+            if response.status_code == 429 and cooldownKey is not None:
+                delay = retryAfterSeconds(response.headers.get('Retry-After'))
+                with _RATE_LIMIT_LOCK:
+                    _RATE_LIMIT_UNTIL[cooldownKey] = max(_cooldownTime() + delay, _RATE_LIMIT_UNTIL.get(cooldownKey, 0))
+                util.WARN_LOG('{0} is limiting requests: not asked again for {1} s', self.name, delay)
+                raise exceptions.RateLimited(delay)
             if response.status_code not in (200, 201):
                 if response.status_code in GATEWAY_ERRORS:
                     # a proxy in front of the server answering for it: the server itself may be down

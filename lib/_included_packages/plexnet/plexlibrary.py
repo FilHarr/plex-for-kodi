@@ -9,6 +9,7 @@ from . import playlist
 from . import media
 from . import exceptions
 from . import util
+from xml.etree import ElementTree
 from . import signalsmixin
 from lib.path_mapping import pmm, norm_sep
 from lib.exceptions import NoDataException
@@ -583,15 +584,16 @@ class WatchlistSection(LibrarySection):
     }
 
     def __init__(self, data, initpath=None, server=None, container=None):
+        # Nothing asked of plex.tv here: the sidebar makes one for every build, and the screen
+        # asks for the items when it's opened (all()). It used to ask for the count, and the
+        # sidebar left Watchlist out when plex.tv didn't answer or the Watchlist was empty.
         self.locations = []
         self._settings = {}
-        data = server.query(self.key+"/all", offset=0, limit=0, type=99, **self.DEFAULT_URL_ARGS) # type: ignore
         self.type = "mixed"
-        super(LibrarySection, self).__init__(data, initpath=initpath, server=server, container=self)
+        super(LibrarySection, self).__init__(
+            data if data is not None else ElementTree.Element('MediaContainer'),
+            initpath=initpath, server=server, container=self)
         self.server = server
-
-    def has_data(self):
-        return self.totalSize and self.totalSize > 0
 
     @property
     def key(self):

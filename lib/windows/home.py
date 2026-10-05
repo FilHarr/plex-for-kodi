@@ -283,10 +283,12 @@ class SectionHubsTask(backgroundthread.Task):
             if self.isCanceled():
                 return
             self.callback(self.section, hubs, reselect_pos_dict=self.reselect_pos_dict)
-        except plexnet.exceptions.BadRequest:
-            util.DEBUG_LOG('404 on section: {0}', repr(self.section.title))
+        except plexnet.exceptions.BadRequest as e:
+            # any refusal (a 404, a 429 rate limit...), not only a 404
+            util.DEBUG_LOG('Rows refused for section {0}: {1}', repr(self.section.title), e)
             hubs = HubsList().init()
             hubs.invalid = True
+            hubs.error = e
             self.callback(self.section, hubs)
         except:
             util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
