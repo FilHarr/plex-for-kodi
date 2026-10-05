@@ -42,6 +42,10 @@ from .mixins.text_metrics import FONT10_POINT_SIZE, measureTextWidth
 
 VIDEO_RELOAD_KW = dict(includeExtras=1, includeExtrasCount=10, includeChapters=1)
 
+# back from playback: how long to wait for the stop's timeline report to reach the server before
+# asking it what was watched (EpisodesWindow._settleProgressWithServer())
+TIMELINE_WAIT = 2.0
+
 
 class EpisodesReloadTask(backgroundthread.Task):
     def setup(self, episodes, callback, set_item_info=False):
@@ -939,6 +943,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             return
 
         self.manuallySelected = False
+        self._settleProgressWithServer()
         util.DEBUG_LOG("Episodes: {}: Got progress info: {}, came from: {}".format(
             self.episode and self.episode.ratingKey or None, VIDEO_PROGRESS, self.cameFrom))
         try:
@@ -1136,18 +1141,15 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
                     # progress can be False (no entry), a number (progress), or True (fully watched just now)
                     # select it if it's not watched or in progress
-                    if progress:
+                    if progress is not False:
                         if progress is True:
-                            # ep was just watched
+                            # ep was just watched (the server says so: _settleProgressWithServer())
                             just_fully_watched = True
                             mli.setProperty('unwatched', '')
                             mli.setProperty('watched', '1')
                             mli.setProperty('progress', '')
                             mli.setProperty('unwatched.count', '')
                             mli.setProperty('unwatched.count.large', '')
-                            mli.dataSource.set('viewCount', mli.dataSource.get('viewCount', 0).asInt() + 1)
-                            mli.dataSource.set('viewOffset', 0)
-                            mli.dataSource.markWatched()
                             self.setUserItemInfo(mli, fully_watched=True)
 
                         elif progress > 60000:
@@ -1391,6 +1393,40 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.episode = video
 
         return True
+
+    def _settleProgressWithServer(self):
+        """Back from playback: the server's word on each episode of this season that was played -
+        the player only knows where it stopped. Once the stop's timeline report has reached the
+        server, those episodes are reloaded and VIDEO_PROGRESS holds the server's answer: True where
+        its view count went up (watched just now), else its resume point. What counts as watched is
+        the server's call (the user, 2026-10-05); this screen used to decide, by its own threshold,
+        and mark episodes watched itself. If the server doesn't answer, the player's positions
+        stand."""
+        season = VIDEO_PROGRESS.get(self.show_.ratingKey, {}).get(self.season.ratingKey)
+        if not season:
+            return
+        played = [mli.dataSource for mli in self.episodeListControl
+                  if mli.dataSource and mli.dataSource.ratingKey in season]
+        if not played:
+            return
+        plexapp.util.APP.nowplayingmanager.waitForTimelines(TIMELINE_WAIT)
+        before = dict((ep.ratingKey, ep.get('viewCount', 0).asInt()) for ep in played)
+        try:
+            data = plexobjects.listItems(played[0].server, '/library/metadata/{0}'.format(
+                ','.join(str(ep.ratingKey) for ep in played)), return_data=True,
+                checkFiles=1, includeChapters=1, includeMarkers=1)
+        except Exception as e:
+            util.DEBUG_LOG('Episodes: the played episodes did not reload ({0}); the player\'s positions stand', e)
+            return
+        byKey = dict((str(ep.ratingKey), ep) for ep in played)
+        for d in data or ():
+            ep = byKey.get(d.attrib.get('ratingKey'))
+            if ep is None:
+                continue
+            ep.reload(checkFiles=1, includeChapters=1, fromMediaChoice=ep.mediaChoice is not None, data=d)
+            watched = ep.get('viewCount', 0).asInt() > before[ep.ratingKey]
+            season[ep.ratingKey] = True if watched else ep.get('viewOffset', 0).asInt()
+        util.DEBUG_LOG('Episodes: the server says, of the episodes played: {0}', season)
 
     def onVideoProgress(self, data=None, **kwargs):
         if not data:

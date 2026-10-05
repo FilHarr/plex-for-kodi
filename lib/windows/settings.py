@@ -157,10 +157,6 @@ class ThemeMusicSetting(ListSetting):
     ] + [T(32482) % {"percentage": 10+i} for i in range(0, 100, 10)]
 
 
-class PlayedThresholdSetting(ListSetting):
-    options = ['{} %'.format(perc) for perc in range(70, 100, 5)]
-
-
 class BoolSetting(BasicSetting):
     type = 'BOOL'
 
@@ -471,30 +467,6 @@ class Settings(object):
                 .description(T(35086, "Stop whatever is playing, and clear Kodi's playlists, whenever the addon "
                                       "exits - including signing out or switching users. Off: playback carries on "
                                       "under Kodi's own player after Plex has closed.")),
-                PlayedThresholdSetting('played_threshold', T(33501, 'Video played threshold'), 1,
-                                       show_cb=lambda: plexnet.plexapp.SERVERMANAGER.selectedServer.prefs.get("LibraryVideoPlayedThreshold", None) is None
-                                       ).description(
-                    T(
-                        33502,
-                        "Set this to the same value as your Plex server (Settings>Library>Video played threshold) to av"
-                        "oid certain pitfalls, Default: 90 %"
-                    )
-                ),
-                OptionsSetting(
-                    'played_threshold_behaviour',
-                    T(34022, 'Video play completion behaviour'),
-                    3,
-                    (
-                        (0, T(34024, 'at selected threshold percentage')),
-                        (1, T(34025, 'at final credits marker position')),
-                        (2, T(34026, 'at first credits marker position')),
-                        (3, T(34027, 'earliest between threshold percent and first credits marker')),
-                    ),
-                    show_cb=lambda: plexnet.plexapp.SERVERMANAGER.selectedServer.prefs.get(
-                        "LibraryVideoPlayedAtBehaviour", None) is None
-                ).description(T(34023, "Decide whether to use end credits markers to determine the 'watched' "
-                                       "state of video items. When markers are not available the selected threshold "
-                                       "percentage will be used.")),
                 BoolSetting('use_alternate_seek2', T(33667, 'Use alternate seek'), util.altSeekRecommended).description(
                     T(33668, 'ATTENTION: Only enable this if you have reproducible audio issues after '
                              'seeking/resuming.\n\nUse an alternative seek method in videos, which can help in '

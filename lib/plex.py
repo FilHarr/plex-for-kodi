@@ -14,7 +14,9 @@ from kodi_six import xbmc, xbmcaddon
 from plexnet import plexapp, myplex, util as plexnet_util, asyncadapter, http as pnhttp
 
 from .playback_utils import PlaybackManager
-from . windows.settings import PlayedThresholdSetting
+# imported for its side effect: building its settings registers their defaults
+# (util.DEFAULT_SETTINGS), which getPreference() below needs from the start
+from .windows import settings as _settings  # noqa: F401
 from . import util
 from lib.plex_hosts import pdm
 from six.moves import range
@@ -337,10 +339,6 @@ class PlexInterface(plexapp.AppInterface):
         if index > 0:
             return index * 10
         return 0
-
-    def getPlayedThresholdValue(self):
-        values = list(reversed(PlayedThresholdSetting.options))
-        return int(values[self.getPreference("played_threshold", 1)].replace(" %", ""))
 
 
 def onSmartDiscoverLocalChange(value=None, **kwargs):

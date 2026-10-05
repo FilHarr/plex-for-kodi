@@ -84,24 +84,6 @@ class PlexServerManager(signalsmixin.SignalsMixin):
                 if self.searchContext:
                     self.searchContext.active = False
 
-                prefs = server.getPrefs() if server.owned else None
-                if prefs:
-                    util.LOG("Got and stored server prefs for {0}", server.name)
-                    for pref in prefs:
-                        if pref.get("id") in ("LibraryVideoPlayedThreshold", "LibraryVideoPlayedAtBehaviour"):
-                            server.prefs[str(pref.get("id"))] = pref.get("value").asInt()
-                    util.INTERFACE.setRegistry("PlexServerPrefs", json.dumps(server.prefs), sec=server.uuid[-8:])
-                else:
-                    # not owned, or the server didn't answer (an owned server always has prefs;
-                    # storing the empty answer used to wipe the cached ones)
-                    util.LOG("{0}: no prefs from the server ({1}), trying cached ones",
-                             server.name, server.owned and "no answer" or "not owned")
-                    try:
-                        server.prefs = json.loads(util.INTERFACE.getRegistry("PlexServerPrefs", sec=server.uuid[-8:]))
-                        util.DEBUG_LOG("Cached server prefs loaded for {0}", server.name)
-                    except:
-                        pass
-
                 # Update our saved state.
                 self.saveState(setPreferred=True)
 

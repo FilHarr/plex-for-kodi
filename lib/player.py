@@ -362,7 +362,6 @@ class SeekPlayerHandler(BasePlayerHandler):
         self.queuingNext = False
         self.queuingSpecific = False
         self.isMapped = False
-        self.creditMarkerHit = None
         self.skipFixForNextSeek = False
         self.pausedForSeek = False
         self.reportedSeekPlayerTime = None
@@ -386,7 +385,6 @@ class SeekPlayerHandler(BasePlayerHandler):
         self.title = title
         self.title2 = title2
         self.chapters = chapters or []
-        self.playedThreshold = plexapp.util.INTERFACE.getPlayedThresholdValue() # percentage
         self.stoppedManually = False
         self.inBingeMode = False
         self.skipPostPlay = False
@@ -952,50 +950,6 @@ class SeekPlayerHandler(BasePlayerHandler):
     def videoPlayedFac(self):
         return self.getVideoPlayedFac()
 
-    @property
-    def playedThresholdPerc(self):
-        if not self.player.video:
-            return 90
-
-        server_thres = self.player.video.server.prefs.get("LibraryVideoPlayedThreshold", None)
-        if server_thres is None:
-            return int(self.playedThreshold)
-        return int(server_thres)
-
-    def getVideoWatched(self, ref=None):
-        """
-        0:at selected threshold percentage|1:at final credits marker position|2:at first credits marker position|3:earliest between threshold percent and first credits marker
-        :param ref:
-        :return: bool
-        """
-        if not self.player.video:
-            return False
-
-        playedAtBH = self.player.video.server.prefs.get("LibraryVideoPlayedAtBehaviour", None)
-        if playedAtBH is None:
-            playedAtBH = util.getSetting("played_threshold_behaviour")
-        playedAtBH = int(playedAtBH)
-
-        watchedByPerc = self.getVideoPlayedFac(ref=ref) >= self.playedThresholdPerc / 100.0 or self.player.isExternal
-
-        if playedAtBH == 0 or not self.player.video.has_credit_markers:
-            util.DEBUG_LOG("SeekPlayerHandler: Watched item due to percentage: {}", watchedByPerc)
-            return watchedByPerc
-        elif playedAtBH == 1 and self.creditMarkerHit == "final":
-            util.DEBUG_LOG("SeekPlayerHandler: Watched item due to final credits marker")
-            return True
-        elif playedAtBH == 2 and self.creditMarkerHit == "first":
-            util.DEBUG_LOG("SeekPlayerHandler: Watched item due to first credits marker")
-            return True
-        elif playedAtBH == 3 and (watchedByPerc or self.creditMarkerHit):
-            util.DEBUG_LOG("SeekPlayerHandler: Watched item due to percentage or credits marker")
-            return True
-        return False
-
-    @property
-    def videoWatched(self):
-        return self.getVideoWatched()
-
     def triggerProgressEvent(self):
         if not self.player.video or self.player.video.isExtra:
             return
@@ -1011,11 +965,9 @@ class SeekPlayerHandler(BasePlayerHandler):
             prk = self.player.video.parentRatingKey
             gprk = self.player.video.grandparentRatingKey
 
-        vw = self.getVideoWatched(
-            ref=self._progressHld[rk] if self._progressHld[rk] > self.trueTime * 1000 else None)
-        if vw:
-            self._progressHld[rk] = True
-        self.player.trigger('video.progress', data=(gprk, prk, rk, vw or self._progressHld[rk]))
+        # where it got to - whether that counts as watched is the server's call, from the timeline
+        # reports (EpisodesWindow._settleProgressWithServer())
+        self.player.trigger('video.progress', data=(gprk, prk, rk, self._progressHld[rk]))
 
     def getProgressForItem(self, rk, default=0):
         return self._progressHld.get(rk, default)
@@ -1043,17 +995,17 @@ class SeekPlayerHandler(BasePlayerHandler):
             self.triggerProgressEvent()
 
             if not self.queuingSpecific:
-                # show post play if possible, if an item has been watched (90% by Plex standards)
+                # Stopped before the end: back to wherever playback started from, never post-play,
+                # however far in (the user, 2026-10-05: stopping is the same every time; post-play
+                # is for a video that plays to its end, and whether it counts as watched is the
+                # server's call). An external player is the exception: it can't tell a stop from
+                # the end, so its stop gets post-play as an end would, without auto-advance.
                 if self.seeking != self.SEEK_PLAYLIST and self.duration:
-                    util.DEBUG_LOG("Player - played-threshold: {}%/{}%",
-                                   int(self.videoPlayedFac * 100), int(self.playedThresholdPerc))
-                    if not (self.stoppedManually or self.endedManually):
-                        # the stop didn't come from our own UI (CEC TV-standby, JSON-RPC
-                        # remote, ...); show post-play, but don't auto-advance
-                        util.DEBUG_LOG("SeekHandler: external stop, disabling post-play auto-advance")
+                    util.DEBUG_LOG("Player - stopped at {}%", int(self.videoPlayedFac * 100))
+                    if self.player.isExternal:
                         self.stoppedManually = True
-                    if self.videoWatched and self.next(on_end=True):
-                        return
+                        if self.next(on_end=True):
+                            return
 
         if (self.seeking not in (self.SEEK_IN_PROGRESS, self.SEEK_PLAYLIST) or
                 (self.seeking == self.SEEK_PLAYLIST and (self.stoppedManually or self.endedManually))):

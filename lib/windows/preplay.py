@@ -250,6 +250,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.initialized = False
         if util.getSetting("slow_connection"):
             self.setProperty('remainingTime', T(32914, "Loading"))
+        if self.fromPlayback:
+            # the stop's timeline report first: the server decides what was watched from it
+            plexapp.util.APP.nowplayingmanager.waitForTimelines(2.0)
         self.video.reload(checkFiles=1, fromMediaChoice=self.video.mediaChoice is not None, skip_cache=True, **VIDEO_RELOAD_KW)
         removed_from_wl = False
         if self.fromPlayback:

@@ -356,16 +356,6 @@ class SelectionTest(ManagerTestCase):
             self.assertTrue(self.manager.setSelectedServer(self.oscar, True))
         self.assertFalse(self.manager.searchContext.active)
 
-    def test_an_owned_server_that_does_not_answer_keeps_its_cached_prefs(self):
-        self.oscar.owned = True
-        with mock.patch.object(self.manager, "saveState"), \
-                mock.patch.object(self.oscar, "getPrefs", return_value=[]), \
-                mock.patch.object(pnUtil.INTERFACE, "getRegistry", return_value='{"LibraryVideoPlayedThreshold": 90}'), \
-                mock.patch.object(pnUtil.INTERFACE, "setRegistry") as store:
-            self.manager.setSelectedServer(self.oscar, True)
-        self.assertEqual({"LibraryVideoPlayedThreshold": 90}, self.oscar.prefs)
-        self.assertNotIn("PlexServerPrefs", [c[0][0] for c in store.call_args_list])
-
     def test_another_dropped_server_is_removed(self):
         self.select(self.animal)
         self.manager.removeServer(self.oscar, MYPLEX)

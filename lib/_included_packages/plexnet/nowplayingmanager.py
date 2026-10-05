@@ -77,6 +77,9 @@ class NowPlayingManager(object):
         self.textFieldContent = None
         self.textFieldSecure = None
 
+        # timeline reports sent and not answered yet (waitForTimelines())
+        self._pendingTimelines = set()
+
         # Initialization
         self.reset()
 
@@ -173,7 +176,21 @@ class NowPlayingManager(object):
 
         context = request.createRequestContext("timelineUpdate", callback.Callable(self.onTimelineResponse))
         context.playQueue = timeline.playQueue
-        util.APP.startRequest(request, context)
+        context.timelineToken = token = object()
+        self._pendingTimelines.add(token)
+        if not util.APP.startRequest(request, context):
+            self._pendingTimelines.discard(token)
+
+    def waitForTimelines(self, timeout):
+        """Until every timeline report sent has been answered, or timeout seconds. Back from
+        playback, a screen that reloads what was played asks the server after its stop report has
+        reached it - the server decides what counts as watched from it."""
+        end = time.time() + timeout
+        while self._pendingTimelines and time.time() < end:
+            time.sleep(0.05)
+        if self._pendingTimelines:
+            util.DEBUG_LOG("NowPlaying: {0} timeline report(s) still unanswered after {1} s".format(
+                len(self._pendingTimelines), timeout))
 
     def getServerTimeline(self, timelineType):
         if not self.serverTimelines.get(timelineType):
@@ -188,6 +205,7 @@ class NowPlayingManager(object):
         self.timelines[timelineType].setControllable(name, isControllable)
 
     def onTimelineResponse(self, request, response, context):
+        self._pendingTimelines.discard(getattr(context, 'timelineToken', None))
         context.request.server.trigger("np:timelineResponse", response=response)
 
         # Server may signal that the current stream was killed (admin "stop stream",

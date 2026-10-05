@@ -96,7 +96,6 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         self.transcodeSupport = False
         self.currentHubs = None
         self.dnsRebindingProtection = False
-        self.prefs = {}
 
         if data is None:
             return

@@ -2570,14 +2570,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 not self.handler.playlist.hasNext():
             markerAutoSkip = False
 
-        # hint handler
-        if markerDef["marker_type"] == "credits":
-            if not self.handler.creditMarkerHit:
-                self.handler.creditMarkerHit = "first"
-            else:
-                if getattr(markerDef["marker"], "final", False):
-                    self.handler.creditMarkerHit = "final"
-
         markerAutoSkipped = markerDef["markerAutoSkipped"]
 
         sTOffWThres = startTimeOff + util.addonSettings.autoSkipOffset * 1000
