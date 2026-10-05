@@ -72,6 +72,7 @@ class FakeSearchDialog(object):
     search.SearchDialog below) actually touches - not a real SearchDialog instance."""
 
     hubItemClicked = search.SearchDialog.hubItemClicked
+    OPENED_HERE = search.SearchDialog.OPENED_HERE
 
     def __init__(self, control, mli):
         self.hubControls = [control]
@@ -159,3 +160,20 @@ class HubItemClickedContextTest(KodiTestCase):
             hubItem = FakeHubItem(type_)
             dialog, calls = self._click(hubItem)
             self.assertEqual(dialog.parentWindow, calls[0][1], "TYPE={0}".format(type_))
+
+
+class StaysClosedTest(HubItemClickedContextTest):
+    """Live 2026-10-05: no search result opened. Since item opens go through the window's queue
+    (43f176ae), the window behind only opens the item once this dialog has finished - it must not
+    show itself again."""
+
+    def test_an_item_opened_through_the_queue_leaves_the_dialog_finished(self):
+        for type_ in ('movie', 'show', 'episode', 'Role', 'playlist'):
+            dialog, _ = self._click(FakeHubItem(type_))
+            self.assertFalse(dialog.isActive, type_)
+            self.assertEqual(0, dialog.shown, type_)
+
+    def test_a_photo_track_or_clip_opened_here_comes_back_to_the_results(self):
+        for type_ in ('photo', 'track', 'clip'):
+            dialog, _ = self._click(FakeHubItem(type_))
+            self.assertEqual(1, dialog.shown, type_)

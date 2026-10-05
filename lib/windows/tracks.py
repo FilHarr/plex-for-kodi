@@ -261,7 +261,7 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         return True
 
     def searchButtonClicked(self):
-        self.processCommand(search.dialog(self, section_id=self.album.getLibrarySectionId() or None))
+        self.processCommand(search.dialog(self))
 
     def shuffleButtonClicked(self):
         self.playButtonClicked(shuffle=True)

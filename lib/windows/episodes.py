@@ -1691,8 +1691,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         return kodigui.ManagedListItem(T(35058, 'Show'))
 
     def searchButtonClicked(self):
-        section_id = self.show_.getLibrarySectionId()
-        self.processCommand(search.dialog(self, section_id=section_id or None, server=self.show_.server))
+        self.processCommand(search.dialog(self))
 
     def playButtonClicked(self, force_episode=None, from_auto_play=False, start_over=False,
                           force_resume=False):

@@ -133,7 +133,7 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         self.lastFocusID = controlID
 
     def searchButtonClicked(self):
-        self.processCommand(search.dialog(self, section_id=self.section.key, server=self.section.server))
+        self.processCommand(search.dialog(self))
 
     def sidebarActiveSection(self, entries):
         return sidebar_model.matchSection(entries, self.section.key, server=self.section.server)

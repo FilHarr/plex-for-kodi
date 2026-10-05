@@ -5,12 +5,13 @@
 <defaultcontrol>100</defaultcontrol>
 {% endblock %}
 {% block controls %}
-<!-- Card lists (dropdown.CardListDialog: the Libraries picker, Manage Hubs):
+<!-- Card lists (dropdown.CardListDialog: the Libraries picker, Manage Hubs, the search's servers):
      script-plex-dropdown_header's frame, with rows of 84, each three rounded cards: the row (its
      title, and in font8 a second line - a library's server), a toggle tile (a library's pin, a
      hub's shown/hidden) and Move. Left/Right choose which Select acts on
      (Window.Property(picker.column): open, pin, move); the focused row shows the chosen card in the
-     sidebar's focus grey. Written from the header dropdown; keep the frame in step with it. -->
+     sidebar's focus grey. A 'single' row has its toggle only, where Move would be. Written from the
+     header dropdown; keep the frame in step with it. -->
 <control type="button" id="700">
     <!-- dummy for clicks off list -->
     <posx>0</posx>
@@ -72,10 +73,18 @@
         <pagecontrol>1152</pagecontrol>
         <itemlayout height="{{ vscale(84) }}">
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single))</visible>
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>472</width>
+                <height>{{ vscale(78) }}</height>
+                <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
+            </control>
+            <control type="image">
+                <visible>!String.IsEmpty(ListItem.Property(single))</visible>
+                <posx>0</posx>
+                <posy>{{ vscale(3) }}</posy>
+                <width>536</width>
                 <height>{{ vscale(78) }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
@@ -88,7 +97,7 @@
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single))</visible>
                 <posx>480</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
@@ -145,7 +154,7 @@
                 <label>$INFO[ListItem.Property(subtitle)]</label>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
                 <posx>495</posx>
                 <posy>{{ vscale(29) }}</posy>
                 <width>26</width>
@@ -154,7 +163,7 @@
                 <aspectratio>keep</aspectratio>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + !String.IsEmpty(ListItem.Property(indicator.dim))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim))</visible>
                 <posx>495</posx>
                 <posy>{{ vscale(29) }}</posy>
                 <width>26</width>
@@ -163,7 +172,25 @@
                 <aspectratio>keep</aspectratio>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(nomove))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
+                <posx>559</posx>
+                <posy>{{ vscale(29) }}</posy>
+                <width>26</width>
+                <height>{{ vscale(26) }}</height>
+                <texture colordiffuse="FFFFFFFF">$INFO[ListItem.Thumb]</texture>
+                <aspectratio>keep</aspectratio>
+            </control>
+            <control type="image">
+                <visible>!String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim))</visible>
+                <posx>559</posx>
+                <posy>{{ vscale(29) }}</posy>
+                <width>26</width>
+                <height>{{ vscale(26) }}</height>
+                <texture colordiffuse="66FFFFFF">$INFO[ListItem.Thumb]</texture>
+                <aspectratio>keep</aspectratio>
+            </control>
+            <control type="image">
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(nomove))</visible>
                 <posx>559</posx>
                 <posy>{{ vscale(29) }}</posy>
                 <width>26</width>
@@ -174,10 +201,18 @@
         </itemlayout>
         <focusedlayout height="{{ vscale(84) }}">
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single))</visible>
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>472</width>
+                <height>{{ vscale(78) }}</height>
+                <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
+            </control>
+            <control type="image">
+                <visible>!String.IsEmpty(ListItem.Property(single))</visible>
+                <posx>0</posx>
+                <posy>{{ vscale(3) }}</posy>
+                <width>536</width>
                 <height>{{ vscale(78) }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
@@ -190,7 +225,7 @@
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single))</visible>
                 <posx>480</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
@@ -215,7 +250,7 @@
                 <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEqual(Window.Property(picker.column),open) + String.IsEmpty(ListItem.Property(moving))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEqual(Window.Property(picker.column),open) + String.IsEmpty(ListItem.Property(moving))</visible>
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>472</width>
@@ -223,7 +258,7 @@
                 <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + !String.IsEqual(Window.Property(picker.column),open) + String.IsEmpty(ListItem.Property(moving))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + !String.IsEqual(Window.Property(picker.column),open) + String.IsEmpty(ListItem.Property(moving))</visible>
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>472</width>
@@ -231,7 +266,23 @@
                 <texture colordiffuse="22FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(single)) + String.IsEqual(Window.Property(picker.column),open) + String.IsEmpty(ListItem.Property(moving))</visible>
+                <posx>0</posx>
+                <posy>{{ vscale(3) }}</posy>
+                <width>536</width>
+                <height>{{ vscale(78) }}</height>
+                <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
+            </control>
+            <control type="image">
+                <visible>!String.IsEmpty(ListItem.Property(single)) + !String.IsEqual(Window.Property(picker.column),open) + String.IsEmpty(ListItem.Property(moving))</visible>
+                <posx>0</posx>
+                <posy>{{ vscale(3) }}</posy>
+                <width>536</width>
+                <height>{{ vscale(78) }}</height>
+                <texture colordiffuse="22FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
+            </control>
+            <control type="image">
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))</visible>
                 <posx>480</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
@@ -239,7 +290,15 @@
                 <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEqual(Window.Property(picker.column),move) + String.IsEmpty(ListItem.Property(moving))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(single)) + String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))</visible>
+                <posx>544</posx>
+                <posy>{{ vscale(3) }}</posy>
+                <width>56</width>
+                <height>{{ vscale(78) }}</height>
+                <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
+            </control>
+            <control type="image">
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEqual(Window.Property(picker.column),move) + String.IsEmpty(ListItem.Property(moving))</visible>
                 <posx>544</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
@@ -248,7 +307,7 @@
             </control>
             <!-- picked up to move: all three cards a step brighter -->
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + !String.IsEmpty(ListItem.Property(moving))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(moving))</visible>
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>472</width>
@@ -256,7 +315,7 @@
                 <texture colordiffuse="4DFFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + !String.IsEmpty(ListItem.Property(moving))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(moving))</visible>
                 <posx>480</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
@@ -264,7 +323,7 @@
                 <texture colordiffuse="4DFFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + !String.IsEmpty(ListItem.Property(moving))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(moving))</visible>
                 <posx>544</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
@@ -313,7 +372,7 @@
                 <label>$INFO[ListItem.Property(subtitle)]</label>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
                 <posx>495</posx>
                 <posy>{{ vscale(29) }}</posy>
                 <width>26</width>
@@ -322,7 +381,7 @@
                 <aspectratio>keep</aspectratio>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + !String.IsEmpty(ListItem.Property(indicator.dim)) + String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim)) + String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))</visible>
                 <posx>495</posx>
                 <posy>{{ vscale(29) }}</posy>
                 <width>26</width>
@@ -331,7 +390,7 @@
                 <aspectratio>keep</aspectratio>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + !String.IsEmpty(ListItem.Property(indicator.dim)) + ![String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))]</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim)) + ![String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))]</visible>
                 <posx>495</posx>
                 <posy>{{ vscale(29) }}</posy>
                 <width>26</width>
@@ -340,7 +399,34 @@
                 <aspectratio>keep</aspectratio>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(nomove)) + [String.IsEqual(Window.Property(picker.column),move) | !String.IsEmpty(ListItem.Property(moving))]</visible>
+                <visible>!String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
+                <posx>559</posx>
+                <posy>{{ vscale(29) }}</posy>
+                <width>26</width>
+                <height>{{ vscale(26) }}</height>
+                <texture colordiffuse="FFFFFFFF">$INFO[ListItem.Thumb]</texture>
+                <aspectratio>keep</aspectratio>
+            </control>
+            <control type="image">
+                <visible>!String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim)) + String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))</visible>
+                <posx>559</posx>
+                <posy>{{ vscale(29) }}</posy>
+                <width>26</width>
+                <height>{{ vscale(26) }}</height>
+                <texture colordiffuse="99FFFFFF">$INFO[ListItem.Thumb]</texture>
+                <aspectratio>keep</aspectratio>
+            </control>
+            <control type="image">
+                <visible>!String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim)) + ![String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))]</visible>
+                <posx>559</posx>
+                <posy>{{ vscale(29) }}</posy>
+                <width>26</width>
+                <height>{{ vscale(26) }}</height>
+                <texture colordiffuse="66FFFFFF">$INFO[ListItem.Thumb]</texture>
+                <aspectratio>keep</aspectratio>
+            </control>
+            <control type="image">
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(nomove)) + [String.IsEqual(Window.Property(picker.column),move) | !String.IsEmpty(ListItem.Property(moving))]</visible>
                 <posx>559</posx>
                 <posy>{{ vscale(29) }}</posy>
                 <width>26</width>
@@ -349,7 +435,7 @@
                 <aspectratio>keep</aspectratio>
             </control>
             <control type="image">
-                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(nomove)) + ![String.IsEqual(Window.Property(picker.column),move) | !String.IsEmpty(ListItem.Property(moving))]</visible>
+                <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(nomove)) + ![String.IsEqual(Window.Property(picker.column),move) | !String.IsEmpty(ListItem.Property(moving))]</visible>
                 <posx>559</posx>
                 <posy>{{ vscale(29) }}</posy>
                 <width>26</width>

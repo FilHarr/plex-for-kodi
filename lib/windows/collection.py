@@ -368,7 +368,7 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         pass
 
     def searchButtonClicked(self):
-        self.processCommand(search.dialog(self, section_id=self.entrySectionId or None, server=self.collection.server))
+        self.processCommand(search.dialog(self))
 
 
 

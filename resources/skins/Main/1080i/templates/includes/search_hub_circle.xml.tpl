@@ -41,6 +41,20 @@
                 <textcolor>FFFFFFFF</textcolor>
                 <label>$INFO[ListItem.Label2]</label>
             </control>
+            <!-- its server, on a multi-server account (search.resultServerName()) -->
+            <control type="label">
+                <visible>!String.IsEmpty(ListItem.Property(server.name))</visible>
+                <scroll>false</scroll>
+                <posx>0</posx>
+                <posy>{{ vscale(314) }}</posy>
+                <width>244</width>
+                <height>{{ vscale(22) }}</height>
+                <font>font8</font>
+                <align>center</align>
+                <aligny>center</aligny>
+                <textcolor>99FFFFFF</textcolor>
+                <label>$INFO[ListItem.Property(server.name)]</label>
+            </control>
         </control>
     </control>
 </itemlayout>
@@ -100,6 +114,20 @@
                     <align>center</align>
                     <textcolor>FFFFFFFF</textcolor>
                     <label>$INFO[ListItem.Label2]</label>
+                </control>
+                <!-- its server, on a multi-server account (search.resultServerName()) -->
+                <control type="label">
+                    <visible>!String.IsEmpty(ListItem.Property(server.name))</visible>
+                    <scroll>false</scroll>
+                    <posx>0</posx>
+                    <posy>{{ vscale(314) }}</posy>
+                    <width>244</width>
+                    <height>{{ vscale(22) }}</height>
+                    <font>font8</font>
+                    <align>center</align>
+                    <aligny>center</aligny>
+                    <textcolor>99FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Property(server.name)]</label>
                 </control>
             </control>
             <control type="image">

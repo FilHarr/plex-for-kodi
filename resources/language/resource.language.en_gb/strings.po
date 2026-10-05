@@ -3700,3 +3700,7 @@ msgstr ""
 msgctxt "#35139"
 msgid "{0} is no longer available to this account. Its libraries were removed from the sidebar."
 msgstr ""
+
+msgctxt "#35140"
+msgid "Servers to search"
+msgstr ""

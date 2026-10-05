@@ -737,7 +737,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         return True
 
     def searchButtonClicked(self):
-        self.processCommand(search.dialog(self, section_id=self.mediaItem.getLibrarySectionId() or None))
+        self.processCommand(search.dialog(self))
 
     def roleSectionId(self):
         return self.entrySectionId

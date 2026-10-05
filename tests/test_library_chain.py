@@ -2258,3 +2258,39 @@ class ChunkCallbackStopsMidChunkTest(KodiTestCase):
         host._chunkCallback([self.Album(), self.Album()], 0, generation=1)
         self.assertTrue(first.written)
         self.assertFalse(second.written, 'written after the list was retired')
+
+
+class BackToSearchTest(KodiTestCase):
+    """Back from a result opened from a search comes back to the search (the user, 2026-10-05): the
+    screen the search was over carries it on the back stack, and its restore reopens it."""
+
+    def host(self):
+        host = FakeHostWindow()
+        host._current = FakeThinProxy(FakeThinProxy.xmlFile, FakeThinProxy.path, FakeThinProxy.theme, FakeThinProxy.res)
+        host.posted = []
+        host.postUI = lambda name, fn, args=(), kwargs=None: host.posted.append((name, fn, args))
+        host._reopenSearch = lambda state, tries=0: None
+        return host
+
+    def test_the_screen_pushed_after_a_search_carries_it(self):
+        host = self.host()
+        library.LibraryWindow.searchReturn(host, {'query': 'alien', 'focus': (0, 3)})
+        library.LibraryWindow.swapTo(host, FakeShell)
+        self.assertEqual({'query': 'alien', 'focus': (0, 3)}, host._backStack[-1][1]['_searchReturn'])
+        self.assertIsNone(host._pendingSearchReturn)
+
+    def test_back_to_it_reopens_the_search(self):
+        host = self.host()
+        host._backStack = [(FakeShell, {'_searchReturn': {'query': 'alien', 'focus': (0, 3)}})]
+        host.swapTo = lambda cls, push=True, **kwargs: host.swapped.append((cls, push, kwargs))
+        host.swapped = []
+        library.LibraryWindow.popBack(host)
+        self.assertEqual([(FakeShell, False, {})], host.swapped)
+        self.assertEqual(['back to search'], [p[0] for p in host.posted])
+        self.assertEqual(({'query': 'alien', 'focus': (0, 3)},), host.posted[0][2])
+
+    def test_only_the_next_swap_takes_it(self):
+        host = self.host()
+        library.LibraryWindow.searchReturn(host, {'query': 'alien', 'focus': (0, 0)})
+        library.LibraryWindow.swapTo(host, FakeShell, push=False)
+        self.assertIsNone(host._pendingSearchReturn)

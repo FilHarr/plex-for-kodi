@@ -327,6 +327,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # the latter is pushed once, automatically, the moment a chain starts (see swapTo()),
         # so the *last* pop of any chain reveals the grid again instead of running off the end.
         self._backStack = []
+        # A search's result about to be opened (searchReturn()): the next screen pushed back to
+        # carries it, so Back to that screen opens the search again
+        self._pendingSearchReturn = None
         self._nextKwargs = {}
         self._currentKwargs = {}
         self._isHostedShell = False
@@ -876,6 +879,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 entryKwargs = {'section': self.section, 'filter_': self.filter}
                 entryKwargs.update(self._captureRootRestoreState())
                 self._backStack.append((None, entryKwargs))
+            if self.__dict__.get('_pendingSearchReturn'):
+                # opened from a search over the screen just pushed: Back to it opens that again
+                entryKwargs['_searchReturn'] = self._pendingSearchReturn
+        self._pendingSearchReturn = None
         self._next = cls
         self._nextKwargs = kwargs
         self._current.doClose()
@@ -933,6 +940,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         decline for it not being Kodi's current window."""
         entry = self._backStack.pop()
         cls, kwargs = entry
+        kwargs = dict(kwargs)
+        searchReturn = kwargs.pop('_searchReturn', None)
+        if searchReturn:
+            # the screen comes back with the search its result was opened from over it
+            self.postUI('back to search', self._reopenSearch, args=(searchReturn,))
         if cls is None:
             # _restoreItemPos/_restoreHubId (_captureRootRestoreState()) aren't real
             # openSection() kwargs - peel them off into the pending-restore attributes fillShows()/
@@ -957,6 +969,26 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 self._backStack.append(entry)
         else:
             self.swapTo(cls, push=False, **kwargs)
+
+    def searchReturn(self, state):
+        """The search dialog is about to have one of its results opened (search.SearchDialog.
+        hubItemClicked()): the screen it's over goes on the back stack next (swapTo()), and Back to
+        it opens the search again - the same query, focused on that result (the user, 2026-10-05).
+        state: {'query', 'focus': (row, item)}."""
+        self._pendingSearchReturn = state
+
+    def _reopenSearch(self, state, tries=0):
+        """Back to a screen a search's result was opened from: the search again, over it, once the
+        screen is up."""
+        target = self._sidebarTarget()
+        if self.closing or self._shuttingDown:
+            return
+        if not getattr(target, 'started', True) and tries < 50:
+            util.MONITOR.waitForAbort(0.02)
+            self.postUI('back to search', self._reopenSearch, args=(state, tries + 1))
+            return
+        util.DEBUG_LOG('Library: back to the search for {0!r}', state.get('query'))
+        target.processCommand(search.dialog(target, query=state.get('query'), focus=state.get('focus')))
 
     def swapToSection(self, section, filter_=None):
         """hashed-orbiting-pizza.md Phase 4 item 8: genre/director/actor-tag filtered browsing
@@ -2760,9 +2792,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self.postNav('switchTab', self.switchTab, args=(mode,), kwargs={'item_type': item_type})
 
     def searchButtonClicked(self):
-        # Watchlist's own server is plex.tv's, which isn't searched here
-        server = None if self.section == home.watchlist_section else self.section.server
-        self.processCommand(search.dialog(self, section_id=self.section.key, server=server))
+        self.processCommand(search.dialog(self))
 
     def buildSectionList(self):
         """The shared sidebar build (windowutils.SidebarMixin), with Watchlist made afresh first:

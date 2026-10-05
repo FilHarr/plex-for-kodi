@@ -5,14 +5,16 @@ import threading
 import time
 
 from kodi_six import xbmcgui, xbmc
-from plexnet import plexapp
+from plexnet import plexapp, plexobjects
 
 from lib import util
 from lib.util import T
 from lib.kodijsonrpc import rpc
+from . import dropdown
 from . import kodigui
 from . import opener
 from . import optionsdialog
+from . import sidebar_model
 from . import windowutils
 
 
@@ -41,6 +43,9 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         904: 'artist',
         905: 'photo'
     }
+
+    # results opener.open() opens itself, blocking, rather than through the window's queue
+    OPENED_HERE = ('photo', 'track', 'clip')
 
     EDIT_CONTROL_ID = 650
     BUTTON_A_ID = 1001
@@ -77,13 +82,9 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         kodigui.BaseDialog.__init__(self, *args, **kwargs)
         windowutils.UtilMixin.__init__(self)
         self.parentWindow = kwargs.get('parent_window')
-        # Only a library's own id narrows the search. Playlists' and Watchlist's ("playlists",
-        # "/library/sections/watchlist") and a collection's key aren't libraries; the server used to
-        # ignore whatever was sent, so those always searched everything.
-        section_id = kwargs.get('section_id')
-        self.sectionID = section_id if section_id and str(section_id).isdigit() else None
-        # A search from inside a library asks that library's server; otherwise the selected one.
-        self.server = kwargs.get('server')
+        # Back from a result opened from here: the search again, and the result (searchReturn())
+        self.initialQuery = kwargs.get('query')
+        self.initialFocus = kwargs.get('focus')
         self.resultsThread = None
         self.updateResultsTimeout = 0
         self.isActive = True
@@ -106,7 +107,13 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         else:
             self.setFocusId(self.BUTTON_A_ID)
         self.setProperty('search.section', 'all')
-        self.showSearchHistory()
+        # the servers button (chooseServers())
+        self.setProperty('search.multi', len(plexapp.SERVERMANAGER.getServers()) > 1 and '1' or '')
+        if self.initialQuery:
+            self.edit.setText(self.initialQuery)
+            self.updateResults(delay=0)
+        else:
+            self.showSearchHistory()
 
     def onReInit(self):
         # Re-displayed (e.g. returning from an opened result): re-evaluate the view.
@@ -144,8 +151,12 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
             nxt += step
         return False
 
+    SERVERS_BUTTON_ID = 998
+
     def onClick(self, controlID):
-        if 1000 < controlID < 1037:
+        if controlID == self.SERVERS_BUTTON_ID:
+            self.chooseServers()
+        elif 1000 < controlID < 1037:
             self.letterClicked(controlID)
         elif controlID in self.SECTION_BUTTONS:
             self.sectionClicked(controlID)
@@ -175,8 +186,8 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
     def updateQuery(self):
         self.updateResults()
 
-    def updateResults(self):
-        self.updateResultsTimeout = time.time() + 1
+    def updateResults(self, delay=1):
+        self.updateResultsTimeout = time.time() + delay
         if not self.resultsThread or not self.resultsThread.is_alive():
             self.resultsThread = threading.Thread(target=self._updateResults, name='search.update')
             self.resultsThread.start()
@@ -191,11 +202,76 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         query = self.edit.getText()
         if query:
             with self.propertyContext('searching'):
-                server = self.server or plexapp.SERVERMANAGER.selectedServer
-                hubs = server.hubs(count=10, search_query=query, section=self.sectionID)
-                self.showHubs(hubs)
+                rows, missing = searchServers(query, searchedServers())
+                self.showHubs(rows)
+            self._restoreFocus()
+            # the results are short of a server's: say whose
+            self.setProperty('search.note', missing and T(35129, "{0} isn't responding").format(', '.join(missing)) or '')
         else:
+            self.setProperty('search.note', '')
             self.showSearchHistory()
+
+    def _restoreFocus(self):
+        """Back at the results from a result opened from them: focus on that result again, if the
+        search still has it there."""
+        focus, self.initialFocus = self.initialFocus, None
+        if not focus:
+            return
+        index, pos = focus
+        if 0 <= index < len(self.hubControls) and pos < self.hubControls[index].size():
+            self.setFocusId(2100 + index)
+            self.hubControls[index].selectItem(pos)
+
+    # a server's row in chooseServers(): searched, or not
+    SERVER_ON = 'script.plex/indicators/visible.png'
+    SERVER_OFF = 'script.plex/indicators/hidden.png'
+
+    def chooseServers(self):
+        """Which of the account's servers a search asks (the user, 2026-10-05): a card per server,
+        its toggle on the right. At least one stays on. Saved for the account; the search runs
+        again with the new choice."""
+        self._serversChanged = False
+        dropdown.showDropdown(
+            self._serverOptions(),
+            pos=(660, 200),
+            close_direction='none',
+            set_dropdown_prop=False,
+            with_indicator=True,
+            header=T(35140, 'Servers to search'),
+            align_items='left',
+            close_only_with_back=True,
+            options_callback=self._onServerToggle,
+            dialog_class=dropdown.CardListDialog,
+            columns=(dropdown.CardListDialog.PIN,),
+        )
+        if self._serversChanged and self.edit.getText():
+            self.updateResults(delay=0)
+
+    def _serverOptions(self):
+        chosen = set(s.uuid for s in searchedServers())
+        options = []
+        for server in accountServers():
+            on = server.uuid in chosen
+            note = (server.offline or server.gone) and T(35129, "{0} isn't responding").format(server.name) or ''
+            options.append({'key': 'server', 'uuid': server.uuid, 'display': server.name,
+                            'indicator': self.SERVER_ON if on else self.SERVER_OFF, 'indicator_dim': not on,
+                            'properties': {'buttons': '1', 'single': '1', 'subtitle': note}})
+        return options
+
+    def _onServerToggle(self, optionsList, mli):
+        choice = mli.dataSource
+        if not choice or choice.get('key') != 'server':
+            return
+        chosen = [s.uuid for s in searchedServers()]
+        if choice['uuid'] in chosen:
+            if len(chosen) == 1:
+                return  # one at least
+            chosen.remove(choice['uuid'])
+        else:
+            chosen.append(choice['uuid'])
+        saveSearchedServers(chosen)
+        self._serversChanged = True
+        return ('rebuild', self._serverOptions(), optionsList.getSelectedPos())
 
     def sectionClicked(self, controlID):
         section = self.SECTION_BUTTONS[controlID]
@@ -218,17 +294,23 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         self.updateQuery()
 
     def _historyKey(self):
+        """The account's search history - a search covers every server now (it was the selected
+        server's, 'search.history.<uuid[-8:]>.<account>', loadSearchHistory() takes it over)."""
+        return 'search.history.{0}'.format(plexapp.ACCOUNT.ID)
+
+    def _oldHistoryKey(self):
         server = plexapp.SERVERMANAGER.selectedServer
-        if not server:
-            return None
-        return 'search.history.{0}.{1}'.format(server.uuid[-8:], plexapp.ACCOUNT.ID)
+        return server and 'search.history.{0}.{1}'.format(server.uuid[-8:], plexapp.ACCOUNT.ID)
 
     def loadSearchHistory(self):
         key = self._historyKey()
-        if not key:
-            return []
         try:
-            return json.loads(util.getSetting(key, '[]'))[:self.MAX_HISTORY_ITEMS]
+            stored = util.getSetting(key, '')
+            if not stored and self._oldHistoryKey():
+                # the selected server's history becomes the account's
+                stored = util.getSetting(self._oldHistoryKey(), '') or '[]'
+                util.setSetting(key, stored)
+            return json.loads(stored or '[]')[:self.MAX_HISTORY_ITEMS]
         except Exception:
             util.ERROR()
             return []
@@ -316,6 +398,12 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
             return
 
         self.addToHistory(self.edit.getText())
+        if hubItem.TYPE not in self.OPENED_HERE:
+            # Back from it comes back here (LibraryWindow.swapTo()/popBack())
+            host = self.parentWindow._liveChainHost() if hasattr(self.parentWindow, '_liveChainHost') else None
+            if host is not None and hasattr(host, 'searchReturn'):
+                host.searchReturn({'query': self.edit.getText(),
+                                   'focus': (self.hubControls.index(control), control.getSelectedPos())})
         self.doClose()
         try:
             # context=self.parentWindow (hashed-orbiting-pizza.md Phase 5 follow-up): every
@@ -336,12 +424,24 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
 
             self.processCommand(command)
         finally:
-            if not self.exitCommand:
+            if not self.exitCommand and hubItem.TYPE in self.OPENED_HERE:
+                # a photo, track or clip opens here and now (opener.handleOpen()): back to the
+                # results after
                 self.show()
             else:
+                # Anything else is opened by the window behind, from its queue (MultiWindow.
+                # postNav(), since 43f176ae) - which only runs once this dialog has finished.
+                # Shown again, as it was, the dialog sat in front of the open it had asked for, for
+                # good (live 2026-10-05: no search result opened).
                 self.isActive = False
 
     def createListItem(self, hubItem):
+        mli = self._listItem(hubItem)
+        if mli is not None:
+            mli.setProperty('server.name', resultServerName(hubItem))
+        return mli
+
+    def _listItem(self, hubItem):
         if hubItem.TYPE in ('Genre', 'Director', 'Role'):
             if hubItem.TYPE == 'Genre':
                 thumb = (self.SECTION_TYPE_MAP.get(hubItem.librarySectionType) or {}).get('thumb', '')
@@ -451,11 +551,136 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
             pass
 
 
-def dialog(parent_window, section_id=None, server=None):
+def sidebarServers():
+    """The servers the sidebar has entries from, in sidebar order."""
+    manager = plexapp.SERVERMANAGER
+    servers, seen = [], set()
+    for sid in sidebar_model.loadNavSettings().get('entries', ()):
+        uuid, sep, _ = sid.partition(':')
+        server = manager.serversByUuid.get(uuid) if sep else None
+        if server is not None and uuid not in seen:
+            seen.add(uuid)
+            servers.append(server)
+    return servers
+
+
+def accountServers():
+    """Every server on the account: the sidebar's first, in its order, then the rest (owned first,
+    by name) - the search's server chooser lists them all."""
+    servers = sidebarServers()
+    rest = sorted((s for s in plexapp.SERVERMANAGER.getServers() if s not in servers),
+                  key=lambda s: (not getattr(s, 'owned', False), (s.name or '').lower()))
+    return servers + rest
+
+
+def _searchedServersKey():
+    return 'search.servers.{0}'.format(plexapp.ACCOUNT.ID)
+
+
+def saveSearchedServers(uuids):
+    util.setSetting(_searchedServersKey(), json.dumps(list(uuids)))
+
+
+def searchedServers():
+    """The servers a search asks: the ones chosen for the account (SearchDialog.chooseServers()), or
+    until there's a choice, every one the sidebar has libraries from - or the selected one if it
+    has none (the user, 2026-10-05: one search, everything on each server, wherever it's opened
+    from)."""
+    try:
+        chosen = json.loads(util.getSetting(_searchedServersKey(), '') or 'null')
+    except ValueError:
+        chosen = None
+    if chosen:
+        servers = [s for s in accountServers() if s.uuid in chosen]
+        if servers:
+            return servers
+    servers = sidebarServers()
+    manager = plexapp.SERVERMANAGER
+    if not servers and manager.selectedServer:
+        servers.append(manager.selectedServer)
+    return servers
+
+
+# One search answers in about 0.15 s on the LAN; a server slower than this is left out of this
+# result (the next keystroke asks again).
+SEARCH_TIMEOUT = 10.0
+
+
+def searchServers(query, servers):
+    """/hubs/search on each server together (a thread each), one row per type: the servers' rows of
+    a type merged, its items by their score (Plex's relevance), in the order the types first come.
+    A server known to be offline isn't asked. Returns (rows, the names of the servers whose results
+    aren't in them - offline, failed or too slow)."""
+    answers = {}
+
+    def ask(server):
+        try:
+            answers[server.uuid] = server.hubs(count=10, search_query=query)
+        except Exception:
+            util.ERROR()
+
+    threads = []
+    for server in servers:
+        if server.offline or server.gone:
+            continue
+        thread = threading.Thread(target=ask, args=(server,), name='search.' + server.name)
+        thread.daemon = True
+        thread.start()
+        threads.append(thread)
+    started = time.time()
+    for thread in threads:
+        thread.join(max(0, SEARCH_TIMEOUT - (time.time() - started)))
+    answered = [s for s in servers if s.uuid in answers]
+    missing = [s.name for s in servers if s.uuid not in answers]
+    return mergeResults([answers[s.uuid] for s in answered]), missing
+
+
+def _score(item):
+    try:
+        return float(item.get('score') or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def mergeResults(answers):
+    """Each server's search hubs ([[Hub]], servers in order) as one row per type: the first hub of a
+    type keeps its title and takes the others' items, all sorted by score, best first (a stable
+    sort, so ties keep server order)."""
+    merged, order = {}, []
+    for hubs in answers:
+        for hub in hubs:
+            key = hub.type
+            if key not in merged:
+                merged[key] = hub
+                order.append(key)
+                hub.items = list(hub.items)
+            else:
+                merged[key].items.extend(hub.items)
+    rows = []
+    for key in order:
+        hub = merged[key]
+        hub.items = sorted(hub.items, key=_score, reverse=True)
+        hub.size = plexobjects.PlexValue(str(len(hub.items)), hub)
+        rows.append(hub)
+    return rows
+
+
+def resultServerName(item):
+    """A result's server, for the line under it on a multi-server account (the sidebar's rule)."""
+    manager = plexapp.SERVERMANAGER
+    server = getattr(item, 'server', None)
+    if server is None or len(manager.getServers()) < 2:
+        return ''
+    return server.name
+
+
+def dialog(parent_window, query=None, focus=None):
+    """The search dialog over parent_window. query/focus: a search to run straight away and the
+    result to focus in it (Back to a search, LibraryWindow.popBack())."""
     parent_window.setProperty('search.dialog.hasresults', '')
     with parent_window.propertyContext('search.dialog'):
         try:
-            w = SearchDialog.open(parent_window=parent_window, section_id=section_id, server=server)
+            w = SearchDialog.open(parent_window=parent_window, query=query, focus=focus)
             w.wait()
             command = w.exitCommand or ''
             del w

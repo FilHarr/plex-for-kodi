@@ -452,8 +452,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         util.MONITOR.watchStatusChanged()
 
     def searchButtonClicked(self):
-        self.processCommand(search.dialog(self, section_id=self.video.getLibrarySectionId() or None,
-                                          server=self.video.server))
+        self.processCommand(search.dialog(self))
 
     def roleSectionId(self):
         return self.entrySectionId

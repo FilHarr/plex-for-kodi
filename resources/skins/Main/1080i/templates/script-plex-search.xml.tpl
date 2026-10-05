@@ -53,6 +53,7 @@
     <width>40</width>
     <height>{{ vscale(40) }}</height>
     <ondown>900</ondown>
+    <onright>998</onright>
     <font>font12</font>
     <focusedcolor>FF000000</focusedcolor>
     <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/search-focus.png</texturefocus>
@@ -71,6 +72,21 @@
     <aligny>center</aligny>
     <textcolor>FFFFFFFF</textcolor>
     <label>[UPPERCASE]$ADDON[script.plexmod 32431][/UPPERCASE]</label>
+</control>
+<!-- Which servers a search asks (SearchDialog.chooseServers()): the media settings button's icon,
+     on a multi-server account -->
+<control type="button" id="998">
+    <visible>!String.IsEmpty(Window.Property(search.multi))</visible>
+    <posx>470</posx>
+    <posy>{{ vscale(37) }}</posy>
+    <width>52</width>
+    <height>{{ vscale(52) }}</height>
+    <onleft>999</onleft>
+    <ondown>900</ondown>
+    <font>font12</font>
+    <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/player/modern/settings.png</texturefocus>
+    <texturenofocus colordiffuse="99FFFFFF">script.plex/buttons/player/modern/settings.png</texturenofocus>
+    <label> </label>
 </control>
 
 <control type="group" id="899">
@@ -1782,6 +1798,20 @@
             <textcolor>FFFFFFFF</textcolor>
             <label>[UPPERCASE]$ADDON[script.plexmod 32435][/UPPERCASE]</label>
         </control>
+    </control>
+    <!-- A server whose results are missing (search.searchServers()): "Oscar isn't responding" -->
+    <control type="label">
+        <visible>!String.IsEmpty(Window.Property(search.note)) + String.IsEmpty(Window.Property(searching))</visible>
+        <scroll>false</scroll>
+        <posx>0</posx>
+        <posy>{{ vscale(1035) }}</posy>
+        <width>564</width>
+        <height>{{ vscale(32) }}</height>
+        <font>font10</font>
+        <align>center</align>
+        <aligny>center</aligny>
+        <textcolor>99FFFFFF</textcolor>
+        <label>$INFO[Window.Property(search.note)]</label>
     </control>
 </control>
 
