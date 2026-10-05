@@ -1312,3 +1312,14 @@ def notifyWatchlistUnavailable(error=None):
     else:
         message = T(35141, "Your Watchlist isn't available right now")
     showNotification(message, time_ms=5000)
+
+
+def standInThumb(fallback):
+    """A stand-in image (script.plex/thumb_fallbacks/...) as an item's own thumb: its absolute path,
+    not the skin-relative one its template's fallback= has. Kodi only falls back when the image that
+    failed isn't the fallback itself (GUIImage::Process()), and on Home a tile's first load of a
+    stand-in failed (live 2026-10-06, PC; why isn't logged): with the thumb the fallback's own path,
+    or empty (which loads the fallback first), the tile stayed blank - with another path, its
+    fallback drew. The texture cache keys this image by the absolute path already."""
+    return os.path.join(translatePath(ADDON.getAddonInfo('path')), 'resources', 'skins', 'Main', 'media',
+                        *fallback.split('/'))

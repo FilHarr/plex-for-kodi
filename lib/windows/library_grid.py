@@ -1821,7 +1821,10 @@ class GridMixin(object):
         # THUMB_SQUARE_DIM at 355x355, same dimension every other grid-view create*ListItem() uses)
         # - same method name on the same class would have silently shadowed one or the other.
         w, h = THUMB_SQUARE_DIM
-        thumb = obj.buildComposite(width=w, height=h, media='thumb')
+        fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(obj.playlistType == 'audio' and 'music' or 'movie')
+        # no composite (an empty playlist): the stand-in as the thumb itself - see
+        # HubsMixin.createPlaylistListItem() (library_hubs.py)
+        thumb = obj.buildComposite(width=w, height=h, media='thumb') or util.standInThumb(fallback)
 
         itemCount = T(35055, '{0} items').format(obj.leafCount.asInt())
         mli = kodigui.ManagedListItem(
@@ -1830,8 +1833,7 @@ class GridMixin(object):
             thumbnailImage=thumb,
             data_source=obj
         )
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/{0}.png'.format(
-            obj.playlistType == 'audio' and 'music' or 'movie'))
+        mli.setProperty('thumb.fallback', fallback)
         # script-plex-squares.xml.tpl's own item template reads the tile's second line from the
         # album.artist property (not ListItem.Label2, unlike the listview-square template, which
         # does use Label2 - set above too, for that view). Reusing the same property/mechanism the

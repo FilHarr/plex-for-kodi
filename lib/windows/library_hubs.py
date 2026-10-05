@@ -1089,7 +1089,12 @@ class HubsMixin(object):
         # property uses composite.asTranscodedImageURL() with no media= param, i.e. PMS's default
         # composite rendition) - was 'art' for video playlists back when this tile was ar16x9 and
         # a backdrop-style image suited the wide shape; square tiles should match instead.
-        thumb = obj.buildComposite(width=w, height=h, media='thumb')
+        fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(obj.playlistType == 'audio' and 'music' or 'movie')
+        # A playlist with no items has no composite (buildComposite() gives ''): its stand-in is the
+        # thumb itself, by another path than the fallback's - left to the template's fallback= for
+        # an empty thumb, it drew as a blank tile on Home (live 2026-10-06, Animal's empty "Recently
+        # Added" smart playlist, PC) - see util.standInThumb().
+        thumb = obj.buildComposite(width=w, height=h, media='thumb') or util.standInThumb(fallback)
 
         # Second line is the total runtime (on request, 2026-09-20 - was the item count; the
         # hero's own line still carries both), in the hero's own hours/minutes format; '' for an
@@ -1101,7 +1106,7 @@ class HubsMixin(object):
             thumbnailImage=thumb,
             data_source=obj
         )
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/{0}.png'.format(obj.playlistType == 'audio' and 'music' or 'movie'))
+        mli.setProperty('thumb.fallback', fallback)
         return mli
 
     def createCollectionListItem(self, obj, wide=False):

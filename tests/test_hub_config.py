@@ -22,6 +22,7 @@ from unittest import mock
 from kodienv import ENV
 
 ENV.abort_requested = True
+from lib import util  # noqa: E402
 from lib.windows import home, hub_config, library, library_hubs, section_ids  # noqa: E402
 from plexnet import plexserver  # noqa: E402
 
@@ -589,3 +590,29 @@ class EmptyPlaylistArtTest(KodiTestCase):
         playlist = plexlibrary.Playlist.__new__(plexlibrary.Playlist)
         playlist.composite = plexobjects.PlexValue('')
         self.assertEqual('', playlist.buildComposite(width=240, height=240, media='thumb'))
+
+    def empty_playlist(self, playlistType):
+        playlist = mock.Mock(title='Recently Added', playlistType=playlistType)
+        playlist.get.return_value = None
+        playlist.buildComposite.return_value = ''
+        return playlist
+
+    def test_its_tile_has_the_stand_in_as_its_thumb(self):
+        # by its absolute path, not the fallback's own: with the thumb empty or the fallback's path,
+        # a failed first load on Home left the tile blank (live 2026-10-06, the same playlist on the
+        # PC) - Kodi only falls back to a different file (util.standInThumb())
+        host = mock.Mock(THUMB_SQUARE_DIM=(240, 240))
+        for playlistType, image in (('audio', 'music'), ('video', 'movie')):
+            mli = library_hubs.HubsMixin.createPlaylistListItem(host, self.empty_playlist(playlistType))
+            fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(image)
+            self.assertEqual(fallback, mli.properties['thumb.fallback'])
+            self.assertNotEqual(fallback, mli.thumbnailImage)
+            self.assertEqual(util.standInThumb(fallback), mli.thumbnailImage)
+            self.assertTrue(mli.thumbnailImage.replace('\\', '/').endswith(
+                'resources/skins/Main/media/' + fallback), mli.thumbnailImage)
+
+    def test_and_in_the_grid(self):
+        playlist = self.empty_playlist('audio')
+        playlist.leafCount.asInt.return_value = 0
+        mli = library.LibraryWindow.createPlaylistGridListItem(mock.Mock(), playlist)
+        self.assertEqual(util.standInThumb('script.plex/thumb_fallbacks/music.png'), mli.thumbnailImage)
