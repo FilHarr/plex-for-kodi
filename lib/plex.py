@@ -480,6 +480,7 @@ def init(local=False):
 
     PLEX_INTERFACE.prepareCache()
 
+    wasLocal = plexnet_util.LOCAL_MODE
     plexnet_util.LOCAL_MODE = bool(local)
 
     timed_out = False
@@ -501,6 +502,12 @@ def init(local=False):
         # no plex.tv resources will arrive; test the stored, manual and GDM servers
         plexapp.SERVERMANAGER.beginDiscovery()
         plexapp.refreshResources(True)
+    elif wasLocal and plexapp.ACCOUNT.authToken:
+        # Back online after local mode: plex.tv's list of servers, asked for and waited for. Live
+        # (2026-10-06), Home opened at once on local mode's connections, token-less - Oscar refused
+        # everything (401) and Animal had none - until a retest happened to ask plex.tv 1¾ min later.
+        # (With no token, signing in asks plex.tv itself: validateToken(force_resource_refresh).)
+        plexapp.SERVERMANAGER.rediscover()
 
     retry = True
 

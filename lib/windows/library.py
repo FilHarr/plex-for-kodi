@@ -12,6 +12,7 @@ import six.moves.urllib.parse
 import six.moves.urllib.request
 from kodi_six import xbmc
 from kodi_six import xbmcgui
+from plexnet import exceptions as plexExceptions
 from plexnet import plexapp
 from plexnet import plexobjects
 from plexnet import util as pnUtil
@@ -107,6 +108,10 @@ def _sectionHasCollections(section):
         return False
     try:
         has = bool(section.all(start=0, size=0, type_=plexobjects.SEARCHTYPES.get('collection')).totalSize.asInt())
+    except plexExceptions.BadRequest as e:
+        # refused (e.g. a 401): an answer, not a fault - no traceback for it
+        util.LOG('Library: {0} would not say whether it has collections: {1}', repr(section.title), e)
+        has = False
     except:
         util.ERROR()
         has = False

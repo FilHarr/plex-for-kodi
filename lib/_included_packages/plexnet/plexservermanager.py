@@ -157,7 +157,18 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             self.waitingForResources = False
 
         if not self.waitingForResources:
-            self.deviceRefreshComplete(source)
+            if util.LOCAL_MODE and source != plexresource.ResourceConnection.SOURCE_MANUAL:
+                # Local mode has no plex.tv to say a connection is gone, and a GDM round that
+                # misses a server says nothing: a server that doesn't answer GDM (live: Animal,
+                # never in any log) lost the LAN connections plex.tv's list had found for it
+                # (labelled discovered) the moment GDM finished, and sat offline with nothing to
+                # retest for the rest of the session. Only the user's own manual entries are
+                # taken away here; the connections local mode can't use aren't tested anyway
+                # (PlexConnection.testReachability()).
+                util.DEBUG_LOG("[LOCAL] keeping every server's connections after the {0} list",
+                               plexconnection.PlexConnection.SOURCE_BY_VAL.get(source, source))
+            else:
+                self.deviceRefreshComplete(source)
             self.updateReachability(True)
             self.saveState()
 
@@ -575,6 +586,17 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         self.waitingForResources = plexapp.ACCOUNT.isSignedIn
         if util.LOCAL_OVER_SECURE:
             util.WARN_LOG("Preferring local server connections over secure ones!")
+
+    def rediscover(self):
+        """Back online after local mode, in the same session (plex.init()): the servers' connections
+        are local mode's - LAN only, their plex.tv tokens dropped - so they're looked for afresh,
+        and until plex.tv has listed them they aren't known (serversKnown(): Home waits for it,
+        main.waitForServers()). The account check doesn't ask plex.tv for them itself: it defers to
+        a user switch, which local mode's profile pick left pending."""
+        util.LOG("Back online: asking plex.tv for the account's servers")
+        self.resourcesAnswered = self.storedLoaded = False
+        self.beginDiscovery()
+        plexapp.refreshResources(True)
 
     def onAccountChange(self, account, reallyChanged=False):
         # Clear any AudioPlayer data before invalidating the active server
