@@ -513,10 +513,20 @@ class ListEditTest(SidebarCase):
         self.assertNotIn(UUID + ':2', nav['entries'])
         self.assertNotIn(UUID + ':2', nav['libraries'])
 
-    def test_a_move_keeps_entries_not_showing_after_it(self):
+    def test_a_move_takes_its_place_in_the_order_and_the_sidebar_follows(self):
         nav = self.nav()
-        sidebar_model.reorder(nav, [UUID + ':3', UUID + ':1', UUID + ':2'])
-        self.assertEqual([UUID + ':3', UUID + ':1', UUID + ':2', section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID],
+        sidebar_model.moveEntry(nav, UUID + ':3', 0)
+        self.assertEqual([UUID + ':3', section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID, UUID + ':1', UUID + ':2'],
+                         nav['entries'])
+
+    def test_unpinning_keeps_the_place_and_pinning_puts_it_back(self):
+        nav = self.nav()
+        sidebar_model.unpin(nav, UUID + ':1')
+        self.assertNotIn(UUID + ':1', nav['entries'])
+        self.assertIn(UUID + ':1', nav['libraries'])
+        sidebar_model.moveEntry(nav, UUID + ':3', 0)
+        sidebar_model.pin(nav, UUID + ':1')
+        self.assertEqual([UUID + ':3', section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID, UUID + ':1', UUID + ':2'],
                          nav['entries'])
 
     def test_reset_order(self):
@@ -529,58 +539,102 @@ class ListEditTest(SidebarCase):
 
 
 class PickerTest(SidebarCase):
-    """LibraryWindow's Libraries picker: what it lists, and its ticks."""
+    """LibraryWindow's Libraries picker: one list of every library in the user's order, the sidebar
+    being the pinned ones (the user's design, 2026-10-05); each row its pin and Move."""
 
-    def window(self, listed):
+    def window(self, servers, listed):
         win = library.LibraryWindow.__new__(library.LibraryWindow)
         win.navSettings = None
-        win._pickerServers = listed
+        win._pickerServers = servers
+        win._pickerListed = listed
         win._pickerChanged = False
+        self.manager.getServers.return_value = servers
         return win
 
     @staticmethod
     def rows(options):
-        """'--' a separator, '# name' a heading, '  name' a row set in under one; ' [x]' if pinned."""
+        """'--' a separator; a row is its title, ' / subtitle' if it has one, ' [x]' if pinned."""
         def row(o):
             if not o:
                 return '--'
-            if o.get('heading'):
-                return '# ' + o['display']
+            if o['key'] != 'library':
+                return o['display']
             pinned = o['indicator'] == library.LibraryWindow.PICKER_PINNED
             assert o['indicator_dim'] is not pinned, 'pinned full white, unpinned dimmed'
-            return (o.get('inset') and '  ' or '') + o['display'] + (pinned and ' [x]' or '')
+            subtitle = o['properties']['subtitle']
+            return o['display'] + (subtitle and ' / ' + subtitle or '') + (pinned and ' [x]' or '')
         return [row(o) for o in options]
 
-    def test_each_server_a_heading_over_its_libraries_ticked_when_in_the_sidebar(self):
-        win = self.window([(self.server, [MOVIES, TV, MUSIC]), (OSCAR, [Section('7', 'Films', server=OSCAR)])])
-        self.store('watchlist', '1', '3')
-        self.assertEqual(['Watchlist [x]', 'Playlists', '--',
-                          '# Animal', '  Movies [x]', '  TV Shows', '  Music [x]', '--',
-                          '# Oscar', '  Films'],
+    def films(self):
+        return Section('7', 'Films', server=OSCAR)
+
+    def test_one_list_pinned_first_as_ordered_then_the_rest_by_server(self):
+        self.store('watchlist', '3', '1')
+        win = self.window([self.server, OSCAR], {UUID: [MOVIES, TV, MUSIC], OTHER: [self.films()]})
+        self.assertEqual(['Watchlist [x]', 'Playlists / Animal', 'Music / Animal [x]', 'Movies / Animal [x]',
+                          'TV Shows / Animal', 'Films / Oscar', '--', 'Reset library order'],
                          self.rows(win._libraryPickerOptions()))
 
-    def test_a_server_that_does_not_answer_says_so_and_keeps_its_entries_removable(self):
-        win = self.window([(self.server, [MOVIES]), (OSCAR, None)])
+    def test_one_server_no_server_line(self):
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        self.assertEqual(['Watchlist [x]', 'Playlists [x]', 'Movies [x]', 'TV Shows [x]', 'Music [x]'],
+                         self.rows(win._libraryPickerOptions())[:5])
+
+    def test_a_server_that_does_not_answer_says_so_with_its_libraries_still_listed(self):
         self.store('1', 'other:7', other_7=('Films', 'movie'))
-        self.assertEqual(['Watchlist', 'Playlists', '--', '# Animal', '  Movies [x]', '--',
-                          "# Oscar isn't responding", '  Films [x]'],
-                         self.rows(win._libraryPickerOptions()))
+        win = self.window([self.server, OSCAR], {UUID: [MOVIES], OTHER: None})
+        self.assertIn(u"Films / Oscar isn't responding [x]", self.rows(win._libraryPickerOptions()))
 
-    def test_a_heading_does_nothing(self):
-        win = self.window([(self.server, [MOVIES])])
-        headingRow = [o for o in win._libraryPickerOptions() if o and o.get('heading')][0]
-        self.assertIsNone(win._onLibraryPickerToggle(mock.Mock(), mock.Mock(dataSource=headingRow)))
-        self.assertFalse(win._pickerChanged)
+    def test_an_unpinned_library_gone_from_its_server_leaves_the_list(self):
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        win._libraryPickerOptions()
+        sidebar_model.unpin(win.navSettings, UUID + ':2')
+        win._pickerListed = {UUID: [MOVIES, MUSIC]}
+        self.assertNotIn('TV Shows', self.rows(win._libraryPickerOptions()))
 
-    def test_toggling_adds_and_removes(self):
-        films = Section('7', 'Films', server=OSCAR)
-        win = self.window([(self.server, [MOVIES]), (OSCAR, [films])])
+    def choose(self, win, sid, column='pin'):
+        row = dict([o for o in win._libraryPickerOptions() if o and o.get('sid') == sid][0], column=column)
         optionsList = mock.Mock()
-        optionsList.getSelectedPos.return_value = 4
-        filmsRow = [o for o in win._libraryPickerOptions() if o and o.get('sid') == OTHER + ':7'][0]
-        result = win._onLibraryPickerToggle(optionsList, mock.Mock(dataSource=filmsRow))
-        self.assertEqual('rebuild', result[0])
+        optionsList.getSelectedPos.return_value = 3
+        return win._onLibraryPickerChoice(optionsList, mock.Mock(dataSource=row))
+
+    def test_select_on_the_pin_pins_and_unpins_in_place(self):
+        win = self.window([self.server, OSCAR], {UUID: [MOVIES, TV, MUSIC], OTHER: [self.films()]})
+        self.assertEqual('rebuild', self.choose(win, OTHER + ':7')[0])
         self.assertEqual(OTHER + ':7', win.navSettings['entries'][-1])
         self.assertTrue(win._pickerChanged)
-        win._onLibraryPickerToggle(optionsList, mock.Mock(dataSource=filmsRow))
-        self.assertNotIn(OTHER + ':7', win.navSettings['entries'])
+        self.choose(win, UUID + ':2')
+        self.assertNotIn(UUID + ':2', win.navSettings['entries'])
+        self.assertEqual(['Watchlist [x]', 'Playlists / Animal [x]', 'Movies / Animal [x]', 'TV Shows / Animal',
+                          'Music / Animal [x]', 'Films / Oscar [x]'], self.rows(win._libraryPickerOptions())[:6])
+
+    def test_select_on_move_picks_the_row_up(self):
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        self.assertEqual('enter_move_mode', self.choose(win, UUID + ':1', column='move'))
+        self.assertFalse(win._pickerChanged)
+
+    def test_a_dropped_row_takes_its_place_pinned_or_not(self):
+        win = self.window([self.server, OSCAR], {UUID: [MOVIES, TV, MUSIC], OTHER: [self.films()]})
+        win._libraryPickerOptions()
+        # Films (unpinned, row 5) dropped at the top
+        win._onLibraryPickerMove('confirm', mock.Mock(dataSource={'sid': OTHER + ':7'}), 5, 0)
+        self.assertEqual(['Films / Oscar', 'Watchlist [x]', 'Playlists / Animal [x]'],
+                         self.rows(win._libraryPickerOptions())[:3])
+        # Music (pinned, row 4) dropped second: the sidebar follows
+        win._onLibraryPickerMove('confirm', mock.Mock(dataSource={'sid': UUID + ':3'}), 4, 1)
+        self.assertEqual([UUID + ':3', section_ids.WATCHLIST_ID], win.navSettings['entries'][:2])
+        self.assertTrue(win._pickerChanged)
+
+    def test_a_cancelled_move_changes_nothing(self):
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        win._onLibraryPickerMove('cancel', mock.Mock(dataSource={'sid': UUID + ':3'}), 4, 4)
+        self.assertFalse(win._pickerChanged)
+
+    def test_reset_order(self):
+        self.store('3', 'watchlist', '1')
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        reset = [o for o in win._libraryPickerOptions() if o and o['key'] == 'reset_order'][0]
+        optionsList = mock.Mock()
+        optionsList.getSelectedPos.return_value = 0
+        win._onLibraryPickerChoice(optionsList, mock.Mock(dataSource=reset))
+        self.assertEqual([section_ids.WATCHLIST_ID, UUID + ':1', UUID + ':3'], win.navSettings['entries'])

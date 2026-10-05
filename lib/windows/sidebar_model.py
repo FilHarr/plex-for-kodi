@@ -4,13 +4,17 @@ Playlists, the libraries), the stored list behind them, and the labels below the
 windowutils.SidebarMixin turns these into list items and window properties; each window keeps only
 its own highlight rule (sidebarActiveSection()).
 
-The sidebar is the libraries the user picked, from any server on the account (the Libraries picker,
-LibraryWindow.showLibraryPicker()), in the user's order: one setting per account,
-section_ids.sidebarKey():
+The sidebar is the libraries the user pinned, from any server on the account, in the user's order -
+both set in the Libraries picker (LibraryWindow.showLibraryPicker()), which lists every library in
+that order, pinned or not. One setting per account, section_ids.sidebarKey():
 
     {"version": 2,
-     "entries": ["/library/sections/watchlist", "playlists", "<server uuid>:<key>", ...],
+     "order": ["/library/sections/watchlist", "playlists", "<server uuid>:<key>", ...],
+     "entries": [the pinned ones, in that order],
      "libraries": {"<server uuid>:<key>": {"title": ..., "type": ..., "server": <server name>}}}
+
+"order" came later: without it, the order is the pinned entries', and the picker adds the rest after
+them (pickerOrder()).
 
 A library is shown from its server's own list (serverSections(), fetched on a worker and kept),
 and until its server has answered, by a LibraryPlaceholder made from what's stored, which looks
@@ -139,30 +143,97 @@ def migrateToList(nav, server):
     return {'version': SIDEBAR_VERSION, 'entries': ids, 'libraries': libraries}
 
 
+def _order(nav):
+    """The full order: every entry the picker lists, pinned or not."""
+    if 'order' not in nav:
+        nav['order'] = list(nav.get('entries', ()))
+    return nav['order']
+
+
+def _pinnedInOrder(nav, pinned):
+    nav['entries'] = [sid for sid in _order(nav) if sid in pinned]
+
+
 def addEntry(nav, section):
-    """Add a library (or Watchlist/Playlists) to the end of the sidebar."""
+    """Pin a library: where it is in the order, or at the end if it's new to it."""
     sid = sectionId(section)
-    if sid not in nav['entries']:
-        nav['entries'].append(sid)
     if ':' in sid:
         nav['libraries'][sid] = libraryMeta(section)
+    pin(nav, sid)
+
+
+def pin(nav, sid):
+    """Pin an entry by its id (Watchlist and Playlists have no library to describe)."""
+    if sid not in _order(nav):
+        nav['order'].append(sid)
+    _pinnedInOrder(nav, set(nav['entries']) | {sid})
+
+
+def unpin(nav, sid):
+    """Unpin an entry: it leaves the sidebar, keeping its place in the order."""
+    _order(nav)
+    _pinnedInOrder(nav, set(nav['entries']) - {sid})
 
 
 def removeEntry(nav, sid):
+    """Drop an entry altogether (its server has left the account)."""
+    if sid in _order(nav):
+        nav['order'].remove(sid)
     if sid in nav['entries']:
         nav['entries'].remove(sid)
     nav['libraries'].pop(sid, None)
 
 
-def reorder(nav, shownIds):
-    """The sidebar's new order after a Move: the entries showing, in their new order, then any that
-    aren't showing (Watchlist turned off, no playlists) where they were."""
-    nav['entries'] = list(shownIds) + [sid for sid in nav['entries'] if sid not in shownIds]
+def moveEntry(nav, sid, index):
+    """Move an entry to `index` in the order; the sidebar follows if it's pinned."""
+    order = _order(nav)
+    if sid not in order:
+        return
+    order.remove(sid)
+    order.insert(max(0, min(index, len(order))), sid)
+    _pinnedInOrder(nav, set(nav['entries']))
+
+
+def pickerOrder(nav, listed, servers):
+    """The picker's rows, in the user's order: the stored order, then anything new to it - Watchlist
+    and Playlists, and each listed server's libraries in its own order, servers as given. A library
+    gone from a server that listed its libraries leaves, unless it's pinned (the sidebar shows it as
+    missing until it's unpinned); so does one of a server no longer on the account, unless pinned.
+    listed: {uuid: [LibrarySection] or None (didn't answer)}. Stores the order and each library's
+    title, type and server, and returns it."""
+    order = _order(nav)
+    pinned = set(nav.get('entries', ()))
+    onAccount = set(server.uuid for server in servers)
+    keep = []
+    for sid in order:
+        uuid, sep, key = sid.partition(':')
+        if sep and sid not in pinned:
+            if uuid not in onAccount:
+                continue
+            sections = listed.get(uuid)
+            if sections is not None and key not in [str(s.key) for s in sections]:
+                continue
+        keep.append(sid)
+    if WATCHLIST_ID not in keep:
+        keep.insert(0, WATCHLIST_ID)
+    if PLAYLISTS_ID not in keep:
+        keep.insert(keep.index(WATCHLIST_ID) + 1, PLAYLISTS_ID)
+    for server in servers:
+        for section in listed.get(server.uuid) or ():
+            sid = sectionId(section)
+            nav['libraries'][sid] = libraryMeta(section)
+            if sid not in keep:
+                keep.append(sid)
+    nav['order'] = keep
+    for sid in list(nav['libraries']):
+        if sid not in keep:
+            del nav['libraries'][sid]
+    return keep
 
 
 def resetOrder(nav):
     """Watchlist, Playlists, then the libraries by server - the selected one first - each server's
-    in its own order."""
+    in its own order. Pins stay as they are."""
     selected = plexapp.SERVERMANAGER.selectedServer
     selectedUuid = selected.uuid if selected else None
 
@@ -178,7 +249,8 @@ def resetOrder(nav):
         return (2 if uuid == selectedUuid else 3, (meta.get('server') or '').lower(),
                 keys.index(key) if key in keys else len(keys))
 
-    nav['entries'].sort(key=position)
+    _order(nav).sort(key=position)
+    _pinnedInOrder(nav, set(nav['entries']))
 
 
 # Each server's libraries, kept by server uuid: {uuid: (fetched at, [LibrarySection])}. Fetched on a

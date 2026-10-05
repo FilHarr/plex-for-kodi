@@ -293,15 +293,22 @@ class SidebarMixin():
         on a click, so browsing the list moves nothing but the highlight - this snaps it back to the
         active section when focus leaves the list, and when focus enters it from outside the
         sidebar's own controls (on a window's first focus event the list would otherwise sit on
-        index 0, which is always Search). Skipped while sectionMover() owns the selection."""
-        if getattr(self, 'movingSection', False):
-            return
+        index 0, which is always Search).
 
+        The Libraries button below the list (SERVER_BUTTON_ID) is the list's last row (the user,
+        2026-10-05): Down onto it leaves the list where it is, Up from it lands on the list's last
+        entry, and leaving it for anywhere else is leaving the list."""
         if controlID == self.SECTION_LIST_ID:
-            if previousFocusID in (self.SIDEBAR_GROUP_ID, self.SECTION_LIST_ID,
-                                   self.SERVER_BUTTON_ID, self.USER_BUTTON_ID):
+            if previousFocusID == self.SERVER_BUTTON_ID:
+                sectionList = getattr(self, 'sectionList', None)
+                if sectionList and sectionList.items:
+                    sectionList.setSelectedItemByPos(len(sectionList.items) - 1)
                 return
-        elif previousFocusID != self.SECTION_LIST_ID:
+            if previousFocusID in (self.SIDEBAR_GROUP_ID, self.SECTION_LIST_ID, self.USER_BUTTON_ID):
+                return
+        elif controlID == self.SERVER_BUTTON_ID and previousFocusID == self.SECTION_LIST_ID:
+            return
+        elif previousFocusID not in (self.SECTION_LIST_ID, self.SERVER_BUTTON_ID):
             return
 
         self._selectActiveSection()

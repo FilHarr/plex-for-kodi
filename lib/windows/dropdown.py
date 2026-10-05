@@ -18,6 +18,8 @@ class DropdownDialog(kodigui.BaseDialog):
     width = 1920
     height = 1080
     optionHeight = util.vscalei(66)
+    # rows shown before the list scrolls (the templates size the scrollbar to match)
+    maxRows = 14
     separatorHeight = util.vscalei(2)
     dropWidth = 360
     borderOff = -20
@@ -79,10 +81,11 @@ class DropdownDialog(kodigui.BaseDialog):
         self.setProperty('header', self.header)
         optLen = len(list(filter(lambda x: x != SEPARATOR, self.options)))
         separators = len(list(filter(lambda x: x == SEPARATOR, self.options)))
-        self.setBoolProperty('scroll', optLen > 14)
-        self.optionsList = kodigui.ManagedControlList(self, self.OPTIONS_LIST_ID, 14)
+        self.setBoolProperty('scroll', optLen > self.maxRows)
+        self.optionsList = kodigui.ManagedControlList(self, self.OPTIONS_LIST_ID, self.maxRows)
         openSubList = self.showOptions()
-        height = min(self.optionHeight * 14, optLen * self.optionHeight + separators * self.separatorHeight) + util.vscalei(86)
+        height = min(self.optionHeight * self.maxRows,
+                     optLen * self.optionHeight + separators * self.separatorHeight) + util.vscalei(86)
         ol_height = height - util.vscalei(86)
         y = self.y
 
@@ -479,6 +482,8 @@ class DropdownDialog(kodigui.BaseDialog):
                 item.setProperty('heading', '1' if o.get('heading') else '')
                 item.setProperty('inset', '1' if o.get('inset') else '')
                 item.setProperty('indicator.dim', '1' if o.get('indicator_dim') else '')
+                for key, value in (o.get('properties') or {}).items():
+                    item.setProperty(key, value)
                 items.append(item)
                 options.append(o)
             else:
@@ -535,6 +540,50 @@ class DropdownHeaderDialog(DropdownDialog):
     dropWidth = 660
 
 
+class LibraryPickerDialog(DropdownHeaderDialog):
+    """The Libraries picker: every library in the user's order, each row two buttons on the right -
+    its pin (in the sidebar or not) and Move. A list row can't hold focusable controls, so Left and
+    Right choose which of the two Select acts on (picker.column, drawn on the focused row), and it
+    stays chosen from row to row. Select on Move picks the row up (the dropdown's move mode: Up and
+    Down carry it, Select drops it, Back puts it back). A row without the buttons (Reset order) just
+    acts. options_callback gets the column in the row's dataSource ('column')."""
+    xmlFile = 'script-plex-library_picker.xml'
+    optionHeight = util.vscalei(84)
+    maxRows = 10
+    PIN = 'pin'
+    MOVE = 'move'
+
+    @property
+    def y(self):
+        """Centred on the screen, its header included (it sat so high its header was cut off -
+        live 2026-10-05): the list's height as onFirstInit() works it out, plus the header's."""
+        rows = len([o for o in self.options if o is not SEPARATOR])
+        separators = len(self.options) - rows
+        listHeight = min(self.optionHeight * self.maxRows,
+                         rows * self.optionHeight + separators * self.separatorHeight)
+        header = util.vscalei(86)
+        return max(header, (self.height - listHeight - header) // 2 + util.vscalei(66))
+
+    def onFirstInit(self):
+        self.column = self.PIN
+        self.setProperty('picker.column', self.column)
+        DropdownHeaderDialog.onFirstInit(self)
+
+    def onAction(self, action):
+        if (self.movingItem is None and action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT)
+                and self.getFocusId() == self.OPTIONS_LIST_ID):
+            self.column = self.PIN if action == xbmcgui.ACTION_MOVE_LEFT else self.MOVE
+            self.setProperty('picker.column', self.column)
+            return
+        DropdownHeaderDialog.onAction(self, action)
+
+    def setChoice(self):
+        mli = self.optionsList.getSelectedItem() if self.optionsList else None
+        if mli and mli.dataSource is not None:
+            mli.dataSource['column'] = self.column
+        DropdownHeaderDialog.setChoice(self)
+
+
 def showDropdown(
     options, pos=None,
     pos_is_bottom=False,
@@ -554,10 +603,26 @@ def showDropdown(
     onclose_callback=None,
     dialog_props=None,
     move_mode_callback=None,
-    indicator_right=False
+    indicator_right=False,
+    dialog_class=None
 ):
 
-    if header:
+    if dialog_class is not None:
+        w = dialog_class.open(
+            options=options, pos=pos or (660, 400),
+            close_direction=close_direction,
+            set_dropdown_prop=set_dropdown_prop,
+            with_indicator=with_indicator,
+            close_only_with_back=close_only_with_back,
+            align_items=align_items,
+            options_callback=options_callback,
+            header=header,
+            select_index=select_index,
+            dialog_props=dialog_props,
+            move_mode_callback=move_mode_callback,
+            indicator_right=indicator_right,
+        )
+    elif header:
         pos = pos or (660, 400)
         w = DropdownHeaderDialog.open(
             options=options, pos=pos,

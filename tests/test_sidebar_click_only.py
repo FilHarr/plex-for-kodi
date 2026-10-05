@@ -57,7 +57,6 @@ class FakeSectionList(object):
 class FakeSidebarWindow(windowutils.SidebarMixin):
     def __init__(self, items, selected=0):
         self.sectionList = FakeSectionList(items, selected)
-        self.movingSection = False
         self.deferCalls = []
         self.goHomeCalls = []
         self.searchClicked = False
@@ -93,9 +92,24 @@ class ReselectActiveSectionTest(KodiTestCase):
 
         self.assertEqual([2], win.sectionList.selectCalls)
 
+    def test_down_onto_the_libraries_button_leaves_the_list_where_it_is(self):
+        win = FakeSidebarWindow(_sidebar(), selected=3)
+        win.reselectActiveSection(win.SERVER_BUTTON_ID, win.SECTION_LIST_ID)
+        self.assertEqual([], win.sectionList.selectCalls)
+
+    def test_up_from_the_libraries_button_lands_on_the_last_entry(self):
+        win = FakeSidebarWindow(_sidebar(), selected=2)
+        win.reselectActiveSection(win.SECTION_LIST_ID, win.SERVER_BUTTON_ID)
+        self.assertEqual([3], win.sectionList.selectCalls)
+
+    def test_leaving_the_libraries_button_snaps_back_to_the_active_section(self):
+        win = FakeSidebarWindow(_sidebar(), selected=3)
+        win.reselectActiveSection(CONTENT_ID, win.SERVER_BUTTON_ID)
+        self.assertEqual([2], win.sectionList.selectCalls)
+
     def test_moving_within_the_sidebar_leaves_the_selection_alone(self):
         for previous in (windowutils.SidebarMixin.SECTION_LIST_ID, windowutils.SidebarMixin.SIDEBAR_GROUP_ID,
-                         windowutils.SidebarMixin.SERVER_BUTTON_ID, windowutils.SidebarMixin.USER_BUTTON_ID):
+                         windowutils.SidebarMixin.USER_BUTTON_ID):
             win = FakeSidebarWindow(_sidebar(), selected=3)
             win.reselectActiveSection(win.SECTION_LIST_ID, previous)
             self.assertEqual([], win.sectionList.selectCalls, previous)
@@ -104,15 +118,6 @@ class ReselectActiveSectionTest(KodiTestCase):
         win = FakeSidebarWindow(_sidebar(), selected=3)
 
         win.reselectActiveSection(CONTENT_ID, CONTENT_ID + 1)
-
-        self.assertEqual([], win.sectionList.selectCalls)
-
-    def test_no_snap_while_a_section_is_being_moved(self):
-        win = FakeSidebarWindow(_sidebar(), selected=3)
-        win.movingSection = win.sectionList.items[3]
-
-        win.reselectActiveSection(CONTENT_ID, win.SECTION_LIST_ID)
-        win.reselectActiveSection(win.SECTION_LIST_ID, CONTENT_ID)
 
         self.assertEqual([], win.sectionList.selectCalls)
 

@@ -13,6 +13,8 @@ says abort; setting abort_requested first lets it exit immediately.
 
 from __future__ import absolute_import
 
+from unittest import mock
+
 import xbmcgui
 from kodienv import ENV
 
@@ -127,3 +129,47 @@ class SkipHeadingsTest(KodiTestCase):
         win = self.dialog(False, True, False)
         self.assertEqual(2, win._skipHeadings(2, xbmcgui.ACTION_MOVE_DOWN))
         self.assertIsNone(win.optionsList.selected)
+
+
+class LibraryPickerButtonsTest(KodiTestCase):
+    """The Libraries picker's two buttons a row: Left/Right choose which one Select acts on, and it
+    stays chosen; the row's choice carries it to the callback."""
+
+    def picker(self, moving=False):
+        dlg = dropdown.LibraryPickerDialog.__new__(dropdown.LibraryPickerDialog)
+        dlg.movingItem = 'an item' if moving else None
+        dlg.column = dlg.PIN
+        dlg.props = {}
+        dlg.setProperty = lambda key, value: dlg.props.__setitem__(key, value)
+        dlg.getFocusId = lambda: dlg.OPTIONS_LIST_ID
+        return dlg
+
+    def test_right_chooses_move_and_left_the_pin(self):
+        dlg = self.picker()
+        dlg.onAction(FakeAction(xbmcgui.ACTION_MOVE_RIGHT))
+        self.assertEqual(('move', 'move'), (dlg.column, dlg.props['picker.column']))
+        dlg.onAction(FakeAction(xbmcgui.ACTION_MOVE_LEFT))
+        self.assertEqual(('pin', 'pin'), (dlg.column, dlg.props['picker.column']))
+
+    def test_not_while_a_row_is_being_moved(self):
+        dlg = self.picker(moving=True)
+        dlg._handleMoveAction = lambda action: None
+        dlg.onAction(FakeAction(xbmcgui.ACTION_MOVE_RIGHT))
+        self.assertEqual('pin', dlg.column)
+
+    def test_the_choice_carries_the_button(self):
+        dlg = self.picker()
+        dlg.column = dlg.MOVE
+        row = {'key': 'library'}
+
+        class Item(object):
+            dataSource = row
+
+        class Options(object):
+            def getSelectedItem(self):
+                return Item()
+
+        dlg.optionsList = Options()
+        with mock.patch.object(dropdown.DropdownHeaderDialog, 'setChoice', lambda self: None):
+            dlg.setChoice()
+        self.assertEqual('move', row['column'])

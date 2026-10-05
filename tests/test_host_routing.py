@@ -334,9 +334,8 @@ class LibraryRouteClickTest(KodiTestCase):
         USER_BUTTON_ID = library.LibraryWindow.USER_BUTTON_ID
         SERVER_RETRY_BUTTON_ID = library.LibraryWindow.SERVER_RETRY_BUTTON_ID
 
-        def __init__(self, screen, moving=None):
+        def __init__(self, screen):
             self.screen = screen
-            self.movingSection = moving
             self.calls = []
 
         def _sidebarTarget(self):
@@ -352,11 +351,6 @@ class LibraryRouteClickTest(KodiTestCase):
         screen = self.Screen()
         self.assertTrue(self.Host(screen).routeClick(library.LibraryWindow.SECTION_LIST_ID))
         self.assertEqual(['sectionClicked'], screen.calls)
-
-    def test_no_section_opens_while_one_is_being_moved(self):
-        screen = self.Screen()
-        self.assertTrue(self.Host(screen, moving=object()).routeClick(library.LibraryWindow.SECTION_LIST_ID))
-        self.assertEqual([], screen.calls)
 
     def test_the_user_dropdown_acts_on_the_showing_screen(self):
         screen = self.Screen()

@@ -456,10 +456,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # Hub catalog for the Manage Hubs dialog: the managed section's rows, asked for by
         # _discoverHubsSync() each time the dialog opens.
         self.availableHubs = {}
-        # Section-reorder ("Move") mode - ported from HomeWindow's identical state (home.py).
-        self.movingSection = False
-        self._initialMovingSectionPos = None
-
         # Stage D2 (quiet-orbiting-heron.md): rotation-ring/anchor positioning state, ported
         # from HomeWindow's own __init__ (home.py) - same names, no reason to rename. These are
         # just safe pre-bind defaults, not meaningful positions - _recommendedHubsCallback()
@@ -2619,12 +2615,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         try:
             controlID = self.getFocusId()
             if controlID == self.SECTION_LIST_ID:
-                if self.movingSection:
-                    # Section-reorder ("Move") mode - ported from HomeWindow's identical routing
-                    # (home.py's onAction()). sectionMover() owns every action while active; nothing
-                    # below in this method (the context menu) should also react.
-                    self.sectionMover(self.movingSection, action)
-                    return True
                 if action == xbmcgui.ACTION_CONTEXT_MENU:
                     # Section-item context menu - ported from HomeWindow's identical routing
                     # (home.py's onAction()).
@@ -2681,14 +2671,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         screen (I3 in the navigation review). Control writes go to _sidebarTarget(), the hosted
         screen while one is showing."""
         if controlID == self.SECTION_LIST_ID:
-            # Ported from HomeWindow's identical guard (home.py's onClick()) - while
-            # self.movingSection is set, sectionMover() owns ACTION_SELECT_ITEM itself (via
-            # routeAction() above) to finalize the move; an ordinary click-dispatch here on the same
-            # press would otherwise also try to open whatever's now selected. Hosted screens
-            # lacked this guard. The screen's own sectionClicked() runs: its Search entry searches
-            # its own item's section, and a section click reaches this window through its goHome().
-            if not self.movingSection:
-                self._sidebarTarget().sectionClicked()
+            # The screen's own sectionClicked() runs: its Search entry searches its own item's
+            # section, and a section click reaches this window through its goHome().
+            self._sidebarTarget().sectionClicked()
             return True
 
         if controlID == self.USER_LIST_ID:
@@ -2844,13 +2829,15 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     PICKER_UNPINNED = 'script.plex/indicators/pin-unselected.png'
 
     def showLibraryPicker(self):
-        """The Libraries button: which libraries the sidebar shows. Watchlist and Playlists, then
-        every server on the account - owned first - as a heading with its libraries set in under it,
-        each with a pin on the right: full white when it's in the sidebar, an outline dimmed when it
-        isn't. Ticking adds to the end of the sidebar, unticking removes; the sidebar is rebuilt
-        when the picker closes. The servers are asked for their libraries as it opens, together; one
-        that doesn't answer says so, and its libraries already in the sidebar stay listed to be
-        removed."""
+        """The Libraries button: every library on the account - and Watchlist and Playlists - in
+        the user's order, the sidebar being the pinned ones (the user's design, 2026-10-05). Each
+        row is its title over, on a multi-server account, its server in font8, and two buttons:
+        its pin (full white in the sidebar, dimmed not) and Move; Left/Right choose which Select
+        acts on (dropdown.LibraryPickerDialog). Any row moves, pinned or not: the order is the
+        picker's, the sidebar shows it filtered. Reset order at the bottom. The servers are asked
+        for their libraries as it opens, together; one that doesn't answer has its libraries
+        listed from what's stored, saying so. The sidebar is rebuilt, and Home reloaded, when it
+        closes having changed."""
         servers = sorted(plexapp.SERVERMANAGER.getServers(), key=lambda x: (not x.owned, x.name.lower()))
         if plexapp.util.LOCAL_MODE:
             # local mode can only ever use servers with a plain LAN connection
@@ -2869,7 +2856,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             for thread in threads:
                 thread.join(15)
 
-        self._pickerServers = [(server, listed.get(server.uuid)) for server in servers]
+        self._pickerServers = servers
+        self._pickerListed = listed
         self._pickerChanged = False
         try:
             dropdown.showDropdown(
@@ -2881,80 +2869,112 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 header=T(33722, 'Libraries'),
                 align_items="left",
                 close_only_with_back=True,
-                options_callback=self._onLibraryPickerToggle,
+                options_callback=self._onLibraryPickerChoice,
+                move_mode_callback=self._onLibraryPickerMove,
                 dialog_props=getattr(self, 'carriedProps', None),
-                indicator_right=True,
+                dialog_class=dropdown.LibraryPickerDialog,
             )
         finally:
-            self._pickerServers = None
+            self._pickerServers = self._pickerListed = None
         if self._pickerChanged:
             self.saveNavSettings()
             self._rebuildSidebar()
             self.reloadHomeRows('libraries picked')
 
     def _libraryPickerOptions(self):
+        """The picker's rows: one per entry of sidebar_model.pickerOrder(), then Reset order."""
         nav = self.sidebarNavSettings()
-        inSidebar = set(nav['entries'])
-
-        def option(sid, display, section=None, inset=True):
-            pinned = sid in inSidebar
-            return {'key': 'toggle', 'sid': sid, 'section': section, 'display': display, 'inset': inset,
-                    'indicator': self.PICKER_PINNED if pinned else self.PICKER_UNPINNED,
-                    'indicator_dim': not pinned}
-
-        def heading(display):
-            return {'key': 'heading', 'heading': True, 'display': display}
+        order = sidebar_model.pickerOrder(nav, self._pickerListed, self._pickerServers)
+        pinned = set(nav['entries'])
+        servers = dict((server.uuid, server) for server in self._pickerServers)
+        multiServer = len(plexapp.SERVERMANAGER.getServers()) > 1
+        selected = plexapp.SERVERMANAGER.selectedServer
+        watchlistOn = util.getUserSetting("use_watchlist", True) and not plexapp.ACCOUNT.isOffline
 
         options = []
-        if util.getUserSetting("use_watchlist", True) and not plexapp.ACCOUNT.isOffline:
-            options.append(option(section_ids.WATCHLIST_ID, T(34000, 'Watchlist'), inset=False))
-        options.append(option(section_ids.PLAYLISTS_ID, T(32333, 'Playlists'), inset=False))
-
-        shownUuids = set()
-        for server, sections in self._pickerServers:
-            shownUuids.add(server.uuid)
-            options.append(dropdown.SEPARATOR)
-            if sections is None:
-                options.append(heading(T(35129, "{0} isn't responding").format(server.name)))
-                sections = [sidebar_model.LibraryPlaceholder(sid, nav['libraries'].get(sid, {}), server)
-                            for sid in nav['entries'] if sid.startswith(server.uuid + ':')]
-            elif not sections:
-                options.append(heading(T(35138, '{0} has no libraries').format(server.name)))
+        for sid in order:
+            section, subtitle = None, ''
+            if sid == section_ids.WATCHLIST_ID:
+                if not watchlistOn:
+                    continue
+                title = T(34000, 'Watchlist')
+            elif sid == section_ids.PLAYLISTS_ID:
+                title = T(32333, 'Playlists')
+                # still the selected server's
+                if multiServer and selected is not None:
+                    subtitle = selected.name
             else:
-                options.append(heading(server.name))
-            for section in sections:
-                options.append(option(section_ids.sectionId(section), section.title, section))
-
-        # libraries in the sidebar from a server the account no longer lists, to be removed
-        gone = [sid for sid in nav['entries'] if ':' in sid and sid.partition(':')[0] not in shownUuids]
-        for serverName in sorted(set(nav['libraries'].get(sid, {}).get('server', '') for sid in gone)):
-            options.append(dropdown.SEPARATOR)
-            options.append(heading(serverName))
-            for sid in gone:
+                uuid, _, key = sid.partition(':')
                 meta = nav['libraries'].get(sid, {})
-                if meta.get('server', '') == serverName:
-                    options.append(option(sid, meta.get('title', sid)))
+                title = meta.get('title', sid)
+                server = servers.get(uuid)
+                serverName = server.name if server else meta.get('server', '')
+                sections = self._pickerListed.get(uuid) if server else None
+                for candidate in sections or ():
+                    if str(candidate.key) == key:
+                        section = candidate
+                if server is not None and sections is None:
+                    subtitle = T(35129, "{0} isn't responding").format(serverName)
+                elif section is None and sections is not None:
+                    subtitle = T(35137, '{0} is no longer on {1}').format(title, serverName)
+                elif multiServer:
+                    subtitle = serverName
+            isPinned = sid in pinned
+            options.append({'key': 'library', 'sid': sid, 'section': section, 'display': title,
+                            'indicator': self.PICKER_PINNED if isPinned else self.PICKER_UNPINNED,
+                            'indicator_dim': not isPinned,
+                            'properties': {'subtitle': subtitle, 'buttons': '1'}})
+        options.append(dropdown.SEPARATOR)
+        options.append({'key': 'reset_order', 'display': T(33040, "Reset library order")})
         return options
 
-    def _onLibraryPickerToggle(self, optionsList, mli):
+    def _onLibraryPickerChoice(self, optionsList, mli):
         choice = mli.dataSource
-        if not choice or choice.get('key') != 'toggle':
+        if not choice:
             return
         nav = self.sidebarNavSettings()
-        sid = choice['sid']
-        section = choice.get('section')
-        if sid in nav['entries']:
-            sidebar_model.removeEntry(nav, sid)
-        elif section is not None and not isinstance(section, sidebar_model.LibraryPlaceholder):
-            sidebar_model.addEntry(nav, section)
-        elif sid in (section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID):
-            nav['entries'].append(sid)
-        else:
+        if choice.get('key') == 'reset_order':
+            sidebar_model.resetOrder(nav)
+        elif choice.get('key') != 'library':
             return
+        elif choice.get('column') == dropdown.LibraryPickerDialog.MOVE:
+            return 'enter_move_mode'
+        else:
+            sid = choice['sid']
+            section = choice.get('section')
+            if sid in nav['entries']:
+                sidebar_model.unpin(nav, sid)
+            elif sid in (section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID):
+                sidebar_model.pin(nav, sid)
+            elif section is not None:
+                sidebar_model.addEntry(nav, section)
+            else:
+                # a library its server hasn't listed can't be pinned
+                return
         # an explicit choice is kept even if the older setting couldn't be moved over yet
         nav.pop('unsaved', None)
         self._pickerChanged = True
         return ('rebuild', self._libraryPickerOptions(), optionsList.getSelectedPos())
+
+    def _onLibraryPickerMove(self, action, mli, old_pos, new_pos):
+        """A row moved and dropped (the dropdown's move mode): it takes its new place in the order.
+        Positions are the picker's rows, which are the order's entries - less Watchlist when it's
+        off, which keeps its place."""
+        if action != 'confirm' or old_pos == new_pos or not mli or not mli.dataSource:
+            return
+        nav = self.sidebarNavSettings()
+        rows = [o['sid'] for o in self._libraryPickerOptions() if o and o.get('key') == 'library']
+        sid = mli.dataSource['sid']
+        rows.remove(sid)
+        rows.insert(new_pos, sid)
+        # the place among every entry: just before the row it now precedes
+        order = list(nav.get('order') or nav['entries'])
+        following = rows[new_pos + 1] if new_pos + 1 < len(rows) else None
+        order.remove(sid)
+        index = order.index(following) if following in order else len(order)
+        sidebar_model.moveEntry(nav, sid, index)
+        nav.pop('unsaved', None)
+        self._pickerChanged = True
 
     def _rebuildSidebar(self):
         """Rebuild the sidebar as it stands, on the main thread (postUI())."""
@@ -2984,19 +3004,12 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             options = []
 
             use_sep = False
-            reset = {'entries': list(self.navSettings.get('entries', ())),
-                     'libraries': self.navSettings.get('libraries', {})}
-            sidebar_model.resetOrder(reset)
-            if reset['entries'] != self.navSettings.get('entries'):
-                options.append({'key': 'reset_order', 'display': T(33040, "Reset library order")})
-                use_sep = True
-
             if util.getSetting('cache_requests'):
                 options.append({'key': 'cache_reset', 'display': T(33720, "Clear all caches")})
                 use_sep = True
 
-            # Add Manage Hubs and Refresh Hubs options (libraries are added back with the Libraries
-            # picker, not here)
+            # Add Manage Hubs and Refresh Hubs options (the sidebar itself - what's in it, its order -
+            # is the Libraries picker's)
             if use_sep:
                 options.append(dropdown.SEPARATOR)
             options.append({'key': 'manage_hubs', 'display': T(34080, "Manage Hubs")})
@@ -3045,10 +3058,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
                 options.append(dropdown.SEPARATOR)
 
-            options.append({'key': 'remove', 'display': T(35136, "Remove from sidebar")})
-            options.append({'key': 'move', 'display': T(33039, "Move")})
-            options.append(dropdown.SEPARATOR)
-
             if ('libraries' in util.getSetting('cache_requests') and section != home.watchlist_section
                     and not placeholder):
                 options.append({'key': 'section_cache_reset', 'display': T(33721, "Clear library cache (not items)")})
@@ -3089,16 +3098,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                     return
                 pmm.addPathMapping(d, choice["path"], server=section.server)
                 return self.section
-        elif choice["key"] == "remove":
-            sidebar_model.removeEntry(self.navSettings, section_ids.sectionId(item.dataSource))
-            self.saveNavSettings()
-            return self.sectionList[self.sectionList.prev()].dataSource
-        elif choice["key"] == "move":
-            self.sectionMover(item, "init")
-        elif choice["key"] == "reset_order":
-            sidebar_model.resetOrder(self.navSettings)
-            self.saveNavSettings()
-            return self.section
         elif choice["key"] == "refresh":
             with busy.BusyContext(delay=True, delay_time=0.2):
                 section.refresh()
@@ -3145,75 +3144,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         elif choice["key"] == "refresh_hubs":
             return self.section
-
-    def sectionMover(self, item, action):
-        """Sidebar section-reorder ("Move") mode - ported verbatim from HomeWindow.sectionMover()
-        (home.py). Entered via sectionMenu()'s 'move' choice; routeAction()/onClick() route input here
-        instead of their normal handling while self.movingSection is set - see those methods' own
-        comments.
-        """
-        def stop_moving(reset=False):
-            # set everything to non-moving and re-insert search + home items
-            self.movingSection = False
-            self.setBoolProperty("moving", False)
-            item.setBoolProperty("moving", False)
-            searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
-            searchmli.setProperty('is.search', '1')
-            searchmli.setProperty('item', '1')
-            homemli = kodigui.ManagedListItem(T(32332, 'Home'), iconImage='script.plex/home/type/home.png',
-                                              data_source=home.home_section)
-            homemli.setProperty('is.home', '1')
-            homemli.setProperty('item', '1')
-            if home.home_section.key == self.section.key:
-                homemli.setProperty('is.active', '1')
-            if reset:
-                if self._initialMovingSectionPos is not None:
-                    self.sectionList.moveItem(item, self._initialMovingSectionPos)
-                self._initialMovingSectionPos = None
-            self.sectionList.insertItem(0, homemli)
-            self.sectionList.insertItem(0, searchmli)
-            # Finishing or cancelling a move navigates nowhere - put the selection back on the
-            # section actually showing.
-            self._selectActiveSection()
-
-        if action == "init":
-            self.movingSection = item
-            self.setBoolProperty("moving", True)
-            self._initialMovingSectionPos = self.sectionList.getSelectedPos() - 2  # account for search + home
-
-            # remove search + home items
-            self.sectionList.removeItem(0)  # search
-            self.sectionList.removeItem(0)  # home (shifted to 0)
-            self.sectionList.setSelectedItem(item)
-
-            item.setBoolProperty("moving", True)
-
-        elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
-            stop_moving(reset=True)
-
-        elif action in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
-            direction = "left" if action == xbmcgui.ACTION_MOVE_UP else "right"
-            index = self.sectionList.getManagedItemPosition(item)
-            last_index = len(self.sectionList) - 1
-            next_index = min(max(0, index - 1 if direction == "left" else index + 1), last_index)
-            if index == 0 and direction == "left":
-                next_index = last_index
-                self.sectionList.selectItem(last_index)
-            elif index == last_index and direction == "right":
-                next_index = 0
-                self.sectionList.selectItem(0)
-
-            self.sectionList.moveItem(item, next_index)
-            self.sectionList.selectItem(next_index)
-
-        elif action == xbmcgui.ACTION_SELECT_ITEM:
-            stop_moving()
-            # store section order
-            # Home, the first item again, isn't part of it
-            sidebar_model.reorder(self.navSettings, [section_ids.sectionId(i.dataSource)
-                                                     for i in self.sectionList.items
-                                                     if i.dataSource and i.dataSource.key is not None])
-            self.saveNavSettings()
 
     def _tabListNeedsRebuild(self, section):
         """True (and updates self._tabListIsPlaylists/self._tabListHasCategories/
