@@ -25,6 +25,7 @@ from . import plex
 from . import localmode
 
 from plexnet import plexapp
+from plexnet.util import cleanToken
 from .templating import render_templates
 from .windows import background, userselect, home, library, windowutils, kodigui, busy
 from . import player
@@ -60,9 +61,11 @@ else:
 
 
 if util.addonSettings.debugRequests:
+    # urllib3 logs each request line, query string and all - the token with it
     logger = logging.getLogger("urllib3")
     logger.addHandler(KodiLogProxyHandler(level=logging.DEBUG,
-                                          log_func=lambda *a, **kw: util.log(*a, prepend_msg="[urllib3]", **kw)))
+                                          log_func=lambda msg, *a, **kw: util.log(cleanToken(msg), *a,
+                                                                                 prepend_msg="[urllib3]", **kw)))
     logger.setLevel(logging.DEBUG)
 
 

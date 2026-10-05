@@ -23,6 +23,8 @@ from requests.adapters import HTTPAdapter, Retry
 from requests.compat import urlparse
 from requests_cache import CachedSession
 
+from .util import cleanToken
+
 #from six.moves.http_client import HTTPConnection
 import errno
 
@@ -463,7 +465,7 @@ class PlainSession(AsyncSessionMixin, requests.Session):
     def request(self, method, url, *args, **kwargs):
         kwargs.pop('with_cache', None)
         if DEBUG_REQUESTS:
-            xbmc.log("PlainSession.request: %s %s" % (method, url), xbmc.LOGINFO)
+            xbmc.log("PlainSession.request: %s %s" % (method, cleanToken(url)), xbmc.LOGINFO)
         return requests.Session.request(self, method, url, *args, **kwargs)
 
 
@@ -495,5 +497,6 @@ class Session(AsyncSessionMixin, CachedSession):
     def request(self, method, url, *args, **kwargs):
         self._is_cache_disabled = not kwargs.pop('with_cache', False)
         if DEBUG_REQUESTS:
-            xbmc.log("Session.request: (cache enabled: %s) %s %s" % (not self._is_cache_disabled, method, url), xbmc.LOGINFO)
+            xbmc.log("Session.request: (cache enabled: %s) %s %s" % (not self._is_cache_disabled, method, cleanToken(url)),
+                     xbmc.LOGINFO)
         return CachedSession.request(self, method, url, *args, **kwargs)
