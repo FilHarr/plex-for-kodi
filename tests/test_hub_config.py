@@ -579,3 +579,13 @@ class LibraryRequestTest(KodiTestCase):
         srv.hubs('23', count=20)
         self.assertEqual([('/hubs/sections/23', {'includeMarkers': 1, 'includeLibraryPlaylists': 1, 'count': 20})],
                          asked)
+
+
+class EmptyPlaylistArtTest(KodiTestCase):
+    def test_a_playlist_with_no_composite_asks_for_no_image(self):
+        # its tile falls back to the stand-in art (live 2026-10-05: an empty smart playlist's tile
+        # was sometimes blank on the AM6B - the URL built was the server's root)
+        from plexnet import plexlibrary, plexobjects
+        playlist = plexlibrary.Playlist.__new__(plexlibrary.Playlist)
+        playlist.composite = plexobjects.PlexValue('')
+        self.assertEqual('', playlist.buildComposite(width=240, height=240, media='thumb'))

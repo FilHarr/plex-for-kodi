@@ -782,6 +782,12 @@ class Playlist(playlist.BasePlaylist, signalsmixin.SignalsMixin):
         return self.composite
 
     def buildComposite(self, **kwargs):
+        # A playlist with no items has no composite: no URL, so the tile shows its fallback. Built
+        # anyway it was the server's root with the size on it - XML, which Kodi mostly took as a
+        # failed image (fallback), but on the AM6B at a cold start sometimes drew as nothing (live
+        # 2026-10-05, Animal's empty "Recently Added" smart playlist).
+        if not self.composite:
+            return ''
         if kwargs:
             params = '?' + '&'.join('{0}={1}'.format(k, v) for k, v in kwargs.items())
         else:
