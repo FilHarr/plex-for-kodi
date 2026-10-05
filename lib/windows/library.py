@@ -453,18 +453,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # content-mode state, see __init__ above) - an unrelated thing despite the name collision
         # with HomeWindow's dict.
         self.navSettings = None
-        # Hub catalog for the Manage Hubs dialog - every hub from every section, not just whichever
-        # one the user has actually visited (self.sectionHubs only ever holds those). Populated
-        # lazily by _discoverHubsSync() the first time Manage Hubs opens, same lazy-discovery path
-        # HomeWindow itself falls back to (home.py) - the eager, always-on background
-        # DiscoverHubsTask HomeWindow also has isn't ported here: nothing else on this window needs
-        # an up-front catalog, so paying for it only when the user actually opens Manage Hubs is
-        # narrower and sufficient.
+        # Hub catalog for the Manage Hubs dialog: the managed section's rows, asked for by
+        # _discoverHubsSync() each time the dialog opens.
         self.availableHubs = {}
-        # All sections (including hidden ones), keyed by str(section.key) - populated alongside
-        # availableHubs by _discoverHubsSync(), used only by _ensureCustomConfigExists()'s backfill
-        # path to label a hub whose section isn't in availableHubs yet.
-        self.allSections = {}
         # Section-reorder ("Move") mode - ported from HomeWindow's identical state (home.py).
         self.movingSection = False
         self._initialMovingSectionPos = None
@@ -806,9 +797,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             if opened is not None and opened[0] == index:
                 index = opened[1]
             if self.visibleHubs and 0 <= index < len(self.visibleHubs):
-                hub = self.visibleHubs[index]
-                identifier = hub.getCleanHubIdentifier(is_home=self.section.key is None)
-                return {'_restoreHubId': identifier}
+                return {'_restoreHubId': self.hubMemoryKey(self.visibleHubs[index])}
             return {}
         if self.showPanelControl:
             mli = self.showPanelControl.getSelectedItem()
@@ -2208,26 +2197,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # _chunkCallbackFor()'s _listGeneration snapshot.
             generation = self._listGeneration
 
-            # SectionHubsTask's 3rd arg (section_keys, passed to the server as section_ids)
-            # restricts which sections' hubs get included in a home_section fetch -
-            # HomeWindow.wantedSections's whole purpose (home.py), built from the same
-            # navSettings-based hidden-section check the sidebar applies (sidebar_model.sections()). Leaving this unset (server default: no restriction)
-            # live-confirmed as sections hidden from the sidebar still contributing hub rows -
-            # more rows than the real Home screen shows, one of them empty (a hidden section
-            # with no visible content), which native Kodi list-focus can land geometry on but
-            # not actually focus, needing an extra press to skip past. self.sectionList is
-            # already built by this point (see the branch above) and already filtered the same
-            # way - reused directly rather than re-deriving navSettings here. Real library
-            # section keys are purely numeric strings (same key.isdigit() distinction already
-            # used elsewhere in this file), which naturally excludes the Search/Home/Watchlist/
-            # Playlists entries also in this list.
-            # Only the selected server's: Home is still its /hubs (the others' libraries come
-            # with Home's multi-server rows), and another server's key means another library there.
-            selected = plexapp.SERVERMANAGER.selectedServer
-            section_keys = [mli.dataSource.key for mli in self.sectionList
-                            if mli.dataSource and mli.dataSource.key and mli.dataSource.key.isdigit()
-                            and mli.dataSource.server is not None and selected is not None
-                            and mli.dataSource.server.uuid == selected.uuid]
             # Fetched on a worker (3d / E2 in the navigation review: inline, a server that stopped
             # answering froze everything, Back included, for 20 s or more), and the bind posted
             # back to this thread (_bindFetchedHubs()) - the bind changes control geometry
@@ -2236,7 +2205,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # too and dropped (the user's choice, 2026-09-26): it saved ~230 ms per Back on the
             # AM6B, not enough to be felt, against up to 5 minutes of staleness.
             callback = self._recommendedHubsFetchedFor(generation)
-            task = home.SectionHubsTask().setup(self.section, callback, section_keys)
+            if self.section.key is None:
+                # Home: every sidebar server's rows, asked together (home.HomeHubsTask)
+                task = home.HomeHubsTask().setup(self.section, callback, self._homeServers())
+            else:
+                task = home.SectionHubsTask().setup(self.section, callback)
             self.tasks.add(task)
             backgroundthread.BGThreader.addTasksToFront([task])
 
@@ -2804,6 +2777,36 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
     def _sidebarEntriesChanged(self):
         self.postUI('sidebar entries', self._rebuildSidebar)
+
+    def _homeServers(self):
+        """The servers Home's rows come from, in sidebar order, each with its libraries in the
+        sidebar: [(server, keys)]. A library hidden from the sidebar - not in it - adds no rows
+        (live-confirmed once: rows from hidden libraries, one of them empty). Playlists in the
+        sidebar adds the selected server's recent-playlists row ('playlists': it isn't a library,
+        and is still the selected server's)."""
+        nav = self.sidebarNavSettings()
+        manager = plexapp.SERVERMANAGER
+        order, keys = [], {}
+        for sid in nav.get('entries', ()):
+            uuid, sep, key = sid.partition(':')
+            if not sep:
+                continue
+            if uuid not in keys:
+                order.append(uuid)
+                keys[uuid] = []
+            keys[uuid].append(key)
+        selected = manager.selectedServer
+        if section_ids.PLAYLISTS_ID in nav.get('entries', ()) and selected is not None:
+            if selected.uuid not in keys:
+                order.append(selected.uuid)
+                keys[selected.uuid] = []
+            keys[selected.uuid].append('playlists')
+        servers = []
+        for uuid in order:
+            server = manager.serversByUuid.get(uuid)
+            if server is not None:
+                servers.append((server, keys[uuid]))
+        return servers
 
     def _liveSidebarSection(self, placeholder):
         """A sidebar library its server hadn't listed yet, asked for now (sidebar_model.live()). If

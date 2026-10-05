@@ -634,8 +634,10 @@ class CaptureRootRestoreStateTest(KodiTestCase):
     grid item or hub row was actually focused, instead of always resetting to item 0 / hub 0."""
 
     class _Bag(object):
-        """Plain attribute holder - _captureRootRestoreState() only ever reads attributes off
-        self, no methods, so this is enough of a double without a full LibraryWindow."""
+        """Plain attribute holder - _captureRootRestoreState() reads attributes off self, and
+        names a row through hubMemoryKey(), so this is enough of a double without a full
+        LibraryWindow."""
+        hubMemoryKey = library.LibraryWindow.hubMemoryKey
 
     class _FakePanelItem(object):
         def __init__(self, pos):

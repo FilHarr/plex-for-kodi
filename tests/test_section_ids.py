@@ -72,7 +72,12 @@ class IdsTest(KodiTestCase):
 
     def test_hub_settings_are_a_librarys_or_a_servers_homes(self):
         self.assertEqual(ANIMAL + ':1', section_ids.hubSettingsId(Section('1', Server(ANIMAL))))
-        self.assertEqual(ANIMAL + ':__home__', section_ids.hubSettingsId(Section(None, Server(ANIMAL))))
+        # one Home config for every server's rows (Phase 7); Phase 5's per-server ones merge into it
+        self.assertEqual('__home__', section_ids.hubSettingsId(Section(None, Server(ANIMAL))))
+
+    def test_homes_continue_watching_is_every_servers(self):
+        hub = Hub('continueWatching', Server(OSCAR))
+        self.assertEqual('continueWatching', section_ids.hubCatalogId(hub, Section(None, Server(ANIMAL))))
 
     def test_parse_splits_source_from_identifier(self):
         self.assertEqual((ANIMAL + ':3', 'movie.recentlyadded'),

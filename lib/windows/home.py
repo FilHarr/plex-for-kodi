@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import threading
 import time
 
 import plexnet
@@ -11,6 +12,7 @@ from lib import util
 from lib.path_mapping import pmm
 from lib.util import T
 from . import background
+from .section_ids import CONTINUE_WATCHING_ID
 
 
 HUBS_REFRESH_INTERVAL = 300  # 5 Minutes
@@ -261,10 +263,9 @@ def attributeCrossSectionHub(all_sections, hub, section, is_home):
 
 
 class SectionHubsTask(backgroundthread.Task):
-    def setup(self, section, callback, section_keys=None, reselect_pos_dict=None):
+    def setup(self, section, callback, reselect_pos_dict=None):
         self.section = section
         self.callback = callback
-        self.section_keys = section_keys
         self.reselect_pos_dict = reselect_pos_dict
         return self
 
@@ -277,8 +278,7 @@ class SectionHubsTask(backgroundthread.Task):
             return
 
         try:
-            hubs = HubsList(self.section.server.hubs(self.section.key, count=HUB_ROW_MAX_ITEMS,
-                                                                      section_ids=self.section_keys)).init()
+            hubs = HubsList(self.section.server.hubs(self.section.key, count=HUB_ROW_MAX_ITEMS)).init()
             hubs.identifier = self.section.key
             if self.isCanceled():
                 return
@@ -294,6 +294,128 @@ class SectionHubsTask(backgroundthread.Task):
             hubs = HubsList().init()
             hubs.invalid = True
             self.callback(self.section, hubs)
+
+
+
+# Home waits for every server's rows, but no longer than this once one has answered: the rows bind
+# together, and a server slower than that misses this bind (D8's first variant, plan Phase 7).
+HOME_LATE_SERVER_BUDGET = 2.0
+# ...and for a first answer at all no longer than this
+HOME_FETCH_TIMEOUT = 20.0
+
+
+def keepLibraries(hub, keys):
+    """A row's items from these libraries only: what the request asked for (contentDirectoryID),
+    checked again, as a server's older versions don't all honour the filter. An item with no
+    library (a playlist) stays."""
+    hub.items = [item for item in hub.items
+                 if not item.getLibrarySectionId() or str(item.getLibrarySectionId()) in keys]
+    return hub
+
+
+def mergeContinueWatching(hubs):
+    """One Continue Watching row from each server's: most recently watched first, an item on two
+    servers once, at most HUB_ROW_MAX_ITEMS. One server's row stays as it came (with its "See
+    more"); a merged one has none - its later pages would be per server."""
+    if len(hubs) < 2:
+        return hubs[0] if hubs else None
+    items, seen = [], set()
+    for item in sorted((item for hub in hubs for item in hub.items),
+                       key=lambda item: item.lastViewedAt.asInt() if item.get('lastViewedAt') else 0,
+                       reverse=True):
+        guid = item.get('guid')
+        if guid and guid in seen:
+            continue
+        seen.add(guid)
+        items.append(item)
+    merged = hubs[0]
+    merged.items = items[:HUB_ROW_MAX_ITEMS]
+    merged.more = plexobjects.PlexValue('0', merged)
+    return merged
+
+
+def combineHomeHubs(answers, servers):
+    """Home's rows from each server's answer, as D5's default order has them before the user's
+    own (LibraryWindow.sortHubsByUserOrder()): one merged Continue Watching row, then each server's
+    rows, the servers in sidebar order. answers: {uuid: [Hub]}; servers: [(server, keys)]."""
+    continueWatching, rows = [], []
+    for server, keys in servers:
+        for hub in answers.get(server.uuid) or ():
+            if hub.hubIdentifier == CONTINUE_WATCHING_ID:
+                continueWatching.append(keepLibraries(hub, keys))
+            else:
+                rows.append(keepLibraries(hub, keys))
+    merged = mergeContinueWatching(continueWatching)
+    return HubsList(([merged] if merged is not None else []) + rows).init()
+
+
+class HomeHubsTask(backgroundthread.Task):
+    """Home's rows from every server with libraries in the sidebar, asked together (a thread
+    each), then combined (combineHomeHubs()) and handed to the callback once: when all have
+    answered, or HOME_LATE_SERVER_BUDGET after the first did. servers: [(server, keys)] in sidebar
+    order, keys being its libraries in the sidebar (plus 'playlists' for the recent-playlists row).
+    A server known to be offline isn't asked; one still on its first connection test is, once that
+    finds a connection."""
+
+    def setup(self, section, callback, servers):
+        self.section = section
+        self.callback = callback
+        self.servers = servers
+        return self
+
+    def _fetch(self, server, keys, answers):
+        deadline = time.time() + HOME_FETCH_TIMEOUT
+        if not server.activeConnection and server.pendingReachabilityRequests <= 0:
+            # Its first connection test hasn't started: at start-up the selected server is tested
+            # first and the others a few seconds later, and Home is asking now (live 2026-10-04:
+            # every start bound Home without Oscar's rows).
+            server.updateReachability(True)
+        while (not server.activeConnection and server.pendingReachabilityRequests > 0
+               and time.time() < deadline and not self.isCanceled()):
+            util.MONITOR.waitForAbort(0.05)
+        if self.isCanceled() or server.offline or not server.activeConnection:
+            return
+        try:
+            answers[server.uuid] = server.hubs(None, count=HUB_ROW_MAX_ITEMS, section_ids=list(keys))
+        except plexnet.exceptions.BadRequest:
+            util.DEBUG_LOG('Home: {0} would not give its rows', repr(server.name))
+        except:
+            util.ERROR()
+
+    def run(self):
+        if self.isCanceled():
+            return
+        started = time.time()
+        answers = {}
+        threads = []
+        for server, keys in self.servers:
+            if server.offline or server.gone:
+                continue
+            thread = threading.Thread(target=self._fetch, args=(server, keys, answers),
+                                      name='home.' + server.name)
+            thread.daemon = True
+            thread.start()
+            threads.append((server, thread))
+
+        firstAnswer = None
+        while any(thread.is_alive() for _, thread in threads) and not self.isCanceled():
+            now = time.time()
+            if answers and firstAnswer is None:
+                firstAnswer = now
+            if firstAnswer is not None and now - firstAnswer > HOME_LATE_SERVER_BUDGET:
+                break
+            if now - started > HOME_FETCH_TIMEOUT:
+                break
+            util.MONITOR.waitForAbort(0.02)
+        if self.isCanceled():
+            return
+
+        late = [server.name for server, thread in threads if thread.is_alive()]
+        util.DEBUG_LOG('Home: rows from {0} of {1} servers in {2} ms{3}', len(answers), len(threads),
+                       int((time.time() - started) * 1000), late and ' (not waited for: {0})'.format(', '.join(late)) or '')
+        hubs = combineHomeHubs(dict(answers), self.servers)
+        hubs.identifier = None
+        self.callback(self.section, hubs)
 
 
 class PathMappingProbeTask(backgroundthread.Task):

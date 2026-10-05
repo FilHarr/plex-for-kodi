@@ -221,6 +221,7 @@ class FakeHubControl(object):
 
 class FakeHubsWindow(object):
     checkHubItem = library.LibraryWindow.checkHubItem
+    hubMemoryKey = library.LibraryWindow.hubMemoryKey
     HUB_CONTROL_ID = library.RecommendedWindow.HUB_CONTROL_ID
 
     def __init__(self, control):

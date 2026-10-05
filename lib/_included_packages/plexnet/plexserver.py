@@ -197,9 +197,12 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                 else:
                     q = '/hubs/sections/%s' % section
             else:
-                # home hub
+                # Home's rows, limited to these libraries (and 'playlists', for the recent
+                # playlists row). contentDirectoryID, not pinnedContentDirectoryID: checked live
+                # (2026-10-04), PMS 1.43.3 ignores the pinned one entirely, and 1.43.4 lets the rows
+                # a library promotes through it; this one limits every row, and Continue Watching.
                 if section_ids:
-                    params['pinnedContentDirectoryID'] = ",".join(section_ids)
+                    params['contentDirectoryID'] = ",".join(section_ids)
 
             if count is not None:
                 params['count'] = count
@@ -239,9 +242,9 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                 hubs.append(plexlibrary.Hub(elem, server=self, container=container))
 
         if section_ids:
-            # when we have hidden sections, apply the filter to the hubs keys for subsequent queries
+            # the same libraries for each row's later pages ("See more")
             for hub in hubs:
-                if "pinnedContentDirectoryID" not in hub.key:
+                if "contentDirectoryID" not in hub.key:
                     hub.key += util.joinArgs(params, '?' not in hub.key)
 
         return hubs

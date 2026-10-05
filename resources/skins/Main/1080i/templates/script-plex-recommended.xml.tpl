@@ -156,7 +156,10 @@
                 <visible>Integer.IsGreater(Container({{ id - 100 }}).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
                 <width>1920</width>
                 <height>{{ vscale(decl_height) }}</height>
-                <control type="label">
+                <!-- The row's title, then on Home with more than one server its server
+                     (" · Animal", hub.server.4NN) a size down - a label can't mix fonts, so a
+                     grouplist lays the two auto-width labels end to end. -->
+                <control type="grouplist">
                     <!-- See this whole block's own comment above for the full reasoning. Visible
                          unless this control is currently the anchor (hub.anchor_id) AND a slide
                          is in progress - peek-above/peek-below never hide their title for this
@@ -169,15 +172,33 @@
                     <posy>0</posy>
                     <width>1000</width>
                     <height>{{ vscale(87) }}</height>
-                    <!-- font30_title: InterUI at font13's own 30px but with a real
-                         <style>bold</style> (skin.plextuary's font.xml) - the [B] markup this
-                         used on font13 never rendered visibly bold. -->
-                    <font>font30_title</font>
-                    <align>left</align>
-                    <aligny>center</aligny>
-                    <textcolor>FFD2CCCE</textcolor>
-                    <shadowcolor>66000000</shadowcolor>
-                    <label>$INFO[Window.Property(hub.{{ id - 100 }})]</label>
+                    <orientation>horizontal</orientation>
+                    <itemgap>0</itemgap>
+                    <usecontrolcoords>true</usecontrolcoords>
+                    <control type="label">
+                        <width>auto</width>
+                        <height>{{ vscale(87) }}</height>
+                        <!-- font30_title: InterUI at font13's own 30px but with a real
+                             <style>bold</style> (skin.plextuary's font.xml) - the [B] markup this
+                             used on font13 never rendered visibly bold. -->
+                        <font>font30_title</font>
+                        <align>left</align>
+                        <aligny>center</aligny>
+                        <textcolor>FFD2CCCE</textcolor>
+                        <shadowcolor>66000000</shadowcolor>
+                        <label>$INFO[Window.Property(hub.{{ id - 100 }})]</label>
+                    </control>
+                    <control type="label">
+                        <visible>!String.IsEmpty(Window.Property(hub.server.{{ id - 100 }}))</visible>
+                        <width>auto</width>
+                        <height>{{ vscale(87) }}</height>
+                        <font>font10</font>
+                        <align>left</align>
+                        <aligny>center</aligny>
+                        <textcolor>B3D2CCCE</textcolor>
+                        <shadowcolor>66000000</shadowcolor>
+                        <label>$INFO[Window.Property(hub.server.{{ id - 100 }})]</label>
+                    </control>
                 </control>
                 <!-- fixedlist, not list (on request, 2026-09-21): the focused item stays pinned
                      at the row's start and the row scrolls under it, instead of the focus walking

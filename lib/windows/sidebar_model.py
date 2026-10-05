@@ -217,6 +217,11 @@ def _noteSections(server, sections):
         _serverSections[server.uuid] = (time.time(), sections)
 
 
+def knownSections(uuid):
+    """The server's libraries as last listed (serverSections()), or None if it hasn't yet."""
+    return _knownSections(uuid)
+
+
 def _knownSections(uuid):
     with _sectionsLock:
         known = _serverSections.get(uuid)

@@ -4,9 +4,9 @@ by them: the sidebar's show/hide/order preferences and the hub settings (Manage 
 
 A library's id is "<server uuid>:<section key>", since a section key is only unique on its own
 server (two servers both have a library "1"). Playlists and Watchlist aren't one server's and keep
-their own ids, "playlists" and "/library/sections/watchlist". Home has none in the sidebar (None).
-Its hub settings are each server's own until Home shows hubs from several servers:
-"<server uuid>:__home__" (hubSettingsId()).
+their own ids, "playlists" and "/library/sections/watchlist". Home has none in the sidebar (None);
+its hub settings are kept under "__home__" - one order for every server's Home rows (hubSettingsId(),
+mergeHomeConfigs()).
 
 A hub row's catalog id is "<source>|<identifier>". The source is the library's id for a library's
 hub, and the server's uuid for a hub on that server's Home (its /hubs): two servers' Homes can both
@@ -30,6 +30,8 @@ from lib import util
 PLAYLISTS_ID = 'playlists'
 WATCHLIST_ID = '/library/sections/watchlist'
 HOME_STORAGE_KEY = '__home__'
+# Home's Continue Watching is one row from every server: its catalog id carries none
+CONTINUE_WATCHING_ID = 'continueWatching'
 
 
 def sectionId(section):
@@ -46,11 +48,44 @@ def sectionId(section):
 
 
 def hubSettingsId(section):
-    """Where a section's hub settings are kept: its library id, or for Home, the Home of the server
-    it's showing."""
+    """Where a section's hub settings are kept: its library id, or "__home__" for Home."""
     if section.key is None:
-        return u'{0}:{1}'.format(section.server.uuid, HOME_STORAGE_KEY)
+        return HOME_STORAGE_KEY
     return sectionId(section)
+
+
+# A Home config's servers: rows from a server it doesn't list follow its own rows in their default
+# order, rather than being hidden by a custom config made before that server was in the sidebar.
+HOME_SERVERS = 'servers'
+
+
+def mergeHomeConfigs(hub_settings, selectedUuid=None):
+    """Home's hub settings were each server's own ("<uuid>:__home__", while servers were switched
+    between); Home now shows every server's rows in one order. Their custom configs become one, the
+    selected server's rows first, each server's in its own order; the servers covered are recorded
+    (HOME_SERVERS), so the rows of one that had no custom config still show. Rewrites hub_settings
+    in place; returns whether anything changed."""
+    old = [key for key in hub_settings if key and key.endswith(':' + HOME_STORAGE_KEY)]
+    if not old:
+        return False
+    old.sort(key=lambda key: (key.partition(':')[0] != selectedUuid, key))
+    hubs, servers = [], []
+    for key in old:
+        config = hub_settings.pop(key)
+        if isinstance(config, dict) and config.get('custom'):
+            servers.append(key.partition(':')[0])
+            for h in sorted(config.get('hubs', []), key=lambda h: h.get('order', 999)):
+                if parseCatalogId(h.get('catalog_id', ''))[1] == CONTINUE_WATCHING_ID:
+                    # one row from every server now: listed once, where the first config had it
+                    if any(x['catalog_id'] == CONTINUE_WATCHING_ID for x in hubs):
+                        continue
+                    h = dict(h, catalog_id=CONTINUE_WATCHING_ID)
+                hubs.append(h)
+    if servers and HOME_STORAGE_KEY not in hub_settings:
+        for i, h in enumerate(hubs):
+            h['order'] = i
+        hub_settings[HOME_STORAGE_KEY] = {'custom': True, 'hubs': hubs, HOME_SERVERS: servers}
+    return True
 
 
 def catalogId(source, identifier):
@@ -59,10 +94,14 @@ def catalogId(source, identifier):
 
 def hubCatalogId(hub, section):
     """The catalog id of a hub fetched for `section`. On Home its source is the server whose Home
-    it's on (the hub's own server); elsewhere, the library."""
+    it's on (the hub's own server) - except Continue Watching, one row from every server, which
+    is just "continueWatching"; elsewhere, the library."""
     is_home = section.key is None
+    identifier = hub.getCleanHubIdentifier(is_home=is_home)
+    if is_home and identifier == CONTINUE_WATCHING_ID:
+        return CONTINUE_WATCHING_ID
     source = hub.server.uuid if is_home else sectionId(section)
-    return catalogId(source, hub.getCleanHubIdentifier(is_home=is_home))
+    return catalogId(source, identifier)
 
 
 def parseCatalogId(catalog_id):
@@ -98,6 +137,7 @@ def _isBareKey(key):
 
 
 def _rekeySection(key, uuid):
+    # Home's config as each server's, as Home was then; mergeHomeConfigs() makes them one
     if _isBareKey(key) or key == HOME_STORAGE_KEY:
         return u'{0}:{1}'.format(uuid, key)
     return key
