@@ -30,7 +30,7 @@
         <onup>noop</onup>
         <ondown>9001</ondown>
         <onright condition="!String.IsEmpty(Window.Property(server.unavailable))">2600</onright><onright>50</onright>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <label> </label>
         <onunfocus condition="!String.IsEmpty(Window.Property(show.options))">SetFocus(250)</onunfocus>
@@ -354,7 +354,7 @@
                      its server's name. Kodi labels only centre vertically, so each line's box is
                      placed: together they centre on the row like the single line (y=44). -->
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + [String.IsEmpty(ListItem.Property(is.offline)) | Control.HasFocus(9001)]</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + Control.HasFocus(9001)</visible>
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
@@ -367,7 +367,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + [String.IsEmpty(ListItem.Property(is.offline)) | Control.HasFocus(9001)]</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + Control.HasFocus(9001)</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(19) }}</posy>
                     <width>220</width>
@@ -380,7 +380,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + [String.IsEmpty(ListItem.Property(is.offline)) | Control.HasFocus(9001)]</visible>
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + Control.HasFocus(9001)</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(48) }}</posy>
                     <width>220</width>
@@ -389,6 +389,45 @@
                     <align>left</align>
                     <aligny>center</aligny>
                     <textcolor>99FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Property(server.name)]</label>
+                </control>
+                <!-- The same in the unfocused row's colours while focus is elsewhere in the sidebar (the
+                     Libraries button under the list): Kodi still draws the selected row with this
+                     layout then -->
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <posx>68</posx>
+                    <posy>0</posy>
+                    <width>220</width>
+                    <height>{{ vscale(88) }}</height>
+                    <font>font10</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>99FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <posx>68</posx>
+                    <posy>{{ vscale(19) }}</posy>
+                    <width>220</width>
+                    <height>{{ vscale(28) }}</height>
+                    <font>font10</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>99FFFFFF</textcolor>
+                    <label>$INFO[ListItem.Label]</label>
+                </control>
+                <control type="label">
+                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <posx>68</posx>
+                    <posy>{{ vscale(48) }}</posy>
+                    <width>220</width>
+                    <height>{{ vscale(20) }}</height>
+                    <font>font8</font>
+                    <align>left</align>
+                    <aligny>center</aligny>
+                    <textcolor>66FFFFFF</textcolor>
                     <label>$INFO[ListItem.Property(server.name)]</label>
                 </control>
                 <!-- The same, dimmed: a library whose server isn't answering, or is no longer
@@ -453,7 +492,7 @@
         <onup>9001</onup>
         <onright condition="!String.IsEmpty(Window.Property(server.unavailable))">2600</onright><onright>50</onright>
         <ondown>noop</ondown>
-        <texturefocus colordiffuse="FFE5A00D" border="10">script.plex/white-square-rounded.png</texturefocus>
+        <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <label> </label>
         <onunfocus condition="!String.IsEmpty(Window.Property(show.servers))">SetFocus(260)</onunfocus>
