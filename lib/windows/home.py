@@ -11,6 +11,7 @@ from lib import backgroundthread
 from lib import util
 from lib.path_mapping import pmm
 from lib.util import T
+from . import hub_config
 from . import background
 from .section_ids import CONTINUE_WATCHING_ID
 
@@ -334,19 +335,42 @@ def mergeContinueWatching(hubs):
     return merged
 
 
-def combineHomeHubs(answers, servers):
+def sidebarOrder(rows, positions):
+    """Home's rows from every server in the sidebar's order (the user, 2026-10-05: libraries of
+    different servers interleave there, so their rows do on Home). rows: [(server uuid, hub)], each
+    server's in its own order (Plex's, its libraries in sidebar order), servers in sidebar order;
+    positions: {(server uuid, entry key): place in the sidebar}. Each row goes by its library's place
+    (hub_config.rowLibrary()), a library's rows in Plex's order; one from no entry stays after the
+    row before it from its server, or first."""
+    placed = []
+    last = {}
+    for index, (uuid, hub) in enumerate(rows):
+        library = hub_config.rowLibrary(hub.hubIdentifier)
+        position = positions.get((uuid, library)) if library is not None else None
+        if position is None:
+            position = last.get(uuid, -1)
+        last[uuid] = position
+        placed.append((position, index, uuid, hub))
+    placed.sort(key=lambda row: (row[0], row[1]))
+    return [(uuid, hub) for _, _, uuid, hub in placed]
+
+
+def combineHomeHubs(answers, servers, positions=None):
     """Home's rows from each server's answer, as D5's default order has them before the user's
-    own (LibraryWindow.sortHubsByUserOrder()): one merged Continue Watching row, then each server's
-    rows, the servers in sidebar order. answers: {uuid: [Hub]}; servers: [(server, keys)]."""
+    own (LibraryWindow.sortHubsByUserOrder()): one merged Continue Watching row, then every server's
+    rows in sidebar order (sidebarOrder(); without positions, each server's together, servers in
+    sidebar order). answers: {uuid: [Hub]}; servers: [(server, keys)]."""
     continueWatching, rows = [], []
     for server, keys in servers:
         for hub in answers.get(server.uuid) or ():
             if hub.hubIdentifier == CONTINUE_WATCHING_ID:
                 continueWatching.append(keepLibraries(hub, keys))
             else:
-                rows.append(keepLibraries(hub, keys))
+                rows.append((server.uuid, keepLibraries(hub, keys)))
+    if positions:
+        rows = sidebarOrder(rows, positions)
     merged = mergeContinueWatching(continueWatching)
-    return HubsList(([merged] if merged is not None else []) + rows).init()
+    return HubsList(([merged] if merged is not None else []) + [hub for _, hub in rows]).init()
 
 
 class HomeHubsTask(backgroundthread.Task):
@@ -357,10 +381,11 @@ class HomeHubsTask(backgroundthread.Task):
     A server known to be offline isn't asked; one still on its first connection test is, once that
     finds a connection."""
 
-    def setup(self, section, callback, servers):
+    def setup(self, section, callback, servers, positions=None):
         self.section = section
         self.callback = callback
         self.servers = servers
+        self.positions = positions
         return self
 
     def _fetch(self, server, keys, answers):
@@ -413,7 +438,7 @@ class HomeHubsTask(backgroundthread.Task):
         late = [server.name for server, thread in threads if thread.is_alive()]
         util.DEBUG_LOG('Home: rows from {0} of {1} servers in {2} ms{3}', len(answers), len(threads),
                        int((time.time() - started) * 1000), late and ' (not waited for: {0})'.format(', '.join(late)) or '')
-        hubs = combineHomeHubs(dict(answers), self.servers)
+        hubs = combineHomeHubs(dict(answers), self.servers, self.positions)
         hubs.identifier = None
         self.callback(self.section, hubs)
 

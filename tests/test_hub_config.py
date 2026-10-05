@@ -47,11 +47,22 @@ def hidden(config):
     return [cid.split('|')[-1] for cid in config['hidden']]
 
 
+def cid(identifier):
+    return identifier if identifier == 'continueWatching' else ANIMAL + '|' + identifier
+
+
 def custom(*ids, **kw):
-    config = {'custom': True, 'hubs': [{'catalog_id': i if i == 'continueWatching' else ANIMAL + '|' + i}
-                                       for i in ids]}
+    """A config of these shown rows; with order=[ids] a config of today, whose 'order' has its hidden
+    ones in their places too."""
+    config = {'custom': True, 'hubs': [{'catalog_id': cid(i)} for i in ids]}
+    if 'order' in kw:
+        kw['order'] = [cid(i) for i in kw['order']]
     config.update(kw)
     return config
+
+
+def ordered(config):
+    return [c.split('|')[-1] for c in config['order']]
 
 
 class RowIdTest(KodiTestCase):
@@ -107,7 +118,8 @@ class ReconcileTest(KodiTestCase):
         self.assertEqual(['continueWatching', 'tv.recentlyaired.18', 'tv.recentlyadded.18'], shown(config))
 
     def test_a_hidden_row_stays_hidden(self):
-        config = custom('continueWatching', hidden=[ANIMAL + '|movie.genre.22'], reconciled=['', ANIMAL])
+        config = custom('continueWatching', hidden=[ANIMAL + '|movie.genre.22'], reconciled=['', ANIMAL],
+                        order=['continueWatching', 'movie.genre.22'], ordered=False)
         self.assertFalse(hub_config.reconcile(config, [row('continueWatching'), row('movie.genre.22')]))
         self.assertEqual(['continueWatching'], shown(config))
 
@@ -117,7 +129,8 @@ class ReconcileTest(KodiTestCase):
         self.assertEqual(['continueWatching', 'movie.genre.22', 'home.playlists'], shown(config))
 
     def test_nothing_new_changes_nothing(self):
-        config = custom('continueWatching', 'movie.genre.22', hidden=[], reconciled=['', ANIMAL])
+        config = custom('continueWatching', 'movie.genre.22', hidden=[], reconciled=['', ANIMAL],
+                        order=['continueWatching', 'movie.genre.22'], ordered=False)
         self.assertFalse(hub_config.reconcile(config, [row('continueWatching'), row('movie.genre.22')]))
 
     def test_no_custom_config_is_left_alone(self):
@@ -161,7 +174,8 @@ class MergeFlipTest(KodiTestCase):
         # merged row hidden by the user before; the per-library rows shown since: back on, the
         # merged row's own saved state wins
         config = custom('continueWatching', 'movie.recentlyadded.22', hidden=[ANIMAL + '|home.movies.recent'],
-                        reconciled=['', ANIMAL])
+                        reconciled=['', ANIMAL],
+                        order=['continueWatching', 'home.movies.recent', 'movie.recentlyadded.22'], ordered=False)
         self.assertFalse(hub_config.reconcile(config, [row('continueWatching'), row('home.movies.recent')]))
         self.assertEqual(['continueWatching', 'movie.recentlyadded.22'], shown(config))
 
@@ -232,15 +246,62 @@ class MoveTest(KodiTestCase):
     def test_a_move_among_the_listed_rows_leaves_the_others_in_place(self):
         config = custom('a', 'gone', 'b', 'c')
         listed = [ANIMAL + '|a', ANIMAL + '|b', ANIMAL + '|c']
-        self.assertTrue(hub_config.moveShown(config, listed, 2, 0))
+        self.assertTrue(hub_config.move(config, listed, 2, 0))
         self.assertEqual(['c', 'gone', 'a', 'b'], shown(config))
 
-    def test_hide_and_show(self):
-        config = custom('a', 'b', hidden=[])
-        hub_config.hide(config, ANIMAL + '|a')
-        self.assertEqual((['b'], ['a']), (shown(config), hidden(config)))
-        hub_config.show(config, {'catalog_id': ANIMAL + '|a'})
-        self.assertEqual((['b', 'a'], []), (shown(config), hidden(config)))
+    def test_hidden_and_shown_again_in_its_place(self):
+        config = custom('a', 'b', 'c', hidden=[], order=['a', 'b', 'c'])
+        hub_config.hide(config, ANIMAL + '|b')
+        self.assertEqual((['a', 'c'], ['b'], ['a', 'b', 'c']), (shown(config), hidden(config), ordered(config)))
+        hub_config.show(config, {'catalog_id': ANIMAL + '|b'})
+        self.assertEqual((['a', 'b', 'c'], []), (shown(config), hidden(config)))
+
+    def test_a_hidden_row_moves_too(self):
+        config = custom('a', 'c', hidden=[ANIMAL + '|b'], order=['a', 'b', 'c'])
+        listed = [cid(i) for i in ('a', 'b', 'c')]
+        hub_config.move(config, listed, 1, 0)
+        self.assertEqual((['b', 'a', 'c'], ['a', 'c']), (ordered(config), shown(config)))
+        hub_config.show(config, {'catalog_id': ANIMAL + '|b'})
+        self.assertEqual(['b', 'a', 'c'], shown(config))
+
+    def test_a_new_config_shows_every_row_in_order(self):
+        config = hub_config.newConfig([{'catalog_id': cid('a'), 'title': 'A'}, {'catalog_id': cid('b')}])
+        self.assertEqual((['a', 'b'], [], ['a', 'b']), (shown(config), hidden(config), ordered(config)))
+        self.assertEqual('A', config['hubs'][0]['title'])
+
+
+class OrderTest(KodiTestCase):
+    """Ordering and visibility apart (the user, 2026-10-05): every row has a place, shown or hidden."""
+
+    def test_a_new_row_goes_after_its_neighbour_even_a_hidden_one(self):
+        config = custom('continueWatching', 'movie.genre.22', hidden=[ANIMAL + '|movie.recentlyreleased.22'],
+                        reconciled=['', ANIMAL],
+                        order=['continueWatching', 'movie.genre.22', 'movie.recentlyreleased.22'])
+        hub_config.reconcile(config, [row('continueWatching'), row('movie.recentlyreleased.22'),
+                                      row('movie.recentlyadded.22'), row('movie.genre.22')])
+        self.assertEqual(['continueWatching', 'movie.genre.22', 'movie.recentlyreleased.22', 'movie.recentlyadded.22'],
+                         ordered(config))
+        self.assertEqual(['continueWatching', 'movie.genre.22', 'movie.recentlyadded.22'], shown(config))
+
+    def test_a_config_of_before_gives_its_hidden_rows_their_neighbours_place(self):
+        # shown rows in the user's order; the hidden ones had none
+        config = custom('continueWatching', 'movie.genre.22', 'tv.recentlyaired.18',
+                        hidden=[ANIMAL + '|movie.recentlyreleased.22', ANIMAL + '|home.playlists'], reconciled=['', ANIMAL])
+        self.assertTrue(hub_config.reconcile(config, [
+            row('continueWatching'), row('movie.recentlyreleased.22'), row('movie.genre.22'),
+            row('tv.recentlyaired.18'), row('home.playlists')]))
+        self.assertEqual(['continueWatching', 'movie.recentlyreleased.22', 'movie.genre.22', 'tv.recentlyaired.18',
+                          'home.playlists'], ordered(config))
+        self.assertEqual(['continueWatching', 'movie.genre.22', 'tv.recentlyaired.18'], shown(config))
+
+    def test_merging_off_with_the_merged_row_hidden_they_take_its_place(self):
+        config = custom('continueWatching', 'movie.genre.22', hidden=[ANIMAL + '|home.movies.recent'],
+                        reconciled=['', ANIMAL], order=['continueWatching', 'home.movies.recent', 'movie.genre.22'])
+        hub_config.reconcile(config, [row('continueWatching'), row('movie.recentlyadded.22'),
+                                      row('movie.genre.22'), row('movie.recentlyadded.2')])
+        self.assertEqual(['continueWatching', 'home.movies.recent', 'movie.recentlyadded.22', 'movie.recentlyadded.2',
+                          'movie.genre.22'], ordered(config))
+        self.assertEqual(['continueWatching', 'movie.genre.22'], shown(config))
 
 
 def server(uuid, name):
@@ -298,6 +359,7 @@ class ManageHubsCase(KodiTestCase):
             {'catalog_id': ANIMAL + '|movie.genre.22', 'title': 'Top Movies in (Genre)'},
             {'catalog_id': ANIMAL + '|movie.recentlyadded.22'}]}}
         self.win._homeServers = lambda: [(self.animal, ['22'])]
+        self.win._homeRowPositions = lambda: {}
         self.win._discoverHubsSync(home.home_section)
 
     def rows(self):
@@ -306,6 +368,12 @@ class ManageHubsCase(KodiTestCase):
 
 
 class ManageHubsTest(ManageHubsCase):
+    def test_hidden_rows_in_their_place_unnumbered(self):
+        hub_config.hide(self.win.hubSettings['__home__'], ANIMAL + '|movie.recentlyadded.22')
+        self.win.hubSettings['__home__']['order'].insert(1, ANIMAL + '|movie.recentlyadded.22')
+        self.win.hubSettings['__home__']['order'].pop()
+        self.assertEqual([u'1. continueWatching', u'Recently Added in Films'], self.rows()[:2])
+
     def test_a_row_no_longer_sent_is_left_out_with_its_place_kept(self):
         self.assertEqual([u'1. continueWatching', u'2. Recently Added in Films'], self.rows()[:2])
         self.win._moveHubToPosition(ANIMAL + '|movie.recentlyadded.22', home.home_section, 1, 0, None)
@@ -437,3 +505,63 @@ class ManageHubsTitlesTest(ManageHubsCase):
                                              Hub('movie.recentlyadded.22', [Item()], self.animal)]}
         self.win._noteRowsOnScreenStale(home.home_section)
         self.assertFalse(self.win._hubsSettingsChanged)
+
+
+class SavedOrderTest(KodiTestCase):
+    """Visibility and order saved apart (the user, 2026-10-05): hiding a row saves no order - it
+    keeps following the server's (on Home the sidebar's) until a row is moved."""
+
+    rows = [row('continueWatching'), row('movie.recentlyreleased.22'), row('movie.genre.22'), row('tv.recentlyaired.18')]
+
+    def test_hiding_keeps_the_servers_order(self):
+        config = hub_config.newConfig([r[3] for r in self.rows])
+        hub_config.hide(config, ANIMAL + '|movie.genre.22')
+        self.assertFalse(hub_config.hasOrder(config))
+        # the sidebar moved TV above Films: the server's order changes, and so does the config's
+        hub_config.reconcile(config, [self.rows[0], self.rows[3], self.rows[1], self.rows[2]])
+        self.assertEqual(['continueWatching', 'tv.recentlyaired.18', 'movie.recentlyreleased.22'], shown(config))
+        self.assertEqual(['movie.genre.22'], hidden(config))
+
+    def test_moving_a_row_saves_the_order(self):
+        config = hub_config.newConfig([r[3] for r in self.rows])
+        hub_config.move(config, [r[0] for r in self.rows], 3, 1)
+        self.assertTrue(hub_config.hasOrder(config))
+        hub_config.reconcile(config, [self.rows[0], self.rows[3], self.rows[2], self.rows[1]])
+        self.assertEqual(['continueWatching', 'tv.recentlyaired.18', 'movie.recentlyreleased.22', 'movie.genre.22'],
+                         shown(config))
+
+    def test_a_row_not_sent_keeps_its_place_after_the_one_it_followed(self):
+        config = hub_config.newConfig([r[3] for r in self.rows])
+        hub_config.reconcile(config, [self.rows[0], self.rows[3], self.rows[1]])
+        self.assertEqual(['continueWatching', 'tv.recentlyaired.18', 'movie.recentlyreleased.22', 'movie.genre.22'],
+                         ordered(config))
+
+    def test_a_config_from_before_in_the_servers_order_has_none(self):
+        config = custom('continueWatching', 'movie.recentlyreleased.22', 'tv.recentlyaired.18',
+                        hidden=[ANIMAL + '|movie.genre.22'], reconciled=['', ANIMAL])
+        hub_config.reconcile(config, self.rows)
+        self.assertFalse(hub_config.hasOrder(config))
+        self.assertEqual(['movie.genre.22'], hidden(config))
+
+    def test_a_config_from_before_in_its_own_order_keeps_it(self):
+        config = custom('continueWatching', 'tv.recentlyaired.18', 'movie.recentlyreleased.22',
+                        hidden=[ANIMAL + '|movie.genre.22'], reconciled=['', ANIMAL])
+        hub_config.reconcile(config, self.rows)
+        self.assertTrue(hub_config.hasOrder(config))
+        self.assertEqual(['continueWatching', 'tv.recentlyaired.18', 'movie.recentlyreleased.22'], shown(config))
+
+    def test_one_converted_this_week_is_checked_too(self):
+        # 'order' already, no 'ordered' yet
+        config = custom('continueWatching', 'movie.recentlyreleased.22', 'movie.genre.22', 'tv.recentlyaired.18',
+                        hidden=[], reconciled=['', ANIMAL],
+                        order=['continueWatching', 'movie.recentlyreleased.22', 'movie.genre.22', 'tv.recentlyaired.18'])
+        hub_config.reconcile(config, self.rows)
+        self.assertFalse(hub_config.hasOrder(config))
+
+
+class RowLibraryTest(KodiTestCase):
+    def test_the_entry_each_row_is_from(self):
+        for identifier, library in (('movie.genre.22.71', '22'), ('home.movies.recent.22', '22'),
+                                    ('tv.recentlyaired.18', '18'), ('home.playlists', 'playlists'),
+                                    ('continueWatching', None), ('home.ondeck', None)):
+            self.assertEqual(library, hub_config.rowLibrary(identifier), identifier)

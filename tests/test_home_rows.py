@@ -296,6 +296,7 @@ class DiscoveryTest(KodiTestCase):
         self.win.hubSettings = {}
         self.win.sectionHubs = {}
         self.win._homeServers = lambda: [(self.animal, ['22']), (self.oscar, ['1'])]
+        self.win._homeRowPositions = lambda: {}
 
     def labels(self):
         return dict((cid, info['source_section_title']) for cid, info in self.win.availableHubs.items())
@@ -352,6 +353,7 @@ class ManageHomeTest(KodiTestCase):
         # Home showed Animal's rows only (before the reset, or before Oscar answered)
         self.win.sectionHubs = {'__home__': [self.animal.hubs.return_value[1]]}
         self.win._homeServers = lambda: [(self.animal, ['22']), (self.oscar, ['1'])]
+        self.win._homeRowPositions = lambda: {}
         self.win._discoverHubsSync(home.home_section)
 
     def rows(self):
@@ -388,15 +390,19 @@ class ManageHomeTest(KodiTestCase):
         self.assertEqual([ANIMAL + '|home.movies.recent'], self.win.hubSettings['__home__']['hidden'])
         rows = [o for o in self.win._buildHubSettingsOptions(home.home_section, 'Home') if o]
         hidden = [o for o in rows if o.get('catalog_id') == ANIMAL + '|home.movies.recent'][0]
-        self.assertEqual(('1', True), (hidden['properties']['nomove'], hidden['indicator_dim']))
+        # hidden in its place, unnumbered; the shown ones renumbered round it
+        self.assertTrue(hidden['indicator_dim'])
+        self.assertEqual([u'1. continueWatching', u'home.movies.recent', u'2. home.movies.recent'],
+                         [o['display'] for o in rows if o.get('key') == 'toggle_hub'][:3])
         self.choose(ANIMAL + '|home.movies.recent', 'pin')
         self.assertEqual([], self.win.hubSettings['__home__']['hidden'])
 
-    def test_move_picks_up_a_shown_row_only(self):
+    def test_move_picks_up_any_row_shown_or_hidden(self):
+        # ordering and visibility apart (the user, 2026-10-05)
         self.win._managingHubsForSection = home.home_section
         self.assertEqual('enter_move_mode', self.choose(OSCAR + '|home.movies.recent', 'move'))
         self.win._disableHub(OSCAR + '|home.movies.recent', home.home_section)
-        self.assertIsNone(self.choose(OSCAR + '|home.movies.recent', 'move'))
+        self.assertEqual('enter_move_mode', self.choose(OSCAR + '|home.movies.recent', 'move'))
 
     def test_disabling_one_keeps_the_rest(self):
         self.win._ensureCustomConfigExists(home.home_section)
@@ -404,3 +410,44 @@ class ManageHomeTest(KodiTestCase):
         self.assertEqual(['continueWatching', OSCAR + '|home.movies.recent'],
                          [h['catalog_id'] for h in self.win.hubSettings['__home__']['hubs']])
         self.assertEqual([ANIMAL + '|home.movies.recent'], self.win.hubSettings['__home__']['hidden'])
+
+
+class SidebarOrderTest(KodiTestCase):
+    """Home's rows in the sidebar's order across servers (the user, 2026-10-05): each server answers
+    for its own libraries, so the rows are put in order here, by the library each is from."""
+
+    def setUp(self):
+        super(SidebarOrderTest, self).setUp()
+        self.animal, self.oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
+        # sidebar: Playlists, Animal Films (22), Oscar Films (1), Animal TV (18)
+        self.positions = {(ANIMAL, 'playlists'): 0, (ANIMAL, '22'): 1, (OSCAR, '1'): 2, (ANIMAL, '18'): 3}
+
+    def ids(self, rows):
+        return [(uuid == ANIMAL and 'A ' or 'O ') + hub.hubIdentifier for uuid, hub in rows]
+
+    def test_rows_interleave_by_their_librarys_place(self):
+        rows = [(ANIMAL, Hub('movie.recentlyreleased.22', [], self.animal)),
+                (ANIMAL, Hub('home.movies.recent.22', [], self.animal)),
+                (ANIMAL, Hub('tv.recentlyaired.18', [], self.animal)),
+                (ANIMAL, Hub('home.playlists', [], self.animal)),
+                (OSCAR, Hub('home.movies.recent.1', [], self.oscar))]
+        self.assertEqual(['A home.playlists', 'A movie.recentlyreleased.22', 'A home.movies.recent.22',
+                          'O home.movies.recent.1', 'A tv.recentlyaired.18'],
+                         self.ids(home.sidebarOrder(rows, self.positions)))
+
+    def test_a_row_from_no_entry_stays_with_the_row_before_it(self):
+        rows = [(ANIMAL, Hub('home.ondeck', [], self.animal)),
+                (OSCAR, Hub('home.movies.recent.1', [], self.oscar)),
+                (ANIMAL, Hub('tv.recentlyaired.18', [], self.animal)),
+                (ANIMAL, Hub('home.unknown', [], self.animal))]
+        self.assertEqual(['A home.ondeck', 'O home.movies.recent.1', 'A tv.recentlyaired.18', 'A home.unknown'],
+                         self.ids(home.sidebarOrder(rows, self.positions)))
+
+    def test_home_puts_continue_watching_first_then_the_sidebars_order(self):
+        answers = {ANIMAL: [Hub('continueWatching', [Item('c', '22', 5)], self.animal),
+                            Hub('tv.recentlyaired.18', [Item('t', '18')], self.animal),
+                            Hub('movie.recentlyreleased.22', [Item('m', '22')], self.animal)],
+                   OSCAR: [Hub('home.movies.recent.1', [Item('f', '1')], self.oscar)]}
+        hubs = home.combineHomeHubs(answers, [(self.animal, ['22', '18']), (self.oscar, ['1'])], self.positions)
+        self.assertEqual(['continueWatching', 'movie.recentlyreleased.22', 'home.movies.recent.1', 'tv.recentlyaired.18'],
+                         [h.hubIdentifier for h in hubs])

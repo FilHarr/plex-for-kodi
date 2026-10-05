@@ -2223,7 +2223,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             callback = self._recommendedHubsFetchedFor(generation)
             if self.section.key is None:
                 # Home: every sidebar server's rows, asked together (home.HomeHubsTask)
-                task = home.HomeHubsTask().setup(self.section, callback, self._homeServers())
+                task = home.HomeHubsTask().setup(self.section, callback, self._homeServers(),
+                                                 self._homeRowPositions())
             else:
                 task = home.SectionHubsTask().setup(self.section, callback)
             self.tasks.add(task)
@@ -2814,6 +2815,20 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             if server is not None:
                 servers.append((server, keys[uuid]))
         return servers
+
+    def _homeRowPositions(self):
+        """Each sidebar entry's place, by (server uuid, key), for Home's row order
+        (home.sidebarOrder()). Playlists is the selected server's."""
+        nav = self.sidebarNavSettings()
+        selected = plexapp.SERVERMANAGER.selectedServer
+        positions = {}
+        for index, sid in enumerate(nav.get('entries', ())):
+            uuid, sep, key = sid.partition(':')
+            if sep:
+                positions[(uuid, key)] = index
+            elif sid == section_ids.PLAYLISTS_ID and selected is not None:
+                positions[(selected.uuid, 'playlists')] = index
+        return positions
 
     def _liveSidebarSection(self, placeholder):
         """A sidebar library its server hadn't listed yet, asked for now (sidebar_model.live()). If

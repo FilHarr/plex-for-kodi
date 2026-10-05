@@ -1,21 +1,30 @@
 """
 A section's saved hub config (Manage Hubs) against the rows the server sends now.
 
-A custom config is {'custom': True, 'hubs': [{'catalog_id', 'identifier', 'order', ...}], 'hidden':
-[catalog ids], 'reconciled': [server uuids]}: the rows shown, in order, and the rows hidden. Which
-rows exist is the server's (Plex's Manage Recommendations), so a row in neither list is new - one
-switched on in Plex since, a newly pinned library's, or the other form of Recently Added after Plex's
-merge setting flipped - and it shows, placed beside its neighbour in the server's own order
-(reconcile()). A row the config lists that the server no longer sends keeps its place and state.
+A custom config is {'custom': True, 'order': [catalog ids], 'hidden': [catalog ids], 'hubs':
+[{'catalog_id', 'identifier', 'order', ...}], 'reconciled': [server uuids]}: every row the config
+knows, in order, shown or hidden - ordering and visibility apart, as the Libraries picker's order
+and pins (the user, 2026-10-05). 'hubs' is the shown ones in that order, what Home and the sorting
+read; it follows the other two (_sync()). The order is the user's only once they've moved a row
+('ordered'): until then it's the server's, kept to whatever it sends now - Plex's own, and on Home
+the sidebar's - so hiding a row doesn't fix Home's order. Which rows exist is the server's (Plex's
+Manage Recommendations), so a row the config doesn't know is new - one switched on in Plex since, a
+newly pinned library's, or the other form of Recently Added after Plex's merge setting flipped - and
+it shows, placed after its neighbour in the server's own order (reconcile()). A row the config knows
+that the server no longer sends keeps its place and state.
 
-Configs from before 'hidden' was kept showed only what they listed, so for them an unlisted row is
-hidden, not new: each server's rows are taken that way the first time they're seen ('reconciled'
-records which servers' have been), and Home's catalog ids of then, which dropped a row's library
-(legacy ids), are rewritten to today's.
+Older configs had no 'order': only the shown rows had a place, and before that, no 'hidden' either,
+so an unlisted row was hidden, not new. Each server's rows are taken that way the first time they're
+seen ('reconciled' records which servers' have been), Home's catalog ids of then, which dropped a
+row's library (legacy ids), are rewritten to today's, and a hidden row gets the place its neighbour
+in the server's order gives it. A config from before 'ordered' counts as ordered by the user only if
+its order isn't the server's (the user's rule, 2026-10-05).
 """
 from __future__ import absolute_import
 
 HIDDEN = 'hidden'
+ORDER = 'order'
+ORDERED = 'ordered'
 RECONCILED = 'reconciled'
 # Home configs of 7.1 recorded the servers whose rows they covered; rows of any other showed
 LEGACY_SERVERS = 'servers'
@@ -59,6 +68,18 @@ def rowBase(hub_identifier):
         if part.isdigit():
             return '.'.join(parts[:i])
     return hub_identifier
+
+
+def rowLibrary(hub_identifier):
+    """The sidebar entry a Home row is from, by its key on its server: a library's row its library
+    (movie.genre.22.71 -> '22'), a merged row its first library (home.movies.recent.22 -> '22'),
+    Recent Playlists 'playlists'; None for one from no entry (Continue Watching)."""
+    if hub_identifier == 'home.playlists':
+        return 'playlists'
+    for part in (hub_identifier or '').split('.'):
+        if part.isdigit():
+            return part
+    return None
 
 
 def picksPerRequest(hub_identifier):
@@ -145,6 +166,51 @@ def _isLegacy(config, server):
     return HIDDEN not in config
 
 
+def _id(entry):
+    return entry.get('catalog_id', entry.get('identifier'))
+
+
+def _order(config):
+    """The full order, made from an older config's shown rows then its hidden ones if it has none
+    yet (reconcile() places those properly, by the rows sent)."""
+    if ORDER not in config:
+        order = [_id(h) for h in config.get('hubs', [])]
+        config[ORDER] = order + [cid for cid in config.get(HIDDEN, []) if cid not in order]
+    return config[ORDER]
+
+
+def fullOrder(config):
+    """Every row the config knows, shown or hidden, in the user's order."""
+    return list(_order(config))
+
+
+def _sync(config, entries=None):
+    """'hubs' from the order and what's hidden: the shown rows' entries, in order. entries: entries
+    to use for rows that have none yet (a row shown again), by catalog id."""
+    known = dict((_id(h), h) for h in config.get('hubs', []))
+    known.update(entries or {})
+    hidden = set(config.get(HIDDEN, ()))
+    hubs = []
+    for cid in _order(config):
+        if cid not in hidden:
+            entry = dict(known.get(cid) or {'catalog_id': cid}, order=len(hubs))
+            hubs.append(entry)
+    config['hubs'] = hubs
+
+
+def _place(order, present, index):
+    """Where a row of the rows sent (present, in the server's order; this one at index) goes in the
+    order: after the nearest row before it the order has, else before the nearest after it, else
+    at the end."""
+    for before in reversed(present[:index]):
+        if before in order:
+            return order.index(before) + 1
+    for after in present[index + 1:]:
+        if after in order:
+            return order.index(after)
+    return len(order)
+
+
 def reconcile(config, rows):
     """Brings a custom config up to date with the rows the server sends now. rows: [(catalog_id,
     legacy_id, server_uuid, entry)] in the server's default order (Continue Watching's server is
@@ -153,124 +219,156 @@ def reconcile(config, rows):
     if not config or not config.get('custom'):
         return False
     legacyServers = set(server for _, _, server, _ in rows if _isLegacy(config, server))
-    hubs = config.setdefault('hubs', [])
-    changed = HIDDEN not in config or RECONCILED not in config
+    changed = HIDDEN not in config or RECONCILED not in config or ORDER not in config
+    hadOrder = ORDER in config
     hidden = config.setdefault(HIDDEN, [])
     reconciled = config.setdefault(RECONCILED, [])
-
-    def shownIndex(catalog_id):
-        for i, h in enumerate(hubs):
-            if h.get('catalog_id', h.get('identifier')) == catalog_id:
-                return i
-        return None
-
-    def known(catalog_id):
-        return shownIndex(catalog_id) is not None or catalog_id in hidden
-
+    order = _order(config)
+    entries = dict((_id(h), h) for h in config.get('hubs', []))
     present = [row[0] for row in rows]
 
-    # a config of before: its ids of then, and an unlisted row hidden
+    # a config of before: its ids of then, an unlisted row hidden
     renamed = {}
     for catalog_id, legacy_id, server, entry in rows:
-        if server not in legacyServers or known(catalog_id):
+        if server not in legacyServers or catalog_id in order:
             continue
-        at = shownIndex(legacy_id) if legacy_id and legacy_id != catalog_id else None
         if legacy_id in renamed:
             # a second row under the one legacy id (Films' and Movies' Recently Released were both
-            # movie.recentlyreleased): shown after the first
-            hubs.insert(renamed[legacy_id] + 1, dict(entry))
+            # movie.recentlyreleased): after the first, in the same state
+            order.insert(renamed[legacy_id] + 1, catalog_id)
             renamed[legacy_id] += 1
-        elif at is not None:
-            hubs[at] = dict(hubs[at], catalog_id=catalog_id, identifier=entry.get('identifier', catalog_id))
+            if renamed.get(legacy_id + '|hidden'):
+                hidden.append(catalog_id)
+        elif legacy_id and legacy_id != catalog_id and legacy_id in order:
+            at = order.index(legacy_id)
+            order[at] = catalog_id
             renamed[legacy_id] = at
-        elif legacy_id and legacy_id in hidden:
-            hidden[hidden.index(legacy_id)] = catalog_id
+            if legacy_id in hidden:
+                hidden[hidden.index(legacy_id)] = catalog_id
+                renamed[legacy_id + '|hidden'] = True
+            elif legacy_id in entries:
+                entries[catalog_id] = dict(entries.pop(legacy_id), catalog_id=catalog_id,
+                                           identifier=entry.get('identifier', catalog_id))
         else:
             hidden.append(catalog_id)
         changed = True
 
-    # new rows: shown, beside their neighbour in the server's order
+    if not hadOrder:
+        # hidden rows had no place: each goes where its neighbour in the server's order puts it
+        shown = [cid for cid in order if cid not in hidden]
+        for cid in [cid for cid in order if cid in hidden]:
+            order.remove(cid)
+        order[:] = shown
+        for index, cid in enumerate(present):
+            if cid in hidden and cid not in order:
+                order.insert(_place(order, present, index), cid)
+        order.extend(cid for cid in hidden if cid not in order)
+
+    # new rows: shown, after their neighbour in the server's order
     placed = {}  # merged row -> its per-library rows placed after it so far
     for index, (catalog_id, _, server, entry) in enumerate(rows):
-        if known(catalog_id):
+        if catalog_id in order:
             continue
-        other = counterparts(catalog_id, [h.get('catalog_id') for h in hubs] + hidden)
+        entries[catalog_id] = dict(entry)
+        other = counterparts(catalog_id, order)
         if other:
             # Plex's merge setting flipped: the row takes its other form's state and place
-            shown = [o for o in other if shownIndex(o) is not None]
+            shown = [o for o in other if o not in hidden]
             if not shown:
                 hidden.append(catalog_id)
-                changed = True
-                continue
             if _identifier(catalog_id) in MERGED_ROWS:
-                # where the first of its libraries' rows was
-                position = min(shownIndex(o) for o in shown)
+                # where the first of its libraries' rows was (a shown one, if any is)
+                position = min(order.index(o) for o in (shown or other))
             else:
                 # after the merged row, and after its other libraries' rows placed already
-                merged = shown[0]
+                merged = (shown or other)[0]
                 placed[merged] = placed.get(merged, 0) + 1
-                position = shownIndex(merged) + placed[merged]
+                position = order.index(merged) + placed[merged]
         else:
-            position = None
-            for before in reversed(present[:index]):
-                i = shownIndex(before)
-                if i is not None:
-                    position = i + 1
-                    break
-            if position is None:
-                for after in present[index + 1:]:
-                    i = shownIndex(after)
-                    if i is not None:
-                        position = i
-                        break
-            if position is None:
-                position = len(hubs)
-        hubs.insert(position, dict(entry))
+            position = _place(order, present, index)
+        order.insert(position, catalog_id)
         changed = True
+
+    if ORDERED not in config:
+        # a config from before: the user's order only if it isn't the server's
+        sent = [cid for cid in order if cid in present]
+        config[ORDERED] = sent != [cid for cid in present if cid in sent]
+        changed = True
+    if not config[ORDERED]:
+        # the server's order, as it is now; a row it doesn't send stays after the row it followed
+        following = _serverOrder(order, present)
+        if following != order:
+            order[:] = following
+            changed = True
 
     for server in sorted(set(server for _, _, server, _ in rows)):
         if server not in reconciled:
             reconciled.append(server)
             changed = True
     if changed:
-        for i, h in enumerate(hubs):
-            h['order'] = i
+        _sync(config, entries)
     return changed
 
 
+def _serverOrder(order, present):
+    """order rearranged to the server's (present, the rows it sends, in its order); a row it doesn't
+    send keeps its place after whichever row it followed."""
+    out = [cid for cid in present if cid in order]
+    for index, cid in enumerate(order):
+        if cid in out:
+            continue
+        before = [o for o in order[:index] if o in out]
+        out.insert(out.index(before[-1]) + 1 if before else 0, cid)
+    return out
+
+
+def hasOrder(config):
+    """Whether the user has ordered the rows themselves (moved one), rather than only hidden some."""
+    return bool(config and config.get('custom') and config.get(ORDERED))
+
+
 def hide(config, catalog_id):
-    """A shown row hidden (Manage Hubs' Disable)."""
-    hubs = config.get('hubs', [])
-    config['hubs'] = [h for h in hubs if h.get('catalog_id', h.get('identifier')) != catalog_id]
-    for i, h in enumerate(config['hubs']):
-        h['order'] = i
+    """A row hidden, keeping its place (Manage Hubs' eye)."""
+    order = _order(config)
+    if catalog_id not in order:
+        order.append(catalog_id)
     hidden = config.setdefault(HIDDEN, [])
     if catalog_id not in hidden:
         hidden.append(catalog_id)
+    _sync(config)
 
 
 def show(config, entry):
-    """A hidden row shown again, at the end."""
+    """A hidden row shown again, where it was (at the end if the config didn't know it)."""
     catalog_id = entry['catalog_id']
+    order = _order(config)
+    if catalog_id not in order:
+        order.append(catalog_id)
     hidden = config.setdefault(HIDDEN, [])
     if catalog_id in hidden:
         hidden.remove(catalog_id)
-    hubs = config.setdefault('hubs', [])
-    if not any(h.get('catalog_id', h.get('identifier')) == catalog_id for h in hubs):
-        hubs.append(dict(entry, order=len(hubs)))
+    _sync(config, {catalog_id: entry})
 
 
-def moveShown(config, shown_ids, from_pos, to_pos):
-    """Moves a row from one place to another among the rows the dialog shows (shown_ids, in order):
-    rows the config lists but the server no longer sends keep their own places."""
-    hubs = config.get('hubs', [])
-    slots = [i for i, h in enumerate(hubs) if h.get('catalog_id', h.get('identifier')) in shown_ids]
+def move(config, listed_ids, from_pos, to_pos):
+    """Moves a row from one place to another among the rows the dialog lists (listed_ids, in order,
+    shown or hidden): rows the config knows but the server no longer sends keep their own places."""
+    order = _order(config)
+    slots = [i for i, cid in enumerate(order) if cid in listed_ids]
     if not (0 <= from_pos < len(slots) and 0 <= to_pos < len(slots)) or from_pos == to_pos:
         return False
-    moving = [hubs[i] for i in slots]
+    moving = [order[i] for i in slots]
     moving.insert(to_pos, moving.pop(from_pos))
-    for slot, h in zip(slots, moving):
-        hubs[slot] = h
-    for i, h in enumerate(hubs):
-        h['order'] = i
+    for slot, cid in zip(slots, moving):
+        order[slot] = cid
+    # the order is the user's from now on
+    config[ORDERED] = True
+    _sync(config)
     return True
+
+
+def newConfig(rows):
+    """A custom config of these rows ([entry] in their default order), every one shown."""
+    config = {'custom': True, ORDER: [_id(e) for e in rows], HIDDEN: [], ORDERED: False}
+    _sync(config, dict((_id(e), e) for e in rows))
+    return config
