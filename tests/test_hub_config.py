@@ -444,20 +444,18 @@ class SidebarChangeTest(KodiTestCase):
         win = library.LibraryWindow.__new__(library.LibraryWindow)
         win.section, win.contentMode, win._backStack = section, mode, []
         win.closing = win._shuttingDown = False
-        win._captureRootRestoreState = lambda: {'_restoreHubId': 'row'}
-        win.openSection = mock.Mock(return_value=True)
+        win.refreshHubsInPlace = mock.Mock(return_value=True)
         return win
 
-    def test_home_showing_reloads_on_the_same_row(self):
+    def test_home_showing_refreshes_its_rows_in_place(self):
         win = self.window(home.home_section)
         win.reloadHomeRows('test')
-        win.openSection.assert_called_once_with(home.home_section, force=True, fresh=False)
-        self.assertEqual('row', win._pendingRestoreHubId)
+        win.refreshHubsInPlace.assert_called_once_with('test')
 
-    def test_not_home_or_not_its_rows_no_reload(self):
-        for win in (self.window(mock.Mock(key='22')), self.window(home.home_section, mode='grid')):
-            win.reloadHomeRows('test')
-            win.openSection.assert_not_called()
+    def test_not_home_no_refresh(self):
+        win = self.window(mock.Mock(key='22'))
+        win.reloadHomeRows('test')
+        win.refreshHubsInPlace.assert_not_called()
 
 
 class GenericTitleTest(KodiTestCase):

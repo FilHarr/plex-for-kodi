@@ -299,10 +299,14 @@ class SectionHubsTask(backgroundthread.Task):
 
 
 # Home waits for every server's rows, but no longer than this once one has answered: the rows bind
-# together, and a server slower than that misses this bind (D8's first variant, plan Phase 7).
+# together, and a server slower than that has its rows added in place when they come (D8's first
+# variant, plan Phase 7).
 HOME_LATE_SERVER_BUDGET = 2.0
-# ...and for a first answer at all no longer than this
+# ...and for a first answer at all no longer than this (and for a late one)
 HOME_FETCH_TIMEOUT = 20.0
+# D8's second variant, to compare live: bind as soon as the first server answers, and add each
+# other server's rows in place as they come.
+HOME_BIND_PROGRESSIVE = False
 
 
 def keepLibraries(hub, keys):
@@ -314,16 +318,27 @@ def keepLibraries(hub, keys):
     return hub
 
 
-def mergeContinueWatching(hubs):
-    """One Continue Watching row from each server's: most recently watched first, an item on two
-    servers once, at most HUB_ROW_MAX_ITEMS. One server's row stays as it came (with its "See
-    more"); a merged one has none - its later pages would be per server."""
-    if len(hubs) < 2:
-        return hubs[0] if hubs else None
+def mergeContinueWatching(hubs, positions=None):
+    """One Continue Watching row from each server's: most recently watched first, each item once
+    (decided 2026-10-05). A film in two libraries comes back twice, once per library, with the same
+    progress (a server keeps a guid's watch state in step) - the copy from the library highest in
+    the sidebar stays (positions: {(server uuid, library key): place}), so the user picks which by
+    their sidebar order; on two servers, which don't share progress, the one watched last stays.
+    At most HUB_ROW_MAX_ITEMS. One server's row keeps its "See more"; a merged one has none - its
+    later pages would be per server."""
+    if not hubs:
+        return None
+    positions = positions or {}
+    entries = [(getattr(hub.server, 'uuid', None), item) for hub in hubs for item in hub.items]
+
+    def rank(entry):
+        uuid, item = entry
+        viewed = item.lastViewedAt.asInt() if item.get('lastViewedAt') else 0
+        place = positions.get((uuid, str(item.getLibrarySectionId())))
+        return (-viewed, place if place is not None else len(positions))
+
     items, seen = [], set()
-    for item in sorted((item for hub in hubs for item in hub.items),
-                       key=lambda item: item.lastViewedAt.asInt() if item.get('lastViewedAt') else 0,
-                       reverse=True):
+    for _, item in sorted(entries, key=rank):
         guid = item.get('guid')
         if guid and guid in seen:
             continue
@@ -331,7 +346,8 @@ def mergeContinueWatching(hubs):
         items.append(item)
     merged = hubs[0]
     merged.items = items[:HUB_ROW_MAX_ITEMS]
-    merged.more = plexobjects.PlexValue('0', merged)
+    if len(hubs) > 1:
+        merged.more = plexobjects.PlexValue('0', merged)
     return merged
 
 
@@ -369,24 +385,31 @@ def combineHomeHubs(answers, servers, positions=None):
                 rows.append((server.uuid, keepLibraries(hub, keys)))
     if positions:
         rows = sidebarOrder(rows, positions)
-    merged = mergeContinueWatching(continueWatching)
+    merged = mergeContinueWatching(continueWatching, positions)
     return HubsList(([merged] if merged is not None else []) + [hub for _, hub in rows]).init()
 
 
 class HomeHubsTask(backgroundthread.Task):
     """Home's rows from every server with libraries in the sidebar, asked together (a thread
-    each), then combined (combineHomeHubs()) and handed to the callback once: when all have
-    answered, or HOME_LATE_SERVER_BUDGET after the first did. servers: [(server, keys)] in sidebar
-    order, keys being its libraries in the sidebar (plus 'playlists' for the recent-playlists row).
-    A server known to be offline isn't asked; one still on its first connection test is, once that
-    finds a connection."""
+    each), then combined (combineHomeHubs()) and handed to the callback: when all have answered,
+    or HOME_LATE_SERVER_BUDGET after the first did (HOME_BIND_PROGRESSIVE: as soon as the first
+    has). A server that answers after that has every row so far handed to lateCallback, to rebind
+    in place. servers: [(server, keys)] in sidebar order, keys being its sidebar entries
+    (libraries, 'playlists'). A server known to be offline isn't asked; one still on its first
+    connection test is, once that finds a connection."""
 
-    def setup(self, section, callback, servers, positions=None):
+    def setup(self, section, callback, servers, positions=None, lateCallback=None):
         self.section = section
         self.callback = callback
         self.servers = servers
         self.positions = positions
+        self.lateCallback = lateCallback
         return self
+
+    def _combined(self, answers):
+        hubs = combineHomeHubs(dict(answers), self.servers, self.positions)
+        hubs.identifier = None
+        return hubs
 
     def _fetch(self, server, keys, answers):
         deadline = time.time() + HOME_FETCH_TIMEOUT
@@ -427,6 +450,8 @@ class HomeHubsTask(backgroundthread.Task):
             now = time.time()
             if answers and firstAnswer is None:
                 firstAnswer = now
+                if HOME_BIND_PROGRESSIVE:
+                    break
             if firstAnswer is not None and now - firstAnswer > HOME_LATE_SERVER_BUDGET:
                 break
             if now - started > HOME_FETCH_TIMEOUT:
@@ -438,9 +463,28 @@ class HomeHubsTask(backgroundthread.Task):
         late = [server.name for server, thread in threads if thread.is_alive()]
         util.DEBUG_LOG('Home: rows from {0} of {1} servers in {2} ms{3}', len(answers), len(threads),
                        int((time.time() - started) * 1000), late and ' (not waited for: {0})'.format(', '.join(late)) or '')
-        hubs = combineHomeHubs(dict(answers), self.servers, self.positions)
-        hubs.identifier = None
-        self.callback(self.section, hubs)
+        bound = set(answers)
+        self.callback(self.section, self._combined(answers))
+        if late and self.lateCallback:
+            # the rest, in place as they come - on a thread of its own, not holding a worker
+            waiter = threading.Thread(target=self._awaitLate, args=(threads, answers, bound, started),
+                                      name='home.late')
+            waiter.daemon = True
+            waiter.start()
+
+    def _awaitLate(self, threads, answers, bound, started):
+        deadline = started + HOME_FETCH_TIMEOUT
+        while not self.isCanceled():
+            alive = any(thread.is_alive() for _, thread in threads)
+            if set(answers) != bound:
+                added = [server.name for server, _ in threads if server.uuid in set(answers) - bound]
+                bound = set(answers)
+                util.DEBUG_LOG('Home: rows from {0} came late ({1} ms), added in place', ', '.join(added),
+                               int((time.time() - started) * 1000))
+                self.lateCallback(self.section, self._combined(answers))
+            if not alive or time.time() > deadline:
+                return
+            util.MONITOR.waitForAbort(0.1)
 
 
 class PathMappingProbeTask(backgroundthread.Task):

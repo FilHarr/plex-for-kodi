@@ -750,7 +750,8 @@ class LibraryWindowTest(KodiTestCase):
 class TickTest(KodiTestCase):
     """LibraryWindow.tick(), sleep and wake - ported from HomeWindow, which took them with it when
     it was retired (12675d11): the periodic reachability check was a setting that did nothing, and
-    waking did nothing at all. Refreshing hubs is wake-only until rows can be rebound in place."""
+    waking did nothing at all. The rows are refreshed in place: on wake, and every 5 minutes (plan
+    7.3)."""
 
     def setUp(self):
         KodiTestCase.setUp(self)
@@ -769,6 +770,11 @@ class TickTest(KodiTestCase):
         self.win.contentMode = 'recommended'
         self.win.section = "the section"
         self.win.openSection = mock.Mock()
+        self.win.closing = False
+        self.win._isHostedShell = False
+        self.win._listGeneration = 3
+        self.win.started = []
+        self.win._startHubsFetch = lambda callback, late=None: self.win.started.append((callback, late))
         self.win._captureRootRestoreState = lambda: {'_restoreHubId': 'movie.recentlyadded'}
         self.win.postUI = lambda name, fn, args=(), kwargs=None: self.posted.append((name, fn, args))
         ENV.settings["recheck_server_connections"] = "true"
@@ -816,29 +822,20 @@ class TickTest(KodiTestCase):
         self.win.tick()
         self.servers.periodicReachabilityCheck.assert_not_called()
 
-    def test_the_tick_does_not_refresh_hubs(self):
-        # HomeWindow's 5-minute refresh waits for a rebind-in-place refresh (the plan's Phase 7)
-        self.win._hubsBoundAt = 0.0
-        ENV.cond_visibility["System.IdleTime(60)"] = True
+    def test_the_rows_are_refreshed_every_5_minutes(self):
+        self.win._lastHubsRefresh = 10000.0 - library.LibraryWindow.HUBS_REFRESH_INTERVAL - 1
         self.win.tick()
-        self.assertEqual([], self.posted)
+        self.assertEqual([('refresh rows', self.win.refreshHubsInPlace, ('every 5 minutes',))],
+                         [p for p in self.posted if p[0] == 'refresh rows'])
+        self.posted[:] = []
+        self.win.tick()  # not again until another 5 minutes
+        self.assertEqual([], [p for p in self.posted if p[0] == 'refresh rows'])
 
-    def test_a_refresh_reloads_the_recommended_view_in_place(self):
+    def test_waking_refreshes_the_rows_in_place(self):
         self.win.refreshLastSection()
-        self.win.openSection.assert_called_once_with(self.win.section, force=True, fresh=False)
+        self.assertEqual(1, len(self.win.started))
+        self.win.openSection.assert_not_called()
         self.servers.resumeOfflineRetry.assert_called_once_with()
-
-    def test_a_refresh_lands_back_on_the_same_hub_row(self):
-        # the rebuilt view starts on the first row unless told otherwise, as Back tells it
-        seen = []
-        self.win.openSection = mock.Mock(side_effect=lambda *a, **kw: seen.append(self.win._pendingRestoreHubId) or True)
-        self.win.refreshLastSection()
-        self.assertEqual(['movie.recentlyadded'], seen)
-
-    def test_a_declined_refresh_drops_the_pending_row(self):
-        self.win.openSection = mock.Mock(return_value=False)
-        self.win.refreshLastSection()
-        self.assertIsNone(self.win._pendingRestoreHubId)
 
     def test_a_refresh_leaves_a_grid_a_chain_or_a_video_alone(self):
         import xbmc
@@ -847,8 +844,8 @@ class TickTest(KodiTestCase):
                       lambda: setattr(xbmc.Player, 'playing_video', True)):
             self.win.contentMode, self.win._backStack, xbmc.Player.playing_video = 'recommended', [], False
             setup()
-            self.win.refreshLastSection()
-        self.win.openSection.assert_not_called()
+            self.assertFalse(self.win.refreshHubsInPlace('test'))
+        self.assertEqual([], self.win.started)
 
     def test_sleep_pauses_ticks_and_offline_retests(self):
         self.win._onSleep()
@@ -1006,6 +1003,8 @@ class EmptyLibraryTest(KodiTestCase):
 
         def _reconcileWithHubs(self, *args):
             pass
+
+        _visibleHubsFor = library.HubsMixin._visibleHubsFor
 
         def isHubHidden(self, *args):
             return False

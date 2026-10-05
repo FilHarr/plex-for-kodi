@@ -455,3 +455,134 @@ class SidebarOrderTest(KodiTestCase):
         hubs = home.combineHomeHubs(answers, [(self.animal, ['22', '18']), (self.oscar, ['1'])], self.positions)
         self.assertEqual(['continueWatching', 'movie.recentlyreleased.22', 'home.movies.recent.1', 'tv.recentlyaired.18'],
                          [h.hubIdentifier for h in hubs])
+
+
+class ContinueWatchingOnceTest(KodiTestCase):
+    """Continue Watching shows each item once (decided 2026-10-05): a film in two libraries comes back
+    twice from its server, with the same progress - the copy from the library highest in the sidebar
+    stays; on two servers, which don't share progress, the one watched last."""
+
+    def setUp(self):
+        super(ContinueWatchingOnceTest, self).setUp()
+        self.animal, self.oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
+
+    def test_one_servers_two_copies_the_sidebars_first_library_wins(self):
+        # Films (22) above Movies (2) in the sidebar
+        positions = {(ANIMAL, '22'): 3, (ANIMAL, '2'): 4}
+        a = Hub('continueWatching', [Item('movies copy', '2', 300, guid='plex://movie/s'),
+                                     Item('films copy', '22', 300, guid='plex://movie/s'),
+                                     Item('other', '22', 100)], self.animal)
+        merged = home.mergeContinueWatching([a], positions)
+        self.assertEqual(['films copy', 'other'], [i.title for i in merged.items])
+        self.assertTrue(merged.more.asBool(), "one server's row keeps its See more")
+
+    def test_and_the_other_way_round_when_the_sidebar_says(self):
+        positions = {(ANIMAL, '22'): 5, (ANIMAL, '2'): 4}
+        a = Hub('continueWatching', [Item('films copy', '22', 300, guid='plex://movie/s'),
+                                     Item('movies copy', '2', 300, guid='plex://movie/s')], self.animal)
+        self.assertEqual(['movies copy'], [i.title for i in home.mergeContinueWatching([a], positions).items])
+
+    def test_across_servers_the_one_watched_last_wins(self):
+        positions = {(ANIMAL, '22'): 1, (OSCAR, '1'): 2}
+        a = Hub('continueWatching', [Item('on animal', '22', 100, guid='plex://movie/s')], self.animal)
+        o = Hub('continueWatching', [Item('on oscar', '1', 300, guid='plex://movie/s')], self.oscar)
+        self.assertEqual(['on oscar'], [i.title for i in home.mergeContinueWatching([a, o], positions).items])
+
+
+class LateServerTest(KodiTestCase):
+    """A server slower than the bind's budget has its rows added in place when they come (plan 7.3);
+    HOME_BIND_PROGRESSIVE binds on the first answer and adds the rest the same way (D8's variants)."""
+
+    def setUp(self):
+        super(LateServerTest, self).setUp()
+        self.animal, self.oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
+        self.release = threading.Event()
+        self.addCleanup(self.release.set)
+
+    def run_task(self, progressive=False):
+        bound, late, done = [], [], threading.Event()
+
+        def answer(srv, wait):
+            def hubs(section, count=None, section_ids=None):
+                if wait:
+                    self.release.wait(5)
+                return [Hub('home.movies.recent', [Item(srv.name, section_ids[0])], srv)]
+            return hubs
+
+        self.animal.hubs = mock.Mock(side_effect=answer(self.animal, False))
+        self.oscar.hubs = mock.Mock(side_effect=answer(self.oscar, True))
+
+        def lateCallback(section, rows):
+            late.append(rows)
+            done.set()
+        task = home.HomeHubsTask().setup(home.home_section, lambda section, rows: bound.append(rows),
+                                         [(self.animal, ['22']), (self.oscar, ['1'])], lateCallback=lateCallback)
+        with mock.patch.object(home, 'HOME_LATE_SERVER_BUDGET', 0.2), \
+                mock.patch.object(home, 'HOME_BIND_PROGRESSIVE', progressive):
+            task.run()
+            self.assertEqual([['Animal']], [[h.items[0].title for h in rows] for rows in bound])
+            self.release.set()
+            self.assertTrue(done.wait(5), 'the late rows were handed over')
+        return late
+
+    def test_a_late_servers_rows_are_handed_over_with_the_rest(self):
+        late = self.run_task()
+        self.assertEqual([['Animal', 'Oscar']], [[h.items[0].title for h in rows] for rows in late])
+
+    def test_progressive_binds_on_the_first_answer(self):
+        late = self.run_task(progressive=True)
+        self.assertEqual([['Animal', 'Oscar']], [[h.items[0].title for h in rows] for rows in late])
+
+
+class RebindInPlaceTest(KodiTestCase):
+    """The Recommended view's rows refreshed over the ones showing (plan 7.3): the anchor row stays
+    the anchor, found by its id; nothing is rebound when nothing changed; a refresh for a view
+    that's gone since is dropped."""
+
+    def setUp(self):
+        super(RebindInPlaceTest, self).setUp()
+        self.animal, self.oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
+        win = self.win = library.LibraryWindow.__new__(library.LibraryWindow)
+        win.section = home.home_section
+        win.contentMode = 'recommended'
+        win.closing = False
+        win._listGeneration = 7
+        win.lock = threading.Lock()
+        win.hubSettings = {}
+        win.sectionHubs = {}
+        win.saveHubSettings = lambda: None
+        win._bindAllHubSlots = mock.Mock()
+        win.updateServerUnavailable = mock.Mock()
+        win.getFocusId = lambda: 400
+        win.setFocusId = mock.Mock()
+        self.films = Hub('movie.recentlyreleased.22', [Item('f')], self.animal)
+        self.tv = Hub('tv.recentlyaired.18', [Item('t')], self.animal)
+        self.oscarFilms = Hub('home.movies.recent.1', [Item('o')], self.oscar)
+        win.visibleHubs = [self.films, self.tv]
+        win.focusedHubIndex = 1  # on TV
+
+    def fresh(self, hub):
+        return Hub(hub.hubIdentifier, hub.items, hub.server)
+
+    def test_the_anchor_row_stays_the_anchor_as_rows_come_in_above_it(self):
+        self.win._rebindHubsInPlace(home.home_section, [self.fresh(self.films), self.fresh(self.oscarFilms),
+                                                        self.fresh(self.tv)], 7, 'test')
+        self.assertEqual(2, self.win.focusedHubIndex)
+        self.assertEqual(3, len(self.win.visibleHubs))
+        self.win._bindAllHubSlots.assert_called_once_with()
+
+    def test_nothing_changed_nothing_rebound(self):
+        self.win._rebindHubsInPlace(home.home_section, [self.fresh(self.films), self.fresh(self.tv)], 7, 'test')
+        self.win._bindAllHubSlots.assert_not_called()
+
+    def test_the_anchor_gone_the_nearest_place(self):
+        self.win._rebindHubsInPlace(home.home_section, [self.fresh(self.films)], 7, 'test')
+        self.assertEqual(0, self.win.focusedHubIndex)
+
+    def test_a_refresh_for_a_view_gone_since_is_dropped(self):
+        self.win._rebindHubsInPlace(home.home_section, [self.fresh(self.films)], 6, 'test')
+        self.win._bindAllHubSlots.assert_not_called()
+
+    def test_every_row_gone_the_sidebar(self):
+        self.win._rebindHubsInPlace(home.home_section, [], 7, 'test')
+        self.win.setFocusId.assert_called_once_with(library.LibraryWindow.SECTION_LIST_ID)

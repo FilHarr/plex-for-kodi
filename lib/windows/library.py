@@ -1634,12 +1634,14 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             (plexapp.SERVERMANAGER, 'gone:server', self._postedHandler('onServerGone', self.onServerGone)),
             # Sleep and wake (monitor.py), ported from HomeWindow, which went with it in 12675d11.
             # Pausing only sets flags, so it runs where it's signalled; waking waits on its own
-            # thread (_onWake()) and posts the refresh. HomeWindow also refreshed when a
-            # screensaver or a blanked display ended (and every 5 minutes); those wait for a
-            # refresh that rebinds rows in place rather than rebuilding the view - see
-            # refreshLastSection().
+            # thread (_onWake()) and posts the refresh (refreshLastSection()).
             (util.MONITOR, 'system.sleep', self._onSleep),
             (util.MONITOR, 'system.wakeup', self._onWake),
+            # the screensaver or a blanked display ending: the rows may well have moved on
+            (util.MONITOR, 'screensaver.deactivated', self._postedHandler(
+                'refresh after screensaver', lambda *a, **k: self.refreshHubsInPlace('screensaver'))),
+            (util.MONITOR, 'dpms.deactivated', self._postedHandler(
+                'refresh after display sleep', lambda *a, **k: self.refreshHubsInPlace('display'))),
             # Settings' update source; passed on to the update checker by tick()
             (plexapp.util.APP, 'change:update_source', self._onUpdateSourceChanged),
         )
@@ -1648,7 +1650,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         # tick() - the update checker's hand-offs and the periodic reachability check
         self._ignoreTick = False
-        self._lastReachabilityCheck = self._lastAliveCheck = time.time()
+        self._lastReachabilityCheck = self._lastAliveCheck = self._lastHubsRefresh = time.time()
         self._updateSourceChanged = None
         self._updatePromptPosted = False
         if util.CRON:
@@ -1675,12 +1677,14 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     # connections, which also finds a better one appearing.
     SERVER_ALIVE_INTERVAL = 60
     REACHABILITY_CHECK_INTERVAL = 600
+    # the Recommended view's rows fetched again and rebound in place (refreshHubsInPlace())
+    HUBS_REFRESH_INTERVAL = 300
 
     def tick(self):
         """util.CRON, about once a second, on its own thread - root only (hookSignals()). Ported
         from HomeWindow.tick(), which went with it in 12675d11, leaving the periodic reachability
-        check a setting that did nothing. HomeWindow's tick also refreshed Home's hubs every 5
-        minutes; that waits for a refresh that rebinds rows in place (see refreshLastSection())."""
+        check a setting that did nothing: that, and the rows refreshed in place every 5 minutes
+        (refreshHubsInPlace())."""
         if self._shuttingDown or self.__dict__.get('_ignoreTick'):
             return
 
@@ -1690,6 +1694,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             return
 
         now = time.time()
+        if now - self.__dict__.get('_lastHubsRefresh', now) > self.HUBS_REFRESH_INTERVAL:
+            self._lastHubsRefresh = now
+            self.postUI('refresh rows', self.refreshHubsInPlace, args=('every 5 minutes',))
         if not util.getSetting('recheck_server_connections', True):
             return
         if now - self.__dict__.get('_lastReachabilityCheck', now) > self.REACHABILITY_CHECK_INTERVAL:
@@ -1792,37 +1799,20 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.postUI('refresh after wake', self.refreshLastSection)
 
     def refreshLastSection(self, *args, **kwargs):
-        """Reload the section's Recommended view after waking from sleep - its hubs were fetched
-        before it, and Continue Watching, On Deck or Recently Added may well have moved on since.
-        Rebuilt by openSection() (the window stays): this view has no refresh that rebinds rows
-        in place like HomeWindow's _bindAllHubSlots() yet, so until it has, wake is the only
-        trigger (HomeWindow's screensaver/blank-display/5-minute ones wait for it - see the plan's
-        Phase 7). Lands back on the same hub row, as Back does, and each row keeps its item
-        position (fresh=False). Not with a screen chain open, a library grid showing (its scroll
-        position would be lost) or a video playing."""
+        """After waking from sleep: the section's rows were fetched before it, and Continue
+        Watching or Recently Added may well have moved on since - fetched again and rebound in
+        place (refreshHubsInPlace(), which says when it doesn't)."""
         self._ignoreTick = False
         plexapp.SERVERMANAGER.resumeOfflineRetry()
-        if (self._shuttingDown or self._backStack or self.contentMode != 'recommended' or
-                xbmc.Player().isPlayingVideo()):
-            return
-        util.LOG("Library: refreshing {0} after wake/idle", self.section)
-        # without this the rebuilt view starts on the first row (_recommendedHubsCallback())
-        self._pendingRestoreHubId = self._captureRootRestoreState().get('_restoreHubId')
-        if not self.openSection(self.section, force=True, fresh=False):
-            self._pendingRestoreHubId = None
+        self.refreshHubsInPlace('wake')
 
     def reloadHomeRows(self, reason):
         """Home's rows depend on the sidebar - which libraries it has, and with no saved Home order
-        theirs - so a change to it reloads Home if it's showing, landing on the same row, as waking
-        does (refreshLastSection()). Until the Recommended view can rebind rows in place (plan 7.3),
-        a reload."""
-        if (self.section is None or self.section.key is not None or self.contentMode != 'recommended'
-                or self._backStack or self.closing or self._shuttingDown):
+        theirs - so a change to it refreshes Home's rows in place if it's showing
+        (refreshHubsInPlace())."""
+        if self.section is None or self.section.key is not None:
             return
-        util.DEBUG_LOG('Library: reloading Home ({0})', reason)
-        self._pendingRestoreHubId = self._captureRootRestoreState().get('_restoreHubId')
-        if not self.openSection(self.section, force=True, fresh=False):
-            self._pendingRestoreHubId = None
+        self.refreshHubsInPlace(reason)
 
     # The "isn't responding" panel's button (includes/server_unavailable.xml.tpl)
     SERVER_RETRY_BUTTON_ID = 2600
@@ -1871,6 +1861,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self._rebuildSidebar()
         if server is plexapp.SERVERMANAGER.selectedServer:
             self.displayServerAndUser()
+        if self._isHomeServer(server) and not self._isViewServer(server):
+            # Home's rows from it go (HomeHubsTask skips an offline server)
+            self.refreshHubsInPlace(u'{0} offline'.format(server.name))
         if not self._isViewServer(server):
             return
         self._notifyUnavailable(server)
@@ -2023,6 +2016,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self._rebuildSidebar()
         if server is plexapp.SERVERMANAGER.selectedServer:
             self.displayServerAndUser()
+        if self._isHomeServer(server) and not self._isViewServer(server):
+            # Home's rows from it come back
+            self.refreshHubsInPlace(u'{0} back'.format(server.name))
         if not self._isViewServer(server):
             return
         self._unavailableNotified = None
@@ -2223,15 +2219,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # and tabs meanwhile, with the hero hidden (no_hero_art, above). A hub cache was tried
             # too and dropped (the user's choice, 2026-09-26): it saved ~230 ms per Back on the
             # AM6B, not enough to be felt, against up to 5 minutes of staleness.
-            callback = self._recommendedHubsFetchedFor(generation)
-            if self.section.key is None:
-                # Home: every sidebar server's rows, asked together (home.HomeHubsTask)
-                task = home.HomeHubsTask().setup(self.section, callback, self._homeServers(),
-                                                 self._homeRowPositions())
-            else:
-                task = home.SectionHubsTask().setup(self.section, callback)
-            self.tasks.add(task)
-            backgroundthread.BGThreader.addTasksToFront([task])
+            self._startHubsFetch(self._recommendedHubsFetchedFor(generation),
+                                 self._hubsRefetchedFor(generation, 'a late server'))
 
             self.setBoolProperty("initialized", True)
         elif self.showPanelControl and not self.refill:
@@ -2247,6 +2236,39 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             finally:
                 self._gridTiming = None
             timing.log()
+
+    def _startHubsFetch(self, callback, lateCallback=None):
+        """Fetch the section's rows on a worker for callback(section, hubs): Home's from every
+        sidebar server together (home.HomeHubsTask, which hands rows from a server that answers too
+        late for the first bind to lateCallback), a library's from its server."""
+        if self.section.key is None:
+            task = home.HomeHubsTask().setup(self.section, callback, self._homeServers(),
+                                             self._homeRowPositions(), lateCallback=lateCallback)
+        else:
+            task = home.SectionHubsTask().setup(self.section, callback)
+        self.tasks.add(task)
+        backgroundthread.BGThreader.addTasksToFront([task])
+
+    def _hubsRefetchedFor(self, generation, reason):
+        """A fetch's callback that rebinds the rows in place (_rebindHubsInPlace()), on the main
+        thread."""
+        def callback(section, hubs, reselect_pos_dict=None):
+            self.postUI('rebind hubs', self._rebindHubsInPlace, args=(section, hubs, generation, reason))
+        return callback
+
+    def refreshHubsInPlace(self, reason):
+        """Fetch the Recommended view's rows again and rebind them over the ones showing
+        (_rebindHubsInPlace()) - Home's every 5 minutes, after the screensaver, a blanked display or
+        sleep, and as its servers come and go (plan 7.3). Not with a screen chain open (its rows
+        aren't on screen; it's refreshed on the way back), the grid showing, or a video playing."""
+        if (self._shuttingDown or self.closing or self._backStack or self._isHostedShell
+                or self.contentMode != 'recommended' or self.section is None
+                or xbmc.Player().isPlayingVideo()):
+            return False
+        util.DEBUG_LOG('Library: refreshing {0}\'s rows in place ({1})', self.section.title or 'Home', reason)
+        self._startHubsFetch(self._hubsRefetchedFor(self._listGeneration, reason),
+                             self._hubsRefetchedFor(self._listGeneration, reason + ', a late server'))
+        return True
 
     def _consumeRestoreItemPos(self, count):
         """One-shot: the grid position popBack() asked to land back on (_captureRootRestoreState()/
@@ -2812,6 +2834,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 servers.append((server, keys[uuid]))
         return servers
 
+    def _isHomeServer(self, server):
+        """Whether Home is showing and has rows from this server (its libraries in the sidebar)."""
+        return (server is not None and self.section is not None and self.section.key is None
+                and any(s.uuid == server.uuid for s, _ in self._homeServers()))
+
     def _homeRowPositions(self):
         """Each sidebar entry's place, by (server uuid, key), for Home's row order
         (home.sidebarOrder()) - a server's Playlists by (its uuid, 'playlists')."""
@@ -3196,11 +3223,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         elif choice["key"] == "manage_hubs":
             self.showHubSettingsDialog(section)
-            # showHubSettingsDialog() has no HomeWindow-style showHubs() call to fall back on here
-            # (no equivalent exists on this window) - reopening the section below, via the caller's
-            # serverRefresh(section=...) handoff, is this window's own refresh mechanism, so only
-            # ask for it when something actually changed.
+            # Something changed (or the dialog found rows the screen doesn't show): the section's
+            # rows refreshed in place if it's the one showing, else reopened via the caller's
+            # serverRefresh(section=...) handoff, as before.
             if self._hubsSettingsChanged:
+                if (section_ids.hubSettingsId(section) == section_ids.hubSettingsId(self.section)
+                        and self.refreshHubsInPlace('hub settings')):
+                    return
                 return self.section
             return
 

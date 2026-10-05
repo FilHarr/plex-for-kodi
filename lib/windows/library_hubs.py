@@ -2481,9 +2481,7 @@ class HubsMixin(object):
             # explicitly hidden from their real Home screen still showed up here - live-confirmed
             # (pinnedContentDirectoryID is identical between HomeWindow's own requests and this
             # one, so the fetch itself was never the difference; the missing filter was).
-            self._reconcileWithHubs(section, hubs)
-            sorted_hubs = [hub for hub in self.sortHubsByUserOrder(hubs, section=section)
-                          if hub.items and not self.isHubHidden(hub, section)]
+            sorted_hubs = self._visibleHubsFor(section, hubs)
             self.sectionHubs[section_ids.hubSettingsId(section)] = sorted_hubs
             self.visibleHubs = sorted_hubs
             # One-shot: popBack() asked to land back on a specific hub row (_pendingRestoreHubId,
@@ -2528,6 +2526,58 @@ class HubsMixin(object):
             util.DEBUG_LOG("Library: _recommendedHubsCallback() bound {0} hub(s) for {1}, anchor={2}",
                            min(len(sorted_hubs), len(self.hubControls)), section.key,
                            self._anchorControlId())
+
+    def _visibleHubsFor(self, section, hubs):
+        """The rows a section shows of the hubs fetched for it: the saved config brought up to date
+        with them, then in its order, less the hidden and the empty."""
+        self._reconcileWithHubs(section, hubs)
+        return [hub for hub in self.sortHubsByUserOrder(hubs, section=section)
+                if hub.items and not self.isHubHidden(hub, section)]
+
+    def _hubsSignature(self, hubs):
+        """What a set of rows shows: each row and its items, in order - nothing to rebind when it's
+        the same."""
+        return [(self.hubMemoryKey(hub), [getattr(item, 'ratingKey', None) or id(item) for item in hub.items])
+                for hub in hubs]
+
+    def _rebindHubsInPlace(self, section, hubs, generation, reason=''):
+        """The Recommended view's rows fetched again (refreshHubsInPlace(), a late server's), bound
+        over the ones showing without rebuilding the view (plan 7.3, agreed 2026-10-02): the row
+        that was the anchor stays it (found by hubMemoryKey(), else the nearest place), the ring
+        keeps its rotation, each row its item (_bindHubToControl()'s reselect memory), and focus
+        stays where it is. Nothing happens when the rows show what they did."""
+        if generation != self._listGeneration or self.closing or self.contentMode != 'recommended':
+            return
+        with self.lock:
+            if generation != self._listGeneration or self.closing:
+                return
+            if section_ids.hubSettingsId(section) != section_ids.hubSettingsId(self.section):
+                return
+            new = self._visibleHubsFor(section, hubs)
+            if self._hubsSignature(new) == self._hubsSignature(self.visibleHubs or []):
+                util.DEBUG_LOG('Library: hub rows unchanged ({0})', reason)
+                return
+            anchorKey = None
+            if self.visibleHubs and 0 <= self.focusedHubIndex < len(self.visibleHubs):
+                anchorKey = self.hubMemoryKey(self.visibleHubs[self.focusedHubIndex])
+            index = None
+            for i, hub in enumerate(new):
+                if self.hubMemoryKey(hub) == anchorKey:
+                    index = i
+                    break
+            if index is None:
+                index = max(0, min(self.focusedHubIndex, len(new) - 1))
+            hadFocus = self.getFocusId() in self.HUB_ROTATION_RING
+            self.sectionHubs[section_ids.hubSettingsId(section)] = new
+            self.visibleHubs = new
+            self.focusedHubIndex = index
+            self._bindAllHubSlots()
+            self.updateServerUnavailable()
+            util.DEBUG_LOG('Library: hub rows rebound in place ({0}): {1} rows, anchor {2}',
+                           reason, len(new), self.hubMemoryKey(new[index]) if new else None)
+            if hadFocus and not new:
+                # nothing left to be on: the sidebar, as for an empty view
+                self.setFocusId(self.SECTION_LIST_ID)
 
     def _bindAllHubSlots(self):
         """Bind all 5 physical hub-row controls to their current roles, from

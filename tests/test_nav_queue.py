@@ -336,11 +336,13 @@ class ServerSignalsTest(KodiTestCase):
                               ('onServerGone', {'server': 'oscar'})], calls)
 
             # sleep and wake: pausing runs in place (it only sets flags), and waking threads its own
-            # wait before it posts the refresh; nothing hooks the screensaver
+            # wait before it posts the refresh; the screensaver or a blanked display ending posts a
+            # refresh of the rows in place
             monitor.trigger('system.sleep')
             monitor.trigger('system.wakeup')
             self.assertEqual(['_onSleep', '_onWake'], [c[0] for c in calls[-2:]])
-            self.assertEqual(['system.sleep', 'system.wakeup'], sorted(monitor.handlers))
+            self.assertEqual(['dpms.deactivated', 'screensaver.deactivated', 'system.sleep', 'system.wakeup'],
+                             sorted(monitor.handlers))
             cron.registerReceiver.assert_called_once_with(host)
 
             library.LibraryWindow.unhookSignals(host)
