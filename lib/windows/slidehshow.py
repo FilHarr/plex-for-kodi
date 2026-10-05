@@ -5,6 +5,7 @@ from plexnet import plexapp
 
 from lib import util
 from . import kodigui
+from . import section_ids
 
 
 class Slideshow(kodigui.BaseWindow, util.CronReceiver):
@@ -45,12 +46,32 @@ class Slideshow(kodigui.BaseWindow, util.CronReceiver):
         self.displayMoveTime = time.time() + self.timeBetweenDisplayMove
         self.revealTitleTime = None
         
-        self.selectedServer = plexapp.SERVERMANAGER.selectedServer
         self.index = -1
         self.images = []
         
         self.initialized = True
     
+    # how long to wait for a server's first connection test: the screensaver starts on its own,
+    # straight after plex.init(), with none tested yet
+    CONNECT_WAIT = 5
+
+    def fetchArts(self):
+        """Random art from every server the sidebar has libraries from - every server on the
+        account if it has none - mixed together (the user's choice, 2026-10-05; it was the selected
+        server's). A server that doesn't answer is left out."""
+        servers = section_ids.sidebarServers() or plexapp.SERVERMANAGER.getServers()
+        images = []
+        for server in servers:
+            if not section_ids.awaitConnection(server, self.CONNECT_WAIT):
+                util.DEBUG_LOG('[SS] {0} not answering, no art from it', server.name)
+                continue
+            try:
+                images.extend(server.library.randomArts())
+            except Exception as e:
+                util.DEBUG_LOG('[SS] No art from {0}: {1}', server.name, e)
+        random.shuffle(images)
+        return images
+
     def tick(self):
         if not self.initialized:
             return
@@ -64,10 +85,9 @@ class Slideshow(kodigui.BaseWindow, util.CronReceiver):
             nextIndex = self.index + 1
             
             if nextIndex >= len(self.images):
-                if self.selectedServer != None:
-                    self.images = self.selectedServer.library.randomArts();
-                    util.DEBUG_LOG('[SS] Fetched {0} items', lambda: len(self.images))
-                    nextIndex = 0
+                self.images = self.fetchArts()
+                util.DEBUG_LOG('[SS] Fetched {0} items', lambda: len(self.images))
+                nextIndex = 0
 
             if len(self.images) == 0:
                 title = 'No Images'
@@ -76,7 +96,7 @@ class Slideshow(kodigui.BaseWindow, util.CronReceiver):
                 image = self.images[nextIndex]
                 title = image.get('title')
                 key = image.get('key')
-                url = self.selectedServer.getImageTranscodeURL(key, self.width, self.height)
+                url = image.server.getImageTranscodeURL(key, self.width, self.height)
             if not self.quizMode:
                 self.setProperty('title', title)
             else:

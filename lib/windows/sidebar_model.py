@@ -36,6 +36,9 @@ from lib.util import T
 from . import home
 from . import section_ids
 from .section_ids import sectionId, PLAYLISTS_ID, WATCHLIST_ID
+# section_ids' own, kept here for the windows that call them by this module: the screensaver can't
+# import this one (its home import), so they live there
+from .section_ids import sidebarServers, awaitConnection  # noqa: F401
 
 SIDEBAR_VERSION = 2
 
@@ -123,20 +126,6 @@ def saveNavSettings(nav):
     if nav.get('unsaved'):
         return
     util.setSetting(section_ids.sidebarKey(), json.dumps(nav))
-
-
-def sidebarServers():
-    """The servers the sidebar has entries from, in sidebar order. Read as stored: no migration, no
-    fetch (loadNavSettings()), so any thread can ask; empty until the sidebar has been moved over."""
-    manager = plexapp.SERVERMANAGER
-    servers, seen = [], set()
-    for sid in section_ids.loadJson(section_ids.sidebarKey()).get('entries', ()):
-        uuid, sep, _ = sid.partition(':')
-        server = manager.serversByUuid.get(uuid) if sep else None
-        if server is not None and uuid not in seen:
-            seen.add(uuid)
-            servers.append(server)
-    return servers
 
 
 def watchServers(nav):
@@ -329,23 +318,6 @@ def fetchServerSections(server):
             sections.append(cls(elem, initpath=path, server=server, container=library))
     _noteSections(server, sections)
     return sections
-
-
-def awaitConnection(server, timeout):
-    """A server's first connection test, started if it hasn't been, and waited for (timeout s at
-    most): whether it found one. Asking a server before then gets no answer - at start-up, or on a
-    new account, none has been tested yet."""
-    if server.activeConnection:
-        return True
-    if server.offline:
-        return False
-    if server.pendingReachabilityRequests <= 0:
-        server.updateReachability(True)
-    end = time.time() + timeout
-    while not server.activeConnection and server.pendingReachabilityRequests > 0 and time.time() < end:
-        if util.MONITOR.waitForAbort(0.05):
-            break
-    return bool(server.activeConnection)
 
 
 def _noteSections(server, sections):

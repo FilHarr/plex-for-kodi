@@ -22,6 +22,7 @@ from __future__ import absolute_import
 
 import json
 import threading
+import time
 
 from plexnet import plexapp
 
@@ -353,3 +354,34 @@ def migrate():
         util.setSetting(hubSettingsKey(), json.dumps(hubs))
         util.setSetting(sidebarKey(), json.dumps(nav))
         _migrated.add(account)
+
+
+def sidebarServers():
+    """The servers the sidebar has entries from, in sidebar order. Read as stored: no migration, no
+    fetch (loadNavSettings()), so any thread can ask; empty until the sidebar has been moved over."""
+    manager = plexapp.SERVERMANAGER
+    servers, seen = [], set()
+    for sid in loadJson(sidebarKey()).get('entries', ()):
+        uuid, sep, _ = sid.partition(':')
+        server = manager.serversByUuid.get(uuid) if sep else None
+        if server is not None and uuid not in seen:
+            seen.add(uuid)
+            servers.append(server)
+    return servers
+
+
+def awaitConnection(server, timeout):
+    """A server's first connection test, started if it hasn't been, and waited for (timeout s at
+    most): whether it found one. Asking a server before then gets no answer - at start-up, or on a
+    new account, none has been tested yet."""
+    if server.activeConnection:
+        return True
+    if server.offline:
+        return False
+    if server.pendingReachabilityRequests <= 0:
+        server.updateReachability(True)
+    end = time.time() + timeout
+    while not server.activeConnection and server.pendingReachabilityRequests > 0 and time.time() < end:
+        if util.MONITOR.waitForAbort(0.05):
+            break
+    return bool(server.activeConnection)
