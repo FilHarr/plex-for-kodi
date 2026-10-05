@@ -256,9 +256,13 @@ class LibraryWindowHomeTest(KodiTestCase):
 
     def test_home_asks_each_server_for_its_sidebar_libraries_in_sidebar_order(self):
         self.win.navSettings = {'version': 2, 'libraries': {},
-                                'entries': ['/library/sections/watchlist', OSCAR + ':1', ANIMAL + ':22',
-                                            'playlists', OSCAR + ':2', 'gone-uuid:5']}
-        self.assertEqual([(self.oscar, ['1', '2']), (self.animal, ['22', 'playlists'])], self.win._homeServers())
+                                'entries': ['/library/sections/watchlist', OSCAR + ':playlists', OSCAR + ':1',
+                                            ANIMAL + ':22', ANIMAL + ':playlists', OSCAR + ':2', 'gone-uuid:5']}
+        # each server's Playlists in its place among its entries
+        self.assertEqual([(self.oscar, ['playlists', '1', '2']), (self.animal, ['22', 'playlists'])],
+                         self.win._homeServers())
+        self.assertEqual({(OSCAR, 'playlists'): 1, (OSCAR, '1'): 2, (ANIMAL, '22'): 3, (ANIMAL, 'playlists'): 4,
+                          (OSCAR, '2'): 5, ('gone-uuid', '5'): 6}, self.win._homeRowPositions())
 
     def test_a_row_names_its_server_with_more_than_one(self):
         self.assertEqual('Oscar', self.win.homeRowServerName(Hub('home.movies.recent', [], self.oscar)))

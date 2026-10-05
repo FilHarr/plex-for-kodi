@@ -6,7 +6,7 @@ import plexnet
 from kodi_six import xbmcgui
 from six.moves import range
 
-from plexnet import signalsmixin
+from plexnet import plexapp, signalsmixin
 from lib import backgroundthread
 from lib import player
 from lib import util
@@ -229,9 +229,10 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.processCommand(search.dialog(self))
 
     def sidebarActiveSection(self, entries):
-        # A playlist isn't tied to one library section (its items can span several): Playlists
-        # is where this screen was reached from.
-        return home.playlists_section
+        # A playlist isn't tied to one library section (its items can span several): its server's
+        # Playlists is where this screen was reached from.
+        server = getattr(getattr(self, 'playlist', None), 'server', None) or plexapp.SERVERMANAGER.selectedServer
+        return home.playlistsSection(server) if server is not None else None
 
     def playlistListClicked(self, no_item=False, shuffle=False, resume=None, play=False):
         if no_item:

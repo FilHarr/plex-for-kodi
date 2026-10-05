@@ -346,7 +346,11 @@ class HubsMixin(object):
         section_ids.migrate()
         self.hubSettings = section_ids.loadJson(section_ids.hubSettingsKey())
         selected = plexapp.SERVERMANAGER.selectedServer
-        if section_ids.mergeHomeConfigs(self.hubSettings, selected.uuid if selected else None):
+        changed = section_ids.mergeHomeConfigs(self.hubSettings, selected.uuid if selected else None)
+        if selected is not None and section_ids.migratePlaylists(None, self.hubSettings, selected.uuid)[1]:
+            # the old single Playlists entry's hub settings: the selected server's Playlists'
+            changed = True
+        if changed:
             self.saveHubSettings()
 
     def saveHubSettings(self):

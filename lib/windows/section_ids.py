@@ -30,7 +30,45 @@ from lib import util
 from .hub_config import homeRowId
 
 
+# The old single Playlists entry, the selected server's; each server has its own now,
+# "<server uuid>:playlists" (playlistsId())
 PLAYLISTS_ID = 'playlists'
+PLAYLISTS_KEY = 'playlists'
+
+
+def playlistsId(uuid):
+    return u'{0}:{1}'.format(uuid, PLAYLISTS_KEY)
+
+
+def isPlaylistsId(sid):
+    return sid == PLAYLISTS_ID or (sid or '').endswith(':' + PLAYLISTS_KEY)
+
+
+def migratePlaylists(nav, hub_settings, uuid):
+    """The old single Playlists entry - the selected server's - becomes that server's own: in the
+    sidebar's entries and order, and its Manage Hubs config (key and catalog ids). Rewrites both in
+    place; returns (nav changed, hub settings changed)."""
+    new = playlistsId(uuid)
+    navChanged = hubsChanged = False
+    for name in ('entries', 'order'):
+        ids = (nav or {}).get(name)
+        if ids and PLAYLISTS_ID in ids:
+            ids[ids.index(PLAYLISTS_ID)] = new
+            navChanged = True
+    config = (hub_settings or {}).pop(PLAYLISTS_ID, None)
+    if config is not None:
+        prefix = PLAYLISTS_ID + '|'
+        if isinstance(config, dict):
+            for h in config.get('hubs', []):
+                if h.get('catalog_id', '').startswith(prefix):
+                    h['catalog_id'] = new + h['catalog_id'][len(PLAYLISTS_ID):]
+            for name in ('order', 'hidden'):
+                if config.get(name):
+                    config[name] = [new + c[len(PLAYLISTS_ID):] if c.startswith(prefix) else c
+                                    for c in config[name]]
+        hub_settings.setdefault(new, config)
+        hubsChanged = True
+    return navChanged, hubsChanged
 WATCHLIST_ID = '/library/sections/watchlist'
 HOME_STORAGE_KEY = '__home__'
 # Home's Continue Watching is one row from every server: its catalog id carries none
@@ -38,9 +76,9 @@ CONTINUE_WATCHING_ID = 'continueWatching'
 
 
 def sectionId(section):
-    """The library's id across servers: None for Home, the fixed id for Playlists and Watchlist,
-    otherwise "<server uuid>:<key>". A sidebar placeholder (sidebar_model.LibraryPlaceholder) carries
-    its own."""
+    """The library's id across servers: None for Home, the fixed id for Watchlist, otherwise
+    "<server uuid>:<key>" - a server's Playlists "<server uuid>:playlists". A sidebar placeholder
+    (sidebar_model.LibraryPlaceholder) and a server's Playlists section carry their own."""
     stored = section.__dict__.get('sidebarId')
     if stored:
         return stored

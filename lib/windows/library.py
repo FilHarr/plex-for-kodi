@@ -2790,8 +2790,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         """The servers Home's rows come from, in sidebar order, each with its libraries in the
         sidebar: [(server, keys)]. A library hidden from the sidebar - not in it - adds no rows
         (live-confirmed once: rows from hidden libraries, one of them empty). Playlists in the
-        sidebar adds the selected server's recent-playlists row ('playlists': it isn't a library,
-        and is still the selected server's)."""
+        sidebar adds that server's recent-playlists row ('playlists', in its place among them)."""
         nav = self.sidebarNavSettings()
         manager = plexapp.SERVERMANAGER
         order, keys = [], {}
@@ -2803,12 +2802,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 order.append(uuid)
                 keys[uuid] = []
             keys[uuid].append(key)
-        selected = manager.selectedServer
-        if section_ids.PLAYLISTS_ID in nav.get('entries', ()) and selected is not None:
-            if selected.uuid not in keys:
-                order.append(selected.uuid)
-                keys[selected.uuid] = []
-            keys[selected.uuid].append('playlists')
         servers = []
         for uuid in order:
             server = manager.serversByUuid.get(uuid)
@@ -2818,16 +2811,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
     def _homeRowPositions(self):
         """Each sidebar entry's place, by (server uuid, key), for Home's row order
-        (home.sidebarOrder()). Playlists is the selected server's."""
+        (home.sidebarOrder()) - a server's Playlists by (its uuid, 'playlists')."""
         nav = self.sidebarNavSettings()
-        selected = plexapp.SERVERMANAGER.selectedServer
         positions = {}
         for index, sid in enumerate(nav.get('entries', ())):
             uuid, sep, key = sid.partition(':')
             if sep:
                 positions[(uuid, key)] = index
-            elif sid == section_ids.PLAYLISTS_ID and selected is not None:
-                positions[(selected.uuid, 'playlists')] = index
         return positions
 
     def _liveSidebarSection(self, placeholder):
@@ -2868,9 +2858,14 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             servers = [x for x in servers if x.hasLocalModeConnection()]
 
         listed = {}
+        playlists = {}
 
         def ask(server):
-            listed[server.uuid] = sidebar_model.fetchServerSections(server)
+            listed[server.uuid] = sections = sidebar_model.fetchServerSections(server)
+            if sections is not None:
+                answer = server.playlists()
+                sidebar_model.notePlaylists(server, answer)
+                playlists[server.uuid] = bool(answer)
 
         with busy.BusyContext(delay=True, delay_time=0.2):
             threads = [threading.Thread(target=ask, args=(server,), name='libraries.' + server.name)
@@ -2882,6 +2877,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         self._pickerServers = servers
         self._pickerListed = listed
+        self._pickerPlaylists = playlists
         self._pickerChanged = False
         self._pickerOpen = None
         try:
@@ -2900,7 +2896,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 dialog_class=dropdown.CardListDialog,
             )
         finally:
-            self._pickerServers = self._pickerListed = None
+            self._pickerServers = self._pickerListed = self._pickerPlaylists = None
         if self._pickerChanged:
             self.saveNavSettings()
             self._rebuildSidebar()
@@ -2928,11 +2924,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     def _libraryPickerOptions(self):
         """The picker's rows: one per entry of sidebar_model.pickerOrder(), then Reset order."""
         nav = self.sidebarNavSettings()
-        order = sidebar_model.pickerOrder(nav, self._pickerListed, self._pickerServers)
+        order = sidebar_model.pickerOrder(nav, self._pickerListed, self._pickerServers,
+                                          getattr(self, '_pickerPlaylists', None))
         pinned = set(nav['entries'])
         servers = dict((server.uuid, server) for server in self._pickerServers)
         multiServer = len(plexapp.SERVERMANAGER.getServers()) > 1
-        selected = plexapp.SERVERMANAGER.selectedServer
         watchlistOn = util.getUserSetting("use_watchlist", True) and not plexapp.ACCOUNT.isOffline
 
         options = []
@@ -2942,11 +2938,14 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 if not watchlistOn:
                     continue
                 title = T(34000, 'Watchlist')
-            elif sid == section_ids.PLAYLISTS_ID:
+            elif section_ids.isPlaylistsId(sid):
+                # a server's Playlists
                 title = T(32333, 'Playlists')
-                # still the selected server's
-                if multiServer and selected is not None:
-                    subtitle = selected.name
+                server = servers.get(sid.partition(':')[0])
+                if server is not None:
+                    section = home.playlistsSection(server)
+                    if multiServer:
+                        subtitle = server.name
             else:
                 uuid, _, key = sid.partition(':')
                 meta = nav['libraries'].get(sid, {})
@@ -2991,7 +2990,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             section = choice.get('section')
             if sid in nav['entries']:
                 sidebar_model.unpin(nav, sid)
-            elif sid in (section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID):
+            elif sid == section_ids.WATCHLIST_ID:
                 sidebar_model.pin(nav, sid)
             elif section is not None:
                 sidebar_model.addEntry(nav, section)
@@ -3010,8 +3009,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         sid = choice['sid']
         if sid == section_ids.WATCHLIST_ID:
             return home.watchlist_section
-        if sid == section_ids.PLAYLISTS_ID:
-            return home.playlists_section
         if choice.get('section') is not None:
             return choice['section']
         nav = self.sidebarNavSettings()
@@ -3100,7 +3097,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
             # the server's own admin only: a shared server refuses these
             if (plexapp.ACCOUNT.isAdmin and not placeholder
-                    and section not in (home.watchlist_section, home.playlists_section)
+                    and section != home.watchlist_section and not home.isPlaylists(section)
                     and section.server.owned):
                 options = [{'key': 'refresh', 'display': T(33082, "Scan Library Files")},
                            {'key': 'emptyTrash', 'display': T(33083, "Empty Trash")},
@@ -3260,7 +3257,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         (_tabListNeedsRebuild()) and its grid (fillPlaylists()) both need them."""
         playlists = self.__dict__.get('_viewPlaylists')
         if playlists is None:
-            server = plexapp.SERVERMANAGER.selectedServer
+            server = self.section.server
             playlists = self._viewPlaylists = list(server.playlists() or [])
             sidebar_model.notePlaylists(server, playlists)
         return playlists

@@ -81,6 +81,11 @@ def loadNavSettings():
     section_ids.migrate()
     nav = section_ids.loadJson(section_ids.sidebarKey())
     if nav.get('version') == SIDEBAR_VERSION:
+        selected = plexapp.SERVERMANAGER.selectedServer
+        if selected is not None and section_ids.migratePlaylists(nav, None, selected.uuid)[0]:
+            # the old single Playlists entry is the selected server's own now
+            util.LOG('Sidebar: Playlists is {0}\'s own entry now', selected.name)
+            saveNavSettings(nav)
         watchServers(nav)
         return nav
     migrated = migrateToList(nav, plexapp.SERVERMANAGER.selectedServer)
@@ -194,13 +199,15 @@ def moveEntry(nav, sid, index):
     _pinnedInOrder(nav, set(nav['entries']))
 
 
-def pickerOrder(nav, listed, servers):
-    """The picker's rows, in the user's order: the stored order, then anything new to it - Watchlist
-    and Playlists, and each listed server's libraries in its own order, servers as given. A library
-    gone from a server that listed its libraries leaves, unless it's pinned (the sidebar shows it as
-    missing until it's unpinned); so does one of a server no longer on the account, unless pinned.
-    listed: {uuid: [LibrarySection] or None (didn't answer)}. Stores the order and each library's
-    title, type and server, and returns it."""
+def pickerOrder(nav, listed, servers, playlists=None):
+    """The picker's rows, in the user's order: the stored order, then anything new to it - Watchlist,
+    and each listed server's libraries in its own order then its Playlists, servers as given. A
+    library gone from a server that listed its libraries leaves, unless it's pinned (the sidebar
+    shows it as missing until it's unpinned); so does one of a server no longer on the account,
+    unless pinned, and a server's Playlists once it has none. listed: {uuid: [LibrarySection] or
+    None (didn't answer)}; playlists: {uuid: whether it has any}. Stores the order and each
+    library's title, type and server, and returns it."""
+    playlists = playlists or {}
     order = _order(nav)
     pinned = set(nav.get('entries', ()))
     onAccount = set(server.uuid for server in servers)
@@ -210,18 +217,25 @@ def pickerOrder(nav, listed, servers):
         if sep and sid not in pinned:
             if uuid not in onAccount:
                 continue
-            sections = listed.get(uuid)
-            if sections is not None and key not in [str(s.key) for s in sections]:
-                continue
+            if key == section_ids.PLAYLISTS_KEY:
+                if playlists.get(uuid) is False:
+                    continue
+            else:
+                sections = listed.get(uuid)
+                if sections is not None and key not in [str(s.key) for s in sections]:
+                    continue
         keep.append(sid)
     if WATCHLIST_ID not in keep:
         keep.insert(0, WATCHLIST_ID)
-    if PLAYLISTS_ID not in keep:
-        keep.insert(keep.index(WATCHLIST_ID) + 1, PLAYLISTS_ID)
     for server in servers:
         for section in listed.get(server.uuid) or ():
             sid = sectionId(section)
             nav['libraries'][sid] = libraryMeta(section)
+            if sid not in keep:
+                keep.append(sid)
+        if playlists.get(server.uuid):
+            sid = section_ids.playlistsId(server.uuid)
+            nav['libraries'][sid] = libraryMeta(home.playlistsSection(server))
             if sid not in keep:
                 keep.append(sid)
     nav['order'] = keep
@@ -232,8 +246,8 @@ def pickerOrder(nav, listed, servers):
 
 
 def resetOrder(nav):
-    """Watchlist, Playlists, then the libraries by server - the selected one first - each server's
-    in its own order. Pins stay as they are."""
+    """Watchlist, then the libraries by server - the selected one first - each server's in its own
+    order, then its Playlists. Pins stay as they are."""
     selected = plexapp.SERVERMANAGER.selectedServer
     selectedUuid = selected.uuid if selected else None
 
@@ -246,8 +260,9 @@ def resetOrder(nav):
         known = _knownSections(uuid) or []
         keys = [str(s.key) for s in known]
         meta = nav['libraries'].get(sid, {})
-        return (2 if uuid == selectedUuid else 3, (meta.get('server') or '').lower(),
-                keys.index(key) if key in keys else len(keys))
+        server = plexapp.SERVERMANAGER.serversByUuid.get(uuid)
+        name = meta.get('server') or (server.name if server is not None else '')
+        return (2 if uuid == selectedUuid else 3, name.lower(), keys.index(key) if key in keys else len(keys))
 
     _order(nav).sort(key=position)
     _pinnedInOrder(nav, set(nav['entries']))
@@ -505,10 +520,12 @@ def sections(nav, onChange=None):
             if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True)
                     and home.watchlist_section and home.watchlist_section.has_data()):
                 entries.append(home.watchlist_section)
-        elif sid == PLAYLISTS_ID:
-            server = manager.selectedServer
+        elif section_ids.isPlaylistsId(sid):
+            # a server's Playlists (the old single entry: the selected server's), when it has any
+            uuid = sid.partition(':')[0] if ':' in sid else None
+            server = manager.serversByUuid.get(uuid) if uuid else manager.selectedServer
             if server and hasPlaylists(server, onChange=onChange):
-                entries.append(home.playlists_section)
+                entries.append(home.playlistsSection(server))
         elif sid:
             entry = _libraryEntry(nav, sid, onChange)
             if entry.__dict__.get('sidebarId') is None:

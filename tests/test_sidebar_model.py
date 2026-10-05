@@ -204,7 +204,7 @@ class EntriesTest(SidebarCase):
         self.assertTrue(items[0].getProperty('is.search'))
         self.assertTrue(items[1].getProperty('is.home'))
         self.assertIs(home.home_section, items[1].dataSource)
-        playlists = [mli for mli in items if mli.dataSource is home.playlists_section][0]
+        playlists = [mli for mli in items if home.isPlaylists(mli.dataSource)][0]
         self.assertTrue(playlists.getProperty('is.playlists'))
         self.assertTrue(all(mli.getProperty('item') for mli in items))
 
@@ -516,7 +516,7 @@ class ListEditTest(SidebarCase):
     def test_a_move_takes_its_place_in_the_order_and_the_sidebar_follows(self):
         nav = self.nav()
         sidebar_model.moveEntry(nav, UUID + ':3', 0)
-        self.assertEqual([UUID + ':3', section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID, UUID + ':1', UUID + ':2'],
+        self.assertEqual([UUID + ':3', section_ids.WATCHLIST_ID, section_ids.playlistsId(UUID), UUID + ':1', UUID + ':2'],
                          nav['entries'])
 
     def test_unpinning_keeps_the_place_and_pinning_puts_it_back(self):
@@ -526,7 +526,7 @@ class ListEditTest(SidebarCase):
         self.assertIn(UUID + ':1', nav['libraries'])
         sidebar_model.moveEntry(nav, UUID + ':3', 0)
         sidebar_model.pin(nav, UUID + ':1')
-        self.assertEqual([UUID + ':3', section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID, UUID + ':1', UUID + ':2'],
+        self.assertEqual([UUID + ':3', section_ids.WATCHLIST_ID, section_ids.playlistsId(UUID), UUID + ':1', UUID + ':2'],
                          nav['entries'])
 
     def test_reset_order(self):
@@ -534,7 +534,8 @@ class ListEditTest(SidebarCase):
         self.store('other:7', '3', 'playlists', '1', 'watchlist')
         nav = self.nav()
         sidebar_model.resetOrder(nav)
-        self.assertEqual([section_ids.WATCHLIST_ID, section_ids.PLAYLISTS_ID, UUID + ':1', UUID + ':3', OTHER + ':7'],
+        # a server's Playlists after its libraries
+        self.assertEqual([section_ids.WATCHLIST_ID, UUID + ':1', UUID + ':3', section_ids.playlistsId(UUID), OTHER + ':7'],
                          nav['entries'])
 
 
@@ -571,9 +572,27 @@ class PickerTest(SidebarCase):
     def test_one_list_pinned_first_as_ordered_then_the_rest_by_server(self):
         self.store('watchlist', '3', '1')
         win = self.window([self.server, OSCAR], {UUID: [MOVIES, TV, MUSIC], OTHER: [self.films()]})
-        self.assertEqual(['Watchlist [x]', 'Playlists / Animal', 'Music / Animal [x]', 'Movies / Animal [x]',
+        self.assertEqual(['Watchlist [x]', 'Music / Animal [x]', 'Movies / Animal [x]',
                           'TV Shows / Animal', 'Films / Oscar', '--', 'Reset library order'],
                          self.rows(win._libraryPickerOptions()))
+
+    def test_each_servers_playlists_its_own_row_after_its_libraries(self):
+        self.store('watchlist', '3', '1')
+        win = self.window([self.server, OSCAR], {UUID: [MOVIES, TV, MUSIC], OTHER: [self.films()]})
+        win._pickerPlaylists = {UUID: True, OTHER: True}
+        self.assertEqual(['Watchlist [x]', 'Music / Animal [x]', 'Movies / Animal [x]', 'TV Shows / Animal',
+                          'Playlists / Animal', 'Films / Oscar', 'Playlists / Oscar'],
+                         self.rows(win._libraryPickerOptions())[:7])
+        # pinned, it's that server's sidebar entry
+        self.choose(win, section_ids.playlistsId(OTHER))
+        self.assertEqual(section_ids.playlistsId(OTHER), win.navSettings['entries'][-1])
+
+    def test_a_server_with_no_playlists_any_more_leaves_the_list(self):
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        win._pickerPlaylists = {UUID: True}
+        win._libraryPickerOptions()
+        win._pickerPlaylists = {UUID: False}
+        self.assertNotIn('Playlists', self.rows(win._libraryPickerOptions()))
 
     def test_one_server_no_server_line(self):
         win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})

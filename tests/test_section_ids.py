@@ -18,7 +18,7 @@ from unittest import mock
 from kodienv import ENV
 
 ENV.abort_requested = True
-from lib.windows import library_hubs, section_ids  # noqa: E402
+from lib.windows import home, library_hubs, section_ids  # noqa: E402
 from plexnet import plexlibrary  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
@@ -362,3 +362,34 @@ class SameAsBeforeTest(MigrateCase):
         self.assertEqual({'show': False}, nav[ANIMAL + ':2'])
         self.assertNotIn(ANIMAL + ':1', nav)
         self.assertEqual([ANIMAL + ':3', ANIMAL + ':1'], nav['order'][1:])
+
+
+class PlaylistsPerServerTest(KodiTestCase):
+    """The old single Playlists entry - the selected server's - becomes that server's own (plan
+    7.2b): in the sidebar and in its Manage Hubs config."""
+
+    def test_the_sidebar_entry_and_order(self):
+        nav = {'entries': ['/library/sections/watchlist', 'playlists', 'a:1'],
+               'order': ['/library/sections/watchlist', 'playlists', 'a:1', 'a:2']}
+        self.assertEqual((True, False), section_ids.migratePlaylists(nav, None, 'a'))
+        self.assertEqual(['/library/sections/watchlist', 'a:playlists', 'a:1'], nav['entries'])
+        self.assertEqual('a:playlists', nav['order'][1])
+        self.assertEqual((False, False), section_ids.migratePlaylists(nav, None, 'a'))
+
+    def test_its_hub_settings(self):
+        hubs = {'playlists': {'custom': True, 'hubs': [{'catalog_id': 'playlists|playlists.audio'}],
+                              'order': ['playlists|playlists.audio', 'playlists|playlists.video'],
+                              'hidden': ['playlists|playlists.video']}}
+        self.assertEqual((False, True), section_ids.migratePlaylists(None, hubs, 'a'))
+        config = hubs['a:playlists']
+        self.assertEqual('a:playlists|playlists.audio', config['hubs'][0]['catalog_id'])
+        self.assertEqual(['a:playlists|playlists.video'], config['hidden'])
+        self.assertNotIn('playlists', hubs)
+
+    def test_a_servers_playlists_section_is_its_own(self):
+        server = Server('a')
+        section = home.playlistsSection(server)
+        self.assertIs(section, home.playlistsSection(server))
+        self.assertEqual('a:playlists', section_ids.sectionId(section))
+        self.assertIs(server, section.server)
+        self.assertTrue(home.isPlaylists(section))

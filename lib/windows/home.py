@@ -720,9 +720,22 @@ watchlist_section = None
 
 
 class PlaylistsSection(VirtualSection):
+    """A server's playlists, as a section: a sidebar entry of its own per server,
+    "<server uuid>:playlists" (sidebarId, which section_ids.sectionId() honours), shown and placed
+    like a library (plan 7.2b). One per server (playlistsSection()). Made with no server, it's the
+    selected server's (the old single entry, while its setting is moved over)."""
     key = 'playlists'
     type = 'playlists'
     title = T(32333, 'Playlists')
+
+    def __init__(self, server=None):
+        self._server = server
+        if server is not None:
+            self.sidebarId = u'{0}:playlists'.format(server.uuid)
+
+    @property
+    def server(self):
+        return self._server if self._server is not None else plexapp.SERVERMANAGER.selectedServer
 
     locations = []
     isMapped = False
@@ -743,4 +756,17 @@ class PlaylistsSection(VirtualSection):
         return self.key
 
 
-playlists_section = PlaylistsSection()
+_playlistsSections = {}
+
+
+def playlistsSection(server):
+    """The server's Playlists section - the same object each time, so the sidebar's entry, the view
+    and its screens all compare equal."""
+    section = _playlistsSections.get(server.uuid)
+    if section is None or section.server is not server:
+        section = _playlistsSections[server.uuid] = PlaylistsSection(server)
+    return section
+
+
+def isPlaylists(section):
+    return getattr(section, 'TYPE', None) == 'playlists' and isinstance(section, PlaylistsSection)

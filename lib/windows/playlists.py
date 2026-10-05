@@ -91,7 +91,8 @@ class PlaylistsWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowuti
 
     def sidebarActiveSection(self, entries):
         # This window IS the Playlists destination.
-        return home.playlists_section
+        server = plexapp.SERVERMANAGER.selectedServer
+        return home.playlistsSection(server) if server is not None else None
 
     def playlistListClicked(self, list_control):
         mli = list_control.getSelectedItem()
