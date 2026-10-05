@@ -508,9 +508,9 @@ class HubsMixin(object):
                     if server.offline:
                         continue
                     hubs = [home.keepLibraries(hub, keys)
-                            for hub in server.hubs(None, count=home.HUB_PAGE_SIZE, section_ids=list(keys))]
+                            for hub in server.hubs(None, count=home.HUB_ROW_MAX_ITEMS, section_ids=list(keys))]
                 else:
-                    hubs = server.hubs(section.key, count=home.HUB_PAGE_SIZE)
+                    hubs = server.hubs(section.key, count=home.HUB_ROW_MAX_ITEMS)
             except plexnet.exceptions.BadRequest:
                 continue
             except Exception:
@@ -534,6 +534,12 @@ class HubsMixin(object):
                     native_display = self.TYPE_TO_DISPLAY.get(hub.items[0].type, 'poster')
 
                 hub_title = hub.title or home.PLAYLIST_HUB_TITLES.get(clean_identifier, clean_identifier)
+                # a row that names this request's pick goes by its kind ("Top Movies in [Genre]")
+                library = section.key if section.key is not None else self.promotedHubSourceKey(hub.hubIdentifier)
+                generic = hub_config.genericTitle(
+                    hub.hubIdentifier, self._manageTitles(server, library) if library else None)
+                if generic:
+                    hub_title = generic
 
                 # the rows' grouping in the dialog: Home's by server
                 source_title = section_title
@@ -579,6 +585,24 @@ class HubsMixin(object):
             (cid, info['legacy_id'], info['source_server'],
              self._hubConfigEntry(cid, info['identifier'], info['title']))
             for cid, info in availableHubs.items()])
+
+    def _manageTitles(self, server, library):
+        """Plex's own generic row titles for a library ({base identifier: title}, its Manage
+        Recommendations list), asked once per Manage Hubs open. Only the server's owner may read
+        them: {} otherwise, and hub_config.GENERIC_TITLES stands in."""
+        cache = self.__dict__.setdefault('_manageTitleCache', {})
+        key = (server.uuid, str(library))
+        if key not in cache:
+            titles = {}
+            if server.owned:
+                try:
+                    data = server.query('/hubs/sections/{0}/manage'.format(library))
+                    titles = dict((elem.attrib.get('identifier'), elem.attrib.get('title'))
+                                  for elem in (data if data is not None else ()))
+                except Exception as e:
+                    util.DEBUG_LOG('Hubs: no generic row titles from {0} ({1})', server.name, e)
+            cache[key] = titles
+        return cache[key]
 
     def _sidebarLibraries(self):
         """The sidebar's live library entries (not Watchlist/Playlists, nor a placeholder whose
@@ -706,17 +730,19 @@ class HubsMixin(object):
             hub_states[catalog_id] = (is_enabled, hub_info)
 
         def make_option(catalog_id, hub_info, is_enabled, position=None):
-            display_title = self._hubOptionLabel(catalog_id, hub_info, position)
-            indicator = 'script.plex/indicators/circle-19.png' if is_enabled else ''
+            # a card row (dropdown.CardListDialog, as the Libraries picker): its shown/hidden
+            # tile, and Move for a shown one; on a multi-server Home its server on the second line
             return {
                 'key': 'toggle_hub',
                 'catalog_id': catalog_id,
                 'identifier': hub_info.get('identifier', catalog_id),
                 'hub_info': hub_info,
                 'enabled': is_enabled,
-                'display': display_title,
-                'indicator': indicator,
-                'has_submenu': is_enabled,
+                'display': self._hubOptionLabel(catalog_id, hub_info, position),
+                'indicator': self.HUB_SHOWN if is_enabled else self.HUB_HIDDEN,
+                'indicator_dim': not is_enabled,
+                'properties': {'subtitle': hub_info.get('server_label', ''), 'buttons': '1',
+                               'nomove': '' if is_enabled else '1'},
             }
 
         options = []
@@ -776,6 +802,7 @@ class HubsMixin(object):
         self._managingHubsForSection = section
         self._hubsSettingsChanged = False
 
+        self._manageTitleCache = {}
         with busy.BusyContext(delay=True, delay_time=0.2):
             self._discoverHubsSync(section)
         if not self.availableHubs:
@@ -800,25 +827,27 @@ class HubsMixin(object):
                 align_items="left",
                 close_only_with_back=True,
                 options_callback=self.onHubSettingToggle,
-                suboption_callback=self._hubSubOptionCallback,
                 dialog_props=getattr(self, 'carriedProps', None),
                 move_mode_callback=self._onHubMoveCallback,
+                dialog_class=dropdown.CardListDialog,
+                columns=(dropdown.CardListDialog.PIN, dropdown.CardListDialog.MOVE),
             )
         except Exception as e:
             util.ERROR('Hub Settings: Error showing dropdown: {}'.format(e))
             return
 
+    # Manage Hubs' shown/hidden tile: an open eye, full white; a struck-through one, dimmed
+    HUB_SHOWN = 'script.plex/indicators/visible.png'
+    HUB_HIDDEN = 'script.plex/indicators/hidden.png'
+
     @staticmethod
     def _hubOptionLabel(catalog_id, hub_info, position=None):
-        """A Manage Hubs row: its place in a custom order ("2. "), its title, "(Collection)" for a
-        collection's row, and on Home with more than one server its server (" · Oscar",
-        server_label) - the dialog lists the managed section's own rows only, so there's no
-        other source to name."""
+        """A Manage Hubs row: its place in a custom order ("2. "), its title, and "(Collection)" for
+        a collection's row. On Home with more than one server its server is the row's second line
+        (server_label)."""
         title = hub_info.get('title', catalog_id)
         if 'collection' in hub_info.get('identifier', ''):
             title = u'{} ({})'.format(title, T(32382, 'Collection'))
-        if hub_info.get('server_label'):
-            title = u'{} · {}'.format(title, hub_info['server_label'])
         if position is not None:
             title = u'{}. {}'.format(position, title)
         return title
@@ -830,29 +859,14 @@ class HubsMixin(object):
         sid = section_ids.hubSettingsId(section)
         if getattr(self, 'section', None) is None or section_ids.hubSettingsId(self.section) != sid:
             return
-        onScreen = [section_ids.hubCatalogId(hub, section) for hub in self.sectionHubs.get(sid, [])]
-        listed = [cid for cid in self._shownHubIds(section) if self.availableHubs.get(cid, {}).get('item_count')]
+        onScreen = [section_ids.hubCatalogId(hub, section) for hub in self.sectionHubs.get(sid, [])
+                    if not hub_config.picksPerRequest(hub.hubIdentifier)]
+        listed = [cid for cid in self._shownHubIds(section)
+                  if self.availableHubs.get(cid, {}).get('item_count')
+                  and not hub_config.picksPerRequest(self.availableHubs[cid].get('hubIdentifier'))]
         if onScreen != listed:
             util.DEBUG_LOG('Hubs: {0}\'s rows have changed on the server since it was shown', sid)
             self._hubsSettingsChanged = True
-
-    def _hubSubOptionCallback(self, choice):
-        """Return sub-menu options for an enabled hub, or None if no sub-menu needed. Ported
-        verbatim from HomeWindow._hubSubOptionCallback() (home.py)."""
-        if choice.get('key') != 'toggle_hub' or not choice.get('enabled'):
-            return None
-
-        catalog_id = choice.get('catalog_id')
-        section = getattr(self, '_managingHubsForSection', None) or self.section
-
-        can_move_up, can_move_down = self._canMoveHub(catalog_id, section)
-        can_move = can_move_up or can_move_down
-
-        options = []
-        if can_move:
-            options.append({'key': 'move', 'display': T(34089, 'Move')})
-        options.append({'key': 'disable', 'display': T(34085, 'Disable')})
-        return options
 
     def onHubSettingToggle(self, optionsList, mli):
         """Callback when a hub is toggled in the settings dialog - ported verbatim from
@@ -883,32 +897,27 @@ class HubsMixin(object):
         catalog_id = choice.get('catalog_id', choice.get('identifier'))
         is_currently_enabled = choice.get('enabled', False)
 
-        if is_currently_enabled:
-            config_created = self._ensureCustomConfigExists(section)
-            if config_created:
-                self._refreshHubSettingsDialog(optionsList, section)
-
-            sub = choice.get('sub')
-            if not sub:
+        if choice.get('column') == dropdown.CardListDialog.MOVE:
+            # only a shown row has a place to move
+            if not is_currently_enabled:
                 return None
+            if self._ensureCustomConfigExists(section):
+                self._refreshHubSettingsDialog(optionsList, section)
+            self._movingHubCatalogId = catalog_id
+            self._movingHubSection = section
+            self._movingHubOptionsList = optionsList
+            return 'enter_move_mode'
 
-            if sub.get('key') == 'move':
-                self._movingHubCatalogId = catalog_id
-                self._movingHubSection = section
-                self._movingHubOptionsList = optionsList
-                return 'enter_move_mode_sub'
-
-            elif sub.get('key') == 'disable':
-                focus_pos = optionsList.getSelectedPos()
-                self._disableHub(catalog_id, section)
-                self._hubsSettingsChanged = True
-                section_title = getattr(self, '_managingHubsForSectionTitle', '')
-                options = self._buildHubSettingsOptions(section, section_title)
-                return ('rebuild', options, focus_pos)
-
-            return None
-        else:
-            new_enabled = True
+        if is_currently_enabled:
+            # the shown/hidden tile: hide it
+            self._ensureCustomConfigExists(section)
+            focus_pos = optionsList.getSelectedPos()
+            self._disableHub(catalog_id, section)
+            self._hubsSettingsChanged = True
+            section_title = getattr(self, '_managingHubsForSectionTitle', '')
+            options = self._buildHubSettingsOptions(section, section_title)
+            return ('rebuild', options, focus_pos)
+        new_enabled = True
 
         sid = section_ids.hubSettingsId(section)
 
@@ -983,9 +992,11 @@ class HubsMixin(object):
                 is_enabled = hub_info.get('source_section_id') == sid
 
             ds['enabled'] = is_enabled
-            indicator = 'script.plex/indicators/circle-19.png' if is_enabled else ''
+            indicator = self.HUB_SHOWN if is_enabled else self.HUB_HIDDEN
             mli.setProperty('indicator', indicator)
             mli.setThumbnailImage(indicator)
+            mli.setProperty('indicator.dim', '' if is_enabled else '1')
+            mli.setProperty('nomove', '' if is_enabled else '1')
 
             position = enabled_order[catalog_id] if has_custom_config and is_enabled else None
             display_title = self._hubOptionLabel(catalog_id, hub_info, position)

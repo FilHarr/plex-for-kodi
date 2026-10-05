@@ -136,8 +136,9 @@ class LibraryPickerButtonsTest(KodiTestCase):
     stays chosen; the row's choice carries it to the callback."""
 
     def picker(self, moving=False):
-        dlg = dropdown.LibraryPickerDialog.__new__(dropdown.LibraryPickerDialog)
+        dlg = dropdown.CardListDialog.__new__(dropdown.CardListDialog)
         dlg.movingItem = 'an item' if moving else None
+        dlg.columns = dlg.COLUMNS
         dlg.column = dlg.PIN
         dlg.props = {}
         dlg.setProperty = lambda key, value: dlg.props.__setitem__(key, value)
@@ -173,3 +174,29 @@ class LibraryPickerButtonsTest(KodiTestCase):
         with mock.patch.object(dropdown.DropdownHeaderDialog, 'setChoice', lambda self: None):
             dlg.setChoice()
         self.assertEqual('move', row['column'])
+
+
+class LibraryPickerColumnsTest(KodiTestCase):
+    picker = LibraryPickerButtonsTest.picker
+
+    def test_open_pin_move_left_to_right_stopping_at_the_ends(self):
+        dlg = self.picker()
+        dlg.column = dlg.OPEN
+        seen = []
+        for action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT, xbmcgui.ACTION_MOVE_RIGHT,
+                       xbmcgui.ACTION_MOVE_RIGHT, xbmcgui.ACTION_MOVE_LEFT):
+            dlg.onAction(FakeAction(action))
+            seen.append(dlg.column)
+        self.assertEqual(['open', 'pin', 'move', 'move', 'pin'], seen)
+
+
+class ManageHubsColumnsTest(KodiTestCase):
+    picker = LibraryPickerButtonsTest.picker
+
+    def test_two_tiles_only(self):
+        dlg = self.picker()
+        dlg.columns = (dlg.PIN, dlg.MOVE)
+        dlg.onAction(FakeAction(xbmcgui.ACTION_MOVE_LEFT))
+        self.assertEqual('pin', dlg.column)
+        dlg.onAction(FakeAction(xbmcgui.ACTION_MOVE_RIGHT))
+        self.assertEqual('move', dlg.column)

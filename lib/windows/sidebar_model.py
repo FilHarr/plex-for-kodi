@@ -464,15 +464,43 @@ class PlaylistsCheckTask(backgroundthread.Task):
                 _playlistsChecking.discard(self.server.uuid)
 
 
+# An entry opened from the Libraries picker that isn't pinned: shown at the end of the sidebar while
+# it's the section open (the user's design, 2026-10-05), so everything that goes by the sidebar -
+# its highlight, Back, its menu - works as for a pinned one. One at a time, for every screen's
+# sidebar; LibraryWindow.openSection() lets it go when another section opens.
+_temporary = None
+
+
+def setTemporary(sid):
+    global _temporary
+    _temporary = sid
+
+
+def temporary():
+    return _temporary
+
+
+def leaveTemporaryFor(section):
+    """The section now open isn't the temporary entry's: it goes. Returns whether it did."""
+    global _temporary
+    if _temporary is None or sectionId(section) == _temporary:
+        return False
+    _temporary = None
+    return True
+
+
 def sections(nav, onChange=None):
     """The sidebar's entries after Search and Home, in the user's order: Watchlist and Playlists when
     they're in it and there's something to show, and the libraries - live where their server has
-    listed them, placeholders where it hasn't. onChange() (on a worker) when a server's answer
-    changes what this showed."""
+    listed them, placeholders where it hasn't - then the temporary entry, if one's open.
+    onChange() (on a worker) when a server's answer changes what this showed."""
     manager = plexapp.SERVERMANAGER
     entries = []
     renamed = False
-    for sid in nav.get('entries', ()):
+    ids = list(nav.get('entries', ()))
+    if _temporary is not None and _temporary not in ids:
+        ids.append(_temporary)
+    for sid in ids:
         if sid == WATCHLIST_ID:
             if (not plexapp.ACCOUNT.isOffline and util.getUserSetting("use_watchlist", True)
                     and home.watchlist_section and home.watchlist_section.has_data()):

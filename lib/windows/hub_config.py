@@ -51,6 +51,59 @@ def homeRowId(hub_identifier):
     return hub_identifier
 
 
+def rowBase(hub_identifier):
+    """A row's identifier without its library or pick: movie.genre.22.71 -> movie.genre,
+    music.popular.10 -> music.popular - what Plex's Manage Recommendations lists it as."""
+    parts = (hub_identifier or '').split('.')
+    for i, part in enumerate(parts):
+        if part.isdigit():
+            return '.'.join(parts[:i])
+    return hub_identifier
+
+
+def picksPerRequest(hub_identifier):
+    """Whether the row picks something on each request, carried in its identifier (a genre,
+    movie.genre.22.71; a person, movie.by.actor.or.director.22.155600) - it can come back empty on
+    one request and not the next. Not Home's merged rows (home.movies.recent.22) or a collection."""
+    parts = (hub_identifier or '').split('.')
+    if parts[0] == 'home' or 'collection' in parts:
+        return False
+    return len([p for p in parts if p.isdigit()]) > 1
+
+
+# Plex's generic titles for the rows whose title names what they picked this time, as its Manage
+# Recommendations lists them (checked against Animal, PMS 1.43.4, 2026-10-05). The server's own come
+# first (manageTitles(), localised): only the owner may read them, so these stand in for a shared
+# or managed user.
+GENERIC_TITLES = {
+    'movie.genre': 'Top Movies in (Genre)',
+    'movie.by.actor.or.director': 'Top Movies by (Actor or Director)',
+    'tv.moreingenre': 'More in (Genre)',
+    'tv.morefromnetwork': 'More from (Network)',
+    'music.top.period': 'Top Albums from (Year)',
+    'music.recent.genre': 'Top Albums from (Genre)',
+    'music.recent.artist': 'More by (Artist)',
+    'music.popular': 'Most Played in (Month)',
+    'music.vault': "Haven't Played in (Time)",
+    'music.recent.label': 'More from (Label)',
+    'photo.random.year': 'Photos from (Year)',
+    'photo.random.decade': 'Photos from (Decade)',
+    'photo.random.dayormonth': 'Photos from (Day or Month)',
+}
+
+
+def genericTitle(hub_identifier, manage_titles=None):
+    """The title a row's kind goes by when its own names this request's pick ("Top Movies in
+    Musical" -> "Top Movies in [Genre]"), or None for a row whose title doesn't change. Plex's
+    placeholder in square brackets, which keeps it apart from a library named in round ones
+    ("Recently Released Movies (Films)"). manage_titles: the server's own, {base: title}."""
+    base = rowBase(hub_identifier)
+    title = (manage_titles or {}).get(base) or GENERIC_TITLES.get(base)
+    if not title or '(' not in title:
+        return None
+    return title.replace('(', '[').replace(')', ']')
+
+
 def _source(catalog_id):
     return catalog_id.partition('|')[0] if '|' in catalog_id else ''
 

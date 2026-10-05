@@ -453,6 +453,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # content-mode state, see __init__ above) - an unrelated thing despite the name collision
         # with HomeWindow's dict.
         self.navSettings = None
+        self._sidebarTemporary = None
         # Hub catalog for the Manage Hubs dialog: the managed section's rows, asked for by
         # _discoverHubsSync() each time the dialog opens.
         self.availableHubs = {}
@@ -1175,6 +1176,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._retireListItems()
 
         self.section = section
+        # an unpinned library opened from the Libraries picker leaves the sidebar once another
+        # section opens
+        sidebar_model.leaveTemporaryFor(section)
         # Force a fresh live Collections probe for the section we're now entering, rather than
         # trusting whatever was cached from a previous visit - see _sectionHasCollections()'s own
         # docstring. Harmless no-op for section types that were never eligible for the probe in
@@ -2089,6 +2093,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self.displayServerAndUser()
         else:
             self.sectionList.newControl(self, guard=sidebarGuard)
+            if self._sidebarTemporary != sidebar_model.temporary():
+                # a library opened from the Libraries picker came or went (openSection())
+                self.buildSectionList()
         # newControl() re-adds the items to a fresh native control whose selection starts at index
         # 0 (Search) - reselect the active section so the collapsed rail shows it from the first
         # frame (SidebarMixin._selectActiveSection()'s rule).
@@ -2735,6 +2742,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         """The shared sidebar build (windowutils.SidebarMixin), with Watchlist made afresh first:
         this is the only window that makes it (sidebar_model.refreshWatchlistSection())."""
         sidebar_model.refreshWatchlistSection()
+        # the temporary entry it was built with (onFirstInit() rebuilds when that changes)
+        self._sidebarTemporary = sidebar_model.temporary()
         windowutils.SidebarMixin.buildSectionList(self)
 
     def sidebarNavSettings(self):
@@ -2833,7 +2842,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         the user's order, the sidebar being the pinned ones (the user's design, 2026-10-05). Each
         row is its title over, on a multi-server account, its server in font8, and two buttons:
         its pin (full white in the sidebar, dimmed not) and Move; Left/Right choose which Select
-        acts on (dropdown.LibraryPickerDialog). Any row moves, pinned or not: the order is the
+        acts on (dropdown.CardListDialog). Any row moves, pinned or not: the order is the
         picker's, the sidebar shows it filtered. Reset order at the bottom. The servers are asked
         for their libraries as it opens, together; one that doesn't answer has its libraries
         listed from what's stored, saying so. The sidebar is rebuilt, and Home reloaded, when it
@@ -2859,6 +2868,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._pickerServers = servers
         self._pickerListed = listed
         self._pickerChanged = False
+        self._pickerOpen = None
         try:
             dropdown.showDropdown(
                 self._libraryPickerOptions(),
@@ -2872,14 +2882,33 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 options_callback=self._onLibraryPickerChoice,
                 move_mode_callback=self._onLibraryPickerMove,
                 dialog_props=getattr(self, 'carriedProps', None),
-                dialog_class=dropdown.LibraryPickerDialog,
+                dialog_class=dropdown.CardListDialog,
             )
         finally:
             self._pickerServers = self._pickerListed = None
         if self._pickerChanged:
             self.saveNavSettings()
             self._rebuildSidebar()
-            self.reloadHomeRows('libraries picked')
+            if not self._pickerOpen:
+                self.reloadHomeRows('libraries picked')
+        if self._pickerOpen:
+            self._openFromPicker(*self._pickerOpen)
+
+    def _openFromPicker(self, sid, section):
+        """Open what the picker's row was, as a sidebar click on the screen showing would
+        (SidebarMixin._dispatchSectionOpen()): in place on this window, or through a hosted
+        screen's goHome(), which unwinds its chain. Not pinned, it gets a temporary sidebar entry
+        while it's open (sidebar_model.setTemporary())."""
+        if section is None:
+            return
+        if sid not in self.sidebarNavSettings()['entries']:
+            sidebar_model.setTemporary(sid)
+        target = self._sidebarTarget()
+        util.DEBUG_LOG('Library: opening {0} from the Libraries picker', sid)
+        if target is self:
+            self._deferOpenSection(section, force=True)
+        else:
+            target.goHome(section=section, force=True)
 
     def _libraryPickerOptions(self):
         """The picker's rows: one per entry of sidebar_model.pickerOrder(), then Reset order."""
@@ -2937,8 +2966,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             sidebar_model.resetOrder(nav)
         elif choice.get('key') != 'library':
             return
-        elif choice.get('column') == dropdown.LibraryPickerDialog.MOVE:
+        elif choice.get('column') == dropdown.CardListDialog.MOVE:
             return 'enter_move_mode'
+        elif choice.get('column') == dropdown.CardListDialog.OPEN:
+            self._pickerOpen = (choice['sid'], self._pickerSection(choice))
+            return 'close'
         else:
             sid = choice['sid']
             section = choice.get('section')
@@ -2955,6 +2987,21 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         nav.pop('unsaved', None)
         self._pickerChanged = True
         return ('rebuild', self._libraryPickerOptions(), optionsList.getSelectedPos())
+
+    def _pickerSection(self, choice):
+        """What a picker row opens: the library as its server listed it; one it hasn't listed (not
+        answering, or the library's gone) as a placeholder, which openSection() asks for again and
+        says why if it can't; Watchlist or Playlists."""
+        sid = choice['sid']
+        if sid == section_ids.WATCHLIST_ID:
+            return home.watchlist_section
+        if sid == section_ids.PLAYLISTS_ID:
+            return home.playlists_section
+        if choice.get('section') is not None:
+            return choice['section']
+        nav = self.sidebarNavSettings()
+        server = plexapp.SERVERMANAGER.serversByUuid.get(sid.partition(':')[0])
+        return sidebar_model.LibraryPlaceholder(sid, nav['libraries'].get(sid, {}), server)
 
     def _onLibraryPickerMove(self, action, mli, old_pos, new_pos):
         """A row moved and dropped (the dropdown's move mode): it takes its new place in the order.

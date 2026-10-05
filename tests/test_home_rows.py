@@ -307,12 +307,14 @@ class DiscoveryTest(KodiTestCase):
                           OSCAR + '|home.movies.recent': u'Home · Oscar'}, self.labels())
 
     def test_home_rows_name_their_server_only_with_more_than_one(self):
+        # on the row's second line (Manage Hubs' card rows, as the Libraries picker's)
         self.win._discoverHubsSync(home.home_section)
-        label = library.LibraryWindow._hubOptionLabel
         rows = self.win.availableHubs
-        self.assertEqual(u'Recently Added Movies · Oscar', label('x', rows[OSCAR + '|home.movies.recent']))
-        self.assertEqual(u'2. Recently Added Movies · Animal', label('x', rows[ANIMAL + '|home.movies.recent'], 2))
-        self.assertEqual('continueWatching', label('x', rows['continueWatching']))
+        self.assertEqual('Oscar', rows[OSCAR + '|home.movies.recent']['server_label'])
+        self.assertEqual('Animal', rows[ANIMAL + '|home.movies.recent']['server_label'])
+        self.assertEqual('', rows['continueWatching']['server_label'])
+        label = library.LibraryWindow._hubOptionLabel
+        self.assertEqual(u'2. Recently Added Movies', label('x', rows[ANIMAL + '|home.movies.recent'], 2))
 
     def test_no_source_label_otherwise(self):
         label = library.LibraryWindow._hubOptionLabel
@@ -353,7 +355,9 @@ class ManageHomeTest(KodiTestCase):
         self.win._discoverHubsSync(home.home_section)
 
     def rows(self):
-        return [o['display'] for o in self.win._buildHubSettingsOptions(home.home_section, 'Home') if o]
+        """Each row as its title, ' / ' its second line if it has one."""
+        return [o['display'] + (o.get('properties', {}).get('subtitle') and ' / ' + o['properties']['subtitle'] or '')
+                for o in self.win._buildHubSettingsOptions(home.home_section, 'Home') if o]
 
     def test_an_empty_row_is_not_offered(self):
         self.assertNotIn(OSCAR + '|home.photos.recent', self.win.availableHubs)
@@ -366,8 +370,33 @@ class ManageHomeTest(KodiTestCase):
         self.assertNotIn(OSCAR + '|home.photos.recent', self.win.availableHubs)
 
     def test_every_row_numbered_in_homes_default_order(self):
-        self.assertEqual([u'1. continueWatching', u'2. home.movies.recent \u00b7 Animal',
-                          u'3. home.movies.recent \u00b7 Oscar'], self.rows()[:3])
+        self.assertEqual([u'1. continueWatching', u'2. home.movies.recent / Animal',
+                          u'3. home.movies.recent / Oscar'], self.rows()[:3])
+
+    def choose(self, catalog_id, column):
+        row = dict([o for o in self.win._buildHubSettingsOptions(home.home_section, 'Home')
+                    if o and o.get('catalog_id') == catalog_id][0], column=column)
+        optionsList = mock.Mock()
+        optionsList.getSelectedPos.return_value = 1
+        optionsList.__iter__ = lambda s: iter([])
+        return self.win.onHubSettingToggle(optionsList, mock.Mock(dataSource=row))
+
+    def test_the_toggle_tile_hides_and_shows(self):
+        self.win._managingHubsForSection = home.home_section
+        self.win._managingHubsForSectionTitle = 'Home'
+        self.assertEqual('rebuild', self.choose(ANIMAL + '|home.movies.recent', 'pin')[0])
+        self.assertEqual([ANIMAL + '|home.movies.recent'], self.win.hubSettings['__home__']['hidden'])
+        rows = [o for o in self.win._buildHubSettingsOptions(home.home_section, 'Home') if o]
+        hidden = [o for o in rows if o.get('catalog_id') == ANIMAL + '|home.movies.recent'][0]
+        self.assertEqual(('1', True), (hidden['properties']['nomove'], hidden['indicator_dim']))
+        self.choose(ANIMAL + '|home.movies.recent', 'pin')
+        self.assertEqual([], self.win.hubSettings['__home__']['hidden'])
+
+    def test_move_picks_up_a_shown_row_only(self):
+        self.win._managingHubsForSection = home.home_section
+        self.assertEqual('enter_move_mode', self.choose(OSCAR + '|home.movies.recent', 'move'))
+        self.win._disableHub(OSCAR + '|home.movies.recent', home.home_section)
+        self.assertIsNone(self.choose(OSCAR + '|home.movies.recent', 'move'))
 
     def test_disabling_one_keeps_the_rest(self):
         self.win._ensureCustomConfigExists(home.home_section)

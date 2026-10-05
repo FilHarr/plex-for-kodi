@@ -432,6 +432,9 @@ class DropdownDialog(kodigui.BaseDialog):
             elif result == 'enter_move_mode_sub':
                 self.enterMoveMode(mli, skip_first_select=False)  # came via sub-menu
                 return
+            if result == 'close':
+                self.doClose()
+                return
             # Check if callback wants to close and reopen the dialog
             if result == 'close_and_reopen':
                 self.choice = {'reopen': True}
@@ -540,18 +543,27 @@ class DropdownHeaderDialog(DropdownDialog):
     dropWidth = 660
 
 
-class LibraryPickerDialog(DropdownHeaderDialog):
-    """The Libraries picker: every library in the user's order, each row two buttons on the right -
-    its pin (in the sidebar or not) and Move. A list row can't hold focusable controls, so Left and
-    Right choose which of the two Select acts on (picker.column, drawn on the focused row), and it
-    stays chosen from row to row. Select on Move picks the row up (the dropdown's move mode: Up and
-    Down carry it, Select drops it, Back puts it back). A row without the buttons (Reset order) just
-    acts. options_callback gets the column in the row's dataSource ('column')."""
-    xmlFile = 'script-plex-library_picker.xml'
+class CardListDialog(DropdownHeaderDialog):
+    """A list of rows as cards, each row up to three controls: the row itself (open), and two tiles
+    on the right - a toggle (pin: the Libraries picker's pin, Manage Hubs' shown/hidden) and Move.
+    A list row can't hold focusable controls, so Left and Right step between them (picker.column;
+    the focused row shows the chosen one in the focus grey), and the choice stays from row to row.
+    `columns` says which a dialog has, in order, the first chosen to start: the Libraries picker all
+    three, Manage Hubs the two tiles. Select on Move picks the row up (the dropdown's move mode: Up
+    and Down carry it, Select drops it, Back puts it back). A row without the tiles (Reset order)
+    just acts; one that can't move ('nomove') shows no Move icon. options_callback gets the column
+    in the row's dataSource ('column')."""
+    xmlFile = 'script-plex-card_list.xml'
     optionHeight = util.vscalei(84)
     maxRows = 10
+    OPEN = 'open'
     PIN = 'pin'
     MOVE = 'move'
+    COLUMNS = (OPEN, PIN, MOVE)
+
+    def __init__(self, *args, **kwargs):
+        DropdownHeaderDialog.__init__(self, *args, **kwargs)
+        self.columns = tuple(kwargs.get('columns') or self.COLUMNS)
 
     @property
     def y(self):
@@ -565,14 +577,16 @@ class LibraryPickerDialog(DropdownHeaderDialog):
         return max(header, (self.height - listHeight - header) // 2 + util.vscalei(66))
 
     def onFirstInit(self):
-        self.column = self.PIN
+        self.column = self.columns[0]
         self.setProperty('picker.column', self.column)
         DropdownHeaderDialog.onFirstInit(self)
 
     def onAction(self, action):
         if (self.movingItem is None and action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT)
                 and self.getFocusId() == self.OPTIONS_LIST_ID):
-            self.column = self.PIN if action == xbmcgui.ACTION_MOVE_LEFT else self.MOVE
+            step = -1 if action == xbmcgui.ACTION_MOVE_LEFT else 1
+            index = max(0, min(len(self.columns) - 1, self.columns.index(self.column) + step))
+            self.column = self.columns[index]
             self.setProperty('picker.column', self.column)
             return
         DropdownHeaderDialog.onAction(self, action)
@@ -604,12 +618,13 @@ def showDropdown(
     dialog_props=None,
     move_mode_callback=None,
     indicator_right=False,
-    dialog_class=None
+    dialog_class=None,
+    columns=None
 ):
 
     if dialog_class is not None:
         w = dialog_class.open(
-            options=options, pos=pos or (660, 400),
+            columns=columns, options=options, pos=pos or (660, 400),
             close_direction=close_direction,
             set_dropdown_prop=set_dropdown_prop,
             with_indicator=with_indicator,

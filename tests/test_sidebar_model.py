@@ -638,3 +638,62 @@ class PickerTest(SidebarCase):
         optionsList.getSelectedPos.return_value = 0
         win._onLibraryPickerChoice(optionsList, mock.Mock(dataSource=reset))
         self.assertEqual([section_ids.WATCHLIST_ID, UUID + ':1', UUID + ':3'], win.navSettings['entries'])
+
+
+class OpenFromPickerTest(SidebarCase):
+    """The picker's third action: open the library (the row itself). Not pinned, it gets a temporary
+    sidebar entry at the end while it's the section open (the user's design, 2026-10-05)."""
+    window = PickerTest.window
+    choose = PickerTest.choose
+
+    def setUp(self):
+        super(OpenFromPickerTest, self).setUp()
+        self.addCleanup(sidebar_model.setTemporary, None)
+
+    def test_select_on_the_row_closes_with_the_library_to_open(self):
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        win._pickerOpen = None
+        self.assertEqual('close', self.choose(win, UUID + ':2', column='open'))
+        self.assertEqual((UUID + ':2', TV), win._pickerOpen)
+        self.assertFalse(win._pickerChanged)
+
+    def test_a_library_not_listed_opens_as_a_placeholder(self):
+        self.store('1', 'other:7', other_7=('Films', 'movie'))
+        win = self.window([self.server, OSCAR], {UUID: [MOVIES], OTHER: None})
+        win._pickerOpen = None
+        self.choose(win, OTHER + ':7', column='open')
+        self.assertIsInstance(win._pickerOpen[1], sidebar_model.LibraryPlaceholder)
+
+    def opened(self, win, sid, section):
+        win._sidebarTarget = lambda: win
+        win._deferOpenSection = mock.Mock()
+        win._openFromPicker(sid, section)
+        win._deferOpenSection.assert_called_once_with(section, force=True)
+
+    def test_an_unpinned_library_gets_a_temporary_entry_at_the_end(self):
+        self.store('watchlist', '1')
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        win._libraryPickerOptions()
+        self.opened(win, UUID + ':2', TV)
+        self.assertEqual(UUID + ':2', sidebar_model.temporary())
+        entries = sidebar_model.sections(win.navSettings)
+        self.assertEqual([self.watchlist, MOVIES, TV], entries)
+
+    def test_a_pinned_library_opens_without_one(self):
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        self.opened(win, UUID + ':2', TV)
+        self.assertIsNone(sidebar_model.temporary())
+
+    def test_another_section_opening_lets_it_go(self):
+        sidebar_model.setTemporary(UUID + ':2')
+        self.assertFalse(sidebar_model.leaveTemporaryFor(TV))
+        self.assertEqual(UUID + ':2', sidebar_model.temporary())
+        self.assertTrue(sidebar_model.leaveTemporaryFor(home.home_section))
+        self.assertIsNone(sidebar_model.temporary())
+
+    def test_a_hosted_screen_goes_home_to_it(self):
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        screen = mock.Mock()
+        win._sidebarTarget = lambda: screen
+        win._openFromPicker(UUID + ':2', TV)
+        screen.goHome.assert_called_once_with(section=TV, force=True)

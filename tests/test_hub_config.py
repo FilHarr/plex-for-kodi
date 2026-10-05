@@ -270,14 +270,14 @@ class Hub(object):
         return self.hubIdentifier
 
 
-class ManageHubsTest(KodiTestCase):
+class ManageHubsCase(KodiTestCase):
     """Manage Hubs on Home with Plex's rows: a row the config shows that Plex no longer sends is
     left out, its place kept (the user's choice, 2026-10-05); a library's row Plex sends empty this
     time (its pick found nothing) is offered, Plex's merged rows with no library behind them
     aren't."""
 
     def setUp(self):
-        super(ManageHubsTest, self).setUp()
+        super(ManageHubsCase, self).setUp()
         self.animal, self.oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
         self.animal.hubs = mock.Mock(return_value=[Hub('continueWatching', [Item()], self.animal),
                                                    Hub('movie.recentlyadded.22', [Item()], self.animal,
@@ -304,6 +304,8 @@ class ManageHubsTest(KodiTestCase):
         return [o['display'] for o in self.win._buildHubSettingsOptions(home.home_section, 'Home')
                 if o and o.get('key') == 'toggle_hub']
 
+
+class ManageHubsTest(ManageHubsCase):
     def test_a_row_no_longer_sent_is_left_out_with_its_place_kept(self):
         self.assertEqual([u'1. continueWatching', u'2. Recently Added in Films'], self.rows()[:2])
         self.win._moveHubToPosition(ANIMAL + '|movie.recentlyadded.22', home.home_section, 1, 0, None)
@@ -342,7 +344,7 @@ class HomeRequestTest(KodiTestCase):
         self.assertEqual('22', library_hubs.HubsMixin.promotedHubSourceKey('movie.recentlyreleased.22'))
 
 
-class RowsOnScreenTest(ManageHubsTest):
+class RowsOnScreenTest(ManageHubsCase):
     """Manage Hubs reloads Home on closing when the rows it was sent aren't the rows on screen: Plex's
     toggles or merge setting changed since Home was shown (live 2026-10-05)."""
 
@@ -388,3 +390,50 @@ class SidebarChangeTest(KodiTestCase):
         for win in (self.window(mock.Mock(key='22')), self.window(home.home_section, mode='grid')):
             win.reloadHomeRows('test')
             win.openSection.assert_not_called()
+
+
+class GenericTitleTest(KodiTestCase):
+    """Rows whose title names what they picked this time go by their kind in Manage Hubs (the user,
+    2026-10-05; the rows checked against Animal)."""
+
+    def test_a_pick_becomes_its_kind_in_square_brackets(self):
+        self.assertEqual('Top Movies in [Genre]', hub_config.genericTitle('movie.genre.22.71'))
+        self.assertEqual('Top Movies by [Actor or Director]',
+                         hub_config.genericTitle('movie.by.actor.or.director.22.155600'))
+        self.assertEqual('Most Played in [Month]', hub_config.genericTitle('music.popular.10'))
+        self.assertEqual('More in [Genre]', hub_config.genericTitle('tv.moreingenre.18'))
+
+    def test_the_servers_own_titles_first(self):
+        self.assertEqual('Meilleurs films [Genre]',
+                         hub_config.genericTitle('movie.genre.22.71', {'movie.genre': 'Meilleurs films (Genre)'}))
+
+    def test_a_row_whose_title_does_not_change_keeps_it(self):
+        for identifier in ('movie.recentlyadded.22', 'home.movies.recent.22', 'continueWatching', 'tv.toprated.18'):
+            self.assertIsNone(hub_config.genericTitle(identifier, {'tv.toprated': 'Top Rated TV'}), identifier)
+
+    def test_rows_that_pick_per_request(self):
+        self.assertTrue(hub_config.picksPerRequest('movie.genre.22.71'))
+        self.assertTrue(hub_config.picksPerRequest('movie.by.actor.or.director.22.155600'))
+        for identifier in ('movie.genre.22', 'music.popular.10', 'home.movies.recent.22',
+                           'custom.collection.2.63624', 'continueWatching'):
+            self.assertFalse(hub_config.picksPerRequest(identifier), identifier)
+
+
+class ManageHubsTitlesTest(ManageHubsCase):
+    def test_a_picked_rows_title_is_its_kind_and_it_asks_as_home_does(self):
+        self.animal.hubs.return_value.append(Hub('movie.genre.22.71', [Item()], self.animal, title='Top Movies in Musical'))
+        self.win._discoverHubsSync(home.home_section)
+        self.assertEqual('Top Movies in [Genre]', self.win.availableHubs[ANIMAL + '|movie.genre.22']['title'])
+        self.assertEqual(home.HUB_ROW_MAX_ITEMS, self.animal.hubs.call_args[1]['count'])
+
+    def test_a_pick_empty_this_time_reloads_nothing(self):
+        self.win.section = home.home_section
+        self.win._hubsSettingsChanged = False
+        self.win.hubSettings = {}
+        self.animal.hubs.return_value.append(Hub('movie.genre.22.71', [Item()], self.animal))
+        self.win._discoverHubsSync(home.home_section)
+        # on Home it came back empty (not shown); the dialog's request found one
+        self.win.sectionHubs = {'__home__': [Hub('continueWatching', [Item()], self.animal),
+                                             Hub('movie.recentlyadded.22', [Item()], self.animal)]}
+        self.win._noteRowsOnScreenStale(home.home_section)
+        self.assertFalse(self.win._hubsSettingsChanged)
