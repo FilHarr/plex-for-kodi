@@ -11,6 +11,8 @@ first - same guard the other lib.windows.* tests use for the same reason.
 
 from __future__ import absolute_import
 
+from unittest import mock
+
 from kodienv import ENV
 
 ENV.abort_requested = True
@@ -32,6 +34,9 @@ class FakeItem(object):
 
     def getProperty(self, key):
         return self.properties.get(key, '')
+
+    def setProperty(self, key, value):
+        self.properties[key] = value
 
 
 class FakeSectionList(object):
@@ -170,3 +175,16 @@ class SectionClickedTest(KodiTestCase):
 
         self.assertTrue(win.searchClicked)
         self.assertEqual([], win.deferCalls)
+
+
+class ActiveMarkerTest(KodiTestCase):
+    def test_the_marker_moves_without_asking_the_native_control(self):
+        # live 2026-10-05: a screen that couldn't load (its server had just gone offline) went back
+        # to the section, and the marker read sectionList[i] from the view just closed - its guard
+        # raised out of the window and shut the add-on down
+        from lib.windows import library, section_ids
+        items = _sidebar()
+        win = mock.Mock(sectionList=FakeSectionList(items, selected=2))
+        with mock.patch.object(section_ids, 'sectionId', lambda section: section):
+            library.LibraryWindow.updateActiveSectionMarker(win, 'tv')
+        self.assertEqual(['', '', '', '1'], [i.getProperty('is.active') for i in items])

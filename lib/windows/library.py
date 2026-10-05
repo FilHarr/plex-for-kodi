@@ -1270,13 +1270,16 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     def updateActiveSectionMarker(self, active_section):
         """Update is.active on the persistent sectionList to highlight active_section, without
         rebuilding the whole list - buildSectionList() only sets is.active once, at first build.
-        """
+        Through the Python-side items, as _selectActiveSection() reads them: sectionList[i] asks
+        the native control, which between views - a screen that couldn't load going back to the
+        section, popBack(view_gone=True) - belongs to the view just closed, and its guard raised
+        ScreenClosed out of the window, shutting the add-on down (live 2026-10-05: an episode of a
+        server that had just gone offline)."""
         if not self.sectionList:
             return
 
         activeId = section_ids.sectionId(active_section)
-        for i in range(self.sectionList.size()):
-            mli = self.sectionList[i]
+        for mli in self.sectionList.items:
             if not mli:
                 continue
             if mli.dataSource is not None and section_ids.sectionId(mli.dataSource) == activeId:
