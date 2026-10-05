@@ -300,8 +300,9 @@ class SectionHubsTask(backgroundthread.Task):
 
 # Home waits for every server's rows, but no longer than this once one has answered: the rows bind
 # together, and a server slower than that has its rows added in place when they come (D8's first
-# variant, plan Phase 7).
-HOME_LATE_SERVER_BUDGET = 2.0
+# variant, plan Phase 7). 1 s (the user, 2026-10-05; was 2 s): since late rows are added in place
+# the wait buys less, and on the AM6B both servers answered within 0.4 s, unaffected either way.
+HOME_LATE_SERVER_BUDGET = 1.0
 # ...and for a first answer at all no longer than this (and for a late one)
 HOME_FETCH_TIMEOUT = 20.0
 # D8's second variant, to compare live: bind as soon as the first server answers, and add each
