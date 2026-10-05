@@ -75,11 +75,22 @@ def libraryMeta(section):
 
 # The stored list
 
+# A new account's sidebar is marked so: no libraries until the user picks them, and Home opens the
+# Libraries picker until a library is pinned (LibraryWindow.offerOnboarding(), the user's choice,
+# 2026-10-05: onboarding, not a default sidebar of some server's libraries)
+ONBOARDING = 'onboarding'
+
+
 def loadNavSettings():
     """The sidebar's stored list (see this module's docstring), moved over from the older show/hide
-    dict the first time."""
+    dict the first time; a new account's (onboarding), the first time there is none."""
     section_ids.migrate()
     nav = section_ids.loadJson(section_ids.sidebarKey())
+    if not nav and not section_ids.hasLegacySettings():
+        nav = {'version': SIDEBAR_VERSION, 'entries': [WATCHLIST_ID], 'libraries': {}, ONBOARDING: True}
+        util.LOG('Sidebar: a new account - no libraries until some are picked')
+        saveNavSettings(nav)
+        return nav
     legacy = section_ids.legacyServer()
     if nav.get('version') == SIDEBAR_VERSION:
         if legacy is not None and section_ids.migratePlaylists(nav, None, legacy.uuid)[0]:
@@ -96,6 +107,15 @@ def loadNavSettings():
                 'unsaved': True}
     saveNavSettings(migrated)
     return migrated
+
+
+def endOnboarding(nav):
+    """A new account's sidebar has a library pinned: onboarding is over. Whether it ended."""
+    if nav.get(ONBOARDING) and any(':' in sid for sid in nav.get('entries', ())):
+        del nav[ONBOARDING]
+        util.LOG('Sidebar: libraries picked, onboarding over')
+        return True
+    return False
 
 
 def saveNavSettings(nav):
@@ -309,6 +329,23 @@ def fetchServerSections(server):
             sections.append(cls(elem, initpath=path, server=server, container=library))
     _noteSections(server, sections)
     return sections
+
+
+def awaitConnection(server, timeout):
+    """A server's first connection test, started if it hasn't been, and waited for (timeout s at
+    most): whether it found one. Asking a server before then gets no answer - at start-up, or on a
+    new account, none has been tested yet."""
+    if server.activeConnection:
+        return True
+    if server.offline:
+        return False
+    if server.pendingReachabilityRequests <= 0:
+        server.updateReachability(True)
+    end = time.time() + timeout
+    while not server.activeConnection and server.pendingReachabilityRequests > 0 and time.time() < end:
+        if util.MONITOR.waitForAbort(0.05):
+            break
+    return bool(server.activeConnection)
 
 
 def _noteSections(server, sections):

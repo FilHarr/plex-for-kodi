@@ -41,6 +41,10 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         # The offline retests, by server uuid: [timer, step] (see scheduleOfflineRetry())
         self.offlineRetries = {}
         self._stateLock = threading.Lock()
+        # Whether the account's servers are known (serversKnown()): plex.tv has answered (or
+        # failed to), or the last run's were loaded
+        self.resourcesAnswered = False
+        self.storedLoaded = False
 
         self.startSelectedServerSearch()
         self.loadState()
@@ -48,6 +52,11 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         plexapp.util.APP.on("change:user", callback.Callable(self.onAccountChange))
         plexapp.util.APP.on("change:allow_insecure", callback.Callable(self.onSecurityChange))
         plexapp.util.APP.on("change:manual_connections", callback.Callable(self.onManualConnectionChange))
+
+    def serversKnown(self):
+        """Whether the account's servers are known: plex.tv has answered (or failed to, its cache or
+        the known servers standing in), or the last run's were loaded. Home opens then (main.py)."""
+        return self.resourcesAnswered or self.storedLoaded
 
     def getSelectedServer(self):
         return self.selectedServer
@@ -214,6 +223,8 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         for server in servers:
             self.mergeServer(server)
 
+        if source == plexresource.ResourceConnection.SOURCE_MYPLEX:
+            self.resourcesAnswered = True
         if self.searchContext and source == plexresource.ResourceConnection.SOURCE_MYPLEX:
             self.searchContext.waitingForResources = False
 
@@ -225,6 +236,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
     def resourcesUnavailable(self):
         """plex.tv couldn't give us resources: stop waiting for them and test the servers we
         already know (stored, discovered, manual) instead."""
+        self.resourcesAnswered = True
         if self.searchContext:
             self.searchContext.waitingForResources = False
         self.updateReachability(True, True)
@@ -633,6 +645,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             self.serversByUuid[server.uuid] = server
 
         util.LOG("Loaded {0} servers from registry", len(obj['servers']))
+        self.storedLoaded = bool(self.serversByUuid)
         util.APP.trigger("loaded:server_connections", servers=self.serversByUuid.values(), source="stored")
         self.updateReachability(False, True)
 
@@ -673,9 +686,9 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
                 obj['servers'].append(serverObj)
 
-        if self.selectedServer and not self.selectedServer.synced and not self.selectedServer.isSecondary() \
-                and setPreferred:
-            util.INTERFACE.setPreference("lastServerId.{}".format(plexapp.ACCOUNT.ID), self.selectedServer.uuid)
+        # lastServerId.<account> isn't written any more: it now says which server the settings from
+        # before account-wide keys belong to (lib/windows/section_ids.legacyServer()), so it stays
+        # as the last run that selected a server left it (plan Phase 9.2)
 
         util.APP.trigger("loaded:server_connections", servers=servers, source="myplex")
         util.INTERFACE.setRegistry("PlexServerManager", json.dumps(obj))
@@ -787,6 +800,8 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             self.updateFromConnectionType([], plexresource.ResourceConnection.SOURCE_MYPLEX)
             self.updateFromConnectionType([], plexresource.ResourceConnection.SOURCE_DISCOVERED)
             self.updateFromConnectionType([], plexresource.ResourceConnection.SOURCE_MANUAL)
+            # another user's servers: known once plex.tv answers for them
+            self.resourcesAnswered = self.storedLoaded = False
 
             self.startSelectedServerSearch(True, ID=account.ID)
 

@@ -3704,3 +3704,7 @@ msgstr ""
 msgctxt "#35140"
 msgid "Servers to search"
 msgstr ""
+
+msgctxt "#35142"
+msgid "None of your servers are responding"
+msgstr ""

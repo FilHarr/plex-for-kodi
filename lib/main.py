@@ -118,6 +118,65 @@ def realExit():
             updateLastUsedAddon()
 
 
+def _serverWaitTimeout():
+    return max(
+        util.addonSettings.plextvTimeoutConnect * util.addonSettings.maxRetries1 +
+        util.addonSettings.plextvTimeoutRead * util.addonSettings.maxRetries1,
+        util.addonSettings.connCheckTimeout * util.addonSettings.maxRetries1)
+
+
+def waitForServers():
+    """Home opens once the account's servers are known: from the last run, else plex.tv's answer
+    (or its failing), at most _serverWaitTimeout() - not once one of them has been picked and has
+    answered, as it used to (plan Phase 9.2). Home's rows and the sidebar fill in as each server
+    answers, and Home says so when none does."""
+    manager = plexapp.SERVERMANAGER
+    if not manager.serversKnown():
+        timeout = _serverWaitTimeout()
+        util.DEBUG_LOG("Main: waiting for the account's servers... (max {0} s)", timeout)
+        background.setBusy()
+        try:
+            end = time.time() + timeout
+            while not manager.serversKnown() and time.time() < end and not util.MONITOR.abortRequested():
+                util.MONITOR.waitForAbort(0.1)
+        finally:
+            background.setBusy(False)
+    util.DEBUG_LOG('Main: starting with {0} known servers', len(manager.serversByUuid))
+
+
+def waitForLocalServer():
+    """Local mode: its one server, picked by plexnet's search, waited for; nothing reachable -
+    manual server entry is offered instead of silently landing on an empty home."""
+    selectedServer = plexapp.SERVERMANAGER.selectedServer
+    if not selectedServer:
+        background.setBusy()
+        base_timeout = _serverWaitTimeout()
+        util.DEBUG_LOG('Main: Waiting for selected server... (max timeout: {})', base_timeout)
+        try:
+            for timeout, skip_preferred, skip_owned in ((base_timeout, True, False), (base_timeout, True, True)):
+                plex.CallbackEvent(plexapp.util.APP, 'change:selectedServer', timeout=timeout).wait()
+
+                selectedServer = plexapp.SERVERMANAGER.checkSelectedServerSearch(
+                    skip_preferred=skip_preferred, skip_owned=skip_owned)
+                if selectedServer:
+                    break
+            else:
+                util.DEBUG_LOG('Main: Finished waiting for selected server...')
+        finally:
+            background.setBusy(False)
+
+    while not selectedServer and localmode.offerServerIfNoneFound():
+        background.setBusy()
+        try:
+            plexapp.SERVERMANAGER.refreshManualConnections()
+            plex.CallbackEvent(plexapp.util.APP, 'change:selectedServer', timeout=15).wait()
+            selectedServer = plexapp.SERVERMANAGER.checkSelectedServerSearch(
+                skip_preferred=True, skip_owned=True)
+        finally:
+            background.setBusy(False)
+    return selectedServer
+
+
 def signout():
     global hadReauth
     hadReauth = True
@@ -297,45 +356,14 @@ def _main():
 
                     closeOption = "exit"
                     try:
-                        selectedServer = plexapp.SERVERMANAGER.selectedServer
-
-                        if not selectedServer:
-                            background.setBusy()
-                            base_timeout = max(
-                                util.addonSettings.plextvTimeoutConnect * util.addonSettings.maxRetries1 +
-                                util.addonSettings.plextvTimeoutRead * util.addonSettings.maxRetries1,
-                                util.addonSettings.connCheckTimeout * util.addonSettings.maxRetries1)
-                            util.DEBUG_LOG('Main: Waiting for selected server... (max timeout: {})', base_timeout)
-                            try:
-                                for timeout, skip_preferred, skip_owned in ((base_timeout, True, False), (base_timeout, True, True)):
-                                    plex.CallbackEvent(plexapp.util.APP, 'change:selectedServer', timeout=timeout).wait()
-
-                                    selectedServer = plexapp.SERVERMANAGER.checkSelectedServerSearch(
-                                        skip_preferred=skip_preferred, skip_owned=skip_owned)
-                                    if selectedServer:
-                                        break
-                                else:
-                                    util.DEBUG_LOG('Main: Finished waiting for selected server...')
-                            finally:
-                                background.setBusy(False)
-
-                        # local mode: nothing reachable - offer manual server entry instead of
-                        # silently landing on an empty home
-                        while plexapp.util.LOCAL_MODE and not selectedServer and localmode.offerServerIfNoneFound():
-                            background.setBusy()
-                            try:
-                                plexapp.SERVERMANAGER.refreshManualConnections()
-                                plex.CallbackEvent(plexapp.util.APP, 'change:selectedServer', timeout=15).wait()
-                                selectedServer = plexapp.SERVERMANAGER.checkSelectedServerSearch(
-                                    skip_preferred=True, skip_owned=True)
-                            finally:
-                                background.setBusy(False)
-
-                        util.DEBUG_LOG('Main: STARTING WITH SERVER: {0}', selectedServer)
-
-                        # account-less local mode: offer user profiles known to the PMS
-                        if plexapp.util.LOCAL_MODE and not plexapp.ACCOUNT.isSignedIn and selectedServer:
-                            localmode.seedUsersFromServer(selectedServer)
+                        if plexapp.util.LOCAL_MODE:
+                            selectedServer = waitForLocalServer()
+                            util.DEBUG_LOG('Main: STARTING WITH SERVER: {0}', selectedServer)
+                            # account-less local mode: offer user profiles known to the PMS
+                            if not plexapp.ACCOUNT.isSignedIn and selectedServer:
+                                localmode.seedUsersFromServer(selectedServer)
+                        else:
+                            waitForServers()
 
                         # LibraryWindow.open() (MultiWindow.open(), kodigui.py) is a single
                         # blocking call - construct, show, run the whole session, return only once

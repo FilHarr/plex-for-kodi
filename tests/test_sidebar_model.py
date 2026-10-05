@@ -105,7 +105,9 @@ class SidebarCase(KodiTestCase):
     def setUp(self):
         super(SidebarCase, self).setUp()
         self.server = Server()
-        self.settings = {}
+        # an account that used the add-on before account-wide keys, Animal selected
+        # (section_ids.legacyServer()); a new account is OnboardingTest's
+        self.settings = {'lastServerId.1': UUID}
         self.account = mock.Mock(title='Phil', username='phil', ID='1', thumb='', isOffline=False)
         self.account.safeUserThumb.return_value = 'avatar.png'
         self.manager = mock.Mock(selectedServer=self.server, serversByUuid={UUID: self.server, OTHER: OSCAR})

@@ -1895,7 +1895,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             return
         if self._sidebarHasServer(server):
             self._rebuildSidebar()
-        if self._sidebarHasServer(server):
             # the Libraries button's icon (sidebar_model.serverAndUserProperties())
             self.displayServerAndUser()
         if self._isHomeServer(server) and not self._isViewServer(server):
@@ -1961,6 +1960,14 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._unavailableNotified = server.uuid
         util.showNotification(T(35125, "{0} isn't responding. Retrying...").format(server.name), time_ms=5000)
 
+    def _viewServers(self):
+        """The servers of what's on screen, for the "isn't responding" panel: Home's every server it
+        has rows from (_homeServers()); a library's or Playlists' own (_viewServer())."""
+        if self.__dict__.get('section') is home.home_section:
+            return [server for server, _ in self._homeServers()]
+        server = self._viewServer()
+        return [server] if server is not None else []
+
     def _viewIsEmpty(self):
         if self.contentMode == 'recommended':
             return not self.visibleHubs
@@ -1968,35 +1975,41 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
     def updateServerUnavailable(self):
         """Show or clear the "isn't responding" panel (includes/server_unavailable.xml.tpl): in
-        place of an empty grid or Recommended view while the server of what's on screen
-        (_viewServer()) is suspect (a query got no answer and its connections are being retested)
-        or offline, so the view says why it's empty and offers "Try again". Empty, it used to say
-        nothing, or "no content" for a grid. Returns whether it shows."""
-        server = self._viewServer()
-        show = bool(server and (server.offline or server.suspect) and not server.gone
+        place of an empty grid or Recommended view while the servers of what's on screen
+        (_viewServers()) are all suspect (a query got no answer and its connections are being
+        retested) or offline, so the view says why it's empty and offers "Try again". Empty, it
+        used to say nothing, or "no content" for a grid. On Home, when none of its servers is
+        answering (plan Phase 9.2's "none reachable"). Returns whether it shows."""
+        servers = [server for server in self._viewServers() if not server.gone]
+        show = bool(servers and all(server.offline or server.suspect for server in servers)
                     and not self._isHostedShell and not self.closing and self._viewIsEmpty())
         if show:
             self.setProperty('server.unavailable.detail',
                              T(35131, 'Trying again...') if self.__dict__.get('_serverRetrying')
                              else T(35130, 'Retrying automatically.'))
-            self.setProperty('server.unavailable', T(35129, "{0} isn't responding").format(server.name))
+            self.setProperty('server.unavailable',
+                             T(35129, "{0} isn't responding").format(servers[0].name) if len(servers) == 1
+                             else T(35142, "None of your servers are responding"))
         elif self.getProperty('server.unavailable'):
             self.setProperty('server.unavailable', '')
         return show
 
     def retryServerNow(self):
-        """The panel's "Try again": retest the server of what's on screen at once rather than at the
-        next step of the backoff. The panel says so until the round ends (_tickServerRetry()); if
-        the server answers, onServerOnline() reloads the view."""
-        if self.__dict__.get('_serverRetrying') or not plexapp.SERVERMANAGER.retestServerNow(self._viewServer()):
+        """The panel's "Try again": retest the servers of what's on screen at once rather than at
+        the next step of the backoff. The panel says so until the round ends (_tickServerRetry());
+        if one answers, onServerOnline() reloads the view (Home: refreshes its rows)."""
+        if self.__dict__.get('_serverRetrying'):
+            return
+        started = [server for server in self._viewServers()
+                   if (server.offline or server.suspect) and plexapp.SERVERMANAGER.retestServerNow(server)]
+        if not started:
             return
         self._serverRetrying = True
         self.updateServerUnavailable()
         self.addTicker(self._tickServerRetry)
 
     def _tickServerRetry(self, now):
-        server = self._viewServer()
-        if server and server.pendingReachabilityRequests > 0 and not self.closing:
+        if not self.closing and any(server.pendingReachabilityRequests > 0 for server in self._viewServers()):
             return True
         self._serverRetrying = False
         self.updateServerUnavailable()
@@ -2051,7 +2064,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             return
         if self._sidebarHasServer(server):
             self._rebuildSidebar()
-        if self._sidebarHasServer(server):
             # the Libraries button's icon (sidebar_model.serverAndUserProperties())
             self.displayServerAndUser()
         if self._isHomeServer(server) and not self._isViewServer(server):
@@ -2163,6 +2175,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # Only the true root reacts to the server signals (hookSignals())
             self._signalsHooked = True
             self.hookSignals()
+        if self is windowutils.HOME and self.section is home.home_section:
+            self.offerOnboarding()
         timing.mark('controls')
         # A new view starts without the "isn't responding" panel or the "no content" message; its
         # first fill or bind decides (updateServerUnavailable(), _recommendedHubsCallback(), the
@@ -2927,6 +2941,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         playlists = {}
 
         def ask(server):
+            sidebar_model.awaitConnection(server, 10)
             listed[server.uuid] = sections = sidebar_model.fetchServerSections(server)
             if sections is not None:
                 answer = server.playlists()
@@ -2964,12 +2979,22 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         finally:
             self._pickerServers = self._pickerListed = self._pickerPlaylists = None
         if self._pickerChanged:
+            sidebar_model.endOnboarding(self.sidebarNavSettings())
             self.saveNavSettings()
             self._rebuildSidebar()
             if not self._pickerOpen:
                 self.reloadHomeRows('libraries picked')
         if self._pickerOpen:
             self._openFromPicker(*self._pickerOpen)
+
+    def offerOnboarding(self):
+        """A new account's Home (no libraries picked yet, sidebar_model.ONBOARDING): the Libraries
+        picker opens by itself, once a session, until a library is pinned."""
+        if self.__dict__.get('_onboardingOffered') or not self.sidebarNavSettings().get(sidebar_model.ONBOARDING):
+            return
+        self._onboardingOffered = True
+        util.LOG('Library: a new account, opening the Libraries picker')
+        self.postUI('onboarding', self.showLibraryPicker)
 
     def _openFromPicker(self, sid, section):
         """Open what the picker's row was, as a sidebar click on the screen showing would

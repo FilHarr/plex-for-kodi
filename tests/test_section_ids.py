@@ -192,9 +192,10 @@ class MigrateCase(KodiTestCase):
     def setUp(self):
         super(MigrateCase, self).setUp()
         self.animal, self.oscar = Server(ANIMAL), Server(OSCAR)
-        self.settings = {}
+        # the server selected when the add-on last ran: the old settings' (legacyServer())
+        self.settings = {'lastServerId.7': ANIMAL}
         self.writes = []
-        self.manager = mock.Mock(selectedServer=self.animal)
+        self.manager = mock.Mock(serversByUuid={ANIMAL: self.animal, OSCAR: self.oscar})
         self.manager.getServers.return_value = [self.oscar, self.animal]
 
         def setSetting(key, value):
@@ -279,20 +280,27 @@ class MigrateTest(MigrateCase):
         self.assertEqual(after, self.settings)
         self.assertEqual(2, len(self.writes))
 
-    def test_waits_for_a_selected_server(self):
-        self.manager.selectedServer = None
+    def test_waits_for_the_old_settings_server_to_be_known(self):
+        self.manager.serversByUuid = {OSCAR: self.oscar}
         section_ids.migrate()
         self.assertEqual([], self.writes)
-        self.manager.selectedServer = self.animal
+        self.manager.serversByUuid[ANIMAL] = self.animal
         section_ids.migrate()
         self.assertIn('sidebar.7', self.settings)
 
 
 class NothingToMigrateTest(MigrateCase):
-    def test_an_account_with_no_settings_is_marked_done(self):
+    def test_an_old_account_with_no_settings_is_marked_done(self):
         section_ids.migrate()
         self.assertEqual({}, self.stored('sidebar.7'))
         self.assertEqual({}, self.stored('hub.settings.7'))
+
+    def test_a_new_account_has_nothing_to_move(self):
+        # never had a server selected: onboarding (sidebar_model.loadNavSettings()), not migration
+        del self.settings['lastServerId.7']
+        section_ids.migrate()
+        self.assertEqual([], self.writes)
+        self.assertIn('7', section_ids._migrated)
 
 
 class SameAsBeforeTest(MigrateCase):

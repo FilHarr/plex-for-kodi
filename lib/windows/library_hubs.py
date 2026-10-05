@@ -2552,6 +2552,7 @@ class HubsMixin(object):
             new = self._visibleHubsFor(section, hubs)
             if self._hubsSignature(new) == self._hubsSignature(self.visibleHubs or []):
                 util.DEBUG_LOG('Library: hub rows unchanged ({0})', reason)
+                self.updateServerUnavailable()
                 return
             anchorKey = None
             if self.visibleHubs and 0 <= self.focusedHubIndex < len(self.visibleHubs):

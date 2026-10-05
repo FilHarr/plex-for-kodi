@@ -296,14 +296,16 @@ def mergeSettings(selected, others):
 def legacyServer():
     """The server settings from before account-wide keys belong to: the one selected when the add-on
     last ran (plexnet's lastServerId.<account>) - the only one the sidebar, Home and search history
-    were kept for. None for an account with no such settings, and while that server isn't known yet
-    (try again later); for a new account, plexnet's choice for now (Phase 9.2 replaces this with
-    onboarding)."""
-    manager = plexapp.SERVERMANAGER
+    were kept for. None for an account with no such settings (hasLegacySettings()), and while that
+    server isn't known yet (try again later)."""
     uuid = util.getSetting('lastServerId.{0}'.format(plexapp.ACCOUNT.ID), '')
-    if uuid:
-        return manager.serversByUuid.get(uuid)
-    return manager.selectedServer
+    return plexapp.SERVERMANAGER.serversByUuid.get(uuid) if uuid else None
+
+
+def hasLegacySettings():
+    """Whether the account used the add-on before account-wide keys: a server was selected for it
+    (legacyServer()). A new account, or one new to this device, has none - onboarding."""
+    return bool(util.getSetting('lastServerId.{0}'.format(plexapp.ACCOUNT.ID), ''))
 
 
 _migrated = set()
@@ -326,6 +328,10 @@ def migrate():
             _migrated.add(account)
             return
         manager = plexapp.SERVERMANAGER
+        if not hasLegacySettings():
+            # nothing from before to move (loadNavSettings() starts a new account's sidebar)
+            _migrated.add(account)
+            return
         selected = legacyServer()
         if not selected:
             return
