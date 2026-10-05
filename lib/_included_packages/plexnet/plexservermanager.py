@@ -16,27 +16,20 @@ from . import util
 from six.moves import range
 
 
-class SearchContext(dict):
-    def __getattr__(self, attr):
-        return self.get(attr)
-
-    def __setattr__(self, attr, value):
-        self[attr] = value
-
-
 class PlexServerManager(signalsmixin.SignalsMixin):
     def __init__(self):
         signalsmixin.SignalsMixin.__init__(self)
         # obj.Append(ListenersMixin())
         self.serversByUuid = {}
-        self.selectedServer = None
         self.transcodeServer = None
         self.channelServer = None
         self.deferReachabilityTimer = None
         self.reachabilityNeverTested = True
-        # Servers that matter besides the selected one: those with libraries in the sidebar
-        # (setWatchedServers()). Each is retested while it's offline, and taken as gone only when
-        # plex.tv stops listing it - see serverMatters().
+        # Signed in, until plex.tv's resources answer: see beginDiscovery()
+        self.waitingForResources = False
+        # The servers that matter: those with libraries in the sidebar (setWatchedServers()). Each
+        # is retested while it's offline, and taken as gone only when plex.tv stops listing it -
+        # see serverMatters().
         self.watchedServerUuids = frozenset()
         # The offline retests, by server uuid: [timer, step] (see scheduleOfflineRetry())
         self.offlineRetries = {}
@@ -46,7 +39,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         self.resourcesAnswered = False
         self.storedLoaded = False
 
-        self.startSelectedServerSearch()
+        self.beginDiscovery()
         self.loadState()
 
         plexapp.util.APP.on("change:user", callback.Callable(self.onAccountChange))
@@ -58,49 +51,9 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         the known servers standing in), or the last run's were loaded. Home opens then (main.py)."""
         return self.resourcesAnswered or self.storedLoaded
 
-    def getSelectedServer(self):
-        return self.selectedServer
-
     @property
     def allConnections(self):
         return [c.address for s in list(self.serversByUuid.values()) for c in s.connections if s.connections]
-
-    def setSelectedServer(self, server, force=False):
-        # Don't do anything if the server is already selected.
-        if self.selectedServer and self.selectedServer == server:
-            return False
-
-        if server:
-            # Don't select servers that don't have connections.
-            if not server.activeConnection:
-                return False
-
-            # Don't select servers that are not supported
-            if not server.isSupported:
-                return False
-
-        if not self.selectedServer or force:
-            util.LOG("Setting selected server to {0}", server)
-            previous = self.selectedServer
-            self.selectedServer = server
-            if previous is not None and previous is not server and not self.serverMatters(previous):
-                self.cancelOfflineRetry(previous)
-
-            if server:
-                # The search for a server to start with is over: from here on, only the user
-                # changes servers. A later reachability result settling for the "best" server
-                # found would otherwise switch servers under them.
-                if self.searchContext:
-                    self.searchContext.active = False
-
-                # Update our saved state.
-                self.saveState(setPreferred=True)
-
-                # Notify anyone who might care.
-                util.APP.trigger("change:selectedServer", server=server)
-
-                return True
-        return False
 
     def getServer(self, uuid=None):
         if uuid is None:
@@ -137,8 +90,8 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         return False
 
     def serverMatters(self, server):
-        """The selected server, or one with libraries in the sidebar (setWatchedServers())."""
-        return server is not None and (server == self.selectedServer or server.uuid in self.watchedServerUuids)
+        """One with libraries in the sidebar (setWatchedServers())."""
+        return server is not None and server.uuid in self.watchedServerUuids
 
     def setWatchedServers(self, uuids):
         """The servers the sidebar has libraries from (the UI says, whenever its list is loaded or
@@ -159,8 +112,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         """A server none of the sources lists any more. For one that matters (serverMatters()), only
         plex.tv's list (with the account signed in) means the account no longer has it: that's
         gone - see onServerGone(). Any other way of losing it - a GDM broadcast that went unanswered
-        once, a manual entry removed, signing out - keeps it, offline, and retested; the selection
-        is never cleared under the UI, which can't survive having none."""
+        once, a manual entry removed, signing out - keeps it, offline, and retested."""
         matters = self.serverMatters(server)
         if matters:
             if source != plexresource.ResourceConnection.SOURCE_MYPLEX or not plexapp.ACCOUNT.isSignedIn:
@@ -172,9 +124,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
         self.trigger('remove:server')
 
-        if server == self.selectedServer:
-            self.onSelectedServerGone(server)
-        elif matters:
+        if matters:
             self.onServerGone(server)
 
         if server == self.transcodeServer:
@@ -185,31 +135,10 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             util.LOG("The selected channel server went away")
             self.channelServer = None
 
-    def onSelectedServerGone(self, server):
-        """plex.tv no longer lists the selected server: the account doesn't have it any more
-        (removed, or the share revoked), so it won't be back - unlike an offline one, it isn't
-        retested. Switches to the best server that answers, saying so ('gone:selectedServer',
-        server=, replacement=), or with none keeps the gone one selected until the user picks
-        another (the UI can't survive having none)."""
-        util.LOG("The selected server {0} is no longer on this account", repr(server.name))
-        server.gone = True
-        self.cancelOfflineRetry(server)
-        with self._stateLock:
-            server.offline = True
-
-        replacement = None
-        for candidate in self.getServers():
-            if candidate.isReachable() and self.compareServers(replacement, candidate) < 0:
-                replacement = candidate
-
-        self.trigger('gone:selectedServer', server=server, replacement=replacement)
-        if replacement:
-            self.setSelectedServer(replacement, force=True)
-
     def onServerGone(self, server):
-        """plex.tv no longer lists a server the sidebar has libraries from (not the selected one):
-        the account doesn't have it any more. It isn't retested; 'gone:server' (server=) lets the
-        UI take its libraries out."""
+        """plex.tv no longer lists a server the sidebar has libraries from: the account doesn't have
+        it any more (removed, or the share revoked), so it won't be back - unlike an offline one,
+        it isn't retested. 'gone:server' (server=) lets the UI take its libraries out."""
         util.LOG("{0} is no longer on this account", repr(server.name))
         server.gone = True
         self.cancelOfflineRetry(server)
@@ -225,21 +154,19 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
         if source == plexresource.ResourceConnection.SOURCE_MYPLEX:
             self.resourcesAnswered = True
-        if self.searchContext and source == plexresource.ResourceConnection.SOURCE_MYPLEX:
-            self.searchContext.waitingForResources = False
+            self.waitingForResources = False
 
-        if not self.searchContext.waitingForResources:
+        if not self.waitingForResources:
             self.deviceRefreshComplete(source)
-            self.updateReachability(True, True)
+            self.updateReachability(True)
             self.saveState()
 
     def resourcesUnavailable(self):
         """plex.tv couldn't give us resources: stop waiting for them and test the servers we
         already know (stored, discovered, manual) instead."""
         self.resourcesAnswered = True
-        if self.searchContext:
-            self.searchContext.waitingForResources = False
-        self.updateReachability(True, True)
+        self.waitingForResources = False
+        self.updateReachability(True)
 
     def updateFromDiscovery(self, server):
         merged = self.mergeServer(server)
@@ -259,18 +186,6 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             existing = self.serversByUuid[server.uuid]
             existing.merge(server)
             util.DEBUG_LOG("Merged {0}", repr(server.name))
-            return existing
-        elif self.selectedServer is not None and self.selectedServer.gone and self.selectedServer.uuid == server.uuid:
-            # The gone server is still selected (nothing else answered) and plex.tv lists it again
-            # (a share restored): take that same object back. A new one beside it would read as
-            # "already selected" to setSelectedServer() (it compares uuid and owner), so it could
-            # never be picked.
-            existing = self.selectedServer
-            existing.gone = False
-            existing.merge(server)
-            self.serversByUuid[server.uuid] = existing
-            util.LOG("The selected server {0} is back on this account", repr(server.name))
-            self.trigger("new:server", server=existing)
             return existing
         else:
             self.serversByUuid[server.uuid] = server
@@ -295,7 +210,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             # self.notifyAboutDevice(server, False)
             self.removeServer(server, source)
 
-    def updateReachability(self, force=False, preferSearch=False, defer=False):
+    def updateReachability(self, force=False, defer=False):
         # We don't need to test any servers unless we are signed in and authenticated.
         if not plexapp.ACCOUNT.isAuthenticated and plexapp.ACCOUNT.isActive():
             util.LOG("Ignore testing server reachability until we're authenticated")
@@ -303,25 +218,10 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
         self.reachabilityNeverTested = False
 
-        # To improve reachability performance and app startup, we'll try to test the
-        # preferred server first, and defer the connection tests for a few seconds.
-
-        hasPreferredServer = bool(self.searchContext.preferredServer)
-        preferredServerExists = hasPreferredServer and self.searchContext.preferredServer in self.serversByUuid
-
-        if preferSearch and hasPreferredServer and preferredServerExists:
-            # Update the preferred server immediately if requested and exits
-            util.LOG("Updating reachability for preferred server: force={0}", force)
-            self.serversByUuid[self.searchContext.preferredServer].updateReachability(force)
+        # Every server is tested at once: there's no one server to start with (and test first)
+        # any more - the sidebar's are all wanted (plan Phase 9.3).
+        if defer:
             self.deferUpdateReachability()
-        elif defer:
-            self.deferUpdateReachability()
-        elif hasPreferredServer and not preferredServerExists and gdm.DISCOVERY.isActive():
-            # Defer the update if requested or if GDM discovery is enabled and
-            # active while the preferred server doesn't exist.
-
-            util.LOG("Defer update reachability until GDM has finished to help locate the preferred server")
-            self.deferUpdateReachability(True, False)
         else:
             if self.deferReachabilityTimer:
                 self.deferReachabilityTimer.cancel()
@@ -462,8 +362,6 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             self.scheduleOfflineRetry(server)
 
     def updateReachabilityResult(self, server, reachable=False):
-        searching = not self.selectedServer and self.searchContext and self.searchContext.active
-
         if reachable:
             self.setServerOnline(server, True)
         elif server.pendingReachabilityRequests <= 0:
@@ -472,27 +370,8 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             self.setServerOnline(server, False)
 
         if reachable:
-            # If we're in the middle of a search for our selected server, see if
-            # this is a candidate.
             self.trigger('reachable:server', server=server)
-            if searching:
-                # If this is what we were hoping for, select it
-                if server.uuid == self.searchContext.preferredServer:
-                    self.setSelectedServer(server, True)
-                elif server.synced:
-                    self.searchContext.fallbackServer = server
-                elif self.compareServers(self.searchContext.bestServer, server) < 0:
-                    self.searchContext.bestServer = server
         else:
-            # If this is what we were hoping for, see if there are any more pending
-            # requests to hope for.
-
-            if searching and server.uuid == self.searchContext.preferredServer and server.pendingReachabilityRequests <= 0:
-                self.searchContext.preferredServer = None
-
-            # The selected server stays selected while unreachable (it's offline - see
-            # setServerOnline()); clearing it, as this once did, left the UI with no server.
-
             if server == self.transcodeServer:
                 util.LOG("The selected transcode server is not reachable")
                 self.transcodeServer = None
@@ -500,62 +379,6 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             if server == self.channelServer:
                 util.LOG("The selected channel server is not reachable")
                 self.channelServer = None
-
-        # See if we should settle for the best we've found so far.
-        self.checkSelectedServerSearch()
-
-    def checkSelectedServerSearch(self, skip_preferred=False, skip_owned=False):
-        if self.selectedServer:
-            return self.selectedServer
-        elif self.searchContext and self.searchContext.active:
-            # If we're still waiting on the resources response then there's no
-            # reason to settle, so don't even iterate over our servers.
-
-            if self.searchContext.waitingForResources:
-                util.DEBUG_LOG("Still waiting for plex.tv resources")
-                return
-
-            waitingForPreferred = False
-            waitingForOwned = False
-            waitingForAnything = False
-            waitingToTestAll = bool(self.deferReachabilityTimer)
-
-            if skip_preferred:
-                self.searchContext.preferredServer = None
-                if self.deferReachabilityTimer:
-                    self.deferReachabilityTimer.cancel()
-                    self.deferReachabilityTimer = None
-
-            if not skip_owned:
-                # Iterate over all our servers and see if we're waiting on any results
-                servers = self.getServers()
-                pendingCount = 0
-                for server in servers:
-                    if server.pendingReachabilityRequests > 0:
-                        pendingCount += server.pendingReachabilityRequests
-                        if server.uuid == self.searchContext.preferredServer:
-                            waitingForPreferred = True
-                        elif server.owned:
-                            waitingForOwned = True
-                        else:
-                            waitingForAnything = True
-
-                pendingString = "{0} pending reachability tests".format(pendingCount)
-
-            if waitingForPreferred:
-                util.LOG("Still waiting for preferred server: " + pendingString)
-            elif waitingToTestAll:
-                util.LOG("Preferred server not reachable, testing all servers now")
-                self.updateReachability(True, False, False)
-            elif waitingForOwned and (not self.searchContext.bestServer or not self.searchContext.bestServer.owned):
-                util.LOG("Still waiting for an owned server: " + pendingString)
-            elif waitingForAnything and not self.searchContext.bestServer:
-                util.LOG("Still waiting for any server: {0}", pendingString)
-            else:
-                # No hope for anything better, let's select what we found
-                util.LOG("Settling for the best server we found")
-                self.setSelectedServer(self.searchContext.bestServer or self.searchContext.fallbackServer, True)
-                return self.selectedServer
 
     def compareServers(self, first, second):
         if not first or not first.isSupported:
@@ -647,9 +470,9 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         util.LOG("Loaded {0} servers from registry", len(obj['servers']))
         self.storedLoaded = bool(self.serversByUuid)
         util.APP.trigger("loaded:server_connections", servers=self.serversByUuid.values(), source="stored")
-        self.updateReachability(False, True)
+        self.updateReachability()
 
-    def saveState(self, setPreferred=False):
+    def saveState(self):
         # Serialize our important information to JSON and save it to the registry.
         # We'll always update server info upon connecting, so we don't need much
         # info here. We do have to use roArray instead of roList, because Brightscript.
@@ -688,7 +511,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
         # lastServerId.<account> isn't written any more: it now says which server the settings from
         # before account-wide keys belong to (lib/windows/section_ids.legacyServer()), so it stays
-        # as the last run that selected a server left it (plan Phase 9.2)
+        # as the last run that selected a server left it (plan Phase 9.2). Nothing selects one now.
 
         util.APP.trigger("loaded:server_connections", servers=servers, source="myplex")
         util.INTERFACE.setRegistry("PlexServerManager", json.dumps(obj))
@@ -720,54 +543,36 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         return self.channelServer
 
     def getTranscodeServer(self, transcodeType=None):
-        if not self.selectedServer:
-            return None
-
-        transcodeMap = {
+        """A server to transcode for a synced one (PlexServer.getImageTranscodeURL()), which can't
+        itself: the best reachable server that isn't synced and can transcode transcodeType, or
+        None. It was the selected server's stand-in; there's no selected server now (Phase 9.3)."""
+        transcodeSupport = {
             'audio': "supportsAudioTranscoding",
             'video': "supportsVideoTranscoding",
             'photo': "supportsPhotoTranscoding"
-        }
-        transcodeSupport = transcodeMap[transcodeType]
+        }.get(transcodeType)
 
-        # Try to use a better transcoding server for synced or secondary servers
-        if self.selectedServer.synced or self.selectedServer.isSecondary():
-            if self.transcodeServer and self.transcodeServer.isReachable():
-                return self.transcodeServer
+        if self.transcodeServer and self.transcodeServer.isReachable():
+            return self.transcodeServer
 
-            self.transcodeServer = None
-            for server in self.getServers():
-                if not server.synced and server.isReachable() and self.compareServers(self.transcodeServer, server) < 0:
-                    if not transcodeSupport or server.transcodeSupport:
-                        self.transcodeServer = server
+        self.transcodeServer = None
+        for server in self.getServers():
+            if not server.synced and server.isReachable() and self.compareServers(self.transcodeServer, server) < 0:
+                if not transcodeSupport or getattr(server, transcodeSupport, False):
+                    self.transcodeServer = server
 
-            if self.transcodeServer:
-                transcodeTypeString = transcodeType or ''
-                util.LOG("Found a better {0} transcode server than {1}, using: {2}", transcodeTypeString, self.selectedServer, self.transcodeServer)
-                return self.transcodeServer
+        if self.transcodeServer:
+            util.LOG("Using {0} as the {1} transcode server", self.transcodeServer, transcodeType or '')
+        return self.transcodeServer
 
-        return self.selectedServer
-
-    def startSelectedServerSearch(self, reset=False, ID=None):
-        if reset:
-            self.selectedServer = None
-            self.transcodeServer = None
-            self.channelServer = None
-
-        ID = ID is not None and ID or plexapp.ACCOUNT.ID
-        pServ = util.INTERFACE.getPreference("lastServerId.{}".format(ID), '')
-        util.DEBUG_LOG("Preferred server for {0} is: {1}", ID, pServ)
-        # Keep track of some information during our search
-
-        self.searchContext = SearchContext({
-            'bestServer': None,
-            'preferredServer': pServ,
-            'waitingForResources': plexapp.ACCOUNT.isSignedIn,
-            # until a server is selected (setSelectedServer())
-            'active': True
-        })
-
-        util.LOG("Starting selected server search, hoping for {0}", self.searchContext.preferredServer)
+    def beginDiscovery(self):
+        """A fresh look for the account's servers (startup, another account, local mode): the
+        transcode and channel servers are picked again, and while signed in, no list but plex.tv's
+        settles which servers the account has until plex.tv has answered (updateFromConnectionType()).
+        This was the start of the selected-server search, the rest of which is gone (Phase 9.3)."""
+        self.transcodeServer = None
+        self.channelServer = None
+        self.waitingForResources = plexapp.ACCOUNT.isSignedIn
         if util.LOCAL_OVER_SECURE:
             util.WARN_LOG("Preferring local server connections over secure ones!")
 
@@ -779,8 +584,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
 
             util.DEBUG_LOG("Account really changed, clearing all servers")
 
-            # Clear selected and transcode servers on user change
-            self.selectedServer = None
+            # Clear the transcode servers on user change
             self.transcodeServer = None
             self.channelServer = None
             self.cancelReachability()
@@ -794,8 +598,8 @@ class PlexServerManager(signalsmixin.SignalsMixin):
                 return
 
             # A request to refresh resources has already been kicked off. We need
-            # to clear out any connections for the previous user and then start
-            # our selected server search.
+            # to clear out any connections for the previous user and then look for
+            # this one's.
 
             self.updateFromConnectionType([], plexresource.ResourceConnection.SOURCE_MYPLEX)
             self.updateFromConnectionType([], plexresource.ResourceConnection.SOURCE_DISCOVERED)
@@ -803,7 +607,7 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             # another user's servers: known once plex.tv answers for them
             self.resourcesAnswered = self.storedLoaded = False
 
-            self.startSelectedServerSearch(True, ID=account.ID)
+            self.beginDiscovery()
 
             if reallyChanged:
                 util.DEBUG_LOG("User really changed, refreshing resources now")
@@ -824,20 +628,10 @@ class PlexServerManager(signalsmixin.SignalsMixin):
             util.LOG('Defer update reachability for all devices a few seconds: GDMactive={0}', gdm.DISCOVERY.isActive())
 
     def onDeferUpdateReachabilityTimer(self):
-        if not self.selectedServer and self.searchContext:
-            for server in self.getServers():
-                if server.pendingReachabilityRequests > 0 and server.uuid == self.searchContext.preferredServer:
-                    util.DEBUG_LOG(
-                        'Still waiting on {0} responses from preferred server: {1}'.format(
-                            server.pendingReachabilityRequests, self.searchContext.preferredServer
-                        )
-                    )
-                    return
-
         if self.deferReachabilityTimer:
             self.deferReachabilityTimer.cancel()
         self.deferReachabilityTimer = None
-        self.updateReachability(True, False, False)
+        self.updateReachability(True)
 
     def checkServersAlive(self):
         """The light, frequent check (PlexServer.checkAlive()) on every server that matters, so one
@@ -888,10 +682,10 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         plexapp.refreshResources(True)
 
     def onManualConnectionChange(self, value=None):
-        # Clear all manual connections on change. A selected server that only had a manual
-        # connection isn't unselected meanwhile: removeServer() keeps it, offline. (This used to
-        # try to put such a server back itself, reading .sources off a list - it would have
-        # raised had it ever run.)
+        # Clear all manual connections on change. A sidebar server that only had a manual
+        # connection is kept meanwhile: removeServer() keeps it, offline. (This used to try to put
+        # such a server back itself, reading .sources off a list - it would have raised had it
+        # ever run.)
         self.updateFromConnectionType([], plexresource.ResourceConnection.SOURCE_MANUAL)
 
     def refreshManualConnections(self):
@@ -961,7 +755,6 @@ class PlexServerManager(signalsmixin.SignalsMixin):
         return manualConnections
 
 # TODO(schuyler): Notifications
-# TODO(schuyler): Transcode (and primary) server selection
 
 
 MANAGER = PlexServerManager()

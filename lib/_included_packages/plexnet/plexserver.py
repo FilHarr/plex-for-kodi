@@ -98,8 +98,7 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         # Known to be unreachable: its last reachability round ended with no working connection
         # (PlexServerManager.setServerOnline())
         self.offline = False
-        # No longer on the account - plex.tv stopped listing it (PlexServerManager.onSelectedServerGone(),
-        # onServerGone())
+        # No longer on the account - plex.tv stopped listing it (PlexServerManager.onServerGone())
         self.gone = False
         # A query got no answer and its connections are being retested (markSuspect()); cleared by
         # the retest's verdict (PlexServerManager.setServerOnline())
@@ -451,9 +450,9 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         # Try to use a better server to transcode for synced servers
         if self.synced:
             from . import plexservermanager
-            selectedServer = plexservermanager.MANAGER.getTranscodeServer("photo")
-            if selectedServer:
-                return selectedServer.buildUrl(path, True)
+            transcodeServer = plexservermanager.MANAGER.getTranscodeServer("photo")
+            if transcodeServer:
+                return transcodeServer.buildUrl(path, True)
 
         if self.activeConnection:
             return self.activeConnection.simpleBuildUrl(self, path)

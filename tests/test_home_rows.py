@@ -247,7 +247,7 @@ class LibraryWindowHomeTest(KodiTestCase):
     def setUp(self):
         super(LibraryWindowHomeTest, self).setUp()
         self.animal, self.oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
-        self.manager = mock.Mock(selectedServer=self.animal, serversByUuid={ANIMAL: self.animal, OSCAR: self.oscar})
+        self.manager = mock.Mock(serversByUuid={ANIMAL: self.animal, OSCAR: self.oscar})
         self.manager.getServers.return_value = [self.animal, self.oscar]
         patcher = mock.patch.object(library.plexapp, 'SERVERMANAGER', self.manager)
         patcher.start()
@@ -291,7 +291,7 @@ class DiscoveryTest(KodiTestCase):
                 if section is None else [Hub('movie.recentlyadded', [Item('z', section)], srv, title='Recently Added')])
         self.animal.hubs = mock.Mock(side_effect=rows(self.animal))
         self.oscar.hubs = mock.Mock(side_effect=rows(self.oscar))
-        manager = mock.Mock(selectedServer=self.animal, serversByUuid={ANIMAL: self.animal, OSCAR: self.oscar})
+        manager = mock.Mock(serversByUuid={ANIMAL: self.animal, OSCAR: self.oscar})
         manager.getServers.return_value = [self.animal, self.oscar]
         patcher = mock.patch.object(library.plexapp, 'SERVERMANAGER', manager)
         patcher.start()
@@ -345,7 +345,7 @@ class ManageHomeTest(KodiTestCase):
                                                    Hub('home.movies.recent', [Item('m', '22')], self.animal)])
         self.oscar.hubs = mock.Mock(return_value=[Hub('home.movies.recent', [Item('f', '1')], self.oscar),
                                                   Hub('home.photos.recent', [], self.oscar)])
-        manager = mock.Mock(selectedServer=self.animal, serversByUuid={ANIMAL: self.animal, OSCAR: self.oscar})
+        manager = mock.Mock(serversByUuid={ANIMAL: self.animal, OSCAR: self.oscar})
         manager.getServers.return_value = [self.animal, self.oscar]
         for patcher in (mock.patch.object(library.plexapp, 'SERVERMANAGER', manager),
                         mock.patch.object(library.util, 'setSetting')):

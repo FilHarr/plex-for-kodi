@@ -346,7 +346,7 @@ class ManageHubsCase(KodiTestCase):
                                                    Hub('movie.by.actor.or.director.22.155600', [], self.animal,
                                                        title='Top Movies with A$AP Rocky'),
                                                    Hub('home.music.recent.10', [], self.animal)])
-        manager = mock.Mock(selectedServer=self.animal, serversByUuid={ANIMAL: self.animal, OSCAR: self.oscar})
+        manager = mock.Mock(serversByUuid={ANIMAL: self.animal, OSCAR: self.oscar})
         manager.getServers.return_value = [self.animal]
         patcher = mock.patch.object(library.plexapp, 'SERVERMANAGER', manager)
         patcher.start()

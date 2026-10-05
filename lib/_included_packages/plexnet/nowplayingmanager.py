@@ -128,7 +128,7 @@ class NowPlayingManager(object):
         return time_updated
 
     def sendTimelineToServer(self, timelineType, timeline, t, force=False, continuing=False, server=None):
-        server = server or util.APP.serverManager.selectedServer
+        # the item's own server (every caller passes it): there's no selected one to fall back on
         if not server:
             return
 

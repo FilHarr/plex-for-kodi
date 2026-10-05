@@ -530,11 +530,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # pattern as self.sectionList/self.tabList above.
         self.userList = None
 
-        # changingServer mirrors HomeWindow's identical flag (home.py): set while the selected
-        # server changes (onSelectedServerChange()), it suppresses the normal back-navigation/
-        # exit-confirm handling mid-switch.
-        self.changingServer = False
-
     def onColdStart(self):
         """Called once, only when this construction is the app's top-level, session-owning window
         (MultiWindow.open()'s base_win_id contract - see main.py's cold-start call, Stage 2 of
@@ -1372,12 +1367,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
     def shutdown(self):
         """Ported from HomeWindow.shutdown() (home.py) - see quiet-orbiting-heron.md's Cold Start
-        plan. unhookSignals() now ported too (Stage 3's server popup). HomeWindow's own version
-        also resets its serverList control and calls storeLastBG() (persists the focused hub's
-        background art for next cold start) here - storeLastBG() depends on a LibraryWindow-shaped
-        equivalent of Home's visibleHubs-based background persistence that doesn't exist yet, and
-        the serverList reset isn't needed - this window's own serverList is rebuilt wholesale by
-        showServers() on next open, never assumed empty in between the way HomeWindow's is.
+        plan. unhookSignals() now ported too. HomeWindow's own version also called storeLastBG()
+        (persists the focused hub's background art for next cold start) here - that depends on a
+        LibraryWindow-shaped equivalent of Home's visibleHubs-based background persistence that
+        doesn't exist yet.
         """
         util.DEBUG_LOG("Library: shutdown called")
         self._shuttingDown = True
@@ -1450,10 +1443,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         genuinely on screen (that's how routeAction()'s SERVER_BUTTON_ID/USER_BUTTON_ID branches get
         reached at all while hosted), but *writes* - getControl(...).setHeight()/.setPosition(),
         ManagedControlList mutations, setFocusId() - do not: live-confirmed 100% reproducible
-        native Kodi crash (minidump captured) the moment showUserMenu()/showServers() ran those
-        against self while a real shell was actually modal. Every control-touching call in
-        showUserMenu()/showServers()/doUserOption()/selectServer() must go through this, not self,
-        for exactly that reason. self.userList/self.serverList themselves stay owned by self (the
+        native Kodi crash (minidump captured) the moment showUserMenu() (then also the server
+        dropdown) ran those against self while a real shell was actually modal. Every
+        control-touching call in showUserMenu()/doUserOption() must go through this, not self,
+        for exactly that reason. self.userList itself stays owned by self (the
         host) - only rebound (ManagedControlList.newControl(), same proven-safe pattern
         self.sectionList/self.tabList/self.hubControls already use to survive a real content swap)
         to whichever native control target.getControl() actually reaches, immediately before use."""
@@ -1637,37 +1630,24 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self._closeSessionWithOption(option)
 
     def hookSignals(self):
-        """Server-list-relevant subset of HomeWindow.hookSignals() (home.py) - only what
-        showServers()/selectServer() below actually need to stay live: new/removed/reachable
-        servers update the open dropdown's contents, change:selectedServer drives the real
-        post-switch refresh (serverRefresh() below). HomeWindow's much larger signal set also
-        covers hub-rendering/theme/spoiler/wake-sleep concerns that don't apply to this narrower
-        port - out of scope here, not an oversight. Called once, only for the true root
-        (onFirstInit()'s guard below) - a nested LibraryWindow instance's own server dropdown
-        still works (selectServer() below operates on whichever self opened it), it just doesn't
-        live-update while open, and doesn't drive its own refresh - see selectServer()'s own
-        comment for why only windowutils.HOME reacting to the actual switch is correct.
+        """The servers' state as the sidebar and the view show it - reachable, suspect, recovered,
+        offline, online, gone from the account - plus sleep and wake, the screensaver and the
+        display. Called once, only for the true root (onFirstInit()'s guard below).
 
         Each handler is posted to the main thread (MultiWindow.postUI()) rather than run where
         the signal fires: plexnet raises these on its own threads (e.g. the deferred reachability
         update's timer), and every one of them touches controls. Live-caught 2026-09-24 as a
-        native crash during a server switch - see postUI(). change:selectedServer is raised on
-        the main thread, inside selectServer()'s busy context; posting it too moves the refresh
-        and its section swap out of that context, onto a clean tick of their own.
+        native crash during a server switch - see postUI().
         """
         self._serverSignalHandlers = (
             (plexapp.SERVERMANAGER, 'reachable:server',
              self._postedHandler('displayServerAndUser', self.displayServerAndUser)),
             (plexapp.SERVERMANAGER, 'reachable:server', self._postedHandler('onServerReachable', self.onServerReachable)),
-            (plexapp.util.APP, 'change:selectedServer',
-             self._postedHandler('onSelectedServerChange', self.onSelectedServerChange)),
             (plexapp.SERVERMANAGER, 'suspect:server', self._postedHandler('onServerSuspect', self.onServerSuspect)),
             (plexapp.SERVERMANAGER, 'recovered:server',
              self._postedHandler('onServerRecovered', self.onServerRecovered)),
             (plexapp.SERVERMANAGER, 'offline:server', self._postedHandler('onServerOffline', self.onServerOffline)),
             (plexapp.SERVERMANAGER, 'online:server', self._postedHandler('onServerOnline', self.onServerOnline)),
-            (plexapp.SERVERMANAGER, 'gone:selectedServer',
-             self._postedHandler('onSelectedServerGone', self.onSelectedServerGone)),
             (plexapp.SERVERMANAGER, 'gone:server', self._postedHandler('onServerGone', self.onServerGone)),
             # Sleep and wake (monitor.py), ported from HomeWindow, which went with it in 12675d11.
             # Pausing only sets flags, so it runs where it's signalled; waking waits on its own
@@ -2015,17 +1995,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.updateServerUnavailable()
         return False
 
-    def onSelectedServerGone(self, server=None, replacement=None, **kwargs):
-        """plex.tv no longer lists the selected server: the account doesn't have it any more. Its
-        libraries leave the sidebar as for any other server (onServerGone()). With a replacement,
-        plexnet has already switched Home to it (change:selectedServer follows and refreshes as for
-        any switch); with none, Home stays on it, shown unreachable."""
-        if server is None:
-            return
-        if replacement is None:
-            self.displayServerAndUser()
-        self.onServerGone(server=server)
-
     def onServerGone(self, server=None, **kwargs):
         """plex.tv no longer lists a server the sidebar has libraries from: the account doesn't have
         it any more (D4). Its libraries leave the sidebar and their hub settings go - Home's for it
@@ -2077,37 +2046,18 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if not self._backStack and not self._shuttingDown:
             self._reloadAfterReturn()
 
-    def onSelectedServerChange(self, **kwargs):
-        if self.serverRefresh():
-            self.setFocusId(self.SECTION_LIST_ID)
-            self.changingServer = False
-
     def serverRefresh(self, section=None):
-        """LibraryWindow-shaped equivalent of HomeWindow.serverRefresh() (home.py) - that
-        version's @busy.dialog()-wrapped fullyRefreshHome()/loadLibrarySettings() rebuild Home's
-        own hub-fetching state, none of which exists here. What a server switch actually needs on
-        this window is narrower: refresh the sidebar avatar/server labels, rebuild the section
-        list for the new server's libraries, and land on a section that still exists there
-        (home_section, same default fullyRefreshHome() itself uses) - openSection() below is the
-        same in-place swap every other section change already goes through, so it inherits that
-        method's own is_current_window decline guard for free (see selectServer()'s comment for
-        why that matters here).
+        """After a section or hub menu changed the libraries' settings (sectionMenu(), hubMenu()):
+        refresh the sidebar avatar and labels, rebuild the section list, and open section (Home by
+        default) afresh. Once also the refresh after a server switch, hence the name.
 
-        force=True on the openSection() call below - live-confirmed regression without it:
-        switching servers while already on Home (the common case, since selectServer()'s own
-        goHome(with_root=True) unwind also lands here) leaves `target == self.section` true
-        (home_section is a shared singleton), so openSection()'s own "already there" no-op guard
-        silently skipped the reload - sidebar rebuilt correctly for the new server, but the
-        content pane stayed on the old server's stale hubs, and clicking Home again did nothing
-        (same equality check, same no-op) until the user detoured through a different section
-        first.
+        force=True on the openSection() call below: with Home already open, `target == self.section`
+        is true (home_section is a shared singleton), and openSection()'s "already there" no-op
+        guard would skip the reload, leaving the old rows (live-confirmed when this followed server
+        switches).
         """
         with self.lock:
             self.displayServerAndUser()
-            if not plexapp.SERVERMANAGER.selectedServer:
-                self.setFocusId(self.USER_BUTTON_ID)
-                return False
-
             self.loadHubSettings()
             self.loadNavSettings()
             self.buildSectionList()
@@ -2604,11 +2554,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         HomeWindow's own NAV_BACK handling (home.py's onAction()).
         """
         if (action == xbmcgui.ACTION_PREVIOUS_MENU or action == xbmcgui.ACTION_NAV_BACK) and self is windowutils.HOME:
-            if self.changingServer:
-                # fixme: cheap way of avoiding an early exit after a server change - ported from
-                # HomeWindow's identical guard (home.py's onAction()).
-                return True
-
             if self.section != home.home_section:
                 # Not at the true root yet: Back goes to Home's root, the same intent as the Home
                 # button, posted like every other swap (navigate()).

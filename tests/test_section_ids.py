@@ -407,8 +407,8 @@ class LegacyServerTest(KodiTestCase):
     """The server settings from before account-wide keys belong to: the one selected when the add-on
     last ran (plan Phase 9: nothing is selected any more)."""
 
-    def check(self, settings, servers, selected=None):
-        manager = mock.Mock(serversByUuid=servers, selectedServer=selected)
+    def check(self, settings, servers):
+        manager = mock.Mock(serversByUuid=servers)
         with mock.patch.object(section_ids.plexapp, 'SERVERMANAGER', manager), \
                 mock.patch.object(section_ids.plexapp, 'ACCOUNT', mock.Mock(ID='7')), \
                 mock.patch.object(section_ids.util, 'getSetting',
@@ -417,7 +417,7 @@ class LegacyServerTest(KodiTestCase):
 
     def test_the_server_last_selected(self):
         animal, oscar = Server('a'), Server('o')
-        self.assertIs(animal, self.check({'lastServerId.7': 'a'}, {'a': animal, 'o': oscar}, selected=oscar))
+        self.assertIs(animal, self.check({'lastServerId.7': 'a'}, {'a': animal, 'o': oscar}))
 
     def test_none_while_that_server_is_not_known_yet(self):
-        self.assertIsNone(self.check({'lastServerId.7': 'a'}, {}, selected=Server('o')))
+        self.assertIsNone(self.check({'lastServerId.7': 'a'}, {}))

@@ -109,9 +109,13 @@ class App(signalsmixin.SignalsMixin):
             util.DEBUG_LOG('Canceling App() timers...')
             self.cancelAllTimers()
 
-        if SERVERMANAGER.selectedServer:
-            util.DEBUG_LOG('Closing server...')
-            SERVERMANAGER.selectedServer.close()
+        servers = SERVERMANAGER.getServers()
+        if servers:
+            # every server's in-flight requests: any of them may be in use (there's no one
+            # selected server now)
+            util.DEBUG_LOG('Closing servers...')
+            for server in servers:
+                server.close()
 
     def shutdown(self):
         if self.timers:
@@ -405,10 +409,10 @@ def refreshResources(force=False):
     if util.LOCAL_MODE:
         util.LOG("[LOCAL] skipping plex.tv resource refresh")
         # without the plex.tv resource response nothing else kicks reachability testing;
-        # do it ourselves so the server search can settle on a local connection
+        # do it ourselves, so local connections get tested
         if force:
             SERVERMANAGER.resetLastTest()
-        SERVERMANAGER.updateReachability(force, True)
+        SERVERMANAGER.updateReachability(force)
     else:
         util.MANAGER.refreshResources(force)
     SERVERMANAGER.refreshManualConnections()

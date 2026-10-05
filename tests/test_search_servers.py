@@ -148,8 +148,7 @@ class ChosenServersTest(KodiTestCase):
         super(ChosenServersTest, self).setUp()
         self.animal, self.oscar, self.other = server('a', 'Animal'), server('o', 'Oscar'), server('x', 'Other')
         self.other.owned = False
-        manager = mock.Mock(serversByUuid={'a': self.animal, 'o': self.oscar, 'x': self.other},
-                            selectedServer=self.animal)
+        manager = mock.Mock(serversByUuid={'a': self.animal, 'o': self.oscar, 'x': self.other})
         manager.getServers.return_value = [self.other, self.animal, self.oscar]
         self.settings = {}
         self.nav = {'entries': ['o:1', 'a:22']}

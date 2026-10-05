@@ -144,37 +144,33 @@ def waitForServers():
     util.DEBUG_LOG('Main: starting with {0} known servers', len(manager.serversByUuid))
 
 
+def _awaitLocalServer(timeout):
+    """Local mode's server (localmode.localServer()), waited for until one answers, at most timeout
+    seconds."""
+    server = localmode.localServer()
+    if server:
+        return server
+    util.DEBUG_LOG('Main: waiting for a local server... (max {0} s)', timeout)
+    background.setBusy()
+    try:
+        end = time.time() + timeout
+        while not server and time.time() < end and not util.MONITOR.abortRequested():
+            util.MONITOR.waitForAbort(0.1)
+            server = localmode.localServer()
+    finally:
+        background.setBusy(False)
+    return server
+
+
 def waitForLocalServer():
-    """Local mode: its one server, picked by plexnet's search, waited for; nothing reachable -
-    manual server entry is offered instead of silently landing on an empty home."""
-    selectedServer = plexapp.SERVERMANAGER.selectedServer
-    if not selectedServer:
-        background.setBusy()
-        base_timeout = _serverWaitTimeout()
-        util.DEBUG_LOG('Main: Waiting for selected server... (max timeout: {})', base_timeout)
-        try:
-            for timeout, skip_preferred, skip_owned in ((base_timeout, True, False), (base_timeout, True, True)):
-                plex.CallbackEvent(plexapp.util.APP, 'change:selectedServer', timeout=timeout).wait()
-
-                selectedServer = plexapp.SERVERMANAGER.checkSelectedServerSearch(
-                    skip_preferred=skip_preferred, skip_owned=skip_owned)
-                if selectedServer:
-                    break
-            else:
-                util.DEBUG_LOG('Main: Finished waiting for selected server...')
-        finally:
-            background.setBusy(False)
-
-    while not selectedServer and localmode.offerServerIfNoneFound():
-        background.setBusy()
-        try:
-            plexapp.SERVERMANAGER.refreshManualConnections()
-            plex.CallbackEvent(plexapp.util.APP, 'change:selectedServer', timeout=15).wait()
-            selectedServer = plexapp.SERVERMANAGER.checkSelectedServerSearch(
-                skip_preferred=True, skip_owned=True)
-        finally:
-            background.setBusy(False)
-    return selectedServer
+    """Local mode: a server that answers, waited for (its profiles are that server's - see
+    localmode.localServer()); nothing reachable - manual server entry is offered instead of silently
+    landing on an empty home. It was plexnet's selected server, which is gone (plan Phase 9.3)."""
+    server = _awaitLocalServer(2 * _serverWaitTimeout())
+    while not server and localmode.offerServerIfNoneFound():
+        plexapp.SERVERMANAGER.refreshManualConnections()
+        server = _awaitLocalServer(15)
+    return server
 
 
 def signout():
@@ -357,11 +353,11 @@ def _main():
                     closeOption = "exit"
                     try:
                         if plexapp.util.LOCAL_MODE:
-                            selectedServer = waitForLocalServer()
-                            util.DEBUG_LOG('Main: STARTING WITH SERVER: {0}', selectedServer)
+                            localServer = waitForLocalServer()
+                            util.DEBUG_LOG('Main: STARTING WITH SERVER: {0}', localServer)
                             # account-less local mode: offer user profiles known to the PMS
-                            if not plexapp.ACCOUNT.isSignedIn and selectedServer:
-                                localmode.seedUsersFromServer(selectedServer)
+                            if not plexapp.ACCOUNT.isSignedIn and localServer:
+                                localmode.seedUsersFromServer(localServer)
                         else:
                             waitForServers()
 

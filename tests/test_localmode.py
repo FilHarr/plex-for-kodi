@@ -305,15 +305,65 @@ class FakeConnection(object):
 
 
 class FakeServer(object):
-    def __init__(self, uuid="uuid-1", name="Tower", address="http://10.0.0.5:32400"):
+    def __init__(self, uuid="uuid-1", name="Tower", address="http://10.0.0.5:32400", owned=True, local=True,
+                 reachable=True):
         self.uuid = uuid
         self.name = name
+        self.owned = owned
+        self.local = local
+        self.reachable = reachable
         self.activeConnection = FakeConnection(address)
+
+    def isReachable(self):
+        return self.reachable
+
+    def isLocalConnection(self):
+        return self.local
 
 
 class FakeServerManager(object):
-    def __init__(self, server=None):
-        self.selectedServer = server
+    def __init__(self, *servers):
+        self.servers = [s for s in servers if s is not None]
+
+    def getServers(self):
+        return list(self.servers)
+
+
+class LocalServerTest(KodiTestCase):
+    """Local mode's server (its profiles' tokens are per server), now that plexnet picks none
+    (plan Phase 9.3): the one used last, else the best that answers."""
+
+    def setUp(self):
+        KodiTestCase.setUp(self)
+        from .base import ensure_plex_interface
+        ensure_plex_interface()
+        from plexnet import plexapp
+        self.plexapp = plexapp
+        self._orig = plexapp.ACCOUNT, plexapp.SERVERMANAGER
+        plexapp.ACCOUNT = type('Account', (), {'ID': '1'})()
+
+    def tearDown(self):
+        self.plexapp.ACCOUNT, self.plexapp.SERVERMANAGER = self._orig
+        KodiTestCase.tearDown(self)
+
+    def pick(self, *servers):
+        self.plexapp.SERVERMANAGER = FakeServerManager(*servers)
+        server = localmode.localServer()
+        return server and server.name
+
+    def test_owned_then_on_this_network_then_by_name(self):
+        self.assertEqual("Tower", self.pick(FakeServer("a", "Shared", owned=False), FakeServer("b", "Tower")))
+        self.assertEqual("Tower", self.pick(FakeServer("a", "Away", local=False), FakeServer("b", "Tower")))
+        self.assertEqual("Attic", self.pick(FakeServer("b", "Tower"), FakeServer("a", "Attic")))
+
+    def test_the_one_used_last_first(self):
+        util.setSetting("lastServerId.1", "b")
+        self.assertEqual("Shared", self.pick(FakeServer("a", "Tower"), FakeServer("b", "Shared", owned=False)))
+
+    def test_only_one_that_answers(self):
+        self.assertEqual("Shared", self.pick(FakeServer("a", "Tower", reachable=False),
+                                             FakeServer("b", "Shared", owned=False)))
+        self.assertIsNone(self.pick(FakeServer("a", "Tower", reachable=False)))
 
 
 class SelectedProfilesTest(KodiTestCase):

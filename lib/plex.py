@@ -498,8 +498,8 @@ def init(local=False):
         util.DEBUG_LOG('Account initialized: {}', plexapp.ACCOUNT.ID)
 
     if local:
-        # no plex.tv resources will arrive; kick the server search from stored/manual/GDM data
-        plexapp.SERVERMANAGER.startSelectedServerSearch(reset=True)
+        # no plex.tv resources will arrive; test the stored, manual and GDM servers
+        plexapp.SERVERMANAGER.beginDiscovery()
         plexapp.refreshResources(True)
 
     retry = True

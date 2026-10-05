@@ -230,7 +230,7 @@ class ReachabilityRoundTest(KodiTestCase):
         manager = mock.Mock(spec=["serversByUuid", "resetLastTest", "updateReachability",
                                   "refreshManualConnections"], serversByUuid={UUID: self.server})
         manager.resetLastTest.side_effect = self.server.resetLastTest
-        manager.updateReachability.side_effect = lambda force, preferSearch: None
+        manager.updateReachability.side_effect = lambda force: None
         with mock.patch("plexnet.asyncadapter.PlainSession.get", autospec=True,
                         side_effect=lambda s, url, **kw: release.wait(5) and FakeResponse(200)), \
                 mock.patch.object(pnUtil, "LOCAL_MODE", True), \

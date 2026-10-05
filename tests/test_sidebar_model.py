@@ -110,7 +110,7 @@ class SidebarCase(KodiTestCase):
         self.settings = {'lastServerId.1': UUID}
         self.account = mock.Mock(title='Phil', username='phil', ID='1', thumb='', isOffline=False)
         self.account.safeUserThumb.return_value = 'avatar.png'
-        self.manager = mock.Mock(selectedServer=self.server, serversByUuid={UUID: self.server, OTHER: OSCAR})
+        self.manager = mock.Mock(serversByUuid={UUID: self.server, OTHER: OSCAR})
         # one server on the account unless a test says otherwise
         self.manager.getServers.return_value = [self.server]
         self.watchlist = Watchlist('/library/sections/watchlist', 'Watchlist')
@@ -548,7 +548,6 @@ class ListEditTest(SidebarCase):
         self.addCleanup(setattr, OSCAR, 'name', 'Oscar')
         self.listed(OTHER, [Section('7', 'Films', server=OSCAR)])
         self.store('other:7', '1', 'watchlist')
-        self.manager.selectedServer = None
         nav = self.nav()
         nav['libraries'][OTHER + ':7']['server'] = 'Aardvark'
         sidebar_model.resetOrder(nav)

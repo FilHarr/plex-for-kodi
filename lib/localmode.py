@@ -268,6 +268,22 @@ def isAccountLess():
     return bool(plexapp.util.LOCAL_MODE and not account.isSignedIn and not account.authToken)
 
 
+def localServer():
+    """
+    Local mode's server, for its user profiles (their tokens are per server): the one local mode
+    used last (lastServerId.<account>, from when plexnet still picked a server), else the best one
+    answering - owned, then on this network, then by name. None while none answers.
+    """
+    from plexnet import plexapp
+
+    servers = [s for s in plexapp.SERVERMANAGER.getServers() if s.isReachable()]
+    if not servers:
+        return None
+    last = util.getSetting('lastServerId.{0}'.format(plexapp.ACCOUNT.ID), '')
+    return sorted(servers, key=lambda s: (s.uuid != last, not s.owned, not s.isLocalConnection(),
+                                          s.name or ''))[0]
+
+
 def needsProfileToken(user, server=None):
     """
     Account-less local mode only: has this profile no server token yet, and haven't we
@@ -279,7 +295,7 @@ def needsProfileToken(user, server=None):
     if not isAccountLess():
         return False
 
-    server = server or plexapp.SERVERMANAGER.selectedServer
+    server = server or localServer()
     if not server:
         return False
 
@@ -296,7 +312,7 @@ def promptProfileToken(user, server=None):
     from plexnet import plexapp
 
     account = plexapp.ACCOUNT
-    server = server or plexapp.SERVERMANAGER.selectedServer
+    server = server or localServer()
     if not server:
         return None
 
@@ -340,7 +356,7 @@ def seedUsersFromServer(server=None, reselect=False):
     if account.isSignedIn or (account.homeUsers and not reselect):
         return
 
-    server = server or plexapp.SERVERMANAGER.selectedServer
+    server = server or localServer()
     if not server:
         return
 

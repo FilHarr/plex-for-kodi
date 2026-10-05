@@ -89,9 +89,9 @@ class ManagerTestCase(KodiTestCase):
         self.timers.append(timer)
         return timer
 
-    def select(self, server):
-        self.manager.selectedServer = server
-        self.manager.searchContext.active = False
+    def watch(self, *servers):
+        """The sidebar has libraries from servers too (setWatchedServers()): they matter."""
+        self.manager.setWatchedServers(self.manager.watchedServerUuids | set(s.uuid for s in servers))
 
     def round_ended(self, server, reachable):
         """The last result of a reachability round for server."""
@@ -106,29 +106,28 @@ class ManagerTestCase(KodiTestCase):
 
 class OfflineTest(ManagerTestCase):
     def test_one_failure_mid_round_is_not_offline(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.animal.pendingReachabilityRequests = 3
         self.manager.updateReachabilityResult(self.animal, False)
         self.assertFalse(self.animal.offline)
         self.assertEqual([], self.signals)
 
-    def test_a_round_ending_unreachable_puts_the_selected_server_offline_but_keeps_it(self):
-        self.select(self.animal)
+    def test_a_round_ending_unreachable_puts_a_sidebar_server_offline_and_retests_it(self):
+        self.watch(self.animal)
         self.round_ended(self.animal, False)
         self.assertTrue(self.animal.offline)
-        self.assertIs(self.animal, self.manager.selectedServer)
         self.assertEqual([('offline', 'Animal')], self.signals)
         self.assertEqual([5], self.delays())
 
     def test_the_change_is_signalled_once(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.round_ended(self.animal, False)
         self.round_ended(self.animal, False)
         self.assertEqual([('offline', 'Animal')], self.signals)
         self.assertEqual([5], self.delays())  # one retest pending at a time
 
     def test_coming_back_is_signalled_and_stops_the_retests(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.round_ended(self.animal, False)
         self.animal.activeConnection = self.animal.connections[0]
         self.round_ended(self.animal, True)
@@ -138,7 +137,7 @@ class OfflineTest(ManagerTestCase):
         self.assertNotIn(ANIMAL, self.manager.offlineRetries)
 
     def test_retests_back_off(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.round_ended(self.animal, False)
         with mock.patch.object(self.animal, "updateReachability"):
             for _ in range(5):
@@ -146,7 +145,7 @@ class OfflineTest(ManagerTestCase):
         self.assertEqual([5, 10, 30, 60, 60, 60], self.delays())
 
     def test_a_retest_round_ending_offline_schedules_the_next(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.round_ended(self.animal, False)
         with mock.patch.object(self.animal, "updateReachability",
                                side_effect=lambda force: setattr(self.animal, "pendingReachabilityRequests", 2)):
@@ -155,16 +154,16 @@ class OfflineTest(ManagerTestCase):
         self.round_ended(self.animal, False)
         self.assertEqual([5, 10], self.delays())
 
-    def test_other_servers_go_offline_without_retests(self):
-        self.select(self.animal)
+    def test_servers_not_in_the_sidebar_go_offline_without_retests(self):
+        self.watch(self.animal)
         self.round_ended(self.oscar, False)
         self.assertTrue(self.oscar.offline)
         self.assertEqual([('offline', 'Oscar')], self.signals)
         self.assertEqual([], self.delays())
 
     def test_a_server_the_sidebar_has_libraries_from_is_retested_too(self):
-        self.select(self.animal)
-        self.manager.setWatchedServers([OSCAR])
+        self.watch(self.animal)
+        self.watch(self.oscar)
         self.round_ended(self.oscar, False)
         self.assertEqual([5], self.delays())
         with mock.patch.object(self.oscar, "updateReachability"):
@@ -172,8 +171,8 @@ class OfflineTest(ManagerTestCase):
         self.assertEqual([5, 10], self.delays())
 
     def test_each_server_backs_off_on_its_own(self):
-        self.select(self.animal)
-        self.manager.setWatchedServers([OSCAR])
+        self.watch(self.animal)
+        self.watch(self.oscar)
         self.round_ended(self.animal, False)
         with mock.patch.object(self.animal, "updateReachability"):
             self.manager.onOfflineRetryTimer(self.animal)
@@ -181,35 +180,28 @@ class OfflineTest(ManagerTestCase):
         self.assertEqual([5, 10, 5], self.delays())
 
     def test_a_server_newly_in_the_sidebar_that_is_offline_is_retested(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.round_ended(self.oscar, False)
         self.assertEqual([], self.delays())
-        self.manager.setWatchedServers([OSCAR])
+        self.watch(self.oscar)
         self.assertEqual([5], self.delays())
 
     def test_one_leaving_the_sidebar_stops_being_retested(self):
-        self.select(self.animal)
-        self.manager.setWatchedServers([OSCAR])
+        self.watch(self.animal)
+        self.watch(self.oscar)
         self.round_ended(self.oscar, False)
         self.manager.setWatchedServers([])
         self.assertTrue(self.timers[0].canceled)
         self.assertNotIn(OSCAR, self.manager.offlineRetries)
 
     def test_the_periodic_check_covers_the_sidebars_servers(self):
-        self.select(self.animal)
-        self.manager.setWatchedServers([OSCAR])
+        self.watch(self.animal)
+        self.watch(self.oscar)
         with mock.patch.object(self.animal, "updateReachability") as animal, \
                 mock.patch.object(self.oscar, "updateReachability") as oscar:
             self.manager.periodicReachabilityCheck()
         animal.assert_called_once_with(True)
         oscar.assert_called_once_with(True)
-
-    def test_no_switch_to_another_server_mid_session(self):
-        self.select(self.animal)
-        self.round_ended(self.animal, False)
-        self.manager.searchContext.bestServer = self.oscar
-        self.round_ended(self.oscar, True)
-        self.assertIs(self.animal, self.manager.selectedServer)
 
 
 class AliveCheckTest(ManagerTestCase):
@@ -260,11 +252,11 @@ class AliveCheckTest(ManagerTestCase):
         self.answer(mock.Mock(isSuccess=lambda: False, getStatus=lambda: 502)).assert_called_once_with()
 
     def test_every_server_that_matters_is_checked(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         with mock.patch.object(self.animal, "checkAlive") as animal, mock.patch.object(self.oscar, "checkAlive") as oscar:
             self.manager.checkServersAlive()
             oscar.assert_not_called()
-            self.manager.setWatchedServers([OSCAR])
+            self.watch(self.oscar)
             self.manager.checkServersAlive()
         self.assertEqual(2, animal.call_count)
         oscar.assert_called_once_with()
@@ -275,26 +267,26 @@ class SuspectSignalTest(ManagerTestCase):
     offline, or 'recovered:server' when it answers after all."""
 
     def test_a_query_with_no_answer_is_said_at_once(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.manager.onServerSuspect(self.animal)
         self.assertTrue(self.animal.suspect)
         self.assertEqual([('suspect', 'Animal')], self.signals)
 
     def test_once_per_retest(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.manager.onServerSuspect(self.animal)
         self.manager.onServerSuspect(self.animal)
         self.assertEqual([('suspect', 'Animal')], self.signals)
 
     def test_not_while_it_is_known_to_be_offline(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.round_ended(self.animal, False)
         self.manager.onServerSuspect(self.animal)
         self.assertEqual([('offline', 'Animal')], self.signals)
         self.assertFalse(self.animal.suspect)
 
     def test_answering_after_all_is_recovered(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.manager.onServerSuspect(self.animal)
         self.round_ended(self.animal, True)
         self.assertEqual([('suspect', 'Animal'), ('recovered', 'Animal')], self.signals)
@@ -302,7 +294,7 @@ class SuspectSignalTest(ManagerTestCase):
 
     def test_a_reachable_result_mid_round_decides_nothing(self):
         # the connection the query failed on is still the active one until its own result is in
-        self.select(self.animal)
+        self.watch(self.animal)
         self.manager.onServerSuspect(self.animal)
         self.animal.pendingReachabilityRequests = 2
         self.manager.updateReachabilityResult(self.animal, True)
@@ -317,7 +309,7 @@ class SuspectSignalTest(ManagerTestCase):
         self.assertEqual(0, self.animal._lastSuspectRetest)
 
     def test_not_answering_is_offline(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.manager.onServerSuspect(self.animal)
         self.round_ended(self.animal, False)
         self.assertEqual([('suspect', 'Animal'), ('offline', 'Animal')], self.signals)
@@ -331,7 +323,7 @@ class SuspectSignalTest(ManagerTestCase):
         self.assertEqual([('suspect', 'Animal')], self.signals)
 
     def test_marking_a_server_with_nothing_to_test_gives_the_verdict_at_once(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.animal.activeConnection = None
         with mock.patch.object(plexservermanager, "MANAGER", self.manager), \
                 mock.patch.object(self.animal, "updateReachability"):
@@ -339,7 +331,7 @@ class SuspectSignalTest(ManagerTestCase):
         self.assertEqual([('suspect', 'Animal'), ('offline', 'Animal')], self.signals)
 
     def test_try_again_retests_now_instead_of_at_the_next_step(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.round_ended(self.animal, False)
         with mock.patch.object(self.animal, "updateReachability",
                                side_effect=lambda force: setattr(self.animal, "pendingReachabilityRequests", 2)):
@@ -349,36 +341,49 @@ class SuspectSignalTest(ManagerTestCase):
         self.assertEqual([5, 10], self.delays())  # still offline: the backoff carries on
 
 
-class SelectionTest(ManagerTestCase):
-    def test_selecting_a_server_ends_the_startup_search(self):
-        self.assertTrue(self.manager.searchContext.active)
-        with mock.patch.object(self.manager, "saveState"):
-            self.assertTrue(self.manager.setSelectedServer(self.oscar, True))
-        self.assertFalse(self.manager.searchContext.active)
+class ServerListTest(ManagerTestCase):
+    def test_signed_in_only_plex_tvs_list_settles_the_servers(self):
+        # until plex.tv has answered, a GDM round that misses a server doesn't count against it
+        self.assertTrue(self.manager.waitingForResources)
+        with mock.patch.object(self.manager, "deviceRefreshComplete") as settle, \
+                mock.patch.object(self.manager, "saveState"), \
+                mock.patch.object(self.manager, "updateReachability"):
+            self.manager.updateFromConnectionType([], DISCOVERED)
+            settle.assert_not_called()
+            self.manager.updateFromConnectionType([], MYPLEX)
+            self.manager.updateFromConnectionType([], DISCOVERED)
+        self.assertEqual([mock.call(MYPLEX), mock.call(DISCOVERED)], settle.call_args_list)
+        self.assertFalse(self.manager.waitingForResources)
+        self.assertTrue(self.manager.serversKnown())
+
+    def test_nothing_is_selected(self):
+        # every server is as good as another (plan Phase 9.3): an answer picks none of them
+        self.round_ended(self.oscar, True)
+        self.assertFalse(hasattr(self.manager, 'selectedServer'))
 
     def test_another_dropped_server_is_removed(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.manager.removeServer(self.oscar, MYPLEX)
         self.assertNotIn(OSCAR, self.manager.serversByUuid)
 
     def test_a_sidebar_server_missing_from_discovery_is_kept_offline(self):
-        self.select(self.animal)
-        self.manager.setWatchedServers([OSCAR])
+        self.watch(self.animal)
+        self.watch(self.oscar)
         self.manager.removeServer(self.oscar, DISCOVERED)
         self.assertIn(OSCAR, self.manager.serversByUuid)
         self.assertTrue(self.oscar.offline)
         self.assertFalse(self.oscar.gone)
 
     def test_a_sidebar_server_plex_tv_drops_is_gone(self):
-        self.select(self.animal)
-        self.manager.setWatchedServers([OSCAR])
+        self.watch(self.animal)
+        self.watch(self.oscar)
         gone = []
         self.manager.on('gone:server', lambda server=None, **kw: gone.append(server))
         self.manager.removeServer(self.oscar, MYPLEX)
         self.assertNotIn(OSCAR, self.manager.serversByUuid)
         self.assertTrue(self.oscar.gone)
         self.assertEqual([self.oscar], gone)
-        self.assertIs(self.animal, self.manager.selectedServer)
+        self.assertIn(ANIMAL, self.manager.serversByUuid)
 
 
 MYPLEX = plexconnection.PlexConnection.SOURCE_MYPLEX
@@ -392,42 +397,32 @@ class GoneTest(ManagerTestCase):
     def setUp(self):
         ManagerTestCase.setUp(self)
         self.gone = []
-        self.manager.on('gone:selectedServer',
-                        lambda server=None, replacement=None, **kw: self.gone.append((server, replacement)))
+        self.manager.on('gone:server', lambda server=None, **kw: self.gone.append(server))
         patcher = mock.patch.object(self.manager, "saveState")
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_dropped_by_plex_tv_it_is_removed_and_another_server_takes_over(self):
-        self.select(self.animal)
-        self.oscar.activeConnection.state = self.oscar.activeConnection.STATE_REACHABLE
+    def test_dropped_by_plex_tv_it_is_removed_and_not_retested(self):
+        self.watch(self.animal)
         self.manager.removeServer(self.animal, MYPLEX)
         self.assertNotIn(ANIMAL, self.manager.serversByUuid)
         self.assertTrue(self.animal.gone)
-        self.assertEqual([(self.animal, self.oscar)], self.gone)
-        self.assertIs(self.oscar, self.manager.selectedServer)
-        self.assertEqual([], self.delays())
-
-    def test_with_nothing_else_answering_it_stays_selected_until_another_is_picked(self):
-        self.select(self.animal)
-        self.manager.removeServer(self.animal, MYPLEX)
-        self.assertIs(self.animal, self.manager.selectedServer)
-        self.assertEqual([(self.animal, None)], self.gone)
         self.assertTrue(self.animal.offline)
+        self.assertEqual([self.animal], self.gone)
         self.round_ended(self.animal, False)
         self.assertEqual([], self.delays(), "no retests: it isn't coming back by being retested")
 
-    def test_listed_again_it_comes_back_as_the_same_server(self):
-        self.select(self.animal)
+    def test_listed_again_it_is_on_the_account_again(self):
+        self.watch(self.animal)
         self.manager.removeServer(self.animal, MYPLEX)
         relisted = make_server(ANIMAL, "Animal")
-        self.assertIs(self.animal, self.manager.mergeServer(relisted))
-        self.assertIs(self.animal, self.manager.serversByUuid[ANIMAL])
-        self.assertFalse(self.animal.gone)
+        self.assertIs(relisted, self.manager.mergeServer(relisted))
+        self.assertIs(relisted, self.manager.serversByUuid[ANIMAL])
+        self.assertFalse(relisted.gone)
 
     def test_a_missed_discovery_reply_keeps_it_offline(self):
         # GDM is UDP broadcast: one unanswered round says nothing about the account
-        self.select(self.animal)
+        self.watch(self.animal)
         self.manager.removeServer(self.animal, DISCOVERED)
         self.assertIn(ANIMAL, self.manager.serversByUuid)
         self.assertFalse(self.animal.gone)
@@ -436,7 +431,7 @@ class GoneTest(ManagerTestCase):
         self.assertEqual([5], self.delays())
 
     def test_signing_out_does_not_count(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         plexapp.ACCOUNT.isSignedIn = False
         self.manager.removeServer(self.animal, MYPLEX)
         self.assertFalse(self.animal.gone)
@@ -527,7 +522,7 @@ class LibraryWindowTest(KodiTestCase):
         KodiTestCase.setUp(self)
         ensure_plex_interface()
         self.server = make_server(ANIMAL, "Animal")
-        servers = mock.Mock(selectedServer=self.server)
+        servers = mock.Mock()
         servers.getServers.return_value = [self.server]
         account = mock.Mock(title="Phil", username="phil", ID="1", thumb="")
         # the sidebar's servers: the Libraries button's icon says when none is answering
@@ -596,13 +591,6 @@ class LibraryWindowTest(KodiTestCase):
         self.win._rebuildSidebar.assert_called_once_with()
         self.assertEqual(["Animal is no longer available to this account. Its libraries were removed from the sidebar."],
                          self.toasts())
-
-    def test_the_selected_server_gone_leaves_the_sidebar_too(self):
-        self.gone_setup()
-        self.server.offline = True
-        self.win.onSelectedServerGone(server=self.server, replacement=None)
-        self.assertEqual(['playlists', OSCAR + ':2'], self.win.navSettings['entries'])
-        self.assertEqual('script.plex/home/device/error.png', self.props['server.icon'])
 
     def test_a_gone_server_with_nothing_in_the_sidebar_says_nothing(self):
         self.gone_setup()
@@ -873,15 +861,15 @@ class TickTest(KodiTestCase):
 
 
 class ResumeRetryTest(ManagerTestCase):
-    def test_resuming_retests_an_offline_selected_server(self):
-        self.select(self.animal)
+    def test_resuming_retests_an_offline_sidebar_server(self):
+        self.watch(self.animal)
         self.round_ended(self.animal, False)
         self.manager.cancelOfflineRetry()  # gone to sleep
         self.manager.resumeOfflineRetry()
         self.assertEqual([5, 5], self.delays())
 
     def test_resuming_leaves_an_online_or_gone_server_alone(self):
-        self.select(self.animal)
+        self.watch(self.animal)
         self.manager.resumeOfflineRetry()
         self.animal.offline = self.animal.gone = True
         self.manager.resumeOfflineRetry()
