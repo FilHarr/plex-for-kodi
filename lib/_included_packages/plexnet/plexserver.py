@@ -196,6 +196,9 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                     return hubs
                 else:
                     q = '/hubs/sections/%s' % section
+                    # a library's own playlists row ("Library Playlists") only comes when asked for,
+                    # as Plex Web does (checked live 2026-10-05, PMS 1.43.4)
+                    params['includeLibraryPlaylists'] = 1
             else:
                 # Home's rows as Plex's own apps ask for them (checked live 2026-10-05, PMS 1.43.3
                 # and 1.43.4): only the rows Plex has on Home for this user - its Manage

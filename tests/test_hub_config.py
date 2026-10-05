@@ -565,3 +565,19 @@ class RowLibraryTest(KodiTestCase):
                                     ('tv.recentlyaired.18', '18'), ('home.playlists', 'playlists'),
                                     ('continueWatching', None), ('home.ondeck', None)):
             self.assertEqual(library, hub_config.rowLibrary(identifier), identifier)
+
+
+class LibraryRequestTest(KodiTestCase):
+    def test_a_library_asks_for_its_playlists_row(self):
+        # Plex sends "Library Playlists" only when asked, as Plex Web does (live 2026-10-05)
+        srv = plexserver.PlexServer.__new__(plexserver.PlexServer)
+        srv.currentHubs = None
+        asked = []
+
+        def query(path, params=None, **kw):
+            asked.append((path, dict(params or {})))
+            return ET.fromstring('<MediaContainer size="0"/>')
+        srv.query = query
+        srv.hubs('23', count=20)
+        self.assertEqual([('/hubs/sections/23', {'includeMarkers': 1, 'includeLibraryPlaylists': 1, 'count': 20})],
+                         asked)
