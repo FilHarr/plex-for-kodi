@@ -9,8 +9,9 @@ its hub settings are kept under "__home__" - one order for every server's Home r
 mergeHomeConfigs()).
 
 A hub row's catalog id is "<source>|<identifier>". The source is the library's id for a library's
-hub, and the server's uuid for a hub on that server's Home (its /hubs): two servers' Homes can both
-have a "home.movies.recent".
+hub, and the server's uuid for a hub on that server's Home (its /hubs/promoted): two servers' Homes
+can both have a "home.movies.recent". A Home row's identifier keeps its library
+(hub_config.homeRowId()).
 
 Both settings used to be kept per server ('home.settings.<uuid[-8:]>.<account>' and
 'hub.settings.<uuid[-8:]>.<account>'), under bare section keys and "<key>:<identifier>" catalog ids.
@@ -25,6 +26,8 @@ import threading
 from plexnet import plexapp
 
 from lib import util
+
+from .hub_config import homeRowId
 
 
 PLAYLISTS_ID = 'playlists'
@@ -95,13 +98,26 @@ def catalogId(source, identifier):
 def hubCatalogId(hub, section):
     """The catalog id of a hub fetched for `section`. On Home its source is the server whose Home
     it's on (the hub's own server) - except Continue Watching, one row from every server, which
-    is just "continueWatching"; elsewhere, the library."""
-    is_home = section.key is None
-    identifier = hub.getCleanHubIdentifier(is_home=is_home)
-    if is_home and identifier == CONTINUE_WATCHING_ID:
-        return CONTINUE_WATCHING_ID
-    source = hub.server.uuid if is_home else sectionId(section)
-    return catalogId(source, identifier)
+    is just "continueWatching" - and its identifier the row's own, less what changes between
+    requests (homeRowId()); elsewhere, the library and the cleaned identifier."""
+    if section.key is None:
+        identifier = homeRowId(hub.hubIdentifier)
+        if identifier == CONTINUE_WATCHING_ID:
+            return CONTINUE_WATCHING_ID
+        return catalogId(hub.server.uuid, identifier)
+    return catalogId(sectionId(section), hub.getCleanHubIdentifier())
+
+
+def legacyHubCatalogId(hub, section):
+    """The catalog id a Home row had before 7.2b, which dropped its library
+    (getCleanHubIdentifier()): what older saved configs list (hub_config.reconcile()). A library's
+    hub's is unchanged."""
+    if section.key is None:
+        identifier = hub.getCleanHubIdentifier(is_home=True)
+        if identifier == CONTINUE_WATCHING_ID:
+            return CONTINUE_WATCHING_ID
+        return catalogId(hub.server.uuid, identifier)
+    return hubCatalogId(hub, section)
 
 
 def parseCatalogId(catalog_id):

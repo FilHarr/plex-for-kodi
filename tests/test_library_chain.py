@@ -1775,7 +1775,7 @@ class HomeHubDisplayTitleTest(KodiTestCase):
             self.assertIsNone(library.LibraryWindow.promotedHubSourceKey(ident), ident)
 
     def test_a_promoted_library_hub_names_its_library(self):
-        self.assertEqual(u'Continue Watching \u2013 Other Videos',
+        self.assertEqual(u'Continue Watching (Other Videos)',
                          self.title('Continue Watching', 'video.inprogress.32'))
 
     def test_homes_own_hub_stays_bare(self):

@@ -1808,6 +1808,19 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if not self.openSection(self.section, force=True, fresh=False):
             self._pendingRestoreHubId = None
 
+    def reloadHomeRows(self, reason):
+        """Home's rows depend on the sidebar - which libraries it has, and with no saved Home order
+        theirs - so a change to it reloads Home if it's showing, landing on the same row, as waking
+        does (refreshLastSection()). Until the Recommended view can rebind rows in place (plan 7.3),
+        a reload."""
+        if (self.section is None or self.section.key is not None or self.contentMode != 'recommended'
+                or self._backStack or self.closing or self._shuttingDown):
+            return
+        util.DEBUG_LOG('Library: reloading Home ({0})', reason)
+        self._pendingRestoreHubId = self._captureRootRestoreState().get('_restoreHubId')
+        if not self.openSection(self.section, force=True, fresh=False):
+            self._pendingRestoreHubId = None
+
     # The "isn't responding" panel's button (includes/server_unavailable.xml.tpl)
     SERVER_RETRY_BUTTON_ID = 2600
 
@@ -2877,6 +2890,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if self._pickerChanged:
             self.saveNavSettings()
             self._rebuildSidebar()
+            self.reloadHomeRows('libraries picked')
 
     def _libraryPickerOptions(self):
         nav = self.sidebarNavSettings()

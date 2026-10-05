@@ -209,13 +209,17 @@ class HomeConfigTest(KodiTestCase):
             self.sectionHubs = {}
             self.availableHubs = {}
 
+        def saveHubSettings(self):
+            pass
+
     def test_rows_of_a_server_the_config_does_not_cover_still_show(self):
         animal, oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
         win = self.Hubs({'__home__': {'custom': True, 'servers': [ANIMAL],
                                       'hubs': [{'catalog_id': ANIMAL + '|home.movies.recent', 'order': 0}]}})
-        self.assertFalse(win.isHubHidden(Hub('home.movies.recent', [], animal), home.home_section))
-        self.assertTrue(win.isHubHidden(Hub('home.music.recent', [], animal), home.home_section))
-        self.assertFalse(win.isHubHidden(Hub('home.music.recent', [], oscar), home.home_section))
+        hubs = [Hub('home.movies.recent', [], animal), Hub('home.music.recent', [], animal),
+                Hub('home.music.recent', [], oscar)]
+        win._reconcileWithHubs(home.home_section, hubs)
+        self.assertEqual([False, True, False], [win.isHubHidden(h, home.home_section) for h in hubs])
 
     def test_continue_watching_follows_the_config_whatever_server_it_came_from(self):
         oscar = server(OSCAR, 'Oscar')
@@ -223,13 +227,20 @@ class HomeConfigTest(KodiTestCase):
                                       'hubs': [{'catalog_id': ANIMAL + '|home.movies.recent', 'order': 0}]}})
         self.assertTrue(win.isHubHidden(Hub('continueWatching', [], oscar), home.home_section))
 
-    def test_editing_home_covers_every_server_on_it(self):
+    def test_a_config_made_now_keeps_its_hidden_rows(self):
         animal, oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
         win = self.Hubs({})
-        win.sectionHubs['__home__'] = [Hub('a', [], animal), Hub('b', [], oscar), Hub('c', [], animal)]
-        config = {}
-        win._coverHomeServers(config, home.home_section)
-        self.assertEqual([ANIMAL, OSCAR], config['servers'])
+        win.sectionHubs['__home__'] = [Hub('a', [], animal), Hub('b', [], oscar)]
+        manager = mock.Mock(serversByUuid={ANIMAL: animal, OSCAR: oscar})
+        manager.getServers.return_value = [animal, oscar]
+        with mock.patch.object(library_hubs.plexapp, 'SERVERMANAGER', manager):
+            win._ensureCustomConfigExists(home.home_section)
+        config = win.hubSettings['__home__']
+        self.assertEqual([], config['hidden'])
+        self.assertNotIn('servers', config)
+        win._disableHub(OSCAR + '|b', home.home_section)
+        self.assertEqual([ANIMAL + '|a'], [h['catalog_id'] for h in config['hubs']])
+        self.assertEqual([OSCAR + '|b'], config['hidden'])
 
 
 class LibraryWindowHomeTest(KodiTestCase):
@@ -335,6 +346,7 @@ class ManageHomeTest(KodiTestCase):
             self.addCleanup(patcher.stop)
         self.win = library.LibraryWindow.__new__(library.LibraryWindow)
         self.win.hubSettings = {}
+        self.win.saveHubSettings = lambda: None
         # Home showed Animal's rows only (before the reset, or before Oscar answered)
         self.win.sectionHubs = {'__home__': [self.animal.hubs.return_value[1]]}
         self.win._homeServers = lambda: [(self.animal, ['22']), (self.oscar, ['1'])]
@@ -346,19 +358,20 @@ class ManageHomeTest(KodiTestCase):
     def test_an_empty_row_is_not_offered(self):
         self.assertNotIn(OSCAR + '|home.photos.recent', self.win.availableHubs)
 
-    def test_an_empty_row_in_the_config_is_still_offered_to_take_out(self):
+    def test_an_empty_row_in_the_config_is_not_offered_either(self):
+        # it can't show, so there's nothing to take out (Plex's merged rows come back empty when no
+        # pinned library feeds them)
         self.win.hubSettings = {'__home__': {'custom': True, 'hubs': [{'catalog_id': OSCAR + '|home.photos.recent'}]}}
         self.win._discoverHubsSync(home.home_section)
-        self.assertIn(OSCAR + '|home.photos.recent', self.win.availableHubs)
+        self.assertNotIn(OSCAR + '|home.photos.recent', self.win.availableHubs)
 
     def test_every_row_numbered_in_homes_default_order(self):
         self.assertEqual([u'1. continueWatching', u'2. home.movies.recent \u00b7 Animal',
                           u'3. home.movies.recent \u00b7 Oscar'], self.rows()[:3])
 
     def test_disabling_one_keeps_the_rest(self):
-        self.win.saveHubSettings = lambda: None
         self.win._ensureCustomConfigExists(home.home_section)
         self.win._disableHub(ANIMAL + '|home.movies.recent', home.home_section)
         self.assertEqual(['continueWatching', OSCAR + '|home.movies.recent'],
                          [h['catalog_id'] for h in self.win.hubSettings['__home__']['hubs']])
-        self.assertEqual([ANIMAL, OSCAR], self.win.hubSettings['__home__']['servers'])
+        self.assertEqual([ANIMAL + '|home.movies.recent'], self.win.hubSettings['__home__']['hidden'])

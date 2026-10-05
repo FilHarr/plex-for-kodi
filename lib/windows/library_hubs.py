@@ -15,6 +15,7 @@ from lib.util import T
 from . import busy
 from . import dropdown
 from . import home
+from . import hub_config
 from . import kodigui
 from . import opener
 from . import optionsdialog
@@ -363,30 +364,72 @@ class HubsMixin(object):
         return {h.get('catalog_id', h.get('identifier')) for h in section_config.get('hubs', [])}
 
     def isHubHidden(self, hub, section):
-        """Whether the user has hidden this hub of `section`. With no custom config, every hub the
-        server gives is shown; on Home, so is every row of a server the custom config doesn't cover
-        (section_ids.HOME_SERVERS) - one added to the sidebar since."""
+        """Whether the user has hidden this hub of `section`: with a custom config, one it doesn't
+        show - reconciled with the rows sent first (_reconcileHubConfig()), so a new row is in it.
+        With none, every hub the server gives is shown."""
         enabled = self.getEnabledHubsForSection(section)
         if enabled is None:
             return False
-        if section.key is None and hub.hubIdentifier != section_ids.CONTINUE_WATCHING_ID:
-            covered = self.hubSettings.get(section_ids.HOME_STORAGE_KEY, {}).get(section_ids.HOME_SERVERS)
-            if covered is not None and hub.server.uuid not in covered:
-                return False
         return section_ids.hubCatalogId(hub, section) not in enabled
 
-    def _coverHomeServers(self, section_config, section):
-        """A Home config the user is editing covers every server whose rows are on Home now, or in
-        the Manage Hubs dialog."""
-        if section.key is not None:
+    @staticmethod
+    def _hubConfigServer(catalog_id, server_uuid):
+        # Continue Watching is every server's
+        return '' if catalog_id == section_ids.CONTINUE_WATCHING_ID else server_uuid
+
+    def _reconcileHubConfig(self, section, rows):
+        """The section's custom config brought up to date with the rows the server sends now
+        (hub_config.reconcile()): a row it hasn't seen is placed and shown, Plex's merge setting
+        flipping carries a row's state over, and a config of before has its ids updated. rows:
+        [(catalog_id, legacy_id, server_uuid, entry)] in the server's order. Saved if changed."""
+        sid = section_ids.hubSettingsId(section)
+        config = self.hubSettings.get(sid) if self.hubSettings else None
+        if not config or not config.get('custom'):
             return
-        covered = section_config.setdefault(section_ids.HOME_SERVERS, [])
-        uuids = [hub.server.uuid for hub in self.sectionHubs.get(section_ids.hubSettingsId(section), [])]
-        uuids += [info['source_server'] for info in self.availableHubs.values()
-                  if info.get('source_section_id') == section_ids.HOME_STORAGE_KEY and info.get('source_server')]
-        for uuid in uuids:
-            if uuid not in covered:
-                covered.append(uuid)
+        rows = [(cid, legacy, self._hubConfigServer(cid, server), entry) for cid, legacy, server, entry in rows]
+        if hub_config.reconcile(config, rows):
+            util.DEBUG_LOG('Hubs: {0}\'s saved rows updated with the rows sent', sid)
+            self.saveHubSettings()
+
+    def _reconcileWithHubs(self, section, hubs):
+        """_reconcileHubConfig() for hubs as fetched."""
+        rows = []
+        for hub in hubs:
+            catalog_id = section_ids.hubCatalogId(hub, section)
+            rows.append((catalog_id, section_ids.legacyHubCatalogId(hub, section),
+                         getattr(getattr(hub, 'server', None), 'uuid', ''),
+                         self._hubConfigEntry(catalog_id, hub.getCleanHubIdentifier(is_home=section.key is None),
+                                              hub.title)))
+        self._reconcileHubConfig(section, rows)
+
+    @staticmethod
+    def _hubConfigEntry(catalog_id, identifier, title):
+        entry = {'catalog_id': catalog_id, 'identifier': identifier}
+        if title:
+            entry['title'] = title
+        return entry
+
+    def _newHubConfig(self, section):
+        """A custom config for the section in its default order, every row shown."""
+        hubs = []
+        for order, (cat_id, identifier) in enumerate(self._defaultHubOrder(section)):
+            entry = self._hubConfigEntry(cat_id, identifier, self.availableHubs.get(cat_id, {}).get('title'))
+            entry['order'] = order
+            hubs.append(entry)
+        return {'custom': True, 'hubs': hubs, hub_config.HIDDEN: []}
+
+    def _shownHubIds(self, section):
+        """The rows Manage Hubs lists as shown, in order: the config's shown rows the server sends.
+        One it no longer sends (switched off in Plex, its library unpinned) isn't listed (the user's
+        choice, 2026-10-05) but keeps its place, and comes back to it if the server sends it
+        again."""
+        sid = section_ids.hubSettingsId(section)
+        config = self.hubSettings.get(sid) if self.hubSettings else None
+        if not config or not config.get('custom'):
+            return [cat_id for cat_id, _ in self._defaultHubOrder(section)]
+        available = set(cid for cid, info in self.availableHubs.items() if info.get('source_section_id') == sid)
+        return [cat_id for cat_id in (h.get('catalog_id', h.get('identifier')) for h in config.get('hubs', []))
+                if cat_id in available]
 
     def _defaultHubOrder(self, section):
         """The section's rows in their default order (what it shows without a custom config), as
@@ -409,9 +452,9 @@ class HubsMixin(object):
         # Build lookup for user-defined order
         user_order = {}
         if section_config and section_config.get('custom'):
-            for idx, hub_config in enumerate(section_config.get('hubs', [])):
-                cat_id = hub_config.get('catalog_id', hub_config.get('identifier'))
-                user_order[cat_id] = hub_config.get('order', idx)
+            for idx, saved in enumerate(section_config.get('hubs', [])):
+                cat_id = saved.get('catalog_id', saved.get('identifier'))
+                user_order[cat_id] = saved.get('order', idx)
 
         # Pre-compute hub index lookup for O(1) access instead of O(n) per hub
         hubs_list = list(hubs)
@@ -448,9 +491,14 @@ class HubsMixin(object):
 
         multiServer = len(manager.getServers()) > 1
         availableHubs = {}
-        # Plex gives its generic Home rows (recent photos, videos...) whether or not there's such a
-        # library: an empty row isn't offered, unless the user's config lists it (to take it out)
-        configured = self.getEnabledHubsForSection(section) or set()
+        # Which empty rows are offered. On Home, Plex's own merged rows (home.movies.recent...) come
+        # back empty when no pinned library feeds them (its Recently Added not on Home in Plex):
+        # not offered. A library's row on Home is sent only when Plex has it on Home, so it's real
+        # even when its pick (a genre, a person) found nothing this time (live 2026-10-05: Films'
+        # genre row went missing from the dialog). In a library, an empty row is offered if the
+        # config knows it.
+        config = (self.hubSettings or {}).get(section_ids.hubSettingsId(section)) or {}
+        configured = set(self.getEnabledHubsForSection(section) or ()) | set(config.get(hub_config.HIDDEN, ()))
         section_type = getattr(section, 'type', 'unknown')
         section_title = getattr(section, 'title', None) or T(32411, 'Unknown')
 
@@ -472,8 +520,14 @@ class HubsMixin(object):
             for hub in hubs:
                 clean_identifier = hub.getCleanHubIdentifier(is_home=(section.key is None))
                 catalog_id = section_ids.hubCatalogId(hub, section)
-                if catalog_id in availableHubs or (not hub.items and catalog_id not in configured):
+                if catalog_id in availableHubs:
                     continue
+                if not hub.items:
+                    if section.key is None:
+                        if hub.hubIdentifier.startswith('home.'):
+                            continue
+                    elif catalog_id not in configured:
+                        continue
 
                 native_display = 'poster'
                 if hub.items:
@@ -490,6 +544,7 @@ class HubsMixin(object):
 
                 availableHubs[catalog_id] = {
                     'catalog_id': str(catalog_id),
+                    'legacy_id': section_ids.legacyHubCatalogId(hub, section),
                     'identifier': str(clean_identifier),
                     'title': str(hub_title),
                     'hubIdentifier': str(hub.hubIdentifier),
@@ -520,6 +575,10 @@ class HubsMixin(object):
                     _CatalogHub(hub_info['title'], hub_info['hubIdentifier']), ambiguous, libraries.get)
 
         self.availableHubs = availableHubs
+        self._reconcileHubConfig(section, [
+            (cid, info['legacy_id'], info['source_server'],
+             self._hubConfigEntry(cid, info['identifier'], info['title']))
+            for cid, info in availableHubs.items()])
 
     def _sidebarLibraries(self):
         """The sidebar's live library entries (not Watchlist/Playlists, nor a placeholder whose
@@ -542,14 +601,7 @@ class HubsMixin(object):
         if sid in self.hubSettings and self.hubSettings[sid].get('custom'):
             return False
 
-        if sid not in self.hubSettings:
-            self.hubSettings[sid] = {'custom': False, 'hubs': []}
-
-        section_config = self.hubSettings[sid]
-        section_config['custom'] = True
-        section_config['hubs'] = [{'catalog_id': cat_id, 'identifier': identifier, 'order': order}
-                                  for order, (cat_id, identifier) in enumerate(self._defaultHubOrder(section))]
-        self._coverHomeServers(section_config, section)
+        self.hubSettings[sid] = self._newHubConfig(section)
 
         is_home = section.key is None
         cached_hubs = self.sectionHubs.get(sid, [])
@@ -584,8 +636,7 @@ class HubsMixin(object):
         return True
 
     def _disableHub(self, catalog_id, section):
-        """Disable a hub by removing it from the enabled list. Ported from HomeWindow._disableHub()
-        (home.py)."""
+        """Hide a hub: out of the shown rows, into the hidden ones (hub_config.hide())."""
         if not self.hubSettings:
             return
 
@@ -593,44 +644,17 @@ class HubsMixin(object):
         if not section_config or not section_config.get('custom'):
             return
 
-        hubs = section_config.get('hubs', [])
-        for hub_config in hubs[:]:
-            if hub_config.get('catalog_id') == catalog_id:
-                hubs.remove(hub_config)
-                break
-
-        for idx, hub_config in enumerate(hubs):
-            hub_config['order'] = idx
-
+        hub_config.hide(section_config, catalog_id)
         self.saveHubSettings()
 
     def _canMoveHub(self, catalog_id, section):
         """Check if a hub can move up or down in the order. Ported from HomeWindow._canMoveHub()
         (home.py)."""
-        sid = section_ids.hubSettingsId(section)
-
-        if self.hubSettings:
-            section_config = self.hubSettings.get(sid)
-            if section_config and section_config.get('custom'):
-                hubs = section_config.get('hubs', [])
-                if len(hubs) <= 1:
-                    return False, False
-
-                current_idx = None
-                for idx, hub_config in enumerate(hubs):
-                    if hub_config.get('catalog_id') == catalog_id:
-                        current_idx = idx
-                        break
-
-                if current_idx is None:
-                    return False, False
-
-                can_move_up = current_idx > 0
-                can_move_down = current_idx < len(hubs) - 1
-                return can_move_up, can_move_down
-
-        can_move = len(self._defaultHubOrder(section)) > 1
-        return can_move, can_move
+        shown = self._shownHubIds(section)
+        if len(shown) <= 1 or catalog_id not in shown:
+            return False, False
+        current_idx = shown.index(catalog_id)
+        return current_idx > 0, current_idx < len(shown) - 1
 
     def _moveHubToPosition(self, catalog_id, section, from_visual_pos, to_visual_pos, optionsList):
         """Move a hub from one visual position to another - ported from
@@ -642,21 +666,8 @@ class HubsMixin(object):
         if not section_config or not section_config.get('custom'):
             return
 
-        hubs = section_config.get('hubs', [])
-
-        from_idx = from_visual_pos
-        to_idx = to_visual_pos
-
-        if from_idx < 0 or from_idx >= len(hubs):
-            return
-        if to_idx < 0 or to_idx >= len(hubs):
-            return
-
-        hub = hubs.pop(from_idx)
-        hubs.insert(to_idx, hub)
-
-        for idx, hub_config in enumerate(hubs):
-            hub_config['order'] = idx
+        # the dialog's positions are among the rows it lists, which needn't be every row saved
+        hub_config.moveShown(section_config, self._shownHubIds(section), from_visual_pos, to_visual_pos)
 
     def _restoreHubOrder(self, section, optionsList):
         """Restore hub order from saved settings after a cancelled move - ported verbatim from
@@ -711,13 +722,9 @@ class HubsMixin(object):
         options = []
         enabled_hubs_shown = set()
         if has_custom_config and configured_hubs:
-            for idx, hub_config in enumerate(configured_hubs):
-                cat_id = hub_config.get('catalog_id', hub_config.get('identifier'))
-                if cat_id in hub_states:
-                    is_enabled, hub_info = hub_states[cat_id]
-                    if is_enabled:
-                        options.append(make_option(cat_id, hub_info, True, position=idx + 1))
-                        enabled_hubs_shown.add(cat_id)
+            for idx, cat_id in enumerate(self._shownHubIds(section)):
+                options.append(make_option(cat_id, hub_states[cat_id][1], True, position=idx + 1))
+                enabled_hubs_shown.add(cat_id)
         else:
             ordered_catalog_ids = []
             for catalog_id, _ in self._defaultHubOrder(section):
@@ -773,6 +780,7 @@ class HubsMixin(object):
             self._discoverHubsSync(section)
         if not self.availableHubs:
             return
+        self._noteRowsOnScreenStale(section)
 
         section_title = section.title if hasattr(section, 'title') else 'Home'
         self._managingHubsForSectionTitle = section_title
@@ -815,6 +823,19 @@ class HubsMixin(object):
             title = u'{}. {}'.format(position, title)
         return title
 
+    def _noteRowsOnScreenStale(self, section):
+        """The dialog has asked the server for the section's rows: if they aren't the rows on
+        screen (Plex's toggles or merge setting changed since, live 2026-10-05), the section is
+        reloaded when the dialog closes, as for a change made in it (_hubsSettingsChanged)."""
+        sid = section_ids.hubSettingsId(section)
+        if getattr(self, 'section', None) is None or section_ids.hubSettingsId(self.section) != sid:
+            return
+        onScreen = [section_ids.hubCatalogId(hub, section) for hub in self.sectionHubs.get(sid, [])]
+        listed = [cid for cid in self._shownHubIds(section) if self.availableHubs.get(cid, {}).get('item_count')]
+        if onScreen != listed:
+            util.DEBUG_LOG('Hubs: {0}\'s rows have changed on the server since it was shown', sid)
+            self._hubsSettingsChanged = True
+
     def _hubSubOptionCallback(self, choice):
         """Return sub-menu options for an enabled hub, or None if no sub-menu needed. Ported
         verbatim from HomeWindow._hubSubOptionCallback() (home.py)."""
@@ -845,6 +866,7 @@ class HubsMixin(object):
         if choice.get('key') == 'refresh_hubs':
             section_title = getattr(self, '_managingHubsForSectionTitle', '')
             self._discoverHubsSync(section)
+            self._noteRowsOnScreenStale(section)
             options = self._buildHubSettingsOptions(section, section_title)
             return ('rebuild', options, 0)
 
@@ -893,35 +915,14 @@ class HubsMixin(object):
         if not self.hubSettings:
             self.hubSettings = {}
 
-        need_init = sid not in self.hubSettings or not self.hubSettings.get(sid, {}).get('custom')
+        section_config = self.hubSettings.get(sid)
+        if not section_config or not section_config.get('custom'):
+            section_config = self.hubSettings[sid] = self._newHubConfig(section)
 
-        if sid not in self.hubSettings:
-            self.hubSettings[sid] = {'custom': False, 'hubs': []}
-
-        section_config = self.hubSettings[sid]
-
-        if need_init:
-            section_config['custom'] = True
-            section_config['hubs'] = [{'catalog_id': cat_id, 'identifier': identifier, 'order': order}
-                                      for order, (cat_id, identifier) in enumerate(self._defaultHubOrder(section))]
-            self._coverHomeServers(section_config, section)
-
-        hub_found = False
-        for hub_config in section_config['hubs']:
-            config_cat_id = hub_config.get('catalog_id', hub_config.get('identifier'))
-            if config_cat_id == catalog_id:
-                hub_found = True
-                if not new_enabled:
-                    section_config['hubs'].remove(hub_config)
-                break
-
-        if new_enabled and not hub_found:
+        if new_enabled:
             hub_info = choice.get('hub_info', {})
-            section_config['hubs'].append({
-                'catalog_id': catalog_id,
-                'identifier': hub_info.get('identifier', catalog_id),
-                'order': len(section_config['hubs'])
-            })
+            hub_config.show(section_config, self._hubConfigEntry(
+                catalog_id, hub_info.get('identifier', catalog_id), hub_info.get('title')))
 
         self.saveHubSettings()
         self._hubsSettingsChanged = True
@@ -964,9 +965,9 @@ class HubsMixin(object):
         configured_hubs = section_config.get('hubs', []) if has_custom_config else []
 
         enabled_order = {}
-        for idx, hub_config in enumerate(configured_hubs):
-            cat_id = hub_config.get('catalog_id', hub_config.get('identifier'))
-            enabled_order[cat_id] = idx + 1
+        if has_custom_config:
+            for idx, cat_id in enumerate(self._shownHubIds(section)):
+                enabled_order[cat_id] = idx + 1
 
         for mli in optionsList:
             ds = mli.dataSource
@@ -1827,8 +1828,7 @@ class HubsMixin(object):
                 # next time it's rebuilt (sliding far enough for the wrap-control rebind,
                 # _bindHubToControl()) - live-reported 2026-09-21.
                 if control.dataSource:
-                    identifier = control.dataSource.getCleanHubIdentifier(is_home=self.section.key is None)
-                    self._hubReselectPositions.pop(identifier, None)
+                    self._hubReselectPositions.pop(self.hubMemoryKey(control.dataSource), None)
                 return False
             # Already at item 0 - nothing for this method to do; tell the caller to let the
             # NAV_BACK/PREVIOUS_MENU action propagate instead of swallowing it.
@@ -2245,6 +2245,9 @@ class HubsMixin(object):
         BaseHub.getCleanHubIdentifier(), plexlibrary.py), so the section is the last numeric
         part before any second numeric one, never blindly the last."""
         parts = (hub_identifier or '').split('.')
+        if parts[0] == 'home':
+            # Home's own, merged across libraries (home.movies.recent.22: its first library)
+            return None
         digits = []
         while parts and parts[-1].isdigit():
             digits.append(parts.pop())
@@ -2266,14 +2269,14 @@ class HubsMixin(object):
 
     def homeHubDisplayTitle(self, hub, ambiguous, lookup=None):
         """The title a hub shows under on Home. A library hub promoted onto Home by the server
-        gets its library named ("Continue Watching – Other Videos"), but only when its bare
+        gets its library named ("Continue Watching (Other Videos)"), but only when its bare
         title is ambiguous - shared with another hub on Home (`ambiguous`, from
         ambiguousHubTitles() over whatever set the caller shows: the visible rows, or the Manage
         Hubs catalog). The case: Other Videos' own in-progress hub is titled plain "Continue
         Watching", indistinguishable from the combined continueWatching hub next to it (live-
         reported 2026-09-21, first in Manage Hubs, then the row itself). Not every promoted hub
-        (Recently Released Movies etc.) - on request, only the ambiguous ones; and an en dash,
-        not home.attributeCrossSectionHub()'s em dash, also on request. Home's own hubs stay
+        (Recently Released Movies etc.) - on request, only the ambiguous ones; and the library in
+        brackets, also on request (2026-10-05; was an en dash). Home's own hubs stay
         bare, as does one whose title already is the library's name. `lookup` resolves a
         section key to its section (default: the sidebar's own list, sectionByKey()); an
         unresolvable key (hidden library) leaves the title bare rather than guessing."""
@@ -2287,18 +2290,17 @@ class HubsMixin(object):
         section = (lookup or (lambda key: self.sectionByKey(key, server=hub.server)))(source_key)
         if section is None or not section.title or section.title.lower() == title.lower():
             return title
-        return u'{} – {}'.format(title, section.title)
+        return u'{} ({})'.format(title, section.title)
 
     def hubMemoryKey(self, hub):
         """A row's identity for what's remembered about it - its scroll position
         (_hubReselectPositions) and Back's landing row (_captureRootRestoreState()): its identifier,
         on Home with its server too, as two servers' Homes both have a home.movies.recent."""
         is_home = self.section.key is None
-        identifier = hub.getCleanHubIdentifier(is_home=is_home)
         server = getattr(hub, 'server', None)
         if is_home and server is not None:
-            return u'{0}|{1}'.format(server.uuid, identifier)
-        return identifier
+            return section_ids.hubCatalogId(hub, self.section)
+        return hub.getCleanHubIdentifier(is_home=is_home)
 
     @staticmethod
     def homeRowServerName(hub):
@@ -2533,6 +2535,7 @@ class HubsMixin(object):
             # explicitly hidden from their real Home screen still showed up here - live-confirmed
             # (pinnedContentDirectoryID is identical between HomeWindow's own requests and this
             # one, so the fetch itself was never the difference; the missing filter was).
+            self._reconcileWithHubs(section, hubs)
             sorted_hubs = [hub for hub in self.sortHubsByUserOrder(hubs, section=section)
                           if hub.items and not self.isHubHidden(hub, section)]
             self.sectionHubs[section_ids.hubSettingsId(section)] = sorted_hubs

@@ -1004,6 +1004,9 @@ class EmptyLibraryTest(KodiTestCase):
         def sortHubsByUserOrder(self, hubs, **kwargs):
             return list(hubs)
 
+        def _reconcileWithHubs(self, *args):
+            pass
+
         def isHubHidden(self, *args):
             return False
 

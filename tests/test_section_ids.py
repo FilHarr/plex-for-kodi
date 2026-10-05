@@ -47,6 +47,7 @@ class Hub(object):
         self.hubIdentifier = hubIdentifier
         self.server = server
         self.items = list(items)
+        self.title = None
         self._identifier = None
 
 
@@ -342,6 +343,8 @@ class SameAsBeforeTest(MigrateCase):
         win = self.Hubs()
         oscarHome = Section(None, self.oscar, title='Home')
         hubs = [Hub('continueWatching', self.oscar), Hub('home.movies.recent.1.1', self.oscar)]
+        # as the bind does: the saved rows reconciled with the rows sent, first
+        win._reconcileWithHubs(oscarHome, hubs)
         self.assertEqual(hubs, [h for h in win.sortHubsByUserOrder(hubs, oscarHome)
                                 if not win.isHubHidden(h, oscarHome)])
 

@@ -197,12 +197,18 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                 else:
                     q = '/hubs/sections/%s' % section
             else:
-                # Home's rows, limited to these libraries (and 'playlists', for the recent
-                # playlists row). contentDirectoryID, not pinnedContentDirectoryID: checked live
-                # (2026-10-04), PMS 1.43.3 ignores the pinned one entirely, and 1.43.4 lets the rows
-                # a library promotes through it; this one limits every row, and Continue Watching.
+                # Home's rows as Plex's own apps ask for them (checked live 2026-10-05, PMS 1.43.3
+                # and 1.43.4): only the rows Plex has on Home for this user - its Manage
+                # Recommendations toggles, "shared Home" ones for a shared or managed user - with
+                # its "merge recently added" setting applied, from these libraries, in their
+                # order (and 'playlists' for the recent playlists row, where it is in the list).
+                # The merged rows follow pinnedContentDirectoryID, every other row
+                # contentDirectoryID (with merging off the pinned one doesn't limit a library's
+                # rows), so both.
+                q = '/hubs/promoted'
                 if section_ids:
                     params['contentDirectoryID'] = ",".join(section_ids)
+                    params['pinnedContentDirectoryID'] = ",".join(k for k in section_ids if k != 'playlists')
 
             if count is not None:
                 params['count'] = count
@@ -220,10 +226,11 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
 
         if newCW:
             cq = '/hubs/continueWatching'
+            cparams = dict((k, v) for k, v in params.items() if k != 'pinnedContentDirectoryID')
             if section_ids:
-                cq += util.joinArgs(params)
+                cq += util.joinArgs(cparams)
 
-            cdata = self.query(cq, params=params)
+            cdata = self.query(cq, params=cparams)
             if cdata and len(cdata) > 0:
                 ccontainer = plexobjects.PlexContainer(cdata, initpath=cq, server=self, address=cq)
                 self.currentHubs[cdata[0].attrib.get('hubIdentifier')] = cdata[0].attrib.get('title')
@@ -242,10 +249,12 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                 hubs.append(plexlibrary.Hub(elem, server=self, container=container))
 
         if section_ids:
-            # the same libraries for each row's later pages ("See more")
+            # the same libraries for each row's later pages ("See more"); a merged row's key
+            # carries its pinned libraries already
+            paging = dict((k, v) for k, v in params.items() if k != 'pinnedContentDirectoryID')
             for hub in hubs:
                 if "contentDirectoryID" not in hub.key:
-                    hub.key += util.joinArgs(params, '?' not in hub.key)
+                    hub.key += util.joinArgs(paging, '?' not in hub.key)
 
         return hubs
 
