@@ -530,8 +530,11 @@ class LibraryWindowTest(KodiTestCase):
         servers = mock.Mock(selectedServer=self.server)
         servers.getServers.return_value = [self.server]
         account = mock.Mock(title="Phil", username="phil", ID="1", thumb="")
+        # the sidebar's servers: the Libraries button's icon says when none is answering
+        self.sidebarServers = [self.server]
         for patcher in (mock.patch.object(library.plexapp, "SERVERMANAGER", servers),
                         mock.patch.object(library.plexapp, "ACCOUNT", account),
+                        mock.patch.object(library.sidebar_model, "sidebarServers", lambda: self.sidebarServers),
                         mock.patch.object(library.util, "showNotification")):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -539,9 +542,11 @@ class LibraryWindowTest(KodiTestCase):
         self.props = {}
         self.win.setProperty = lambda key, value: self.props.__setitem__(key, value)
         self.win.getProperty = lambda key: self.props.get(key, '')
-        # a library of the selected server's on screen
+        # a library of Animal's on screen, in the sidebar
         self.section = mock.Mock(server=self.server)
         self.win.section = self.section
+        self.win.navSettings = {'version': 2, 'entries': [ANIMAL + ':1'], 'libraries': {ANIMAL + ':1': {}}}
+        self.win._rebuildSidebar = mock.Mock()
         self.win._backStack = []
         self.win._shuttingDown = False
         self.win._isHostedShell = False
@@ -550,8 +555,13 @@ class LibraryWindowTest(KodiTestCase):
         self.win.visibleHubs = []
         self.win.openSection = mock.Mock()
 
-    def test_an_offline_server_shows_the_error_icon(self):
+    def test_every_sidebar_server_offline_shows_the_error_icon(self):
+        oscar = make_server(OSCAR, "Oscar")
+        self.sidebarServers = [self.server, oscar]
         self.server.offline = True
+        self.win.displayServerAndUser()
+        self.assertEqual('script.plex/home/device/plex.png', self.props['server.icon'])
+        oscar.offline = True
         self.win.displayServerAndUser()
         self.assertEqual('script.plex/home/device/error.png', self.props['server.icon'])
         # the button below the sidebar is the Libraries picker's now; its icon still says it

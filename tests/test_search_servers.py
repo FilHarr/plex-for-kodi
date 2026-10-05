@@ -96,17 +96,19 @@ class FanOutTest(KodiTestCase):
         self.assertEqual([('Movies', ['Alien'])], titles(rows))
         self.assertEqual(['Oscar', 'Slow'], missing)
 
-    def test_the_sidebars_servers_in_its_order_else_the_selected_one(self):
+    def test_the_sidebars_servers_in_its_order_else_every_server(self):
         animal, oscar = server('a', 'Animal'), server('o', 'Oscar')
-        manager = mock.Mock(serversByUuid={'a': animal, 'o': oscar}, selectedServer=animal)
+        manager = mock.Mock(serversByUuid={'a': animal, 'o': oscar})
+        manager.getServers.return_value = [oscar, animal]
         nav = {'entries': ['/library/sections/watchlist', 'o:1', 'a:22', 'o:playlists', 'gone:5']}
         with mock.patch.object(search.plexapp, 'SERVERMANAGER', manager), \
                 mock.patch.object(search.plexapp, 'ACCOUNT', mock.Mock(ID='7')), \
                 mock.patch.object(search.util, 'getSetting', lambda key, default=None: default), \
-                mock.patch.object(search.sidebar_model, 'loadNavSettings', lambda: nav):
+                mock.patch.object(search.sidebar_model.section_ids, 'loadJson', lambda key: nav):
             self.assertEqual([oscar, animal], search.searchedServers())
+            # a sidebar with no libraries (a new account): every server on the account, by name
             nav['entries'] = ['/library/sections/watchlist']
-            self.assertEqual([animal], search.searchedServers())
+            self.assertEqual([animal, oscar], search.searchedServers())
 
 
 class ServerNameTest(KodiTestCase):
@@ -121,11 +123,13 @@ class ServerNameTest(KodiTestCase):
 
 
 class HistoryTest(KodiTestCase):
-    def test_the_selected_servers_history_becomes_the_accounts(self):
-        settings = {'search.history.0000aaaa.7': json.dumps(['alien', 'reacher'])}
+    def test_the_old_servers_history_becomes_the_accounts(self):
+        # the server selected when the add-on last ran (section_ids.legacyServer())
+        settings = {'search.history.0000aaaa.7': json.dumps(['alien', 'reacher']),
+                    'lastServerId.7': 'uuid-0000aaaa'}
         dlg = search.SearchDialog.__new__(search.SearchDialog)
         account = mock.Mock(ID='7')
-        manager = mock.Mock(selectedServer=server('uuid-0000aaaa', 'Animal'))
+        manager = mock.Mock(serversByUuid={'uuid-0000aaaa': server('uuid-0000aaaa', 'Animal')})
         with mock.patch.object(search.plexapp, 'ACCOUNT', account), \
                 mock.patch.object(search.plexapp, 'SERVERMANAGER', manager), \
                 mock.patch.object(search.util, 'getSetting', lambda key, default=None: settings.get(key, default)), \
@@ -151,7 +155,7 @@ class ChosenServersTest(KodiTestCase):
         self.nav = {'entries': ['o:1', 'a:22']}
         for patch in (mock.patch.object(search.plexapp, 'SERVERMANAGER', manager),
                       mock.patch.object(search.plexapp, 'ACCOUNT', mock.Mock(ID='7')),
-                      mock.patch.object(search.sidebar_model, 'loadNavSettings', lambda: self.nav),
+                      mock.patch.object(search.sidebar_model.section_ids, 'loadJson', lambda key: self.nav),
                       mock.patch.object(search.util, 'getSetting',
                                         lambda key, default=None: self.settings.get(key, default)),
                       mock.patch.object(search.util, 'setSetting',

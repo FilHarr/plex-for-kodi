@@ -453,7 +453,6 @@ def _main():
             util.DEBUG_LOG('Main: SHUTTING DOWN...')
             plex.MOUSE_SETTING_CONTROL.restore()
             dcm.storeDataCache()
-            dcm.deinit()
             plexapp.util.INTERFACE.shutdownCache()
             plexapp.util.INTERFACE.playbackManager.deinit()
             if util.getSetting('player_stop_on_exit', True):

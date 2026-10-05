@@ -43,7 +43,8 @@ def open(obj, context=None, **kwargs):
         if not obj.startswith('/'):
             key = '/library/metadata/{0}'.format(obj)
 
-        server = kwargs.pop("server", None) or plexapp.SERVERMANAGER.selectedServer
+        # the key's own server: two servers can have the same key
+        server = kwargs.pop("server")
         return open(server.getObject(key), context=context, **kwargs)
     elif obj.TYPE == 'episode':
         return episodeClicked(obj, context=context, **kwargs)

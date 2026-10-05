@@ -345,10 +345,10 @@ class HubsMixin(object):
         section_ids.hubSettingsId() and shared by Home and every library's Recommended view."""
         section_ids.migrate()
         self.hubSettings = section_ids.loadJson(section_ids.hubSettingsKey())
-        selected = plexapp.SERVERMANAGER.selectedServer
-        changed = section_ids.mergeHomeConfigs(self.hubSettings, selected.uuid if selected else None)
-        if selected is not None and section_ids.migratePlaylists(None, self.hubSettings, selected.uuid)[1]:
-            # the old single Playlists entry's hub settings: the selected server's Playlists'
+        legacy = section_ids.legacyServer()
+        changed = section_ids.mergeHomeConfigs(self.hubSettings, legacy.uuid if legacy else None)
+        if legacy is not None and section_ids.migratePlaylists(None, self.hubSettings, legacy.uuid)[1]:
+            # the old single Playlists entry's hub settings: that server's Playlists'
             changed = True
         if changed:
             self.saveHubSettings()
@@ -489,10 +489,6 @@ class HubsMixin(object):
         and on Home, when the account has more than one server, which server (the sidebar's rule)
         - what the dialog groups by."""
         manager = plexapp.SERVERMANAGER
-        selected = manager.selectedServer
-        if not selected:
-            return
-
         if section.key is None:
             sources = [(server, keys) for server, keys in self._homeServers()]
         else:

@@ -163,7 +163,6 @@ class PathMappingManager(object):
         return changed
 
     def deletePathMapping(self, target, server=None, save=True):
-        server = server or plexnet.util.SERVERMANAGER.selectedServer
         if not server:
             ERROR("Delete path mapping: Something went wrong")
             return
@@ -189,7 +188,6 @@ class PathMappingManager(object):
             LOG("Path mapping stored after deletion of {}:{}".format(deleted, target))
 
     def addPathMapping(self, source, target, server=None, save=True):
-        server = server or plexnet.util.SERVERMANAGER.selectedServer
         if not server:
             ERROR("Add path mapping: Something went wrong")
             return

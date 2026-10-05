@@ -27,8 +27,6 @@ class DataCacheManager(object):
     USE_GZ = False
 
     def __init__(self):
-        self._currentServerUUID = None
-        plexapp.util.APP.on('change:selectedServer', self.setServerUUID)
         if self.USE_GZ:
             self.DC_PATH += "z"
         if xbmcvfs.exists(self.DC_PATH):
@@ -59,13 +57,10 @@ class DataCacheManager(object):
                 self.DATA_CACHES["general"]["updated"] = time.time()
                 self.storeDataCache()
 
-    def deinit(self):
-        plexapp.util.APP.off('change:selectedServer', self.setServerUUID)
-
     def _scope(self, server):
-        """The cache's per-server part: the item's own server, else the selected one."""
+        """The cache's per-server part: the item's own server."""
         uuid = getattr(server, 'uuid', None)
-        return uuid[-8:] if uuid else self._currentServerUUID
+        return uuid[-8:] if uuid else None
 
     def getCacheData(self, context, identifier, server=None):
         scope = self._scope(server)
@@ -94,11 +89,6 @@ class DataCacheManager(object):
             "last_access": t,
             "data": value
         }
-
-    def setServerUUID(self, server=None, **kwargs):
-        if not server and not plexapp.SERVERMANAGER.selectedServer:
-            return
-        self._currentServerUUID = (server if server is not None else plexapp.SERVERMANAGER.selectedServer).uuid[-8:]
 
     def dataCacheCleanup(self):
         d = copy.deepcopy(self.DATA_CACHES)

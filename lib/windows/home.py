@@ -274,8 +274,7 @@ class SectionHubsTask(backgroundthread.Task):
         if self.isCanceled():
             return
 
-        if not plexapp.SERVERMANAGER.selectedServer or not self.section.server:
-            # Could happen during sign-out for instance
+        if not self.section.server:
             return
 
         try:
@@ -538,8 +537,8 @@ class UpdateHubTask(backgroundthread.Task):
         if self.isCanceled():
             return
 
-        if not plexapp.SERVERMANAGER.selectedServer:
-            # Could happen during sign-out for instance
+        if not plexapp.SERVERMANAGER.serversByUuid:
+            # signed out: no servers
             return
 
         try:
@@ -570,8 +569,8 @@ class ExtendHubTask(backgroundthread.Task):
                 self.canceledCallback(self.hub)
             return
 
-        if not plexapp.SERVERMANAGER.selectedServer:
-            # Could happen during sign-out for instance
+        if not plexapp.SERVERMANAGER.serversByUuid:
+            # signed out: no servers
             return
 
         try:
@@ -608,93 +607,15 @@ class ExtendHubTask(backgroundthread.Task):
             util.ERROR()
 
 
-class DiscoverHubsTask(backgroundthread.Task):
-    """Background task to discover all available hubs across all library sections."""
-
-    def setup(self, sections, callback):
-        self.sections = sections  # List of all sections (including home_section)
-        self.callback = callback
-        return self
-
-    def run(self):
-        if self.isCanceled():
-            return
-
-        if not plexapp.SERVERMANAGER.selectedServer:
-            return
-
-        availableHubs = {}
-
-        for section in self.sections:
-            if self.isCanceled():
-                return
-
-            try:
-                section_key = section.key
-                section_type = getattr(section, 'type', 'unknown')
-                section_title = getattr(section, 'title', T(32411, 'Unknown'))
-
-                # Fetch hubs for this section
-                hubs = section.server.hubs(section_key, count=HUB_PAGE_SIZE)
-
-                for hub in hubs:
-                    clean_identifier = hub.getCleanHubIdentifier(is_home=(section_key is None))
-
-                    # Create section-specific catalog identifier
-                    # Home hubs: use clean identifier (e.g., "home.continue")
-                    # Library hubs: prefix with section key (e.g., "1:movie.recentlyadded")
-                    if section_key is None:
-                        catalog_id = clean_identifier
-                    else:
-                        catalog_id = '{}:{}'.format(section_key, clean_identifier)
-
-                    # Determine native display type from hub content
-                    native_display = 'poster'  # Default
-                    if hub.items:
-                        item_type = hub.items[0].type
-                        native_display = {
-                            'episode': 'ar16x9', 'clip': 'ar16x9', 'video': 'ar16x9',
-                            'album': 'square', 'artist': 'square', 'photo': 'square', 'track': 'square',
-                        }.get(item_type, 'poster')
-
-                    # Resolve hub title — playlist hubs have no server-provided title
-                    hub_title = hub.title
-                    if not hub_title:
-                        hub_title = PLAYLIST_HUB_TITLES.get(clean_identifier, clean_identifier)
-
-                    # Store hub info - each section's hubs are stored separately
-                    if catalog_id not in availableHubs:
-                        availableHubs[catalog_id] = {
-                            'catalog_id': str(catalog_id),
-                            'identifier': str(clean_identifier),
-                            'title': str(hub_title),
-                            'hubIdentifier': str(hub.hubIdentifier),
-                            'source_section_key': section_key,
-                            'source_section_title': str(section_title) if section_title else T(32411, 'Unknown'),
-                            'source_section_type': str(section_type) if section_type else 'unknown',
-                            'native_display': native_display,
-                            'item_count': len(hub.items) if hub.items else 0,
-                        }
-
-            except plexnet.exceptions.BadRequest:
-                pass
-            except Exception as e:
-                pass
-
-
-        if not self.isCanceled():
-            self.callback(availableHubs)
-
-
 class VirtualSection(object):
     locations = []
     isMapped = False
     mappedPaths = []
     mappingBroken = False
 
-    @property
-    def server(self):
-        return plexapp.SERVERMANAGER.selectedServer
+    # Home and Watchlist are no server's: Home's rows come from every Home server
+    # (LibraryWindow._homeServers()), Watchlist's from plex.tv
+    server = None
 
     def getServer(self):
         # LibrarySettings.__init__ (library.py) calls this unconditionally on whatever section
@@ -780,7 +701,7 @@ class PlaylistsSection(VirtualSection):
 
     @property
     def server(self):
-        return self._server if self._server is not None else plexapp.SERVERMANAGER.selectedServer
+        return self._server
 
     locations = []
     isMapped = False

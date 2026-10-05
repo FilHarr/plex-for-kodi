@@ -80,18 +80,18 @@ def loadNavSettings():
     dict the first time."""
     section_ids.migrate()
     nav = section_ids.loadJson(section_ids.sidebarKey())
+    legacy = section_ids.legacyServer()
     if nav.get('version') == SIDEBAR_VERSION:
-        selected = plexapp.SERVERMANAGER.selectedServer
-        if selected is not None and section_ids.migratePlaylists(nav, None, selected.uuid)[0]:
-            # the old single Playlists entry is the selected server's own now
-            util.LOG('Sidebar: Playlists is {0}\'s own entry now', selected.name)
+        if legacy is not None and section_ids.migratePlaylists(nav, None, legacy.uuid)[0]:
+            # the old single Playlists entry is that server's own now
+            util.LOG('Sidebar: Playlists is {0}\'s own entry now', legacy.name)
             saveNavSettings(nav)
         watchServers(nav)
         return nav
-    migrated = migrateToList(nav, plexapp.SERVERMANAGER.selectedServer)
+    migrated = migrateToList(nav, legacy)
     if migrated is None:
-        # the selected server didn't list its libraries: try again next time, keep nothing now
-        util.LOG('Sidebar: the selected server did not list its libraries, sidebar setting not moved yet')
+        # the server didn't list its libraries: try again next time, keep nothing now
+        util.LOG('Sidebar: the old settings\' server did not list its libraries, sidebar setting not moved yet')
         return {'version': SIDEBAR_VERSION, 'entries': [WATCHLIST_ID, PLAYLISTS_ID], 'libraries': {},
                 'unsaved': True}
     saveNavSettings(migrated)
@@ -103,6 +103,20 @@ def saveNavSettings(nav):
     if nav.get('unsaved'):
         return
     util.setSetting(section_ids.sidebarKey(), json.dumps(nav))
+
+
+def sidebarServers():
+    """The servers the sidebar has entries from, in sidebar order. Read as stored: no migration, no
+    fetch (loadNavSettings()), so any thread can ask; empty until the sidebar has been moved over."""
+    manager = plexapp.SERVERMANAGER
+    servers, seen = [], set()
+    for sid in section_ids.loadJson(section_ids.sidebarKey()).get('entries', ()):
+        uuid, sep, _ = sid.partition(':')
+        server = manager.serversByUuid.get(uuid) if sep else None
+        if server is not None and uuid not in seen:
+            seen.add(uuid)
+            servers.append(server)
+    return servers
 
 
 def watchServers(nav):
@@ -246,11 +260,8 @@ def pickerOrder(nav, listed, servers, playlists=None):
 
 
 def resetOrder(nav):
-    """Watchlist, then the libraries by server - the selected one first - each server's in its own
-    order, then its Playlists. Pins stay as they are."""
-    selected = plexapp.SERVERMANAGER.selectedServer
-    selectedUuid = selected.uuid if selected else None
-
+    """Watchlist, then the libraries by server - the account's own servers first, then by name -
+    each server's in its own order, then its Playlists. Pins stay as they are."""
     def position(sid):
         if sid == WATCHLIST_ID:
             return (0, '', 0)
@@ -262,7 +273,8 @@ def resetOrder(nav):
         meta = nav['libraries'].get(sid, {})
         server = plexapp.SERVERMANAGER.serversByUuid.get(uuid)
         name = meta.get('server') or (server.name if server is not None else '')
-        return (2 if uuid == selectedUuid else 3, name.lower(), keys.index(key) if key in keys else len(keys))
+        owned = server is not None and bool(getattr(server, 'owned', False))
+        return (2 if owned else 3, name.lower(), keys.index(key) if key in keys else len(keys))
 
     _order(nav).sort(key=position)
     _pinnedInOrder(nav, set(nav['entries']))
@@ -521,9 +533,9 @@ def sections(nav, onChange=None):
                     and home.watchlist_section and home.watchlist_section.has_data()):
                 entries.append(home.watchlist_section)
         elif section_ids.isPlaylistsId(sid):
-            # a server's Playlists (the old single entry: the selected server's), when it has any
+            # a server's Playlists (the old single entry: the old settings' server's), when it has any
             uuid = sid.partition(':')[0] if ':' in sid else None
-            server = manager.serversByUuid.get(uuid) if uuid else manager.selectedServer
+            server = manager.serversByUuid.get(uuid) if uuid else section_ids.legacyServer()
             if server and hasPlaylists(server, onChange=onChange):
                 entries.append(home.playlistsSection(server))
         elif sid:
@@ -581,8 +593,7 @@ def matchSection(entries, key, fromWatchlist=False, server=None):
 
 def serverAndUserProperties():
     """The window properties for the user's avatar and name, and the Libraries button below the
-    sidebar (it opens the picker). Its icon says when the selected server - Home's, still - isn't
-    answering."""
+    sidebar (it opens the picker). Its icon says when none of the sidebar's servers is answering."""
     account = plexapp.ACCOUNT
     title = account.title or account.username or ' '
     props = [
@@ -591,8 +602,8 @@ def serverAndUserProperties():
         ('user.avatar.letter', title[0].upper()),
     ]
 
-    server = plexapp.SERVERMANAGER.selectedServer
-    if server and server.offline:
+    servers = sidebarServers()
+    if servers and all(server.offline for server in servers):
         icon = 'script.plex/home/device/error.png'
     else:
         icon = 'script.plex/home/device/plex.png'

@@ -324,7 +324,7 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
     def artistButtonClicked(self):
         # Exactly what the More menu's own "Go to artist" entry does (optionsButtonClicked() above,
         # which now calls through here) - the header's artist line is just a more direct way to it.
-        self.processCommand(opener.open(self.album.parentRatingKey, context=self,
+        self.processCommand(opener.open(self.album.parentRatingKey, context=self, server=self.album.server,
                                         entry_section_id=self.entrySectionId))
 
     def checkForHeaderFocus(self, action):

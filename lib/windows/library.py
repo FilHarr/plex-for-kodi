@@ -95,6 +95,8 @@ def _sectionHasCollections(section):
     Callers are expected to only call this for section types the item-type dropdown already
     offered 'collection' for (movie/show/artist) - no point probing types that structurally can't
     have any."""
+    if section.server is None:
+        return False
     cache_key = (section.server.uuid, section.key)
     if cache_key in _sectionHasCollectionsCache:
         return _sectionHasCollectionsCache[cache_key]
@@ -117,7 +119,8 @@ def _invalidateSectionHasCollectionsCache(section):
     immediately after) re-probes live instead of trusting a possibly stale answer left over from
     a previous visit - see _sectionHasCollections()'s own docstring for the caching scheme this is
     half of."""
-    _sectionHasCollectionsCache.pop((section.server.uuid, section.key), None)
+    if section.server is not None:
+        _sectionHasCollectionsCache.pop((section.server.uuid, section.key), None)
 
 class LibrarySettings(object):
     def __init__(self, section_or_server_id):
@@ -133,7 +136,9 @@ class LibrarySettings(object):
             self.serverID = section_or_server_id
             self.sectionID = None
         else:
-            self.serverID = section_or_server_id.getServer().uuid
+            server = section_or_server_id.getServer()
+            # Home and Watchlist have none, and no settings of their own (_loadSettings())
+            self.serverID = server.uuid if server is not None else None
             self.sectionID = section_or_server_id.key
             # Fallback for _loadSettings() below, when this section has never had its own
             # ITEM_TYPE saved (getItemType() returns None) - the section's own native type,
@@ -604,7 +609,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         key = self.section.key
         if not key or not key.isdigit():
             key = self.section.getLibrarySectionId()
-        viewtype = util.getSetting('viewtype.{0}.{1}'.format(self.section.server.uuid, key))
+        server = self.section.server
+        viewtype = server and util.getSetting('viewtype.{0}.{1}'.format(server.uuid, key))
 
         if self.contentMode == 'recommended':
             self.setWindows(VIEWS_RECOMMENDED.get('all'))
@@ -1323,12 +1329,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         """The sidebar's section object for a library section key, or None. For callers that only
         hold a key (getLibrarySectionId()) - resolveSection() resolves those through here, the
         way HomeWindow's old 'HOME:<key>' handler matched the same list. Two servers can both have
-        a library with this key: the one on `server`, else the selected server's (Home's)."""
+        a library with this key: the one on `server`, if given."""
         if not self.sectionList:
             return None
         entries = [mli.dataSource for mli in self.sectionList.items if mli.dataSource is not None]
-        return sidebar_model.matchSection(entries, str(key),
-                                          server=server or plexapp.SERVERMANAGER.selectedServer)
+        return sidebar_model.matchSection(entries, str(key), server=server)
 
     def setWatchlistDirty(self, *args, **kwargs):
         if self.section.TYPE == 'movies_shows':
@@ -1850,12 +1855,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     SERVER_RETRY_BUTTON_ID = 2600
 
     def _viewServer(self):
-        """The server of the section on screen: a library's own; the selected server's for Home and
-        Playlists (home.VirtualSection), which are still its."""
+        """The server of the section on screen: a library's or a Playlists entry's own. None for Home
+        and Watchlist, which are no server's (Home's rows from a server that stops answering drop
+        out, onServerOffline())."""
         section = self.__dict__.get('section')
-        if section is None:
-            return plexapp.SERVERMANAGER.selectedServer
-        return getattr(section, 'server', None)
+        return getattr(section, 'server', None) if section is not None else None
 
     def _isViewServer(self, server):
         view = self._viewServer()
@@ -1891,7 +1895,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             return
         if self._sidebarHasServer(server):
             self._rebuildSidebar()
-        if server is plexapp.SERVERMANAGER.selectedServer:
+        if self._sidebarHasServer(server):
+            # the Libraries button's icon (sidebar_model.serverAndUserProperties())
             self.displayServerAndUser()
         if self._isHomeServer(server) and not self._isViewServer(server):
             # Home's rows from it go (HomeHubsTask skips an offline server)
@@ -2046,7 +2051,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             return
         if self._sidebarHasServer(server):
             self._rebuildSidebar()
-        if server is plexapp.SERVERMANAGER.selectedServer:
+        if self._sidebarHasServer(server):
+            # the Libraries button's icon (sidebar_model.serverAndUserProperties())
             self.displayServerAndUser()
         if self._isHomeServer(server) and not self._isViewServer(server):
             # Home's rows from it come back

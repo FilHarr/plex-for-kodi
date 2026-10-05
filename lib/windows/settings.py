@@ -398,10 +398,10 @@ class PlatformSetting(InfoSetting):
 
 class ServerVersionSetting(InfoSetting):
     def valueLabel(self):
-        if not plexnet.plexapp.SERVERMANAGER.selectedServer:
-            return ''
-
-        return plexnet.plexapp.SERVERMANAGER.selectedServer.rawVersion or ''
+        # each server's: the sidebar's, else every one on the account
+        from . import sidebar_model
+        servers = sidebar_model.sidebarServers() or plexnet.plexapp.SERVERMANAGER.getServers()
+        return u' \u00b7 '.join(u'{0} {1}'.format(s.name, s.rawVersion or '?') for s in servers)
 
 
 class IPSetting(BasicSetting):

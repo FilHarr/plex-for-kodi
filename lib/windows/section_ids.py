@@ -293,6 +293,19 @@ def mergeSettings(selected, others):
     return merged
 
 
+def legacyServer():
+    """The server settings from before account-wide keys belong to: the one selected when the add-on
+    last ran (plexnet's lastServerId.<account>) - the only one the sidebar, Home and search history
+    were kept for. None for an account with no such settings, and while that server isn't known yet
+    (try again later); for a new account, plexnet's choice for now (Phase 9.2 replaces this with
+    onboarding)."""
+    manager = plexapp.SERVERMANAGER
+    uuid = util.getSetting('lastServerId.{0}'.format(plexapp.ACCOUNT.ID), '')
+    if uuid:
+        return manager.serversByUuid.get(uuid)
+    return manager.selectedServer
+
+
 _migrated = set()
 _migrateLock = threading.Lock()
 
@@ -302,9 +315,9 @@ def migrate():
     account: the account-wide sidebar key, written last, marks it done. The selected server's are
     taken whole (mergeSettings()).
 
-    Waits for a selected server, which is when the known servers are. A server not known yet
-    then (plex.tv down at that startup, with no cached resources) has its settings left behind:
-    they stay under its old keys and are never read again."""
+    Waits for that server (legacyServer()) to be known, which is when the known servers are. A
+    server not known yet then (plex.tv down at that startup, with no cached resources) has its
+    settings left behind: they stay under its old keys and are never read again."""
     account = plexapp.ACCOUNT.ID
     with _migrateLock:
         if account in _migrated:
@@ -313,7 +326,7 @@ def migrate():
             _migrated.add(account)
             return
         manager = plexapp.SERVERMANAGER
-        selected = manager.selectedServer
+        selected = legacyServer()
         if not selected:
             return
         others = [s for s in manager.getServers() if s.uuid != selected.uuid]

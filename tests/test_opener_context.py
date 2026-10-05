@@ -516,3 +516,22 @@ class CollectionClickedContextTest(KodiTestCase):
             opener.collectionClicked = originalCollectionClicked
 
         self.assertEqual([(obj, context)], calls)
+
+
+class OpenByKeyTest(KodiTestCase):
+    """A rating key opens on the server it came with: two servers can have the same key, and there's
+    no selected server to fall back on any more (plan Phase 9)."""
+
+    def test_a_key_opens_on_its_own_server(self):
+        from unittest import mock
+        server = mock.Mock()
+        opened = []
+        real_open = opener.open
+        with mock.patch.object(opener, 'open', lambda obj, context=None, **kwargs: opened.append(obj)):
+            real_open('99097', server=server)
+        server.getObject.assert_called_once_with('/library/metadata/99097')
+        self.assertEqual([server.getObject.return_value], opened)
+
+    def test_a_key_without_a_server_is_a_mistake(self):
+        with self.assertRaises(KeyError):
+            opener.open('99097')

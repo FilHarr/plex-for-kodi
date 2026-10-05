@@ -58,8 +58,8 @@ class EpisodesReloadTask(backgroundthread.Task):
         if self.isCanceled():
             return
 
-        if not plexapp.SERVERMANAGER.selectedServer:
-            # Could happen during sign-out for instance
+        if not plexapp.SERVERMANAGER.serversByUuid:
+            # signed out: no servers
             return
 
         epLen = len(self.episodes)

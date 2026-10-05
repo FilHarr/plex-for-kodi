@@ -170,7 +170,8 @@ class PlexInterface(plexapp.AppInterface):
         util.setSetting(pref, value)
 
     def getRCBaseKey(self):
-        return "_".join((plexapp.SERVERMANAGER.selectedServer.uuid[-8:], plexapp.ACCOUNT.ID))
+        # per account: the cached requests' URLs already say which server
+        return str(plexapp.ACCOUNT.ID)
 
     def clearRequestsCache(self):
         try:

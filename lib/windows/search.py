@@ -14,6 +14,7 @@ from . import dropdown
 from . import kodigui
 from . import opener
 from . import optionsdialog
+from . import section_ids
 from . import sidebar_model
 from . import windowutils
 
@@ -299,7 +300,7 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         return 'search.history.{0}'.format(plexapp.ACCOUNT.ID)
 
     def _oldHistoryKey(self):
-        server = plexapp.SERVERMANAGER.selectedServer
+        server = section_ids.legacyServer()
         return server and 'search.history.{0}.{1}'.format(server.uuid[-8:], plexapp.ACCOUNT.ID)
 
     def loadSearchHistory(self):
@@ -551,23 +552,10 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
             pass
 
 
-def sidebarServers():
-    """The servers the sidebar has entries from, in sidebar order."""
-    manager = plexapp.SERVERMANAGER
-    servers, seen = [], set()
-    for sid in sidebar_model.loadNavSettings().get('entries', ()):
-        uuid, sep, _ = sid.partition(':')
-        server = manager.serversByUuid.get(uuid) if sep else None
-        if server is not None and uuid not in seen:
-            seen.add(uuid)
-            servers.append(server)
-    return servers
-
-
 def accountServers():
     """Every server on the account: the sidebar's first, in its order, then the rest (owned first,
     by name) - the search's server chooser lists them all."""
-    servers = sidebarServers()
+    servers = sidebar_model.sidebarServers()
     rest = sorted((s for s in plexapp.SERVERMANAGER.getServers() if s not in servers),
                   key=lambda s: (not getattr(s, 'owned', False), (s.name or '').lower()))
     return servers + rest
@@ -583,9 +571,9 @@ def saveSearchedServers(uuids):
 
 def searchedServers():
     """The servers a search asks: the ones chosen for the account (SearchDialog.chooseServers()), or
-    until there's a choice, every one the sidebar has libraries from - or the selected one if it
-    has none (the user, 2026-10-05: one search, everything on each server, wherever it's opened
-    from)."""
+    until there's a choice, every one the sidebar has libraries from - or every one on the account
+    if it has none (the user, 2026-10-05: one search, everything on each server, wherever it's
+    opened from)."""
     try:
         chosen = json.loads(util.getSetting(_searchedServersKey(), '') or 'null')
     except ValueError:
@@ -594,11 +582,7 @@ def searchedServers():
         servers = [s for s in accountServers() if s.uuid in chosen]
         if servers:
             return servers
-    servers = sidebarServers()
-    manager = plexapp.SERVERMANAGER
-    if not servers and manager.selectedServer:
-        servers.append(manager.selectedServer)
-    return servers
+    return sidebar_model.sidebarServers() or accountServers()
 
 
 # One search answers in about 0.15 s on the LAN; a server slower than this is left out of this

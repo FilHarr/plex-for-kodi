@@ -211,8 +211,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.displayServerAndUser()
 
         # Credits are looked up in the library of the server the role came from. A Discover
-        # role's server is plex.tv's, which has no library: the selected server's stands in.
-        local_server = plexapp.SERVERMANAGER.selectedServer
+        # role's server is plex.tv's, which has no library: the first sidebar server answering
+        # stands in.
+        local_server = next((s for s in sidebar_model.sidebarServers() if not s.offline), None)
         role_server = self.role.server
         if local_server and not (role_server and role_server.uuid in plexapp.SERVERMANAGER.serversByUuid):
             self.role.server = local_server

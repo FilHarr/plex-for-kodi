@@ -559,11 +559,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         elif choice['key'] == 'mark_unwatched':
             self.toggleWatched(self.video, state=False, **VIDEO_RELOAD_KW)
         elif choice['key'] == 'to_season':
-            self.processCommand(opener.open(self.video.parentRatingKey, context=self,
+            self.processCommand(opener.open(self.video.parentRatingKey, context=self, server=self.video.server,
                                             entry_section_id=self.entrySectionId,
                                             entry_from_watchlist=self.entryFromWatchlist))
         elif choice['key'] == 'to_show':
-            self.processCommand(opener.open(self.video.grandparentRatingKey, context=self,
+            self.processCommand(opener.open(self.video.grandparentRatingKey, context=self, server=self.video.server,
                                             entry_section_id=self.entrySectionId,
                                             entry_from_watchlist=self.entryFromWatchlist))
         elif choice['key'] == 'to_section':

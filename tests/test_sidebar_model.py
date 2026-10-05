@@ -64,6 +64,7 @@ class Server(object):
     def __init__(self, uuid=UUID, playlists=()):
         self.uuid = uuid
         self.name = 'Animal'
+        self.owned = True
         self.offline = False
         self.gone = False
         self.suspect = False
@@ -332,6 +333,7 @@ class HighlightTest(SidebarCase):
     def test_a_playlist_highlights_playlists(self):
         self.server._playlists = ['a playlist']
         win = playlist.PlaylistWindow.__new__(playlist.PlaylistWindow)
+        win.playlist = mock.Mock(server=self.server)
         self.assertEqual(['Playlists'], self.active(self.build(win)))
 
 
@@ -537,6 +539,18 @@ class ListEditTest(SidebarCase):
         # a server's Playlists after its libraries
         self.assertEqual([section_ids.WATCHLIST_ID, UUID + ':1', UUID + ':3', section_ids.playlistsId(UUID), OTHER + ':7'],
                          nav['entries'])
+
+    def test_reset_order_puts_the_accounts_own_servers_first(self):
+        # by name, a shared server would come first; nothing is selected to go first any more
+        OSCAR.owned, OSCAR.name = False, 'Aardvark'
+        self.addCleanup(setattr, OSCAR, 'name', 'Oscar')
+        self.listed(OTHER, [Section('7', 'Films', server=OSCAR)])
+        self.store('other:7', '1', 'watchlist')
+        self.manager.selectedServer = None
+        nav = self.nav()
+        nav['libraries'][OTHER + ':7']['server'] = 'Aardvark'
+        sidebar_model.resetOrder(nav)
+        self.assertEqual([section_ids.WATCHLIST_ID, UUID + ':1', OTHER + ':7'], nav['entries'])
 
 
 class PickerTest(SidebarCase):

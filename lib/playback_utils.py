@@ -47,7 +47,6 @@ class PlaybackManager(object):
     """
     version = 1
     _data = None
-    _currentServerUUID = None
     _currentUserID = None
 
     transMap = TRANS_MAP
@@ -68,7 +67,6 @@ class PlaybackManager(object):
                 continue
             self._hook('change:{}'.format(v), self.setGlob)
 
-        self._hook('change:selectedServer', self.setServerUUID)
         self._hook("loaded:cached_user", self.setUserID)
         self._hook("change:user", self.setUserID)
         self._hook('init', self.setUserID)
@@ -86,16 +84,15 @@ class PlaybackManager(object):
         self._signalHandlers = []
 
     def __call__(self, obj, key=None, value=None, kv_dict=None):
-        # the item's own server's settings; the selected server's for one without a server
-        csid = getattr(getattr(obj, 'server', None), 'uuid', None) or self._currentServerUUID
+        # the item's own server's settings
+        csid = getattr(getattr(obj, 'server', None), 'uuid', None)
         cuid = self._currentUserID
 
-        # shouldn't happen
+        # no server (shouldn't happen): the global settings, nothing stored
         if not csid:
             util.DEBUG_LOG("APP.PlaybackManager, something's wrong: ServerUUID: {}, UserID: {}",
                            csid, cuid)
-            return
-
+            return self.glob
 
         # set
         if (key is not None and value is not None) or kv_dict is not None:
@@ -138,9 +135,6 @@ class PlaybackManager(object):
 
     def reset(self):
         self._data = self.load()
-        if plexapp.SERVERMANAGER and plexapp.SERVERMANAGER.selectedServer:
-            self.setServerUUID()
-
         if plexapp.ACCOUNT:
             self.setUserID()
         self.setGlob()
@@ -150,11 +144,6 @@ class PlaybackManager(object):
             self.glob = self.glob._replace(**{skey: value})
         else:
             self.glob = PlaybackSettings(**dict((k, util.getUserSetting(k)) for k in ATTR_MAP.values()))
-
-    def setServerUUID(self, server=None):
-        if not server and not plexapp.SERVERMANAGER.selectedServer:
-            return
-        self._currentServerUUID = (server if server is not None else plexapp.SERVERMANAGER.selectedServer).uuid
 
     def setUserID(self, account=None, reallyChanged=False):
         if not account and not plexapp.ACCOUNT:

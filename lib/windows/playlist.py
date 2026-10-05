@@ -231,7 +231,7 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     def sidebarActiveSection(self, entries):
         # A playlist isn't tied to one library section (its items can span several): its server's
         # Playlists is where this screen was reached from.
-        server = getattr(getattr(self, 'playlist', None), 'server', None) or plexapp.SERVERMANAGER.selectedServer
+        server = getattr(getattr(self, 'playlist', None), 'server', None)
         return home.playlistsSection(server) if server is not None else None
 
     def playlistListClicked(self, no_item=False, shuffle=False, resume=None, play=False):

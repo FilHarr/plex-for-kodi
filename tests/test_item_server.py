@@ -1,9 +1,10 @@
 # coding=utf-8
 """
-What an item is played or shown with follows the item's own server, not the selected one: its
-playback settings (binge mode, skip intro, media version...) and the data cache (genres, audio
-choice). Both used to follow whichever server was selected, switched for a moment by the Watchlist
-opener ('change:tempServer') and switched back before the item had even been played.
+What an item is played or shown with follows the item's own server: its playback settings (binge
+mode, skip intro, media version...) and the data cache (genres, audio choice). Both used to follow
+whichever server was selected, switched for a moment by the Watchlist opener ('change:tempServer')
+and switched back before the item had even been played. With no server selected any more (plan
+Phase 9), an item without one gets the global settings and no cache.
 """
 
 from __future__ import absolute_import
@@ -35,7 +36,6 @@ class PlaybackSettingsTest(KodiTestCase):
         super(PlaybackSettingsTest, self).setUp()
         self.manager = playback_utils.PlaybackManager.__new__(playback_utils.PlaybackManager)
         self.manager._data = {}
-        self.manager._currentServerUUID = ANIMAL.uuid
         self.manager._currentUserID = '1'
         self.manager.glob = playback_utils.PlaybackSettings(**dict((k, False) for k in playback_utils.ATTR_MAP.values()))
         patcher = mock.patch.object(playback_utils.PlaybackManager, 'save')
@@ -47,12 +47,13 @@ class PlaybackSettingsTest(KodiTestCase):
         self.assertIn(OSCAR.uuid, self.manager._data)
         self.assertNotIn(ANIMAL.uuid, self.manager._data)
         self.assertTrue(self.manager(Item('5', OSCAR)).binge_mode)
-        # the selected server's item "5" is another item
+        # another server's item "5" is another item
         self.assertFalse(self.manager(Item('5', ANIMAL)).binge_mode)
 
-    def test_an_item_without_a_server_uses_the_selected_one(self):
+    def test_an_item_without_a_server_gets_the_global_settings(self):
         self.manager(Item('5', None), key='binge_mode', value=True)
-        self.assertTrue(self.manager(Item('5', ANIMAL)).binge_mode)
+        self.assertEqual({}, self.manager._data)
+        self.assertFalse(self.manager(Item('5', None)).binge_mode)
 
 
 class DataCacheTest(KodiTestCase):
@@ -60,13 +61,12 @@ class DataCacheTest(KodiTestCase):
         super(DataCacheTest, self).setUp()
         self.cache = data_cache.DataCacheManager.__new__(data_cache.DataCacheManager)
         self.cache.DATA_CACHES = {"general": {}, "cache": {}}
-        self.cache._currentServerUUID = ANIMAL.uuid[-8:]
 
     def test_data_is_kept_under_the_items_server(self):
         self.cache.setCacheData('show_genres', '5', ['Drama'], server=OSCAR)
         self.assertEqual(['Drama'], self.cache.getCacheData('show_genres', '5', server=OSCAR))
         self.assertIsNone(self.cache.getCacheData('show_genres', '5', server=ANIMAL))
 
-    def test_no_server_means_the_selected_one(self):
+    def test_no_server_is_no_servers(self):
         self.cache.setCacheData('show_genres', '5', ['Drama'])
-        self.assertEqual(['Drama'], self.cache.getCacheData('show_genres', '5', server=ANIMAL))
+        self.assertIsNone(self.cache.getCacheData('show_genres', '5', server=ANIMAL))

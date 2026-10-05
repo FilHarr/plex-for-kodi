@@ -230,10 +230,19 @@ class CacheOptionsTest(KodiTestCase):
             cache_module.KODI_BUILD_NUMBER = orig
 
 
+class FakeServer(object):
+    def __init__(self, uuid):
+        self.uuid = uuid
+
+
+# the cache is scoped by the item's own server: the last eight characters of its uuid
+SERVER01 = FakeServer("0000server01")
+SERVER02 = FakeServer("0000server02")
+
+
 def data_cache_manager():
     """A DataCacheManager with its class-level caches isolated per test."""
     mgr = DataCacheManager.__new__(DataCacheManager)
-    mgr._currentServerUUID = "server01"
     mgr.DATA_CACHES = {"general": {"updated": time.time(),
                                    "version": DataCacheManager.DATA_CACHES_VERSION},
                        "cache": {}}
@@ -253,46 +262,51 @@ class DataCacheTest(KodiTestCase):
             os.remove(self.path)
         KodiTestCase.tearDown(self)
 
+    def set(self, context, identifier, value, server=SERVER01):
+        self.mgr.setCacheData(context, identifier, value, server=server)
+
+    def get(self, context, identifier, server=SERVER01, mgr=None):
+        return (mgr or self.mgr).getCacheData(context, identifier, server=server)
+
     def test_set_then_get(self):
-        self.mgr.setCacheData("hubs", "movies", {"a": 1})
-        self.assertEqual({"a": 1}, self.mgr.getCacheData("hubs", "movies"))
+        self.set("hubs", "movies", {"a": 1})
+        self.assertEqual({"a": 1}, self.get("hubs", "movies"))
 
     def test_an_unknown_identifier_yields_nothing(self):
-        self.assertIsNone(self.mgr.getCacheData("hubs", "absent"))
+        self.assertIsNone(self.get("hubs", "absent"))
 
     def test_entries_are_scoped_to_the_server(self):
-        self.mgr.setCacheData("hubs", "movies", {"a": 1})
-        self.mgr._currentServerUUID = "server02"
-        self.assertIsNone(self.mgr.getCacheData("hubs", "movies"))
+        self.set("hubs", "movies", {"a": 1})
+        self.assertIsNone(self.get("hubs", "movies", server=SERVER02))
 
     def test_entries_are_scoped_to_the_context(self):
-        self.mgr.setCacheData("hubs", "movies", {"a": 1})
-        self.assertIsNone(self.mgr.getCacheData("other", "movies"))
+        self.set("hubs", "movies", {"a": 1})
+        self.assertIsNone(self.get("other", "movies"))
 
     def test_writing_bumps_the_general_updated_stamp(self):
         before = self.mgr.DATA_CACHES["general"]["updated"]
         time.sleep(0.01)
-        self.mgr.setCacheData("hubs", "movies", {"a": 1})
+        self.set("hubs", "movies", {"a": 1})
         self.assertGreater(self.mgr.DATA_CACHES["general"]["updated"], before)
 
     def test_reading_refreshes_last_access(self):
-        self.mgr.setCacheData("hubs", "movies", {"a": 1})
+        self.set("hubs", "movies", {"a": 1})
         entry = self.mgr.DATA_CACHES["cache"]["server01"]["hubs"]["movies"]
         entry["last_access"] = 0
-        self.mgr.getCacheData("hubs", "movies")
+        self.get("hubs", "movies")
         self.assertGreater(entry["last_access"], 0)
 
     def test_data_older_than_the_purge_window_is_dropped_on_read(self):
-        self.mgr.setCacheData("hubs", "movies", {"a": 1})
+        self.set("hubs", "movies", {"a": 1})
         entry = self.mgr.DATA_CACHES["cache"]["server01"]["hubs"]["movies"]
         entry["updated"] = time.time() - (self.mgr.DC_LRUP_TIMEOUT + 1) * 3600 * 24
 
-        self.assertIsNone(self.mgr.getCacheData("hubs", "movies"))
+        self.assertIsNone(self.get("hubs", "movies"))
         self.assertNotIn("movies", self.mgr.DATA_CACHES["cache"]["server01"]["hubs"])
 
     def test_cleanup_evicts_entries_not_accessed_recently(self):
-        self.mgr.setCacheData("hubs", "stale", {"a": 1})
-        self.mgr.setCacheData("hubs", "fresh", {"b": 2})
+        self.set("hubs", "stale", {"a": 1})
+        self.set("hubs", "fresh", {"b": 2})
         stale = self.mgr.DATA_CACHES["cache"]["server01"]["hubs"]["stale"]
         stale["last_access"] = time.time() - (self.mgr.DC_LRU_TIMEOUT + 1) * 3600 * 24
 
@@ -302,7 +316,7 @@ class DataCacheTest(KodiTestCase):
         self.assertIn("fresh", remaining)
 
     def test_store_writes_json_to_disk(self):
-        self.mgr.setCacheData("hubs", "movies", {"a": 1})
+        self.set("hubs", "movies", {"a": 1})
         self.mgr.storeDataCache()
         with open(self.path, "r", encoding="utf-8") as fp:
             stored = json.load(fp)
@@ -310,55 +324,17 @@ class DataCacheTest(KodiTestCase):
                          stored["cache"]["server01"]["hubs"]["movies"]["data"])
 
     def test_store_is_skipped_when_nothing_changed_since_the_last_write(self):
-        self.mgr.setCacheData("hubs", "movies", {"a": 1})
+        self.set("hubs", "movies", {"a": 1})
         self.mgr.DC_LAST_UPDATE = self.mgr.DATA_CACHES["general"]["updated"]
         self.mgr.storeDataCache()
         self.assertFalse(os.path.exists(self.path))
 
     def test_a_stored_cache_round_trips(self):
-        self.mgr.setCacheData("hubs", "movies", {"a": 1})
+        self.set("hubs", "movies", {"a": 1})
         self.mgr.storeDataCache()
 
         with open(self.path, "r", encoding="utf-8") as fp:
             reloaded = json.load(fp)
         other = data_cache_manager()
         other.DATA_CACHES = reloaded
-        self.assertEqual({"a": 1}, other.getCacheData("hubs", "movies"))
-
-
-class DataCacheServerUUIDTest(KodiTestCase):
-    class FakeServer(object):
-        def __init__(self, uuid="0123456789abcdef"):
-            self.uuid = uuid
-
-    class FakeServerManager(object):
-        def __init__(self, selected=None):
-            self.selectedServer = selected
-
-    def setUp(self):
-        KodiTestCase.setUp(self)
-        from plexnet import plexapp
-        self.plexapp = plexapp
-        self._orig_sm = plexapp.SERVERMANAGER
-
-    def tearDown(self):
-        self.plexapp.SERVERMANAGER = self._orig_sm
-        KodiTestCase.tearDown(self)
-
-    def test_the_uuid_is_truncated_to_its_last_eight_characters(self):
-        mgr = data_cache_manager()
-        mgr.setServerUUID(self.FakeServer())
-        self.assertEqual("89abcdef", mgr._currentServerUUID)
-
-    def test_it_falls_back_to_the_selected_server(self):
-        self.plexapp.SERVERMANAGER = self.FakeServerManager(self.FakeServer("aaaabbbbcccc"))
-        mgr = data_cache_manager()
-        mgr.setServerUUID()
-        self.assertEqual("bbbbcccc", mgr._currentServerUUID)
-
-    def test_no_server_and_none_selected_leaves_the_uuid_alone(self):
-        self.plexapp.SERVERMANAGER = self.FakeServerManager(None)
-        mgr = data_cache_manager()
-        mgr._currentServerUUID = "keepme"
-        mgr.setServerUUID(None)
-        self.assertEqual("keepme", mgr._currentServerUUID)
+        self.assertEqual({"a": 1}, self.get("hubs", "movies", mgr=other))
