@@ -1,7 +1,25 @@
-{% extends "base.xml.tpl" %}
-{% block headers %}<onload>SetProperty(dropdown,1)</onload>{% endblock %}
-{% block backgroundcolor %}{% endblock %}
-{% block controls %}
+{% extends "default.xml.tpl" %}
+{% block headers %}<defaultcontrol>1001</defaultcontrol>{% endblock %}
+{% block header %}
+    {{ super() }}
+    {% include "includes/sidebar.xml.tpl" %}
+    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
+         of this include for the full reasoning. -->
+    {% include "includes/sidebar_dropdowns.xml.tpl" %}
+{% endblock header %}
+
+{% block content %}
+<!-- Search (search.SearchWindow), a sidebar destination shown by LibraryWindow. No background of
+     its own: the shared one (includes/default_background.xml.tpl), showing the neutral colour
+     panel - SearchWindow.paintInitialBackground(). -->
+<control type="group" id="50">
+    <!-- Slide right while the sidebar rail is expanded (focused), as every hosted screen does. -->
+    <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
+    <!-- posx=60, not 0: clears the collapsed sidebar rail's icon column - see includes/sidebar.xml.tpl. -->
+    <posx>60</posx>
+    <posy>0</posy>
+    <defaultcontrol>1001</defaultcontrol>
+
 <!-- BACKGROUNDS -->
 <control type="group">
     <control type="image">
@@ -45,25 +63,9 @@
     </control>
 </control>
 
-<control type="button" id="999">
-    <animation effect="zoom" start="100" end="144" time="100" center="80,{{ vscale(67.5) }}" reversible="false">Focus</animation>
-    <animation effect="zoom" start="144" end="100" time="100" center="80,{{ vscale(67.5) }}" reversible="false">UnFocus</animation>
-    <posx>60</posx>
-    <posy>{{ vscale(42.5) }}</posy>
-    <width>40</width>
-    <height>{{ vscale(40) }}</height>
-    <ondown>900</ondown>
-    <onright>998</onright>
-    <font>font12</font>
-    <focusedcolor>FF000000</focusedcolor>
-    <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/search-focus.png</texturefocus>
-    <texturenofocus colordiffuse="FFCC7B19">script.plex/buttons/search.png</texturenofocus>
-    <onclick>Close</onclick>
-    <label> </label>
-</control>
 <control type="label">
     <scroll>false</scroll>
-    <posx>160</posx>
+    <posx>60</posx>
     <posy>{{ vscale(35) }}</posy>
     <width>500</width>
     <height>{{ vscale(65) }}</height>
@@ -73,7 +75,7 @@
     <textcolor>FFFFFFFF</textcolor>
     <label>[UPPERCASE]$ADDON[script.plexmod 32431][/UPPERCASE]</label>
 </control>
-<!-- Which servers a search asks (SearchDialog.chooseServers()): the media settings button's icon,
+<!-- Which servers a search asks (SearchWindow.chooseServers()): the media settings button's icon,
      on a multi-server account -->
 <control type="button" id="998">
     <visible>!String.IsEmpty(Window.Property(search.multi))</visible>
@@ -81,7 +83,7 @@
     <posy>{{ vscale(37) }}</posy>
     <width>52</width>
     <height>{{ vscale(52) }}</height>
-    <onleft>999</onleft>
+    <onleft>9000</onleft>
     <ondown>900</ondown>
     <font>font12</font>
     <texturefocus colordiffuse="FFE5A00D">script.plex/buttons/player/modern/settings.png</texturefocus>
@@ -221,18 +223,19 @@
         </control>
 
         <control type="group" id="900">
-            <defaultcontrol>901</defaultcontrol>
+            <defaultcontrol>911</defaultcontrol>
             <control type="group">
                 <posx>0</posx>
                 <posy>0</posy>
-                <control type="button" id="901">
+                <control type="button" id="911">
                     <hitrect x="0" y="0" w="151" h="60" />
                     <posx>-40</posx>
                     <posy>{{ vscale(-40) }}</posy>
                     <width>231</width>
                     <height>{{ vscale(140) }}</height>
-                    <onright>902</onright>
-                    <onup>999</onup>
+                    <onleft>9000</onleft>
+                    <onright>912</onright>
+                    <onup>998</onup>
                     <ondown>650</ondown>
                     <font>font12</font>
                     <align>center</align>
@@ -247,15 +250,15 @@
             <control type="group">
                 <posx>154</posx>
                 <posy>0</posy>
-                <control type="button" id="902">
+                <control type="button" id="912">
                     <hitrect x="0" y="0" w="74" h="60" />
                     <posx>-40</posx>
                     <posy>{{ vscale(-40) }}</posy>
                     <width>154</width>
                     <height>{{ vscale(140) }}</height>
-                    <onleft>901</onleft>
-                    <onright>903</onright>
-                    <onup>999</onup>
+                    <onleft>911</onleft>
+                    <onright>913</onright>
+                    <onup>998</onup>
                     <ondown>650</ondown>
                     <font>font12</font>
                     <align>center</align>
@@ -269,15 +272,15 @@
             <control type="group">
                 <posx>231</posx>
                 <posy>0</posy>
-                <control type="button" id="903">
+                <control type="button" id="913">
                     <hitrect x="0" y="0" w="74" h="60" />
                     <posx>-40</posx>
                     <posy>{{ vscale(-40) }}</posy>
                     <width>154</width>
                     <height>{{ vscale(140) }}</height>
-                    <onleft>902</onleft>
-                    <onright>904</onright>
-                    <onup>999</onup>
+                    <onleft>912</onleft>
+                    <onright>914</onright>
+                    <onup>998</onup>
                     <ondown>650</ondown>
                     <font>font12</font>
                     <align>center</align>
@@ -291,15 +294,15 @@
             <control type="group">
                 <posx>308</posx>
                 <posy>0</posy>
-                <control type="button" id="904">
+                <control type="button" id="914">
                     <hitrect x="0" y="0" w="74" h="60" />
                     <posx>-40</posx>
                     <posy>{{ vscale(-40) }}</posy>
                     <width>154</width>
                     <height>{{ vscale(140) }}</height>
-                    <onleft>903</onleft>
-                    <onright>905</onright>
-                    <onup>999</onup>
+                    <onleft>913</onleft>
+                    <onright>915</onright>
+                    <onup>998</onup>
                     <ondown>650</ondown>
                     <font>font12</font>
                     <align>center</align>
@@ -313,16 +316,16 @@
             <control type="group">
                 <posx>385</posx>
                 <posy>0</posy>
-                <control type="button" id="905">
+                <control type="button" id="915">
                     <hitrect x="0" y="0" w="74" h="60" />
                     <posx>-40</posx>
                     <posy>{{ vscale(-40) }}</posy>
                     <width>154</width>
                     <height>{{ vscale(140) }}</height>
-                    <onleft>904</onleft>
+                    <onleft>914</onleft>
                     <onright condition="!String.IsEmpty(Window.Property(show.history))">2050</onright>
                     <onright condition="String.IsEmpty(Window.Property(show.history))">3000</onright>
-                    <onup>999</onup>
+                    <onup>998</onup>
                     <ondown>650</ondown>
                     <font>font12</font>
                     <align>center</align>
@@ -339,7 +342,7 @@
             <posx>154</posx>
             <posy>0</posy>
             <control type="group">
-                <animation effect="zoom" start="100" end="120" time="100" center="37,{{ vscale(30) }}" reversible="true" condition="Control.HasFocus(902)">Conditional</animation>
+                <animation effect="zoom" start="100" end="120" time="100" center="37,{{ vscale(30) }}" reversible="true" condition="Control.HasFocus(912)">Conditional</animation>
                 <posx>0</posx>
                 <posy>0</posy>
                 <width>74</width>
@@ -357,7 +360,7 @@
             <posx>231</posx>
             <posy>0</posy>
             <control type="group">
-                <animation effect="zoom" start="100" end="120" time="100" center="37,{{ vscale(30) }}" reversible="true" condition="Control.HasFocus(903)">Conditional</animation>
+                <animation effect="zoom" start="100" end="120" time="100" center="37,{{ vscale(30) }}" reversible="true" condition="Control.HasFocus(913)">Conditional</animation>
                 <posx>0</posx>
                 <posy>0</posy>
                 <width>74</width>
@@ -375,7 +378,7 @@
             <posx>308</posx>
             <posy>0</posy>
             <control type="group">
-                <animation effect="zoom" start="100" end="120" time="100" center="37,{{ vscale(30) }}" reversible="true" condition="Control.HasFocus(904)">Conditional</animation>
+                <animation effect="zoom" start="100" end="120" time="100" center="37,{{ vscale(30) }}" reversible="true" condition="Control.HasFocus(914)">Conditional</animation>
                 <posx>0</posx>
                 <posy>0</posy>
                 <width>74</width>
@@ -393,7 +396,7 @@
             <posx>385</posx>
             <posy>0</posy>
             <control type="group">
-                <animation effect="zoom" start="100" end="120" time="100" center="37,{{ vscale(30) }}" reversible="true" condition="Control.HasFocus(905)">Conditional</animation>
+                <animation effect="zoom" start="100" end="120" time="100" center="37,{{ vscale(30) }}" reversible="true" condition="Control.HasFocus(915)">Conditional</animation>
                 <posx>0</posx>
                 <posy>0</posy>
                 <width>74</width>
@@ -429,6 +432,7 @@
             <height>{{ vscale(60) }}</height>
             <align>left</align>
             <aligny>center</aligny>
+            <onleft>9000</onleft>
             <onup>900</onup>
             <ondown>1001</ondown>
             <onright condition="!String.IsEmpty(Window.Property(show.history))">2050</onright>
@@ -766,7 +770,7 @@
                     <onup>650</onup>
                     <ondown>1007</ondown>
                     <onright>1002</onright>
-                    <onleft>1006</onleft>
+                    <onleft>9000</onleft>
                     <font>font12</font>
                     <align>center</align>
                     <aligny>center</aligny>
@@ -916,7 +920,7 @@
                     <onup>1001</onup>
                     <ondown>1013</ondown>
                     <onright>1008</onright>
-                    <onleft>1012</onleft>
+                    <onleft>9000</onleft>
                     <font>font12</font>
                     <align>center</align>
                     <aligny>center</aligny>
@@ -1066,7 +1070,7 @@
                     <onup>1007</onup>
                     <ondown>1019</ondown>
                     <onright>1014</onright>
-                    <onleft>1018</onleft>
+                    <onleft>9000</onleft>
                     <font>font12</font>
                     <align>center</align>
                     <aligny>center</aligny>
@@ -1216,7 +1220,7 @@
                     <onup>1013</onup>
                     <ondown>1025</ondown>
                     <onright>1020</onright>
-                    <onleft>1024</onleft>
+                    <onleft>9000</onleft>
                     <font>font12</font>
                     <align>center</align>
                     <aligny>center</aligny>
@@ -1366,7 +1370,7 @@
                     <onup>1019</onup>
                     <ondown>1031</ondown>
                     <onright>1026</onright>
-                    <onleft>1030</onleft>
+                    <onleft>9000</onleft>
                     <font>font12</font>
                     <align>center</align>
                     <aligny>center</aligny>
@@ -1516,7 +1520,7 @@
                     <onup>1025</onup>
                     <ondown>951</ondown>
                     <onright>1032</onright>
-                    <onleft>1036</onleft>
+                    <onleft>9000</onleft>
                     <font>font12</font>
                     <align>center</align>
                     <aligny>center</aligny>
@@ -1690,7 +1694,7 @@
                 <posy>{{ vscale(-40) }}</posy>
                 <width>231</width>
                 <height>{{ vscale(140) }}</height>
-                <onleft>953</onleft>
+                <onleft>9000</onleft>
                 <onright>952</onright>
                 <onup>1031</onup>
                 <font>font12</font>
@@ -1960,4 +1964,6 @@
         </focusedlayout>
     </control>
 </control>
-{% endblock controls %}
+
+</control>
+{% endblock content %}

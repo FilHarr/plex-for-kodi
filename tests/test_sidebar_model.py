@@ -346,6 +346,9 @@ class LibraryHighlightTest(SidebarCase):
         win.entrySectionId = entrySectionId
         win.entryFromWatchlist = entryFromWatchlist
         win.navSettings = None
+        # showing its own view, no chain (sidebarActiveSection() checks for one from Search)
+        win._isHostedShell = False
+        win._backStack = []
         return win
 
     def build(self, win):

@@ -127,7 +127,7 @@ class HistoryTest(KodiTestCase):
         # the server selected when the add-on last ran (section_ids.legacyServer())
         settings = {'search.history.0000aaaa.7': json.dumps(['alien', 'reacher']),
                     'lastServerId.7': 'uuid-0000aaaa'}
-        dlg = search.SearchDialog.__new__(search.SearchDialog)
+        dlg = search.SearchWindow.__new__(search.SearchWindow)
         account = mock.Mock(ID='7')
         manager = mock.Mock(serversByUuid={'uuid-0000aaaa': server('uuid-0000aaaa', 'Animal')})
         with mock.patch.object(search.plexapp, 'ACCOUNT', account), \
@@ -141,7 +141,7 @@ class HistoryTest(KodiTestCase):
 
 
 class ChosenServersTest(KodiTestCase):
-    """The servers button (SearchDialog.chooseServers()): the account's choice, saved, wins over the
+    """The servers button (SearchWindow.chooseServers()): the account's choice, saved, wins over the
     sidebar's servers; at least one stays chosen."""
 
     def setUp(self):
@@ -171,7 +171,7 @@ class ChosenServersTest(KodiTestCase):
         self.assertEqual([self.oscar, self.animal, self.other], search.accountServers())
 
     def test_a_choice_is_saved_and_searched(self):
-        dlg = search.SearchDialog.__new__(search.SearchDialog)
+        dlg = search.SearchWindow.__new__(search.SearchWindow)
         self.assertEqual([self.oscar, self.animal], search.searchedServers())
         result = self.toggle(dlg, 'x')
         self.assertEqual('rebuild', result[0])
@@ -182,7 +182,7 @@ class ChosenServersTest(KodiTestCase):
         self.assertEqual({'o': False, 'a': True, 'x': True}, on)
 
     def test_the_last_chosen_server_stays(self):
-        dlg = search.SearchDialog.__new__(search.SearchDialog)
+        dlg = search.SearchWindow.__new__(search.SearchWindow)
         self.toggle(dlg, 'o')
         self.assertIsNone(self.toggle(dlg, 'a'))
         self.assertEqual([self.animal], search.searchedServers())

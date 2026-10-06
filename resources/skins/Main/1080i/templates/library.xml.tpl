@@ -375,33 +375,6 @@
     </control>
 </control>
 
-<control type="group">
-    <visible>!String.IsEmpty(Window.Property(search.dialog))</visible>
-    <control type="group" >
-        <visible>!String.IsEmpty(Window.Property(search.dialog.hasresults))</visible>
-        <control type="image">
-            <posx>0</posx>
-            <posy>0</posy>
-            <width>1920</width>
-            <height>1080</height>
-            <texture>script.plex/home/background-fallback.png</texture>
-        </control>
-        <control type="image">
-            <posx>0</posx>
-            <posy>0</posy>
-            <width>1920</width>
-            <height>1080</height>
-            <texture background="true">$INFO[Window.Property(background)]</texture>
-        </control>
-    </control>
-    <control type="image">
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>1920</width>
-        <height>1080</height>
-        <texture colordiffuse="99606060">script.plex/white-square.png</texture>
-    </control>
-</control>
 {% endblock %}
 
 {% include "includes/server_unavailable.xml.tpl" %}

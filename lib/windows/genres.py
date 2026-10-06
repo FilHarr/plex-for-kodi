@@ -7,7 +7,6 @@ from lib import util
 from lib.util import T
 from . import kodigui
 from . import opener
-from . import search
 from . import windowutils
 from . import sidebar_model
 
@@ -131,9 +130,6 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
             return
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-    def searchButtonClicked(self):
-        self.processCommand(search.dialog(self))
 
     def sidebarActiveSection(self, entries):
         return sidebar_model.matchSection(entries, self.section.key, server=self.section.server)

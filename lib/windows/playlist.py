@@ -16,7 +16,6 @@ from . import dropdown
 from . import home
 from . import kodigui
 from . import opener
-from . import search
 from . import videoplayer
 from . import windowutils
 
@@ -224,9 +223,6 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.playlistListClicked(resume=False, play=True)
         elif choice['key'] == 'resume':
             self.playlistListClicked(resume=True, play=True)
-
-    def searchButtonClicked(self):
-        self.processCommand(search.dialog(self))
 
     def sidebarActiveSection(self, entries):
         # A playlist isn't tied to one library section (its items can span several): its server's

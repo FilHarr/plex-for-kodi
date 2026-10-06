@@ -12,7 +12,6 @@ from . import kodigui
 from . import opener
 from . import pagination
 from . import preplay
-from . import search
 from . import windowutils
 from .mixins.common import CommonMixin
 from .mixins.tasks import TasksMixin
@@ -366,9 +365,6 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         no-op here rather than NotImplementedError, since reaching this from a real collection
         would indicate unexpected server data, not a programming error."""
         pass
-
-    def searchButtonClicked(self):
-        self.processCommand(search.dialog(self))
 
 
 

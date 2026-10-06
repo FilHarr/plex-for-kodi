@@ -12,7 +12,6 @@ from . import dropdown
 from . import info
 from . import kodigui
 from . import opener
-from . import search
 from . import sidebar_model
 from . import windowutils
 
@@ -260,9 +259,6 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             self.album = self.albums[pos]
 
         return True
-
-    def searchButtonClicked(self):
-        self.processCommand(search.dialog(self))
 
     def shuffleButtonClicked(self):
         self.playButtonClicked(shuffle=True)

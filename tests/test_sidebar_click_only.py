@@ -188,3 +188,77 @@ class ActiveMarkerTest(KodiTestCase):
         with mock.patch.object(section_ids, 'sectionId', lambda section: section):
             library.LibraryWindow.updateActiveSectionMarker(win, 'tv')
         self.assertEqual(['', '', '', '1'], [i.getProperty('is.active') for i in items])
+
+
+class SearchEntryTest(KodiTestCase):
+    """The sidebar's Search entry is a destination (the user, 2026-10-06): clicked, it opens as a
+    section does, through the host (windowutils.SEARCH_ENTRY), and it's the active entry while
+    Search is open."""
+
+    class Window(windowutils.SidebarMixin):
+        """searchButtonClicked() not stubbed, unlike FakeSidebarWindow's."""
+        def __init__(self, items, selected=0):
+            self.sectionList = FakeSectionList(items, selected)
+            self.deferCalls = []
+            self.goHomeCalls = []
+
+        def _deferOpenSection(self, section, force=False):
+            self.deferCalls.append((section, force))
+
+        def goHome(self, section=None, with_root=False, force=False):
+            self.goHomeCalls.append((section, force))
+
+    def setUp(self):
+        self._home = windowutils.HOME
+
+    def tearDown(self):
+        windowutils.HOME = self._home
+
+    def test_on_home_it_opens_in_place_as_a_section_does(self):
+        win = self.Window(_sidebar(), selected=0)
+        windowutils.HOME = win
+        win.sectionClicked()
+        self.assertEqual([(windowutils.SEARCH_ENTRY, True)], win.deferCalls)
+
+    def test_from_any_other_screen_it_goes_to_home_as_a_section_does(self):
+        win = self.Window(_sidebar(), selected=0)
+        windowutils.HOME = object()
+        win.sectionClicked()
+        self.assertEqual([(windowutils.SEARCH_ENTRY, True)], win.goHomeCalls)
+        self.assertEqual([], win.deferCalls)
+
+    def test_the_marker_moves_to_search_and_off_it_again(self):
+        from lib.windows import library, section_ids
+        items = _sidebar()
+        win = mock.Mock(sectionList=FakeSectionList(items, selected=2))
+        library.LibraryWindow.updateActiveSectionMarker(win, windowutils.SEARCH_ENTRY)
+        self.assertEqual(['1', '', '', ''], [i.getProperty('is.active') for i in items])
+        with mock.patch.object(section_ids, 'sectionId', lambda section: section):
+            library.LibraryWindow.updateActiveSectionMarker(win, 'home')
+        self.assertEqual(['', '1', '', ''], [i.getProperty('is.active') for i in items])
+
+    def test_a_build_with_search_active_marks_and_selects_it(self):
+        class Built(object):
+            items = None
+            selected = None
+
+            def reset(self):
+                pass
+
+            def addItems(self, items):
+                self.items = items
+
+            def selectItem(self, pos):
+                self.selected = pos
+
+        win = self.Window([])
+        win.sectionList = Built()
+        win.sidebarNavSettings = lambda: {}
+        win.sidebarActiveSection = lambda entries: windowutils.SEARCH_ENTRY
+        movies = mock.Mock(title='Movies', type='movie')
+        with mock.patch.object(windowutils.sidebar_model, 'sections', lambda nav, onChange=None: [movies]), \
+                mock.patch.object(windowutils.sidebar_model, 'serverName', lambda section: ''), \
+                mock.patch.object(windowutils.sidebar_model, 'isOffline', lambda section: False):
+            win.buildSectionList()
+        self.assertEqual(['1', '', ''], [i.getProperty('is.active') for i in win.sectionList.items])
+        self.assertEqual(0, win.sectionList.selected)

@@ -25,7 +25,6 @@ from . import optionsdialog
 from . import pagination
 from . import playbacksettings
 from . import playersettings
-from . import search
 from . import videoplayer
 from . import windowutils
 from .mixins.seasons import SeasonsMixin
@@ -1725,9 +1724,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # mixins/seasons.py) - no dataSource, so onClick()'s SEASONS_LIST_ID handler recognizes it and
         # opens the show/season page instead of trying to switch to it as a season.
         return kodigui.ManagedListItem(T(35058, 'Show'))
-
-    def searchButtonClicked(self):
-        self.processCommand(search.dialog(self))
 
     def playButtonClicked(self, force_episode=None, from_auto_play=False, start_over=False,
                           force_resume=False):

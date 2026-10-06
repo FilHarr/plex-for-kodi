@@ -27,6 +27,8 @@ first - same guard the other lib.windows.* tests use for the same reason.
 
 from __future__ import absolute_import
 
+from unittest import mock
+
 from kodi_six import xbmcgui
 from kodienv import ENV
 
@@ -277,7 +279,7 @@ class IsRealShellTest(KodiTestCase):
         confirmed via grep against the live classes when this was written - if any of these ever
         grow a MULTI_WINDOW_ID, the bifurcation below silently starts treating it as a thin proxy
         instead of a real shell."""
-        from lib.windows import preplay, episodes, subitems, person, tracks, collection, playlist, genres
+        from lib.windows import preplay, episodes, subitems, person, tracks, collection, playlist, genres, search
 
         realShellClasses = [
             preplay.PrePlayWindow, preplay.PrePlayWindowWL,
@@ -288,6 +290,7 @@ class IsRealShellTest(KodiTestCase):
             collection.CollectionWindow, collection.SubDirWindow,
             playlist.PlaylistWindow,
             genres.GenreBrowserWindow,
+            search.SearchWindow,
         ]
         for cls in realShellClasses:
             self.assertTrue(_isRealShell(cls), "{0} unexpectedly carries MULTI_WINDOW_ID".format(cls))
@@ -2260,37 +2263,164 @@ class ChunkCallbackStopsMidChunkTest(KodiTestCase):
         self.assertFalse(second.written, 'written after the list was retired')
 
 
-class BackToSearchTest(KodiTestCase):
-    """Back from a result opened from a search comes back to the search (the user, 2026-10-05): the
-    screen the search was over carries it on the back stack, and its restore reopens it."""
+class SearchDestinationTest(KodiTestCase):
+    """Search is a sidebar destination (the user, 2026-10-06): opened, it replaces whatever is
+    showing, chain and all, and Back from it goes to Home's root - its back stack is Home's root
+    entry alone (LibraryWindow._openSearch()). Back from a result rebuilds it from the back stack
+    (_captureHostedShellRestoreState()); the dialog's way back (searchReturn(), _reopenSearch(),
+    _searchReturn on an entry) is gone."""
 
-    def host(self):
-        host = FakeHostWindow()
-        host._current = FakeThinProxy(FakeThinProxy.xmlFile, FakeThinProxy.path, FakeThinProxy.theme, FakeThinProxy.res)
-        host.posted = []
-        host.postUI = lambda name, fn, args=(), kwargs=None: host.posted.append((name, fn, args))
-        host._reopenSearch = lambda state, tries=0: None
+    class Host(FakeHostWindow):
+        _openSearch = library.LibraryWindow._openSearch
+        _searchChainShowing = library.LibraryWindow._searchChainShowing
+        sidebarActiveSection = library.LibraryWindow.sidebarActiveSection
+
+        def __init__(self):
+            FakeHostWindow.__init__(self)
+            self.tasks = FakeTasks()
+            self._hubReselectPositions = {'row': ('1', 3)}
+            self.subDir = 'a-folder'
+            self.builds = 0
+
+        def _settleHubSlide(self):
+            pass
+
+        def sidebarNavSettings(self):
+            return {'entries': []}
+
+        def buildSectionList(self):
+            self.builds += 1
+
+    HOME_ROOT = [(None, {'section': library.home.home_section, 'filter_': None})]
+
+    def setUp(self):
+        super(SearchDestinationTest, self).setUp()
+        patch = mock.patch.object(library.sidebar_model, 'followSection', lambda section, nav: False)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def open(self, host):
+        self.assertTrue(host._openSearch())
         return host
 
-    def test_the_screen_pushed_after_a_search_carries_it(self):
-        host = self.host()
-        library.LibraryWindow.searchReturn(host, {'query': 'alien', 'focus': (0, 3)})
-        library.LibraryWindow.swapTo(host, FakeShell)
-        self.assertEqual({'query': 'alien', 'focus': (0, 3)}, host._backStack[-1][1]['_searchReturn'])
-        self.assertIsNone(host._pendingSearchReturn)
+    def test_from_home_the_back_stack_is_homes_root_alone(self):
+        host = self.Host()
+        host.section = library.home.home_section
+        host._current = FakeThinProxy(FakeThinProxy.xmlFile, FakeThinProxy.path, FakeThinProxy.theme, FakeThinProxy.res)
+        self.open(host)
+        self.assertEqual(self.HOME_ROOT, host._backStack)
+        self.assertIs(library.search.SearchWindow, host._next)
+        self.assertEqual({}, host._nextKwargs)
+        self.assertTrue(host._current.closed)
 
-    def test_back_to_it_reopens_the_search(self):
-        host = self.host()
-        host._backStack = [(FakeShell, {'_searchReturn': {'query': 'alien', 'focus': (0, 3)}})]
-        host.swapTo = lambda cls, push=True, **kwargs: host.swapped.append((cls, push, kwargs))
-        host.swapped = []
-        library.LibraryWindow.popBack(host)
-        self.assertEqual([(FakeShell, False, {})], host.swapped)
-        self.assertEqual(['back to search'], [p[0] for p in host.posted])
-        self.assertEqual(({'query': 'alien', 'focus': (0, 3)},), host.posted[0][2])
+    def test_from_a_section_the_host_stands_at_home(self):
+        host = self.Host()
+        host._current = FakeThinProxy(FakeThinProxy.xmlFile, FakeThinProxy.path, FakeThinProxy.theme, FakeThinProxy.res)
+        self.open(host)
+        self.assertEqual(self.HOME_ROOT, host._backStack)
+        self.assertIs(library.home.home_section, host.section)
+        self.assertIsNone(host.filter)
+        self.assertIsNone(host.subDir)
+        self.assertEqual({}, host._hubReselectPositions)
+        self.assertTrue(host.tasks.killed)
 
-    def test_only_the_next_swap_takes_it(self):
-        host = self.host()
-        library.LibraryWindow.searchReturn(host, {'query': 'alien', 'focus': (0, 0)})
-        library.LibraryWindow.swapTo(host, FakeShell, push=False)
-        self.assertIsNone(host._pendingSearchReturn)
+    def test_mid_chain_the_chain_goes(self):
+        host = self.Host()
+        host._isHostedShell = True
+        host._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
+        host._backStack = [(None, {'section': 'movies', 'filter_': None}), (OtherFakeShell, {'video': 'x'})]
+        self.open(host)
+        self.assertEqual(self.HOME_ROOT, host._backStack)
+        self.assertIs(library.search.SearchWindow, host._next)
+
+    def test_the_search_entry_is_marked(self):
+        host = self.Host()
+        host._current = FakeThinProxy(FakeThinProxy.xmlFile, FakeThinProxy.path, FakeThinProxy.theme, FakeThinProxy.res)
+        self.open(host)
+        self.assertIs(library.windowutils.SEARCH_ENTRY, host.activeMarker)
+
+    def test_the_temporary_entry_is_let_go(self):
+        followed = []
+
+        def followSection(section, nav):
+            followed.append(section)
+            return True
+
+        host = self.Host()
+        host._current = FakeThinProxy(FakeThinProxy.xmlFile, FakeThinProxy.path, FakeThinProxy.theme, FakeThinProxy.res)
+        with mock.patch.object(library.sidebar_model, 'followSection', followSection):
+            self.open(host)
+        self.assertEqual([library.home.home_section], followed)
+        self.assertEqual(1, host.builds)
+
+    def test_no_temporary_entry_no_rebuild(self):
+        host = self.Host()
+        host._current = FakeThinProxy(FakeThinProxy.xmlFile, FakeThinProxy.path, FakeThinProxy.theme, FakeThinProxy.res)
+        self.open(host)
+        self.assertEqual(0, host.builds)
+
+    def test_open_section_hands_search_to_open_search(self):
+        host = mock.Mock(is_current_window=True)
+        host._openSearch.return_value = True
+        self.assertTrue(library.LibraryWindow.openSection(host, library.windowutils.SEARCH_ENTRY, force=True))
+        host._openSearch.assert_called_once_with()
+
+    def test_open_section_declines_search_with_a_window_on_top(self):
+        host = mock.Mock(is_current_window=False)
+        self.assertFalse(library.LibraryWindow.openSection(host, library.windowutils.SEARCH_ENTRY, force=True))
+        host._openSearch.assert_not_called()
+
+    def test_the_search_entry_is_active_through_a_chain_from_search(self):
+        host = self.Host()
+        host.section = library.home.home_section
+        host._isHostedShell = True
+        host._current = library.search.SearchWindow.__new__(library.search.SearchWindow)
+        host._backStack = list(self.HOME_ROOT)
+        self.assertIs(library.windowutils.SEARCH_ENTRY, host.sidebarActiveSection([library.home.home_section]))
+        # a result opened from it
+        host._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
+        host._backStack.append((library.search.SearchWindow, {'query': 'alien'}))
+        self.assertIs(library.windowutils.SEARCH_ENTRY, host.sidebarActiveSection([library.home.home_section]))
+
+    def test_not_from_search_home_is_active(self):
+        host = self.Host()
+        host.section = library.home.home_section
+        host._isHostedShell = True
+        host._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
+        host._backStack = list(self.HOME_ROOT)
+        self.assertIs(library.home.home_section, host.sidebarActiveSection([library.home.home_section]))
+        # back at Home's own view
+        host._isHostedShell = False
+        host._backStack = []
+        self.assertIs(library.home.home_section, host.sidebarActiveSection([library.home.home_section]))
+
+    def test_a_result_pushes_search_with_its_query_type_and_focus(self):
+        host = self.Host()
+        host._isHostedShell = True
+        host._backStack = list(self.HOME_ROOT)
+        searchWindow = library.search.SearchWindow.__new__(library.search.SearchWindow)
+        searchWindow.restoreState = lambda: {'query': 'alien', 'searchSection': 'movie', 'focus': (1, 3)}
+        searchWindow.doClose = lambda **kw: None
+        host._current = searchWindow
+        host._currentKwargs = {}
+        host._captureHostedShellRestoreState = lambda: _captureHostedShellRestoreState(host)
+        swapTo(host, FakeShell, video='the-movie')
+        self.assertEqual(self.HOME_ROOT + [(library.search.SearchWindow,
+                                            {'query': 'alien', 'searchSection': 'movie', 'focus': (1, 3)})],
+                         host._backStack)
+
+    def test_back_to_it_rebuilds_it_from_the_entry(self):
+        host = self.Host()
+        host._isHostedShell = True
+        host._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
+        host._backStack = self.HOME_ROOT + [(library.search.SearchWindow, {'query': 'alien', 'focus': (1, 3)})]
+        popBack(host)
+        self.assertIs(library.search.SearchWindow, host._next)
+        self.assertEqual({'query': 'alien', 'focus': (1, 3)}, host._nextKwargs)
+        self.assertEqual(self.HOME_ROOT, host._backStack)
+
+    def test_the_dialogs_way_back_is_gone(self):
+        for name in ('searchReturn', '_reopenSearch', 'searchButtonClicked'):
+            self.assertNotIn(name, vars(library.LibraryWindow), name)
+        self.assertFalse(hasattr(library.search, 'dialog'))
+        self.assertFalse(hasattr(library.search, 'SearchDialog'))

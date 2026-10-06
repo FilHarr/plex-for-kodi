@@ -1,19 +1,13 @@
 # coding=utf-8
 """
-lib/windows/search.py's SearchDialog.hubItemClicked() - hashed-orbiting-pizza.md Phase 5
-follow-up. Every search.dialog() caller (library.py, preplay.py, episodes.py, subitems.py,
-person.py, tracks.py, collection.py, genres.py, playlist.py, playlists.py, videoplayer.py) passes
-itself as parent_window, captured on the dialog as self.parentWindow - previously unused for
-opening a clicked result, so every one of the seven hosted shell types opened from a search
-result opened as a second real nested window instead of swapping into a live chain, and anything
-drilled into further from there kept nesting too (a standalone shell's own _chainHost is always
-None). hubItemClicked() now passes context=self.parentWindow through to opener.open() - inert
-(same as before) when parentWindow isn't a live chain host, chain-aware when it is.
+lib/windows/search.py's SearchWindow, a hosted screen since Search became a sidebar destination
+(the user, 2026-10-06): a result opens as from any hosted screen (opener.open(context=self)), what
+Back to it needs is its restoreState(), and the results thread's answers reach the screen through
+the host's UI queue, only while it's still the screen showing.
 
-Constructing a real SearchDialog here would pull in the native WindowXMLDialog machinery
-(pointless for a pure-Python test) - the real, bound hubItemClicked() is called directly against
-a lightweight FakeSearchDialog double instead, same style test_library_chain.py/
-test_opener_context.py use for their own real-shell/opener call-routing tests.
+Constructing a real SearchWindow here would pull in the native WindowXML machinery (pointless for
+a pure-Python test) - the real methods are called on an instance made with __new__, its few
+attributes set by hand, the style test_library_chain.py uses.
 
 Importing lib.windows.search starts lib.player's monitor thread unless abort_requested is set
 first - same guard the other lib.windows.* tests use for the same reason.
@@ -21,10 +15,12 @@ first - same guard the other lib.windows.* tests use for the same reason.
 
 from __future__ import absolute_import
 
+import weakref
+
 from kodienv import ENV
 
 ENV.abort_requested = True
-from lib.windows import search  # noqa: E402
+from lib.windows import kodigui, search  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
@@ -39,13 +35,17 @@ class FakeHubItem(object):
 
 
 class FakeManagedControlList(object):
-    def __init__(self, control_id, selected_item=None):
+    def __init__(self, control_id, selected_item=None, selected_pos=0):
         self.controlID = control_id
         self._selected = selected_item
+        self._selectedPos = selected_pos
         self.removedItems = []
 
     def getSelectedItem(self):
         return self._selected
+
+    def getSelectedPos(self):
+        return self._selectedPos
 
     def removeManagedItem(self, mli):
         self.removedItems.append(mli)
@@ -57,123 +57,170 @@ class FakeManagedListItem(object):
 
 
 class FakeEdit(object):
+    def __init__(self, text=''):
+        self.text = text
+
     def getText(self):
-        return ''
+        return self.text
 
 
-class FakeParentWindow(object):
-    """Stands in for whichever UtilMixin window was current when Search opened - the exact
-    object search.dialog()'s own callers pass as parent_window."""
-    pass
+def searchWindow(control=None, text='alien'):
+    """A SearchWindow with only what the methods under test touch."""
+    win = search.SearchWindow.__new__(search.SearchWindow)
+    win.hubControls = [control or FakeManagedControlList(2100)]
+    win.edit = FakeEdit(text)
+    win.exitCommand = None
+    win._closing = False
+    win.processedCommands = []
+    win.historyAdded = []
+    win.addToHistory = win.historyAdded.append
+    win.processCommand = win.processedCommands.append
+    return win
 
 
-class FakeSearchDialog(object):
-    """Carries only the attributes the real, bound hubItemClicked() (imported directly off
-    search.SearchDialog below) actually touches - not a real SearchDialog instance."""
-
-    hubItemClicked = search.SearchDialog.hubItemClicked
-    OPENED_HERE = search.SearchDialog.OPENED_HERE
-
-    def __init__(self, control, mli):
-        self.hubControls = [control]
-        self.edit = FakeEdit()
-        self.parentWindow = FakeParentWindow()
-        self.exitCommand = None
-        self.isActive = True
-        self.closed = False
-        self.shown = False
-        self.processedCommands = []
-        self.historyAdded = []
-
-    def addToHistory(self, title):
-        self.historyAdded.append(title)
-
-    def doClose(self):
-        self.closed = True
-
-    def show(self):
-        self.shown = True
-
-    def processCommand(self, command):
-        self.processedCommands.append(command)
-
-
-class HubItemClickedContextTest(KodiTestCase):
+class HubItemClickedTest(KodiTestCase):
     def _click(self, hubItem):
         mli = FakeManagedListItem(hubItem)
         control = FakeManagedControlList(2100, selected_item=mli)
-        dialog = FakeSearchDialog(control, mli)
+        win = searchWindow(control)
 
         calls = []
         originalOpen = search.opener.open
 
         def fakeOpen(obj, context=None, **kwargs):
             calls.append((obj, context))
-            return ''
+            return 'the-command'
 
         search.opener.open = fakeOpen
         try:
-            dialog.hubItemClicked(2100)
+            win.hubItemClicked(2100)
         finally:
             search.opener.open = originalOpen
 
-        return dialog, calls
+        return win, control, mli, calls
 
-    def test_passes_the_parent_window_as_context(self):
-        hubItem = FakeHubItem('movie')
-
-        dialog, calls = self._click(hubItem)
-
-        self.assertEqual(1, len(calls))
-        obj, context = calls[0]
-        self.assertIs(hubItem, obj)
-        self.assertIs(dialog.parentWindow, context)
-
-    def test_closes_itself_before_opening_the_item(self):
-        """context is only meaningful if the dialog has already released the screen back to its
-        parent by the time opener.open() runs - regression guard for that ordering."""
-        hubItem = FakeHubItem('show')
-        wasClosedDuringOpen = []
-
-        mli = FakeManagedListItem(hubItem)
-        control = FakeManagedControlList(2100, selected_item=mli)
-        dialog = FakeSearchDialog(control, mli)
-
-        def fakeOpen(obj, context=None, **kwargs):
-            wasClosedDuringOpen.append(dialog.closed)
-            return ''
-
-        originalOpen = search.opener.open
-        search.opener.open = fakeOpen
-        try:
-            dialog.hubItemClicked(2100)
-        finally:
-            search.opener.open = originalOpen
-
-        self.assertEqual([True], wasClosedDuringOpen)
-
-    def test_a_genre_director_or_role_result_also_gets_the_context(self):
-        """These three TYPEs are the ones opener.open()'s dispatch already threads context into
-        alongside the seven main shell types (hashed-orbiting-pizza.md Phase 4 items 4/8) -
-        confirming search doesn't special-case them out."""
-        for type_ in ('Genre', 'Director', 'Role'):
+    def test_opens_the_result_with_itself_as_the_context(self):
+        for type_ in ('movie', 'show', 'episode', 'Genre', 'Director', 'Role', 'photo', 'track', 'clip'):
             hubItem = FakeHubItem(type_)
-            dialog, calls = self._click(hubItem)
-            self.assertEqual(dialog.parentWindow, calls[0][1], "TYPE={0}".format(type_))
+            win, _, _, calls = self._click(hubItem)
+            self.assertEqual([(hubItem, win)], calls, type_)
+            self.assertEqual(['the-command'], win.processedCommands, type_)
+
+    def test_the_query_goes_into_the_history_first(self):
+        win, _, _, _ = self._click(FakeHubItem('movie'))
+        self.assertEqual(['alien'], win.historyAdded)
+
+    def test_it_stays_open(self):
+        """The host swaps the result's screen in (opener -> openWindow() -> swapTo()); a photo,
+        track or clip opens over it. Either way it doesn't close itself."""
+        win, _, _, _ = self._click(FakeHubItem('movie'))
+        self.assertFalse(win._closing)
+
+    def test_a_result_gone_meanwhile_leaves_the_row(self):
+        win, control, mli, _ = self._click(FakeHubItem('movie', exists=False))
+        self.assertEqual([mli], control.removedItems)
 
 
-class StaysClosedTest(HubItemClickedContextTest):
-    """Live 2026-10-05: no search result opened. Since item opens go through the window's queue
-    (43f176ae), the window behind only opens the item once this dialog has finished - it must not
-    show itself again."""
+class RestoreStateTest(KodiTestCase):
+    def window(self, focus, selected_pos=0):
+        rows = [FakeManagedControlList(2100 + i, selected_pos=selected_pos) for i in range(search.SearchWindow.SEARCH_HUB_COUNT)]
+        win = searchWindow(text='alien')
+        win.hubControls = rows
+        win.getFocusId = lambda: focus
+        win.getProperty = lambda key: {'search.section': 'movie'}.get(key, '')
+        return win
 
-    def test_an_item_opened_through_the_queue_leaves_the_dialog_finished(self):
-        for type_ in ('movie', 'show', 'episode', 'Role', 'playlist'):
-            dialog, _ = self._click(FakeHubItem(type_))
-            self.assertFalse(dialog.isActive, type_)
-            self.assertEqual(0, dialog.shown, type_)
+    def test_on_a_result_it_keeps_the_query_type_and_result(self):
+        self.assertEqual({'query': 'alien', 'searchSection': 'movie', 'focus': (2, 4)},
+                         self.window(2102, selected_pos=4).restoreState())
 
-    def test_a_photo_track_or_clip_opened_here_comes_back_to_the_results(self):
-        for type_ in ('photo', 'track', 'clip'):
-            dialog, _ = self._click(FakeHubItem(type_))
-            self.assertEqual(1, dialog.shown, type_)
+    def test_away_from_the_results_no_focus(self):
+        for focus in (search.SearchWindow.BUTTON_A_ID, search.SearchWindow.HISTORY_LIST_ID, 911):
+            self.assertIsNone(self.window(focus).restoreState()['focus'], focus)
+
+    def test_its_keys_are_the_constructors(self):
+        """popBack() rebuilds it with the entry as its kwargs (LibraryWindow.swapTo())."""
+        state = self.window(2100).restoreState()
+        self.assertEqual({'query', 'searchSection', 'focus'}, set(state))
+
+
+class FakeHost(object):
+    """The host's real UI queue (kodigui.MultiWindow.postUI()/_runPendingUI())."""
+    postUI = kodigui.MultiWindow.postUI
+    _runPendingUI = kodigui.MultiWindow._runPendingUI
+    NAV_INIT_HOLD_MAX_SECONDS = kodigui.MultiWindow.NAV_INIT_HOLD_MAX_SECONDS
+
+    def __init__(self):
+        import threading
+        self._navLock = threading.Lock()
+        self._uiPending = []
+        self._current = None
+
+    def runUI(self):
+        view = type('Ready', (), {'finishedInit': True})()
+        self._runPendingUI(view, 0)
+
+
+class PostedResultsTest(KodiTestCase):
+    """The results thread doesn't write the screen: it posts to the host, and what it posted only
+    runs while this screen is still the one showing (_post())."""
+
+    def hosted(self):
+        host = FakeHost()
+        win = searchWindow()
+        win._hostRef = weakref.ref(host)
+        host._current = win
+        win.shown = []
+        return host, win
+
+    def test_runs_on_the_hosts_queue(self):
+        host, win = self.hosted()
+        win._post('search results', win.shown.append, ('rows',))
+        self.assertEqual([], win.shown)
+        host.runUI()
+        self.assertEqual(['rows'], win.shown)
+
+    def test_dropped_once_swapped_out(self):
+        host, win = self.hosted()
+        win._post('search results', win.shown.append, ('rows',))
+        host._current = object()
+        host.runUI()
+        self.assertEqual([], win.shown)
+
+    def test_not_posted_once_swapped_out(self):
+        host, win = self.hosted()
+        host._current = object()
+        win._post('search results', win.shown.append, ('rows',))
+        self.assertEqual([], host._uiPending)
+
+    def test_dropped_once_closed(self):
+        host, win = self.hosted()
+        win._post('search results', win.shown.append, ('rows',))
+        win._closing = True
+        host.runUI()
+        self.assertEqual([], win.shown)
+
+
+class ResultsThreadTest(KodiTestCase):
+    """A key pressed while a search is under way is searched for once it's done (it used to wait
+    for the next key)."""
+
+    def test_a_query_changed_during_a_search_is_searched_next(self):
+        win = searchWindow()
+        win._hostRef = None
+        import threading
+        win._resultsLock = threading.Lock()
+        win.resultsThread = 'running'
+        win.updateResultsTimeout = 0
+        win._query = 'ali'
+        searched = []
+
+        def fakeSearch(query):
+            searched.append(query)
+            if query == 'ali':
+                # typed meanwhile (updateResults() on the main thread)
+                win._query = 'alien'
+        win._search = fakeSearch
+        win._updateResults()
+        self.assertEqual(['ali', 'alien'], searched)
+        self.assertIsNone(win.resultsThread)

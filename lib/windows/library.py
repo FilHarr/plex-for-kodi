@@ -330,16 +330,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.subDir = kwargs.get('subDir')
 
         # Descendant-chain hosting (hashed-orbiting-pizza.md Phase 1) - lets this same
-        # LibraryWindow instance swapTo() any of the seven real descendant shell types
-        # (PrePlayWindow, EpisodesWindow, ...) in place, instead of opening each as a real
-        # nested window. _backStack holds two entry shapes: (ShellClass, kwargs) to reconstruct
+        # LibraryWindow instance swapTo() any of the real descendant shell types (PrePlayWindow,
+        # EpisodesWindow, SearchWindow, ...) in place, instead of opening each as a real nested
+        # window. _backStack holds two entry shapes: (ShellClass, kwargs) to reconstruct
         # a shell, or (None, {'section':..., 'filter_':...}) to restore this window's own grid -
         # the latter is pushed once, automatically, the moment a chain starts (see swapTo()),
         # so the *last* pop of any chain reveals the grid again instead of running off the end.
         self._backStack = []
-        # A search's result about to be opened (searchReturn()): the next screen pushed back to
-        # carries it, so Back to that screen opens the search again
-        self._pendingSearchReturn = None
         self._nextKwargs = {}
         self._currentKwargs = {}
         self._isHostedShell = False
@@ -628,10 +625,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
     @staticmethod
     def _isRealShell(cls):
-        """True for the seven real descendant shell types (PrePlayWindow, EpisodesWindow, ...) -
+        """True for the real descendant shell types (PrePlayWindow, EpisodesWindow, ...) -
         full, independent windows with their own onClick/onFocus/onFirstInit/onAction. False for
         LibraryWindow's own thin view-type children (PostersWindow etc.), which carry
-        MULTI_WINDOW_ID and no real handlers of their own - confirmed via grep, none of the seven
+        MULTI_WINDOW_ID and no real handlers of their own - confirmed via grep, none of the real
         shells define this attribute. See _setupCurrent()'s bifurcation below."""
         return not hasattr(cls, 'MULTI_WINDOW_ID')
 
@@ -818,10 +815,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         never restored at all for collection.py's CollectionWindow/SubDirWindow, the two hosted
         shells with their own grid concept.
 
-        Deliberately scoped to collection.BoundedGridWindow only - the seven real shells are
-        otherwise too structurally different from each other (PrePlayWindow/EpisodesWindow/
-        ShowWindow/ArtistWindow/GenreBrowserWindow each have their own, unrelated internal
-        state/control shape) to share one generic restore mechanism; out of scope here.
+        Deliberately scoped to collection.BoundedGridWindow (and search.SearchWindow, whose own
+        restoreState() gives its query and focus) - the real shells are otherwise too
+        structurally different from each other (PrePlayWindow/EpisodesWindow/ShowWindow/
+        ArtistWindow/GenreBrowserWindow each have their own, unrelated internal state/control
+        shape) to share one generic restore mechanism; out of scope here.
 
         Captures the item's *absolute* position in the full list, not its raw control-relative
         index - BoundedGridPaginator's sliding-window model (pagination.py) only ever materializes
@@ -835,6 +833,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         back to the shell's own existing item-0 default only if neither applies (e.g. the position
         no longer exists at all)."""
         current = self._current
+        if isinstance(current, search.SearchWindow):
+            # the query, the type button and the result focused, which the rebuilt Search reruns
+            # and focuses again
+            return current.restoreState()
         if (isinstance(current, collection.BoundedGridWindow) and current.paginator is not None
                 and current.gridControl):
             mli = current.gridControl.getSelectedItem()
@@ -847,7 +849,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         return {}
 
     def swapTo(self, cls, push=True, chain_root=None, **kwargs):
-        """Swap this already-open, already-hosting LibraryWindow to one of the seven real
+        """Swap this already-open, already-hosting LibraryWindow to one of the real
         descendant shell types in place - same construct-fresh-via-_open()'s-loop pattern
         openSection()/switchTab() already use, just targeting a real shell class instead of one
         of LibraryWindow's own thin view-type proxies. See _backStack's own comment (__init__)
@@ -885,10 +887,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 entryKwargs = {'section': self.section, 'filter_': self.filter}
                 entryKwargs.update(self._captureRootRestoreState())
                 self._backStack.append((None, entryKwargs))
-            if self.__dict__.get('_pendingSearchReturn'):
-                # opened from a search over the screen just pushed: Back to it opens that again
-                entryKwargs['_searchReturn'] = self._pendingSearchReturn
-        self._pendingSearchReturn = None
         self._next = cls
         self._nextKwargs = kwargs
         self._current.doClose()
@@ -946,11 +944,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         decline for it not being Kodi's current window."""
         entry = self._backStack.pop()
         cls, kwargs = entry
-        kwargs = dict(kwargs)
-        searchReturn = kwargs.pop('_searchReturn', None)
-        if searchReturn:
-            # the screen comes back with the search its result was opened from over it
-            self.postUI('back to search', self._reopenSearch, args=(searchReturn,))
         if cls is None:
             # _restoreItemPos/_restoreHubId (_captureRootRestoreState()) aren't real
             # openSection() kwargs - peel them off into the pending-restore attributes fillShows()/
@@ -976,25 +969,43 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         else:
             self.swapTo(cls, push=False, **kwargs)
 
-    def searchReturn(self, state):
-        """The search dialog is about to have one of its results opened (search.SearchDialog.
-        hubItemClicked()): the screen it's over goes on the back stack next (swapTo()), and Back to
-        it opens the search again - the same query, focused on that result (the user, 2026-10-05).
-        state: {'query', 'focus': (row, item)}."""
-        self._pendingSearchReturn = state
+    def _openSearch(self):
+        """openSection() for the sidebar's Search entry (windowutils.SEARCH_ENTRY): Search
+        (search.SearchWindow) opened fresh - an empty query, with the history - in place of
+        whatever is showing, chain and all. It's a sidebar destination like a section (the user,
+        2026-10-06): Back from it goes to Home's root, so the back stack is Home's root entry
+        alone, and the host stands as for a screen opened from Home's root - self.section is Home.
+        The rest of the host's section state (settings, tab, view type) is left as it was: Back
+        reopens Home (popBack() -> openSection()), which sets it all. Remembered hub positions go,
+        as for a section opened fresh, and so does the sidebar's temporary entry."""
+        util.DEBUG_LOG("Library: opening Search, current={0} isHostedShell={1} backStack_len={2}",
+                       self._current, self._isHostedShell, len(self._backStack))
+        self.tasks.kill()
+        self._settleHubSlide()
+        self._hubReselectPositions = {}
+        # before the section changes under a grid chunk still being written, as openSection()
+        self._retireListItems()
+        self.section = home.home_section
+        self.filter = None
+        self.subDir = None
+        if sidebar_model.followSection(self.section, self.sidebarNavSettings()):
+            # the temporary entry goes: rebuilt now, while the sidebar is still bound to the
+            # screen showing (the next one rebinds the list as it is)
+            self.buildSectionList()
+        self.updateActiveSectionMarker(windowutils.SEARCH_ENTRY)
+        self._backStack = [(None, {'section': home.home_section, 'filter_': None})]
+        self.swapTo(search.SearchWindow, push=False)
+        return True
 
-    def _reopenSearch(self, state, tries=0):
-        """Back to a screen a search's result was opened from: the search again, over it, once the
-        screen is up."""
-        target = self._sidebarTarget()
-        if self.closing or self._shuttingDown:
-            return
-        if not getattr(target, 'started', True) and tries < 50:
-            util.MONITOR.waitForAbort(0.02)
-            self.postUI('back to search', self._reopenSearch, args=(state, tries + 1))
-            return
-        util.DEBUG_LOG('Library: back to the search for {0!r}', state.get('query'))
-        target.processCommand(search.dialog(target, query=state.get('query'), focus=state.get('focus')))
+    def _searchChainShowing(self):
+        """Whether what's showing was reached from Search: Search itself over Home's root
+        (_openSearch()), or a screen opened from its results, further along that chain. The
+        sidebar's Search entry is the active one then (sidebarActiveSection())."""
+        if not self._isHostedShell or not self._backStack:
+            return False
+        if len(self._backStack) == 1:
+            return isinstance(self.__dict__.get('_current'), search.SearchWindow)
+        return self._backStack[1][0] is search.SearchWindow
 
     def swapToSection(self, section, filter_=None):
         """hashed-orbiting-pizza.md Phase 4 item 8: genre/director/actor-tag filtered browsing
@@ -1194,6 +1205,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             util.DEBUG_LOG("Library: openSection() declined - {0} not current window (descendant open, or closing)", self)
             return False
 
+        if section is windowutils.SEARCH_ENTRY:
+            # the sidebar's Search entry, reached as a section is (SidebarMixin.searchButtonClicked())
+            return self._openSearch()
+
         if isinstance(section, sidebar_model.LibraryPlaceholder):
             section = self._liveSidebarSection(section)
             if section is None:
@@ -1313,15 +1328,20 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         the native control, which between views - a screen that couldn't load going back to the
         section, popBack(view_gone=True) - belongs to the view just closed, and its guard raised
         ScreenClosed out of the window, shutting the add-on down (live 2026-10-05: an episode of a
-        server that had just gone offline)."""
+        server that had just gone offline). windowutils.SEARCH_ENTRY marks the Search entry."""
         if not self.sectionList:
             return
 
-        activeId = section_ids.sectionId(active_section)
+        searching = active_section is windowutils.SEARCH_ENTRY
+        activeId = None if searching else section_ids.sectionId(active_section)
         for mli in self.sectionList.items:
             if not mli:
                 continue
-            if mli.dataSource is not None and section_ids.sectionId(mli.dataSource) == activeId:
+            if searching:
+                active = bool(mli.getProperty('is.search'))
+            else:
+                active = mli.dataSource is not None and section_ids.sectionId(mli.dataSource) == activeId
+            if active:
                 mli.setProperty('is.active', '1')
             elif mli.getProperty('is.active'):
                 mli.setProperty('is.active', '')
@@ -2707,8 +2727,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         screen (I3 in the navigation review). Control writes go to _sidebarTarget(), the hosted
         screen while one is showing."""
         if controlID == self.SECTION_LIST_ID:
-            # The screen's own sectionClicked() runs: its Search entry searches its own item's
-            # section, and a section click reaches this window through its goHome().
+            # The screen's own sectionClicked() runs: a section click, or Search, reaches this
+            # window through its goHome() (SidebarMixin._dispatchSectionOpen()).
             self._sidebarTarget().sectionClicked()
             return True
 
@@ -2762,9 +2782,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             item_type = self._libraryTabItemType() if mode == 'library' else None
             self.postNav('switchTab', self.switchTab, args=(mode,), kwargs={'item_type': item_type})
 
-    def searchButtonClicked(self):
-        self.processCommand(search.dialog(self))
-
     def buildSectionList(self):
         """The shared sidebar build (windowutils.SidebarMixin), with Watchlist made afresh first:
         this is the only window that makes it (sidebar_model.refreshWatchlistSection())."""
@@ -2788,7 +2805,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         regression: a collection opened in a nested LibraryWindow highlighted nothing). An
         entrySectionId threaded down a drill chain wins over that fallback: a collection opened
         from a cross-section filmography can live in a different section from the one to keep
-        highlighted. Watchlist when entered from it with no section to follow."""
+        highlighted. Watchlist when entered from it with no section to follow. The Search entry
+        (windowutils.SEARCH_ENTRY) while Search, or a screen reached from it, is showing - a
+        rebuild then (a server going offline, say) keeps it marked."""
+        if self._searchChainShowing():
+            return windowutils.SEARCH_ENTRY
         if self.section.key == home.home_section.key:
             return home.home_section
         if self.entrySectionId is not None:

@@ -14,7 +14,6 @@ from . import busy
 from . import dropdown
 from . import kodigui
 from . import opener
-from . import search
 from . import windowutils
 from . import sidebar_model
 
@@ -597,9 +596,6 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             self.processCommand(opener.open(item, context=self,
                                             entry_section_id=self.sectionId,
                                             entry_from_watchlist=self.cameFromWatchlist))
-
-    def searchButtonClicked(self):
-        self.processCommand(search.dialog(self))
 
     def sidebarActiveSection(self, entries):
         # A person isn't tied to one library section (their filmography can span several), but

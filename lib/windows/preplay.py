@@ -18,7 +18,6 @@ from . import opener
 from . import optionsdialog
 from . import pagination
 from . import playersettings
-from . import search
 from . import videoplayer
 from . import windowutils
 from .mixins.ratings import RatingsMixin
@@ -453,9 +452,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.checkIsWatchlisted(self.video)
         self.refreshInfo()
         util.MONITOR.watchStatusChanged()
-
-    def searchButtonClicked(self):
-        self.processCommand(search.dialog(self))
 
     def roleSectionId(self):
         return self.entrySectionId

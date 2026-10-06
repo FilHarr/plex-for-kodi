@@ -28,7 +28,12 @@ class HistoryItem(object):
         self.is_clear = is_clear
 
 
-class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
+class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin):
+    """Search, a sidebar destination like a library or Watchlist (the user, 2026-10-06), shown by
+    the host (LibraryWindow._openSearch()) with the sidebar, its Search entry the active one.
+    Opened from the sidebar, it starts fresh: an empty query, with the history. Back goes to Home's
+    root, as from any section; Back from a result opened here rebuilds it from the back stack -
+    the query, the type button and the result focused (restoreState())."""
     xmlFile = 'script-plex-search.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -37,19 +42,19 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
     height = 1080
 
     LETTERS = 'abcdefghijklmnopqrstuvwxyz0123456789 '
+    # The type buttons: 911-915, clear of the sidebar's user menu group (901, SidebarMixin.
+    # USER_MENU_GROUP_ID), which the user menu resizes by id
     SECTION_BUTTONS = {
-        901: 'all',
-        902: 'movie',
-        903: 'show',
-        904: 'artist',
-        905: 'photo'
+        911: 'all',
+        912: 'movie',
+        913: 'show',
+        914: 'artist',
+        915: 'photo'
     }
-
-    # results opener.open() opens itself, blocking, rather than through the window's queue
-    OPENED_HERE = ('photo', 'track', 'clip')
 
     EDIT_CONTROL_ID = 650
     BUTTON_A_ID = 1001
+    PLAYER_STATUS_BUTTON_ID = 204
     SEARCH_HUB_COUNT = 12  # must match core.search_hub_count in lib/templating/context.py
     HISTORY_LIST_ID = 2050
     MAX_HISTORY_ITEMS = 10
@@ -80,16 +85,28 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
     }
 
     def __init__(self, *args, **kwargs):
-        kodigui.BaseDialog.__init__(self, *args, **kwargs)
+        kodigui.ControlledWindow.__init__(self, *args, **kwargs)
         windowutils.UtilMixin.__init__(self)
-        self.parentWindow = kwargs.get('parent_window')
-        # Back from a result opened from here: the search again, and the result (searchReturn())
+        # A search to run straight away, its type button and the result to focus in it: Back to a
+        # search from a result opened from it (restoreState())
         self.initialQuery = kwargs.get('query')
+        self.initialSection = kwargs.get('searchSection') or 'all'
         self.initialFocus = kwargs.get('focus')
+        # The results thread (updateResults()): the query it searches next, and when
+        self._resultsLock = threading.Lock()
         self.resultsThread = None
         self.updateResultsTimeout = 0
-        self.isActive = True
+        self._query = ''
         self.useKodiKbd = util.getSetting('search_use_kodi_kbd')
+        self.lastFocusID = None
+        # The host's sidebar list, handed over by LibraryWindow._setupCurrent() before
+        # onFirstInit(); None builds one of its own (as PersonWindow)
+        self.sectionList = None
+
+    def paintInitialBackground(self):
+        """No art: the neutral colour panel (kodigui's setNeutralPanel()), as the person screen."""
+        super(SearchWindow, self).paintInitialBackground()
+        self.setNeutralPanel()
 
     def onFirstInit(self):
         self.hubControls = [
@@ -98,44 +115,72 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         ]
         self.historyList = kodigui.ManagedControlList(self, self.HISTORY_LIST_ID, self.MAX_HISTORY_ITEMS + 1)
 
+        if self.sectionList is None:
+            self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
+            self.buildSectionList()
+        else:
+            self.sectionList.newControl(self)
+            host = self.hostedBy()
+            if host is not None:
+                # Search's entry is the active one whenever it shows: Back to it from a genre
+                # result too, whose library's grid moved the marker (LibraryWindow.swapToSection())
+                host.updateActiveSectionMarker(windowutils.SEARCH_ENTRY)
+        self._selectActiveSection()
+        self.displayServerAndUser()
+
         self.edit = kodigui.SafeControlEdit(self.EDIT_CONTROL_ID, 651, self, key_callback=self.updateFromEdit,
                                             grab_focus=True)
         self.edit.setCompatibleMode(rpc.Application.GetProperties(properties=["version"])["version"]["major"] < 17)
         if self.useKodiKbd:
             self.setProperty('hide.kbd', '1')
-            self.setFocusId(self.EDIT_CONTROL_ID)
-            xbmc.executebuiltin('Action(Select,{0})'.format(self._winID))
-        else:
-            self.setFocusId(self.BUTTON_A_ID)
-        self.setProperty('search.section', 'all')
+        self.setProperty('search.section', self.initialSection)
         # the servers button (chooseServers())
         self.setProperty('search.multi', len(plexapp.SERVERMANAGER.getServers()) > 1 and '1' or '')
         if self.initialQuery:
+            # Back to the results: focus moves on to the result once they're in (_restoreFocus())
+            self.setFocusId(self.EDIT_CONTROL_ID if self.useKodiKbd else self.BUTTON_A_ID)
             self.edit.setText(self.initialQuery)
             self.updateResults(delay=0)
         else:
+            if self.useKodiKbd:
+                self.setFocusId(self.EDIT_CONTROL_ID)
+                xbmc.executebuiltin('Action(Select,{0})'.format(self._winID))
+            else:
+                self.setFocusId(self.BUTTON_A_ID)
             self.showSearchHistory()
 
     def onReInit(self):
-        # Re-displayed (e.g. returning from an opened result): re-evaluate the view.
-        # onFirstInit only runs on the first init, so without this the history view
-        # never re-renders after the dialog is shown again.
+        # Shown again after a photo, track or clip opened from here (opener.handleOpen() blocks):
+        # the results again, or the history.
         if self.edit.getText():
             self.updateResults()
         else:
             self.showSearchHistory()
 
+    def restoreState(self):
+        """What a back-stack entry keeps of this screen (LibraryWindow.
+        _captureHostedShellRestoreState()), as the constructor's kwargs: the query, the type button,
+        and the result focused - (row, item), or None away from the results."""
+        controlID = self.getFocusId()
+        focus = None
+        if 2100 <= controlID < 2100 + self.SEARCH_HUB_COUNT:
+            focus = (controlID - 2100, self.hubControls[controlID - 2100].getSelectedPos())
+        return {'query': self.edit.getText(), 'searchSection': self.getProperty('search.section') or 'all',
+                'focus': focus}
+
     def onAction(self, action):
+        # Hosted: the host sees the action first (kodigui.BaseWindow.routeActionToHost()), Back
+        # included - it goes through the chain, to Home's root from here.
+        if self.routeActionToHost(action):
+            return
         try:
-            if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
-                self.isActive = False
-            elif action in (xbmcgui.ACTION_MOVE_DOWN, xbmcgui.ACTION_MOVE_UP):
+            if action in (xbmcgui.ACTION_MOVE_DOWN, xbmcgui.ACTION_MOVE_UP):
                 if self._skipEmptyRow(action):
                     return
-        except:
+        except Exception:
             util.ERROR()
 
-        kodigui.BaseDialog.onAction(self, action)
+        kodigui.ControlledWindow.onAction(self, action)
 
     def _skipEmptyRow(self, action):
         controlID = self.getFocusId()
@@ -155,12 +200,20 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
     SERVERS_BUTTON_ID = 998
 
     def onClick(self, controlID):
-        if controlID == self.SERVERS_BUTTON_ID:
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # Hosted: the host handles the sidebar's clicks (kodigui.BaseWindow.routeClickToHost()).
+        if self.routeClickToHost(controlID):
+            return
+        if controlID == self.SECTION_LIST_ID:
+            self.sectionClicked()
+        elif controlID == self.PLAYER_STATUS_BUTTON_ID:
+            self.showAudioPlayer()
+        elif controlID == self.SERVERS_BUTTON_ID:
             self.chooseServers()
         elif 1000 < controlID < 1037:
             self.letterClicked(controlID)
         elif controlID in self.SECTION_BUTTONS:
-            self.sectionClicked(controlID)
+            self.typeClicked(controlID)
         elif controlID == 951:
             self.deleteClicked()
         elif controlID == 952:
@@ -173,13 +226,23 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
             self.historyItemClicked()
 
     def onFocus(self, controlID):
+        # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        if self.ignoresInput():
+            return
+        self.reselectActiveSection(controlID, self.lastFocusID)
+        self.lastFocusID = controlID
+
         if 2099 < controlID < 2200:
             self.setProperty('hub.focus', str(controlID - 2100))
 
+    def sidebarActiveSection(self, entries):
+        """The Search entry (windowutils.SEARCH_ENTRY), for a sidebar this screen builds itself."""
+        return windowutils.SEARCH_ENTRY
+
     def updateFromEdit(self, actionID, oldVal, newVal):
         if actionID == xbmcgui.ACTION_PREVIOUS_MENU:
-            self.isActive = False
-            self.doClose()
+            # leaving, as Back does anywhere else on this screen: through the host
+            self.routeActionToHost(actionID)
             return
 
         self.updateQuery()
@@ -187,30 +250,83 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
     def updateQuery(self):
         self.updateResults()
 
+    def _gone(self):
+        """Closed, or swapped out by its host: nothing more is shown here."""
+        return self._closing or (self._hostRef is not None and self.hostedBy() is None)
+
     def updateResults(self, delay=1):
-        self.updateResultsTimeout = time.time() + delay
-        if not self.resultsThread or not self.resultsThread.is_alive():
-            self.resultsThread = threading.Thread(target=self._updateResults, name='search.update')
-            self.resultsThread.start()
+        """Search for what's typed, delay seconds after the last key, on the results thread
+        (_updateResults()). The query is read here, on the main thread."""
+        query = self.edit.getText()
+        with self._resultsLock:
+            self._query = query
+            self.updateResultsTimeout = time.time() + delay
+            if self.resultsThread is None:
+                self.resultsThread = threading.Thread(target=self._updateResults, name='search.update')
+                self.resultsThread.daemon = True
+                self.resultsThread.start()
 
     def _updateResults(self):
-        while time.time() < self.updateResultsTimeout and not util.MONITOR.waitForAbort(0.1):
-            pass
+        """The results thread: waits out the typing, searches, and goes again if the query changed
+        meanwhile. It used to end after one search, and a key pressed during it went unsearched
+        until the next."""
+        while True:
+            while time.time() < self.updateResultsTimeout:
+                if util.MONITOR.waitForAbort(0.1) or self._gone():
+                    with self._resultsLock:
+                        self.resultsThread = None
+                    return
+            with self._resultsLock:
+                query = self._query
+                timeout = self.updateResultsTimeout
+            try:
+                self._search(query)
+            except Exception:
+                util.ERROR()
+            with self._resultsLock:
+                if self._gone() or (self._query == query and self.updateResultsTimeout == timeout):
+                    self.resultsThread = None
+                    return
 
-        self._reallyUpdateResults()
+    def _search(self, query):
+        if self._gone():
+            return
+        if not query:
+            self._post('search history', self.showResults, (query, None, None))
+            return
+        self._post('searching', self.setProperty, ('searching', '1'))
+        rows, missing = searchServers(query, searchedServers())
+        self._post('search results', self.showResults, (query, rows, missing))
 
-    def _reallyUpdateResults(self):
-        query = self.edit.getText()
-        if query:
-            with self.propertyContext('searching'):
-                rows, missing = searchServers(query, searchedServers())
-                self.showHubs(rows)
-            self._restoreFocus()
-            # the results are short of a server's: say whose
-            self.setProperty('search.note', missing and T(35129, "{0} isn't responding").format(', '.join(missing)) or '')
-        else:
+    def _post(self, name, fn, args):
+        """Run fn(*args) on the main thread, through the host's UI queue (MultiWindow.postUI()), if
+        this screen is still the one showing by then. The results thread used to write the lists
+        itself, which a screen swapped out meanwhile would have had freed. Not hosted: at once."""
+        if self._hostRef is None:
+            if not self._closing:
+                fn(*args)
+            return
+        host = self.hostedBy()
+        if host is None:
+            return
+
+        def run():
+            if not self._gone():
+                fn(*args)
+        host.postUI(name, run)
+
+    def showResults(self, query, rows, missing):
+        """The results thread's answer for query (_search()): its rows, or the history for an empty
+        query (rows None)."""
+        self.setProperty('searching', '')
+        if rows is None:
             self.setProperty('search.note', '')
             self.showSearchHistory()
+            return
+        self.showHubs(rows)
+        self._restoreFocus()
+        # the results are short of a server's: say whose
+        self.setProperty('search.note', missing and T(35129, "{0} isn't responding").format(', '.join(missing)) or '')
 
     def _restoreFocus(self):
         """Back at the results from a result opened from them: focus on that result again, if the
@@ -274,7 +390,9 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         self._serversChanged = True
         return ('rebuild', self._serverOptions(), optionsList.getSelectedPos())
 
-    def sectionClicked(self, controlID):
+    def typeClicked(self, controlID):
+        """A type button (All, Movies, Shows, Music, Photos). Not sectionClicked(), which is the
+        sidebar's (windowutils.SidebarMixin)."""
         section = self.SECTION_BUTTONS[controlID]
         old = self.getProperty('search.section')
         self.setProperty('search.section', section)
@@ -399,42 +517,15 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
             return
 
         self.addToHistory(self.edit.getText())
-        if hubItem.TYPE not in self.OPENED_HERE:
-            # Back from it comes back here (LibraryWindow.swapTo()/popBack())
-            host = self.parentWindow._liveChainHost() if hasattr(self.parentWindow, '_liveChainHost') else None
-            if host is not None and hasattr(host, 'searchReturn'):
-                host.searchReturn({'query': self.edit.getText(),
-                                   'focus': (self.hubControls.index(control), control.getSelectedPos())})
-        self.doClose()
-        try:
-            # context=self.parentWindow (hashed-orbiting-pizza.md Phase 5 follow-up): every
-            # search.dialog() caller passes the window that was current when Search opened as
-            # parent_window - by the time this runs, self.doClose() above has already closed this
-            # dialog, so parentWindow is back to being the sole active window, same as any other
-            # context-menu-driven open elsewhere in this codebase. Without this, every one of the
-            # seven hosted shell types opened from a search result opened as a second real nested
-            # window instead of swapping into a live chain, and everything drilled into further
-            # from there kept nesting too, since a standalone (non-hosted) shell's own
-            # _chainHost is always None - defeating the whole point of hosting for that entire
-            # sub-tree. context is a no-op for object types no dispatch branch is wired for
-            # (photo/track) - opener.open() already ignores it there.
-            command = opener.open(hubItem, context=self.parentWindow)
+        # As from any hosted screen: the host swaps the result's screen in, pushing this one, and
+        # Back rebuilds this from the back stack (restoreState()). A photo, track or clip opens
+        # over this screen and comes back to it (onReInit()).
+        command = opener.open(hubItem, context=self)
 
-            if not hubItem.exists():
-                control.removeManagedItem(mli)
+        if not hubItem.exists():
+            control.removeManagedItem(mli)
 
-            self.processCommand(command)
-        finally:
-            if not self.exitCommand and hubItem.TYPE in self.OPENED_HERE:
-                # a photo, track or clip opens here and now (opener.handleOpen()): back to the
-                # results after
-                self.show()
-            else:
-                # Anything else is opened by the window behind, from its queue (MultiWindow.
-                # postNav(), since 43f176ae) - which only runs once this dialog has finished.
-                # Shown again, as it was, the dialog sat in front of the open it had asked for, for
-                # good (live 2026-10-05: no search result opened).
-                self.isActive = False
+        self.processCommand(command)
 
     def createListItem(self, hubItem):
         mli = self._listItem(hubItem)
@@ -475,7 +566,6 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
 
     def showHubs(self, hubs):
         self.clearHubs()
-        self.opaqueBackground(on=False)
 
         allowed = None
         if self.getProperty('search.section') == 'movie':
@@ -496,7 +586,6 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
             if h.size.asInt() > 0:
                 if i >= self.SEARCH_HUB_COUNT:
                     break
-                self.opaqueBackground()
                 cid = self.showHub(h, i)
                 controlID = controlID or cid
                 i += 1
@@ -531,7 +620,6 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         return control.controlID
 
     def clearHubs(self):
-        self.opaqueBackground(on=False)
         self.setProperty('no.results', '')
         for i, control in enumerate(self.hubControls):
             control.reset()
@@ -541,15 +629,6 @@ class SearchDialog(kodigui.BaseDialog, windowutils.UtilMixin):
         self.setProperty('hub.focus', '')
         self.historyList.reset()
         self.setProperty('show.history', '')
-
-    def opaqueBackground(self, on=True):
-        self.parentWindow.setProperty('search.dialog.hasresults', on and '1' or '')
-
-    def wait(self):
-        # short slices: Kodi only runs this dialog's queued callbacks (each key typed) between them
-        # - see kodigui.WAIT_SLICE_SECONDS
-        while self.isActive and not util.MONITOR.waitForAbort(kodigui.WAIT_SLICE_SECONDS):
-            pass
 
 
 def accountServers():
@@ -570,7 +649,7 @@ def saveSearchedServers(uuids):
 
 
 def searchedServers():
-    """The servers a search asks: the ones chosen for the account (SearchDialog.chooseServers()), or
+    """The servers a search asks: the ones chosen for the account (SearchWindow.chooseServers()), or
     until there's a choice, every one the sidebar has libraries from - or every one on the account
     if it has none (the user, 2026-10-05: one search, everything on each server, wherever it's
     opened from)."""
@@ -656,18 +735,3 @@ def resultServerName(item):
     if server is None or len(manager.getServers()) < 2:
         return ''
     return server.name
-
-
-def dialog(parent_window, query=None, focus=None):
-    """The search dialog over parent_window. query/focus: a search to run straight away and the
-    result to focus in it (Back to a search, LibraryWindow.popBack())."""
-    parent_window.setProperty('search.dialog.hasresults', '')
-    with parent_window.propertyContext('search.dialog'):
-        try:
-            w = SearchDialog.open(parent_window=parent_window, query=query, focus=focus)
-            w.wait()
-            command = w.exitCommand or ''
-            del w
-            return command
-        finally:
-            parent_window.setProperty('search.dialog.hasresults', '')

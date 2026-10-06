@@ -15,6 +15,18 @@ HOME = None
 _restartingForSkinReload = False
 
 
+class _SearchEntry(object):
+    def __repr__(self):
+        return 'Search'
+
+
+# The sidebar's Search entry as a destination: opened as a section is (a NavIntent's section,
+# LibraryWindow.openSection(), which hands it to _openSearch()), and the active entry while Search
+# is open (sidebarActiveSection(), LibraryWindow.updateActiveSectionMarker()). Search isn't a
+# section; this stands for it where one is expected.
+SEARCH_ENTRY = _SearchEntry()
+
+
 def restartAfterSkinReload(reason):
     """
     Closes Home with its closeOption at "restart": _main() returns, and main.realExit() runs the
@@ -194,8 +206,9 @@ class SidebarMixin():
     def buildSectionList(self):
         """Fill self.sectionList with the sidebar's entries (sidebar_model.sections()), marking the
         one sidebarActiveSection() picks as is.active and selecting it, so the list's cursor is on
-        it the first time focus lands there rather than on Search. Writes go through the list's own
-        guard (LibraryWindow's _sidebarListGuard() for its lists)."""
+        it the first time focus lands there rather than on Search - unless Search is the one
+        (SEARCH_ENTRY). Writes go through the list's own guard (LibraryWindow's
+        _sidebarListGuard() for its lists)."""
         entries = sidebar_model.sections(self.sidebarNavSettings(), onChange=self._sidebarEntriesChanged)
         active = self.sidebarActiveSection([home.home_section] + entries)
         active_pos = None
@@ -203,6 +216,9 @@ class SidebarMixin():
         searchmli = kodigui.ManagedListItem(T(32431, 'Search'), iconImage='script.plex/buttons/search.png')
         searchmli.setProperty('is.search', '1')
         searchmli.setProperty('item', '1')
+        if active is SEARCH_ENTRY:
+            searchmli.setProperty('is.active', '1')
+            active_pos = 0
         items = [searchmli]
 
         for section in [home.home_section] + entries:
@@ -225,7 +241,7 @@ class SidebarMixin():
                 elif section == home.watchlist_section:
                     mli.setIconImage('script.plex/home/type/watchlist.png')
             mli.setProperty('item', '1')
-            if active is not None and section == active:
+            if active is not None and active is not SEARCH_ENTRY and section == active:
                 mli.setProperty('is.active', '1')
                 active_pos = len(items)
             items.append(mli)
@@ -313,26 +329,31 @@ class SidebarMixin():
 
         self._selectActiveSection()
 
-    def _dispatchSectionOpen(self, item):
-        """Open the clicked sidebar section fresh. A click always acts, even on the section already
-        showing: that resets it to its root (from a descendant, unwinds the chain back to it).
+    def _dispatchSectionOpen(self, section):
+        """Open the clicked sidebar section fresh - or Search (SEARCH_ENTRY). A click always acts,
+        even on the section already showing: that resets it to its root (from a descendant,
+        unwinds the chain back to it).
 
         Two cases, split on whether self is the true root (windowutils.HOME):
 
         - self IS HOME: in-place swap (library.py's LibraryWindow.openSection()),
           posted through the navigation queue by _deferOpenSection().
 
-        - self is a descendant - a real hosted shell lands here (ShowWindow, PrePlayWindow,
-          EpisodesWindow...): the host's routeClick() runs the shell's own sectionClicked(), so
-          its Search entry stays scoped to its own item. goHome() bubbles the section up to the
-          host, carrying force so library.py's goHome() override doesn't no-op on the
+        - self is a descendant - a hosted screen lands here (ShowWindow, PrePlayWindow,
+          EpisodesWindow, SearchWindow...), from the host's routeClick(), which runs the screen's
+          own sectionClicked(); or a screen opened outside the chain. goHome() bubbles the
+          section up to Home, carrying force so its navigate() doesn't no-op on the
           already-active section.
         """
-        section = item.dataSource
         if self is HOME:
             self._deferOpenSection(section, force=True)
         else:
             self.goHome(section=section, force=True)
+
+    def searchButtonClicked(self):
+        """The sidebar's Search entry: Search opened fresh, as a section is - in place of whatever
+        is showing, with Home's root its only way back (LibraryWindow._openSearch())."""
+        self._dispatchSectionOpen(SEARCH_ENTRY)
 
     def sectionClicked(self):
         item = self.sectionList.getSelectedItem()
@@ -343,7 +364,7 @@ class SidebarMixin():
             self.searchButtonClicked()
             return
 
-        self._dispatchSectionOpen(item)
+        self._dispatchSectionOpen(item.dataSource)
 
 
 class UtilMixin(GoHomeMixin):

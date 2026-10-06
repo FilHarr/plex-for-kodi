@@ -17,7 +17,6 @@ from . import kodigui
 from . import opener
 from . import pagination
 from . import playbacksettings
-from . import search
 from . import tracks
 from . import videoplayer
 from . import windowutils
@@ -735,9 +734,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.mediaItem = self.mediaItems[pos]
 
         return True
-
-    def searchButtonClicked(self):
-        self.processCommand(search.dialog(self))
 
     def roleSectionId(self):
         return self.entrySectionId
