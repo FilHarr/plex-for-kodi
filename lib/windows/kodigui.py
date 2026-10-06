@@ -670,7 +670,20 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
                                                   seed=ds.get('ratingKey') or ds.get('title'))
             self._setPanelCorners(corners)
 
-    PANEL_CORNER_PROPS = (('background_panel_tl', 'topLeft'), ('background_panel_tr', 'topRight'),
+    # The colour panel for a screen with no item colours of its own: mostly black, top left and
+    # bottom right lifted a touch with a faint cool cast, the other two a shade under the base
+    # fill (FF111111, default_background.xml.tpl) - not flat black, not an item's colours (the
+    # user, 2026-10-06). Only where a screen asks for it (setNeutralPanel()).
+    NEUTRAL_PANEL_CORNERS = {'topLeft': 'FF2C2C31', 'topRight': 'FF080808',
+                             'bottomLeft': 'FF080808', 'bottomRight': 'FF222226'}
+
+    def setNeutralPanel(self):
+        """Shows NEUTRAL_PANEL_CORNERS in the colour panel: for a screen with no item to take
+        colours from (the person screen). Off with dynamic backgrounds, like an item's."""
+        if util.addonSettings.dynamicBackgrounds:
+            self._setPanelCorners(self.NEUTRAL_PANEL_CORNERS)
+
+    PANEL_CORNER_PROPS =(('background_panel_tl', 'topLeft'), ('background_panel_tr', 'topRight'),
                            ('background_panel_bl', 'bottomLeft'), ('background_panel_br', 'bottomRight'))
 
     def _setPanelCorners(self, corners):

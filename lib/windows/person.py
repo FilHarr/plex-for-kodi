@@ -189,6 +189,12 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         # overwrites this with the host's own sectionList object before onFirstInit() runs.
         self.sectionList = None
 
+    def paintInitialBackground(self):
+        """No art, and no colours of a person's own: the neutral colour panel from the first
+        frame (kodigui's setNeutralPanel())."""
+        super(PersonWindow, self).paintInitialBackground()
+        self.setNeutralPanel()
+
     def onFirstInit(self):
         self.setProperty('loading', '1')
         self.filmographyListControl = kodigui.ManagedControlList(self, self.FILMOGRAPHY_LIST_ID, 5)

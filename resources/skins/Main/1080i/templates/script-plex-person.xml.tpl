@@ -13,24 +13,8 @@
 {% block header_anim %}<animation effect="slide" end="0,{{ vscale(-125) }}" time="200" tween="sine" easing="inout" condition="!String.IsEmpty(Window.Property(on.extras)) + !ControlGroup(200).HasFocus(0)">Conditional</animation>{% endblock %}
 
 {% block content %}
-<!-- Background -->
-<control type="group">
-    <control type="image">
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>1920</width>
-        <height>1080</height>
-        <texture background="true">script.plex/home/background-fallback_black.png</texture>
-    </control>
-    <control type="image">
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>1920</width>
-        <height>1080</height>
-        <fadetime>1000</fadetime>
-        <texture background="true">$INFO[Window.Property(background)]</texture>
-    </control>
-</control>
+<!-- No background of its own: the shared one (includes/default_background.xml.tpl), showing the
+     neutral colour panel - person.py's paintInitialBackground(). -->
 
 <!-- Main Content -->
 <control type="group" id="50">
