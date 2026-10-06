@@ -704,25 +704,72 @@ class OpenFromPickerTest(SidebarCase):
         win._openFromPicker(sid, section)
         win._deferOpenSection.assert_called_once_with(section, force=True)
 
-    def test_an_unpinned_library_gets_a_temporary_entry_at_the_end(self):
-        self.store('watchlist', '1')
-        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
-        win._libraryPickerOptions()
-        self.opened(win, UUID + ':2', TV)
-        self.assertEqual(UUID + ':2', sidebar_model.temporary())
-        entries = sidebar_model.sections(win.navSettings)
-        self.assertEqual([self.watchlist, MOVIES, TV], entries)
-
-    def test_a_pinned_library_opens_without_one(self):
+    def test_opening_is_left_to_open_section(self):
+        # which follows the section (sidebar_model.followSection()), however it was reached
         win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
         self.opened(win, UUID + ':2', TV)
         self.assertIsNone(sidebar_model.temporary())
 
-    def test_another_section_opening_lets_it_go(self):
-        sidebar_model.setTemporary(UUID + ':2')
-        self.assertFalse(sidebar_model.leaveTemporaryFor(TV))
+    def test_open_section_follows_the_section(self):
+        nav = {'entries': [UUID + ':1']}
+        with mock.patch.object(sidebar_model, 'followSection') as follow:
+            win = library.LibraryWindow.__new__(library.LibraryWindow)
+            win.navSettings = nav
+            win.section = MOVIES
+            win.view_gone = None
+            for name in ('tasks', '_settleHubSlide', '_retireListItems'):
+                setattr(win, name, mock.Mock())
+            win._hubReselectPositions = {}
+            # the rest of the swap is the window's; the follow comes before any of it
+            with mock.patch.object(library, '_invalidateSectionHasCollectionsCache', side_effect=StopIteration):
+                with self.assertRaises(StopIteration):
+                    library.LibraryWindow.openSection(win, TV, view_gone=True)
+        follow.assert_called_once_with(TV, nav)
+
+    def closed(self, win, section, opening=None):
+        win.section = section
+        win._pickerOpen = opening
+        win._followOpenSection()
+
+    def test_the_open_section_unpinned_keeps_a_temporary_entry(self):
+        # unpinned in the picker while open, it stays on screen: not with no sidebar entry (the
+        # user, 2026-10-06), but the temporary one at the end until another section opens
+        self.store('watchlist', '1', '2')
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        sidebar_model.removeEntry(win.sidebarNavSettings(), UUID + ':2')
+        self.closed(win, TV)
         self.assertEqual(UUID + ':2', sidebar_model.temporary())
-        self.assertTrue(sidebar_model.leaveTemporaryFor(home.home_section))
+        self.assertEqual(UUID + ':2', win._sidebarTemporary)
+        self.assertEqual([self.watchlist, MOVIES, TV], sidebar_model.sections(win.navSettings))
+
+    def test_another_library_unpinned_gets_none(self):
+        self.store('watchlist', '1', '2')
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        sidebar_model.removeEntry(win.sidebarNavSettings(), UUID + ':2')
+        self.closed(win, MOVIES)
+        self.assertIsNone(sidebar_model.temporary())
+
+    def test_not_when_the_picker_opens_another_library(self):
+        self.store('watchlist', '1', '2')
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        sidebar_model.removeEntry(win.sidebarNavSettings(), UUID + ':2')
+        self.closed(win, TV, opening=(UUID + ':1', MOVIES))
+        self.assertIsNone(sidebar_model.temporary())
+
+    def test_pinned_again_its_temporary_entry_goes(self):
+        self.store('watchlist', '1', '2')
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        sidebar_model.setTemporary(UUID + ':3')
+        win.sidebarNavSettings()['entries'].append(UUID + ':3')
+        self.closed(win, MUSIC)
+        self.assertIsNone(sidebar_model.temporary())
+        self.assertEqual([self.watchlist, MOVIES, TV, MUSIC], sidebar_model.sections(win.navSettings))
+
+    def test_home_has_no_entry_to_keep(self):
+        self.store('watchlist', '1', '2')
+        win = self.window([self.server], {UUID: [MOVIES, TV, MUSIC]})
+        sidebar_model.setTemporary(UUID + ':3')
+        self.closed(win, home.home_section)
         self.assertIsNone(sidebar_model.temporary())
 
     def test_a_hosted_screen_goes_home_to_it(self):
@@ -731,3 +778,66 @@ class OpenFromPickerTest(SidebarCase):
         win._sidebarTarget = lambda: screen
         win._openFromPicker(UUID + ':2', TV)
         screen.goHome.assert_called_once_with(section=TV, force=True)
+
+
+class FollowSectionTest(KodiTestCase):
+    """Every way into a library - the sidebar, the picker, "Go to <library>" from an item, a film
+    reached from a credit in another library, Back - goes through LibraryWindow.openSection(), which
+    gives one with no sidebar entry the temporary one while it's open (the user, 2026-10-06)."""
+
+    def setUp(self):
+        super(FollowSectionTest, self).setUp()
+        self.addCleanup(sidebar_model.setTemporary, None)
+        self.nav = {'entries': [section_ids.WATCHLIST_ID, UUID + ':1']}
+
+    def test_an_unpinned_library_gets_it(self):
+        self.assertTrue(sidebar_model.followSection(TV, self.nav))
+        self.assertEqual(UUID + ':2', sidebar_model.temporary())
+        self.assertFalse(sidebar_model.followSection(TV, self.nav), 'unchanged: already its')
+
+    def test_a_pinned_one_or_home_lets_it_go(self):
+        sidebar_model.followSection(TV, self.nav)
+        self.assertTrue(sidebar_model.followSection(MOVIES, self.nav))
+        self.assertIsNone(sidebar_model.temporary())
+        sidebar_model.followSection(TV, self.nav)
+        sidebar_model.followSection(home.home_section, self.nav)
+        self.assertIsNone(sidebar_model.temporary())
+
+    def test_a_folder_or_collection_comes_under_its_library(self):
+        folder = Section('/library/sections/2/folder', 'Some folder', library_id='2')
+        self.assertEqual(UUID + ':2', sidebar_model.entryIdFor(folder))
+        sidebar_model.followSection(folder, self.nav)
+        self.assertEqual(UUID + ':2', sidebar_model.temporary())
+
+    def test_on_its_own_server(self):
+        self.assertEqual(OTHER + ':1', sidebar_model.entryIdFor(Section('1', 'Films', server=OSCAR)))
+
+    def test_nothing_without_a_library(self):
+        self.assertIsNone(sidebar_model.entryIdFor(Section('/library/collections/9', 'A collection')))
+        self.assertIsNone(sidebar_model.entryIdFor(home.home_section))
+
+
+class LibraryOfTest(KodiTestCase):
+    """"Go to <library>" from the music player, an album or a photo folder: the library itself, not
+    its key - a key is only looked up in the sidebar (LibraryWindow.resolveSection()), and one that
+    isn't pinned went to Home instead."""
+
+    def item(self, key='2'):
+        item = mock.Mock(server=ANIMAL)
+        item.getLibrarySectionId.return_value = key
+        return item
+
+    def test_the_servers_own_section(self):
+        with mock.patch.object(sidebar_model, 'serverSections', return_value=[MOVIES, TV]):
+            self.assertIs(TV, sidebar_model.libraryOf(self.item('2')))
+
+    def test_else_one_made_from_the_item(self):
+        made = Section('2', 'TV Shows')
+        with mock.patch.object(sidebar_model, 'serverSections', return_value=None), \
+                mock.patch.object(sidebar_model.plexlibrary.LibrarySection, 'fromFilter', return_value=made):
+            self.assertIs(made, sidebar_model.libraryOf(self.item('2')))
+
+    def test_else_its_key(self):
+        with mock.patch.object(sidebar_model, 'serverSections', return_value=None), \
+                mock.patch.object(sidebar_model.plexlibrary.LibrarySection, 'fromFilter', side_effect=AttributeError):
+            self.assertEqual('2', sidebar_model.libraryOf(self.item('2')))

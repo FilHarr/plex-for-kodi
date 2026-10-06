@@ -11,6 +11,7 @@ from . import busy
 from . import dropdown
 from . import kodigui
 from . import opener
+from . import sidebar_model
 from . import windowutils
 
 
@@ -463,7 +464,9 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         elif choice['key'] == 'to_section':
             # force: the section's start, even when it's the one showing under the player - Home
             # otherwise counted Music as already showing and left the Artist screen up.
-            self.goHome(track.getLibrarySectionId(), force=True)
+            # the library itself, not its key: one that isn't pinned isn't in the sidebar, which
+            # is all a key is looked up in (LibraryWindow.resolveSection())
+            self.goHome(sidebar_model.libraryOf(track), force=True)
 
     def stopButtonClicked(self):
         xbmc.executebuiltin('Action(Back, {})'.format(self.musicPlayerWinID))

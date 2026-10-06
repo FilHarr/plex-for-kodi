@@ -13,6 +13,7 @@ from . import info
 from . import kodigui
 from . import opener
 from . import search
+from . import sidebar_model
 from . import windowutils
 
 
@@ -314,7 +315,8 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             self.artistButtonClicked()
         elif choice['key'] == 'to_section':
             # force: the section's start, as a sidebar click - it's usually the section showing.
-            self.goHome(self.album.getLibrarySectionId(), force=True)
+            # the library itself: see currentplaylist.py's to_section
+            self.goHome(sidebar_model.libraryOf(self.album), force=True)
 
     def summaryButtonClicked(self):
         # The same popup the Seasons/Artist screens' own summary targets open

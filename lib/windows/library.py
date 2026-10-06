@@ -1214,9 +1214,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._retireListItems()
 
         self.section = section
-        # an unpinned library opened from the Libraries picker leaves the sidebar once another
-        # section opens
-        sidebar_model.leaveTemporaryFor(section)
+        # Not in the sidebar - however it was reached - it has the temporary entry while it's
+        # open; any other section lets it go (sidebar_model.followSection()). onFirstInit()
+        # rebuilds the sidebar when that changed.
+        sidebar_model.followSection(section, self.sidebarNavSettings())
         # Force a fresh live Collections probe for the section we're now entering, rather than
         # trusting whatever was cached from a previous visit - see _sectionHasCollections()'s own
         # docstring. Harmless no-op for section types that were never eligible for the probe in
@@ -2931,6 +2932,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if self._pickerChanged:
             sidebar_model.endOnboarding(self.sidebarNavSettings())
             self.saveNavSettings()
+            self._followOpenSection()
             self._rebuildSidebar()
             if not self._pickerOpen:
                 self.reloadHomeRows('libraries picked')
@@ -2946,15 +2948,24 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         util.LOG('Library: a new account, opening the Libraries picker')
         self.postUI('onboarding', self.showLibraryPicker)
 
+    def _followOpenSection(self):
+        """After the Libraries picker changed the pins: the section on screen, unpinned there, keeps
+        a sidebar entry while it stays open - the temporary one, at the end - rather than staying
+        open with none (the user, 2026-10-06); pinned again, the temporary entry goes, its pinned
+        one being back (sidebar_model.followSection()). Not when the picker opens another library
+        (_openFromPicker()): openSection() follows that one."""
+        if not self._pickerOpen and sidebar_model.followSection(self.section, self.sidebarNavSettings()):
+            util.DEBUG_LOG('Library: the sidebar\'s temporary entry is now {0}', sidebar_model.temporary())
+        # the entry the sidebar is now built with (onFirstInit() rebuilds when this differs)
+        self._sidebarTemporary = sidebar_model.temporary()
+
     def _openFromPicker(self, sid, section):
         """Open what the picker's row was, as a sidebar click on the screen showing would
         (SidebarMixin._dispatchSectionOpen()): in place on this window, or through a hosted
-        screen's goHome(), which unwinds its chain. Not pinned, it gets a temporary sidebar entry
-        while it's open (sidebar_model.setTemporary())."""
+        screen's goHome(), which unwinds its chain. Not pinned, openSection() gives it a temporary
+        sidebar entry while it's open (sidebar_model.followSection())."""
         if section is None:
             return
-        if sid not in self.sidebarNavSettings()['entries']:
-            sidebar_model.setTemporary(sid)
         target = self._sidebarTarget()
         util.DEBUG_LOG('Library: opening {0} from the Libraries picker', sid)
         if target is self:

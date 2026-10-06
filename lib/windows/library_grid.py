@@ -30,6 +30,7 @@ from . import videoplayer
 from . import optionsdialog
 from . import preplay
 from . import subitems
+from . import sidebar_model
 from .mixins.watchlist import removeFromWatchlistBlind
 
 
@@ -783,7 +784,8 @@ class GridMixin(object):
 
         if choice['key'] == 'to_section':
             # force: the section's start, as a sidebar click - it's usually the section showing.
-            self.goHome(self.section.getLibrarySectionId(), force=True)
+            # the library itself: see currentplaylist.py's to_section
+            self.goHome(sidebar_model.libraryOf(self.section), force=True)
 
     def itemTypeButtonClicked(self):
         # Button stays visible on the Collections tab (its own visibility only checks

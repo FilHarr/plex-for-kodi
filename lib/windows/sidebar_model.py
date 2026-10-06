@@ -496,10 +496,10 @@ class PlaylistsCheckTask(backgroundthread.Task):
                 _playlistsChecking.discard(self.server.uuid)
 
 
-# An entry opened from the Libraries picker that isn't pinned: shown at the end of the sidebar while
-# it's the section open (the user's design, 2026-10-05), so everything that goes by the sidebar -
-# its highlight, Back, its menu - works as for a pinned one. One at a time, for every screen's
-# sidebar; LibraryWindow.openSection() lets it go when another section opens.
+# The section open when it isn't pinned: shown at the end of the sidebar while it's open (the user's
+# design, 2026-10-05; every way in, 2026-10-06), so everything that goes by the sidebar - its
+# highlight, Back, its menu - works as for a pinned one. One at a time, for every screen's sidebar;
+# followSection() keeps it to the section open.
 _temporary = None
 
 
@@ -512,13 +512,54 @@ def temporary():
     return _temporary
 
 
-def leaveTemporaryFor(section):
-    """The section now open isn't the temporary entry's: it goes. Returns whether it did."""
+def entryIdFor(section):
+    """The sidebar entry a section open on screen comes under: its own for a library, Watchlist or a
+    server's Playlists; a library's folder or filtered view, that library's ("<uuid>:<key>"). None
+    for Home and anything not in a library."""
+    if section is None or section.key is None:
+        return None
+    sid = sectionId(section)
+    if sid == WATCHLIST_ID or section_ids.isPlaylistsId(sid):
+        return sid
+    key = section.key
+    if not str(key).isdigit():
+        getId = getattr(section, 'getLibrarySectionId', None)
+        key = getId() if getId else None
+    server = section.server
+    if not key or server is None or not str(key).isdigit():
+        return None
+    return u'{0}:{1}'.format(server.uuid, key)
+
+
+def followSection(section, nav):
+    """The section now open (LibraryWindow.openSection(); the Libraries picker closing having
+    changed the pins): one the sidebar has no entry for - opened from the picker, unpinned there
+    while open, "Go to <library>" from an item, a credit's film in another library, however it was
+    reached - gets the temporary entry while it's open; any other lets it go. Returns whether that
+    changed."""
     global _temporary
-    if _temporary is None or sectionId(section) == _temporary:
-        return False
-    _temporary = None
-    return True
+    sid = entryIdFor(section)
+    wanted = sid if sid and sid not in nav.get('entries', ()) else None
+    changed = wanted != _temporary
+    _temporary = wanted
+    return changed
+
+
+def libraryOf(item):
+    """The library an item (a track, an album, a photo folder) is in, to open for its "Go to
+    <library>": the server's own section, else one made from the item. The sidebar's isn't enough:
+    the library needn't be pinned. Its key (the old way) when neither is to be had."""
+    key = str(item.getLibrarySectionId() or '')
+    server = getattr(item, 'server', None)
+    if server is not None:
+        for section in serverSections(server) or ():
+            if str(section.key) == key:
+                return section
+    try:
+        section = plexlibrary.LibrarySection.fromFilter(item)
+    except Exception:
+        section = None
+    return section if section is not None and section.key else key
 
 
 def sections(nav, onChange=None):
