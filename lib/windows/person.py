@@ -2,6 +2,8 @@
 from __future__ import absolute_import
 
 import datetime
+import threading
+import time
 
 from kodi_six import xbmc
 from kodi_six import xbmcgui
@@ -17,7 +19,6 @@ from . import opener
 from . import windowutils
 from . import sidebar_model
 
-FILMOGRAPHY_PAGE_SIZE = 10
 DISCOVER_HUB_SLOTS = 6
 NOT_IN_LIBRARY_BATCH_SIZE = 10
 
@@ -36,48 +37,114 @@ class PersonDetailsTask(backgroundthread.Task):
             self.callback(details)
 
 
+# How long the person screen waits for a server's answer (filmography, library presence) before
+# going on without it, as search does (search.SEARCH_TIMEOUT).
+SERVER_TIMEOUT = 10.0
+
+
+def personServers(role):
+    """The servers whose libraries a person's films are looked for in: the sidebar's, in its order,
+    those answering - and the one the role came from, if it isn't among them (a library opened
+    from the picker, say). Not Discover's server, which has no library."""
+    servers = [server for server in sidebar_model.sidebarServers() if not server.offline and not server.gone]
+    own = role.server
+    known = plexapp.SERVERMANAGER.serversByUuid
+    if own is not None and own.uuid in known and own.uuid not in [server.uuid for server in servers]:
+        servers.append(own)
+    return servers
+
+
+def personKey(role):
+    """The person's plex.tv key (tagKey): the same on every server, so it's what asks each one for
+    them (checked live: Alan Rickman's on Animal and Oscar). A role without one has it looked up on
+    its own server; None if that doesn't know either."""
+    key = role.get('tagKey')
+    if key:
+        return key
+    try:
+        data = role.server.query('/library/people/{0}'.format(role.id))
+        for directory in data.findall('Directory') if data is not None else ():
+            if directory.get('tagKey'):
+                return directory.get('tagKey')
+    except Exception as e:
+        util.DEBUG_LOG('Person: no tagKey for {0}: {1}', role.tag, e)
+    return None
+
+
+def libraryFilmography(server, key):
+    """A person's movies and shows in server's libraries: /library/people/{key}/media, whole - it
+    only pages when asked (checked live, PMS 1.43.4). One in two libraries comes twice."""
+    from plexnet import video
+    data = server.query('/library/people/{0}/media'.format(key))
+    items = []
+    if data is None:
+        return items
+    for elem in list(data.findall('Video')) + list(data.findall('Metadata')) + list(data.findall('Directory')):
+        kind = elem.get('type', '')
+        if kind == 'movie':
+            items.append(video.Movie(elem, '/library/people', server))
+        elif kind == 'show':
+            items.append(video.Show(elem, '/library/people', server))
+    return items
+
+
+def _askServers(servers, fn):
+    """fn(server) on each server together, a thread each, for up to SERVER_TIMEOUT: {uuid: answer}
+    for those that answered. One that fails or is too slow is left out."""
+    answers = {}
+
+    def ask(server):
+        try:
+            answers[server.uuid] = fn(server)
+        except Exception as e:
+            util.DEBUG_LOG('Person: no answer from {0}: {1}', server.name, e)
+
+    threads = []
+    for server in servers:
+        thread = threading.Thread(target=ask, args=(server,), name='person.' + server.name)
+        thread.daemon = True
+        thread.start()
+        threads.append(thread)
+    started = time.time()
+    for thread in threads:
+        thread.join(max(0, SERVER_TIMEOUT - (time.time() - started)))
+    return answers
+
+
 class PersonFilmographyTask(backgroundthread.Task):
-    def __init__(self, role, media_type, callback, start=0, size=FILMOGRAPHY_PAGE_SIZE):
+    """A person's movies and shows in every server's libraries (personServers()), in the servers'
+    order - the person screen's filmography (the user, 2026-10-06: it showed only the library
+    the person was opened from, and another server's films under "Not in Library")."""
+
+    def __init__(self, role, servers, callback):
         super(PersonFilmographyTask, self).__init__()
         self.role = role
-        self.media_type = media_type
+        self.servers = servers
         self.callback = callback
-        self.start = start
-        self.size = size
 
     def run(self):
         if self.isCanceled():
             return
-        result = self.role.getFilmography(self.media_type, start=self.start, size=self.size)
+        key = personKey(self.role)
+        # without a plex.tv key, only the role's own server can be asked, by its own id
+        servers = self.servers if key else [self.role.server]
+        answers = _askServers(servers, lambda server: libraryFilmography(server, key or self.role.id))
+        items = [item for server in servers for item in answers.get(server.uuid, ())]
         if not self.isCanceled():
-            self.callback(result)
+            self.callback(items)
 
 
-class ExtendFilmographyTask(backgroundthread.Task):
-    def setup(self, role, start, size, callback, canceledCallback=None):
-        self.role = role
-        self.start = start
-        self.size = size
-        self.callback = callback
-        self.canceledCallback = canceledCallback
-        return self
-
-    def run(self):
-        if self.isCanceled():
-            if self.canceledCallback:
-                self.canceledCallback()
-            return
-        try:
-            result = self.role.getFilmography(None, start=self.start, size=self.size)
-            if self.isCanceled():
-                if self.canceledCallback:
-                    self.canceledCallback()
-                return
-            self.callback(result)
-        except Exception as e:
-            util.DEBUG_LOG('ExtendFilmographyTask failed: {0}'.format(e))
-            if self.canceledCallback:
-                self.canceledCallback()
+def libraryPresence(servers, guids):
+    """Which of guids are in a library on any of servers: {guid: the first server, in order, that
+    has it} - asked together (Role.checkLibraryPresence() on each)."""
+    from plexnet import media as plexmedia
+    servers = servers or []
+    found = _askServers(servers, lambda server: plexmedia.Role.checkLibraryPresence(server, guids))
+    present = {}
+    for server in servers:
+        for guid in found.get(server.uuid, ()):
+            present.setdefault(guid, server)
+    return present
 
 
 class DiscoverItem(object):
@@ -96,10 +163,10 @@ class DiscoverItem(object):
 
 
 class DiscoverCreditsTask(backgroundthread.Task):
-    def __init__(self, role, server, callback, credit_type=None):
+    def __init__(self, role, servers, callback, credit_type=None):
         super(DiscoverCreditsTask, self).__init__()
         self.role = role
-        self.server = server
+        self.servers = servers
         self.callback = callback
         self.credit_type = credit_type
 
@@ -109,7 +176,7 @@ class DiscoverCreditsTask(backgroundthread.Task):
 
         credit_groups = self.role.getDiscoverCredits(credit_type=self.credit_type)
         if self.isCanceled() or not credit_groups:
-            self.callback([], set())
+            self.callback([], {})
             return
         if self.credit_type is not None:
             # One type asked for (DirectorWindow): getDiscoverCredits() returns that group's
@@ -130,12 +197,11 @@ class DiscoverCreditsTask(backgroundthread.Task):
                 discover_hubs.append((group_type, group_items))
 
         if self.isCanceled():
-            self.callback([], set())
+            self.callback([], {})
             return
 
-        unique_guids = list(set(all_guids))
-        from plexnet import media as plexmedia
-        library_guids = plexmedia.Role.checkLibraryPresence(self.server, unique_guids)
+        # {guid: a server that has it}: in a library on any server isn't "Not in Library"
+        library_guids = libraryPresence(self.servers, list(set(all_guids)))
 
         if not self.isCanceled():
             self.callback(discover_hubs, library_guids)
@@ -174,11 +240,11 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.filmographyAllItems = []
         self.filmographyByGuid = {}
         self.filmographyFilter = None
-        self.filmographyOffset = 0
-        self.filmographyTotalSize = 0
-        self.filmographyMore = False
         self.discoverListControls = []
-        self.libraryGuids = set()
+        # {guid: a server it's in a library on} for the Discover credits (libraryPresence())
+        self.libraryGuids = {}
+        # the servers asked for the person's films (personServers())
+        self.servers = []
         self.tasks = backgroundthread.Tasks()
         self.exitCommand = None
         self.initialized = False
@@ -222,6 +288,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         role_server = self.role.server
         if local_server and not (role_server and role_server.uuid in plexapp.SERVERMANAGER.serversByUuid):
             self.role.server = local_server
+        self.servers = personServers(self.role)
 
         self.setProperty('person.name', self.role.tag or '')
         self.setProperty('person.type_label', T(self.TYPE_LABEL_ID, self.PRIMARY_TYPE.title()))
@@ -243,30 +310,14 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         if self.routeActionToHost(action):
             return
         try:
-            controlID = self.getFocusId()
-
             if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                 self.doClose()
                 return
-
-            if controlID == self.FILMOGRAPHY_LIST_ID:
-                if self.checkFilmographyPagination(action):
-                    return
 
         except Exception:
             util.ERROR()
 
         kodigui.ControlledWindow.onAction(self, action)
-
-    def checkFilmographyPagination(self, action):
-        mli = self.filmographyListControl.getSelectedItem()
-        if not mli:
-            return False
-        if mli.getProperty('is.end') and not mli.getProperty('is.updating'):
-            mli.setBoolProperty('is.updating', True)
-            self.extendFilmography()
-            return True
-        return False
 
     def onClick(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
@@ -310,59 +361,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
     def fetchFilmography(self):
         self.setProperty('loading', '1')
-        task = PersonFilmographyTask(self.role, None, self.onFilmography, start=0, size=FILMOGRAPHY_PAGE_SIZE)
+        task = PersonFilmographyTask(self.role, self.servers, self.onFilmography)
         self.tasks.add(task)
         backgroundthread.BGThreader.addTask(task)
-
-    def extendFilmography(self):
-        start = self.filmographyOffset + len(self.filmographyItems)
-        task = ExtendFilmographyTask().setup(
-            self.role,
-            start=start,
-            size=FILMOGRAPHY_PAGE_SIZE,
-            callback=self.onFilmographyExtended,
-            canceledCallback=self.onFilmographyExtendCanceled
-        )
-        self.tasks.add(task)
-        backgroundthread.BGThreader.addTask(task)
-
-    def onFilmographyExtendCanceled(self):
-        for mli in self.filmographyListControl:
-            if mli.getProperty('is.end'):
-                mli.setBoolProperty('is.updating', False)
-                break
-
-    def onFilmographyExtended(self, result):
-        items = result.get('items', [])
-        self.filmographyMore = result.get('more', False)
-        self.filmographyTotalSize = result.get('totalSize', 0)
-
-        if not items:
-            self.onFilmographyExtendCanceled()
-            return
-
-        self.filmographyAllItems.extend(items)
-
-        newUniqueItems, newByGuid = self.groupFilmographyByGuid(items, existingByGuid=self.filmographyByGuid)
-        self.filmographyItems.extend(newUniqueItems)
-
-        newListItems = []
-        for item in newUniqueItems:
-            mli = self.createFilmographyListItem(item)
-            newListItems.append(mli)
-
-        if self.filmographyMore:
-            end = kodigui.ManagedListItem('')
-            end.setBoolProperty('is.end', True)
-            newListItems.append(end)
-
-        endPos = self.filmographyListControl.size() - 1
-        self.filmographyListControl.replaceItem(endPos, newListItems[0])
-        if len(newListItems) > 1:
-            self.filmographyListControl.addItems(newListItems[1:])
-
-        self.filmographyListControl.selectItem(endPos)
-        self.setProperty('filmography.count', str(len(self.filmographyItems)))
 
     def onPersonDetails(self, details):
         if not details:
@@ -402,7 +403,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             return
 
         task = DiscoverCreditsTask(
-            self.role, self.role.server, self.onDiscoverCredits,
+            self.role, self.servers, self.onDiscoverCredits,
             credit_type=self.CREDIT_TYPE
         )
         self.tasks.add(task)
@@ -464,8 +465,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
         from plexnet import util as pnUtil
         from plexnet.compat import quote_plus
-        local_server = self.role.server
-        if local_server and item.guid in self.libraryGuids:
+        # in a library on one of the servers: opened from there
+        local_server = self.libraryGuids.get(item.guid)
+        if local_server:
             try:
                 # Resolve plex:// guid against the local PMS — getObject builds a proper PlexObject
                 self.processCommand(opener.open(
@@ -494,15 +496,11 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             entry_from_watchlist=self.cameFromWatchlist
         ))
 
-    def onFilmography(self, result):
+    def onFilmography(self, items):
+        """Every server's movies and shows for the person (PersonFilmographyTask)."""
         self.setProperty('loading', '')
-        items = result.get('items', [])
         self.filmographyAllItems = items
-        self.filmographyOffset = result.get('offset', 0)
-        self.filmographyTotalSize = result.get('totalSize', len(items))
-        self.filmographyMore = result.get('more', False)
-        self.filmographyItems, self.filmographyByGuid = self.groupFilmographyByGuid(items)
-        self.fillFilmography()
+        self.applyFilmographyFilter()
 
     def createFilmographyListItem(self, item):
         title = item.title if hasattr(item, 'title') else item.get('title', '')
@@ -535,11 +533,6 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             mli = self.createFilmographyListItem(item)
             listItems.append(mli)
 
-        if self.filmographyMore:
-            end = kodigui.ManagedListItem('')
-            end.setBoolProperty('is.end', True)
-            listItems.append(end)
-
         self.filmographyListControl.reset()
         self.filmographyListControl.addItems(listItems)
         self.setProperty('filmography.count', str(len(self.filmographyItems)))
@@ -564,18 +557,15 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.applyFilmographyFilter()
 
     def applyFilmographyFilter(self):
-        self.filmographyAllItems = []
-        self.filmographyItems = []
-        self.filmographyByGuid = {}
-        self.filmographyOffset = 0
-        self.filmographyMore = False
-        self.setProperty('loading', '1')
-        # Filtered modes fetch all at once (smaller result set, no pagination offset mismatch)
-        # "All" mode uses normal page size with pagination
-        size = None if self.filmographyFilter else FILMOGRAPHY_PAGE_SIZE
-        task = PersonFilmographyTask(self.role, self.filmographyFilter, self.onFilmography, start=0, size=size)
-        self.tasks.add(task)
-        backgroundthread.BGThreader.addTask(task)
+        """The filmography as the filter has it (All, Movies, Shows): from what's loaded, one entry
+        for copies of a film on several servers or in several libraries (groupFilmographyByGuid()),
+        by title."""
+        items = self.filmographyAllItems
+        if self.filmographyFilter:
+            items = [item for item in items if getattr(item, 'type', None) == self.filmographyFilter]
+        self.filmographyItems, self.filmographyByGuid = self.groupFilmographyByGuid(items)
+        self.filmographyItems.sort(key=lambda item: u'{0}'.format(item.get('titleSort') or item.get('title')).lower())
+        self.fillFilmography()
 
     def filmographyItemClicked(self):
         mli = self.filmographyListControl.getSelectedItem()
@@ -699,6 +689,10 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
     def formatVersionLabel(self, item, media_type='movie'):
         library = self.getItemLibraryTitle(item) or T(34108, 'Unknown')
+        server = getattr(item, 'server', None)
+        if server is not None and len(plexapp.SERVERMANAGER.getServers()) > 1:
+            # which server, on a multi-server account (the person screen asks them all)
+            library = u'{0}, {1}'.format(library, server.name)
         if media_type == 'movie':
             resolution = self.getItemResolution(item)
             bitrate = self.getItemBitrate(item)

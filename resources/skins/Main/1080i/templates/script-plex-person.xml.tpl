@@ -202,8 +202,8 @@
             <height>{{ vscale(515) }}</height>
             <onup>300</onup>
             <ondown>401</ondown>
-            <!-- No pagination boundary markers on this list (is.end/is.updating only page in on the
-                 right), so unlike a bidirectional carousel this can go straight to the sidebar. -->
+            <!-- The whole filmography is loaded at once (person.PersonFilmographyTask), with no
+                 boundary markers to page in, so Left at the first item goes straight to the sidebar. -->
             <onleft>9000</onleft>
             <scrolltime>200</scrolltime>
             <orientation>horizontal</orientation>
