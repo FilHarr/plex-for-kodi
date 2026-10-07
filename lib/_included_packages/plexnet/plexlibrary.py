@@ -856,6 +856,12 @@ class Hub(BaseHub):
             for elem in data:
                 if elem.tag == "Meta":
                     continue
+                if self.type == 'collection' and elem.attrib.get('type') == 'tag':
+                    # a search's collection is its tag (type="tag": the tag's id and a filter key,
+                    # not the collection's ratingKey), which buildItem() has no class for and
+                    # dropped - search.SearchWindow finds the collection itself to open it
+                    self.items.append(media.Collection(elem, initpath='/hubs', server=self.server, container=container))
+                    continue
                 try:
                     self.items.append(plexobjects.buildItem(self.server, elem, '/hubs', container=container, tag_fallback=True, not_cachable=not_cachable or self.is_external))
                 except exceptions.UnknownType:

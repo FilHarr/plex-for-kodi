@@ -546,3 +546,93 @@ class SearchLimitSettingTest(KodiTestCase):
 
     def test_unset_50(self):
         self.assertEqual(50, self.asked(None))
+
+
+class CollectionHubBuildTest(KodiTestCase):
+    """plexnet builds a search's collections - Directory type="tag" - as media.Collection; it had no
+    class for them, so the row came back empty (live, 2026-10-07)."""
+
+    def test_tags_become_collections(self):
+        from xml.etree import ElementTree
+        from plexnet import plexlibrary, media
+        xml = ElementTree.fromstring(
+            '<Hub type="collection" hubIdentifier="collection" size="1" title="Collections">'
+            '<Directory type="tag" tag="Star Wars Collection" id="84183" librarySectionID="22"'
+            ' librarySectionTitle="Films" librarySectionType="1" thumb="https://image.tmdb.org/x.jpg"'
+            ' key="/library/sections/22/all?collection=84183"/></Hub>')
+        hub = plexlibrary.Hub(xml, server=mock.Mock())
+        self.assertEqual([media.Collection], [type(i) for i in hub.items])
+        self.assertEqual(('Star Wars Collection', '84183'), (hub.items[0].tag, hub.items[0].get('id')))
+
+
+class Tag(object):
+    """A search's collection as Plex sends it: its tag (plexnet media.Collection)."""
+
+    def __init__(self, name, tagID, libraryID, library, libraryType, srv):
+        self.tag = name
+        self.server = srv
+        self.attrs = {'id': tagID, 'librarySectionID': libraryID, 'librarySectionTitle': library,
+                      'librarySectionType': libraryType}
+
+    def get(self, key, default=''):
+        return plexobjects.PlexValue(self.attrs.get(key, default) or '')
+
+
+class RealCollection(object):
+    TYPE = 'collection'
+
+    def __init__(self, title, index):
+        self.title = title
+        self.attrs = {'index': index}
+
+    def get(self, key, default=''):
+        return plexobjects.PlexValue(self.attrs.get(key, default) or '')
+
+    def set(self, key, value):
+        self.attrs[key] = value
+
+
+class ResolveCollectionsTest(KodiTestCase):
+    """A search's collection tags become the collections they are: one request per library, by
+    the tags' ids as the collections' index (resolveCollections(), live 2026-10-07)."""
+
+    def setUp(self):
+        super(ResolveCollectionsTest, self).setUp()
+        self.animal = server('a', 'Animal')
+
+    def test_each_library_asked_once_and_the_tags_replaced(self):
+        tags = [Tag('Star Trek', '84090', '22', 'Films', '1', self.animal),
+                Tag('Skywalker Saga', '2793', '2', 'Movies', '1', self.animal),
+                Tag('Star Wars', '84183', '22', 'Films', '1', self.animal)]
+        asked = []
+        lock = threading.Lock()
+
+        def listItems(srv, path, params):
+            with lock:
+                asked.append((path, params['index']))
+            return {'/library/sections/22/collections': [RealCollection('Star Wars', '84183'),
+                                                          RealCollection('Star Trek', '84090')],
+                    '/library/sections/2/collections': [RealCollection('Skywalker Saga', '2793')]}[path]
+
+        rows = [Hub('collection', 'Collections', tags)]
+        with mock.patch.object(search.plexobjects, 'listItems', side_effect=listItems):
+            search.resolveCollections(rows)
+        self.assertEqual(sorted([('/library/sections/22/collections', '84090,84183'),
+                                 ('/library/sections/2/collections', '2793')]), sorted(asked))
+        # the tags' order, each with its tag's library
+        self.assertEqual(['Star Trek', 'Skywalker Saga', 'Star Wars'], [c.title for c in rows[0].items])
+        self.assertEqual(['Films', 'Movies', 'Films'], [u'{0}'.format(c.get('librarySectionTitle')) for c in rows[0].items])
+        self.assertEqual(3, rows[0].size.asInt())
+
+    def test_one_not_found_is_dropped(self):
+        rows = [Hub('collection', 'Collections', [Tag('Gone', '1', '22', 'Films', '1', self.animal),
+                                                  Tag('Here', '2', '22', 'Films', '1', self.animal)])]
+        with mock.patch.object(search.plexobjects, 'listItems', lambda srv, path, params: [RealCollection('Here', '2')]):
+            search.resolveCollections(rows)
+        self.assertEqual(['Here'], [c.title for c in rows[0].items])
+
+    def test_other_rows_untouched(self):
+        rows = [Hub('movie', 'Movies', [Item('Alien', '0.9')])]
+        with mock.patch.object(search.plexobjects, 'listItems') as listItems:
+            search.resolveCollections(rows)
+        listItems.assert_not_called()

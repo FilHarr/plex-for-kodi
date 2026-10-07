@@ -671,3 +671,50 @@ class BackDeletesTest(KodiTestCase):
         win = self.window('', search.SearchWindow.EDIT_CONTROL_ID)
         win.updateFromEdit(search.xbmcgui.ACTION_NAV_BACK, '', '')
         self.assertEqual((0, 1), (len(win.deleted), len(win.routed)))
+
+
+class CollectionResultsTest(KodiTestCase):
+    """A search's collections (the user, 2026-10-07): the collections themselves
+    (resolveCollections()), shown as posters with their library, each type button showing its
+    kind of library's, opened as the Collections tab opens one."""
+
+    class Collection(object):
+        TYPE = 'collection'
+
+        def __init__(self, title, library, libraryType):
+            self.title = title
+            self.tag = title
+            self.attrs = {'librarySectionTitle': library, 'librarySectionType': libraryType}
+
+        def get(self, key, default=''):
+            return self.attrs.get(key, default)
+
+    class Hub(object):
+        def __init__(self, type_, items):
+            self.type = type_
+            self.items = items
+            self.size = type('Size', (), {'asInt': lambda s: len(items)})()
+
+    def test_its_line_is_its_library_and_type(self):
+        win = searchWindow()
+        self.assertEqual(u'Films \u00b7 Collection', win.typeLine(self.Collection('Star Wars Collection', 'Films', '1')))
+
+    def shown(self, section):
+        win = searchWindow()
+        win.getProperty = lambda key: section
+        win.setProperty = lambda key, value: None
+        win.clearHubs = lambda: None
+        added = []
+        win.resultsList = type('Grid', (), {'addItems': lambda grid, items: added.extend(items)})()
+        win.createListItem = lambda item, artType: (item.title, artType)
+        win.showHubs([self.Hub('collection', [self.Collection('Star Wars Collection', 'Films', '1'),
+                                              self.Collection('Marvel', 'TV', '2')])])
+        return added
+
+    def test_a_poster_on_all(self):
+        self.assertEqual([('Star Wars Collection', 'poster'), ('Marvel', 'poster')], self.shown('all'))
+
+    def test_each_type_button_its_kind_of_librarys(self):
+        self.assertEqual(['Star Wars Collection'], [t for t, _ in self.shown('movie')])
+        self.assertEqual(['Marvel'], [t for t, _ in self.shown('show')])
+        self.assertEqual([], self.shown('photo'))

@@ -85,6 +85,8 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         'director': {'type': 'circle'},
         # no 'genre': a genre is a library's, reached from it (the user, 2026-10-06)
         'playlist': {'type': 'square'},
+        # the collections the search's tags are (resolveCollections()) - the user, 2026-10-07
+        'collection': {'type': 'poster'},
     }
 
     def __init__(self, *args, **kwargs):
@@ -646,6 +648,7 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         'playlist': (35150, 'Playlist'),
         'Role': (32473, 'Actor'),
         'Director': (32474, 'Director'),
+        'collection': (32382, 'Collection'),
     }
 
     def typeLine(self, hubItem):
@@ -668,6 +671,10 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             parts.append(hubItem.get('parentTitle', ''))
         elif kind == 'track':
             parts.append(hubItem.get('grandparentTitle', ''))
+        elif kind == 'collection':
+            # its library: copies of a collection in two libraries can be different collections
+            # (Star Trek's guid on 26 films in Films and on 3 in Movies, live), so never merged
+            parts.append(hubItem.get('librarySectionTitle', ''))
         if name:
             parts.append(T(*name))
         return u' \u00b7 '.join(u'{0}'.format(part) for part in parts if part)
@@ -719,23 +726,32 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
                     mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/show.png')
                 elif hubItem.TYPE == 'photo':
                     mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/photo.png')
+                elif hubItem.TYPE == 'collection':
+                    mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/{0}.png'.format(
+                        self.COLLECTION_FALLBACKS.get(u'{0}'.format(hubItem.get('librarySectionType')), 'movie')))
 
         return mli
 
     # The rows each type button shows (all of them for All)
     SECTION_TYPES = {
-        'movie': ('movie',),
-        'show': ('show', 'season', 'episode'),
-        'artist': ('artist', 'album', 'track'),
+        'movie': ('movie', 'collection'),
+        'show': ('show', 'season', 'episode', 'collection'),
+        'artist': ('artist', 'album', 'track', 'collection'),
         'photo': ('photo', 'photodirectory'),
         'people': ('actor', 'director'),
     }
+    # The library type (librarySectionType) whose collections each type button shows, and a
+    # collection's stand-in art by it
+    COLLECTION_LIBRARY_TYPES = {'movie': '1', 'show': '2', 'artist': '8'}
+    COLLECTION_FALLBACKS = {'1': 'movie', '2': 'show', '8': 'music'}
 
     def showHubs(self, hubs):
         """The search's rows as one grid, three across: each type's items in the order the types
         come (the rows' order, mergeResults()), the ones the type button allows."""
         self.clearHubs()
-        allowed = self.SECTION_TYPES.get(self.getProperty('search.section'))
+        section = self.getProperty('search.section')
+        allowed = self.SECTION_TYPES.get(section)
+        collections = self.COLLECTION_LIBRARY_TYPES.get(section)
         items = []
         for hub in hubs:
             if allowed and hub.type not in allowed or hub.size.asInt() <= 0:
@@ -746,6 +762,10 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
                 continue
             util.DEBUG_LOG('Showing search hub: {0}, {1} items', hub.type, len(hub.items))
             for hubItem in hub.items:
+                # a type button's collections: those of its kind of library
+                if hub.type == 'collection' and collections and \
+                        u'{0}'.format(hubItem.get('librarySectionType')) != collections:
+                    continue
                 mli = self.createListItem(hubItem, info['type'])
                 if mli:
                     items.append(mli)
@@ -839,7 +859,7 @@ def searchServers(query, servers, positions=None, superseded=None):
     missing = [s.name for s in servers if s.uuid not in answers]
     if superseded is not None and superseded():
         return None, missing
-    rows = dropShowNameEpisodes(mergeResults([answers[s.uuid] for s in answered]), query)
+    rows = resolveCollections(dropShowNameEpisodes(mergeResults([answers[s.uuid] for s in answered]), query))
     return dedupeResults(rows, answered, positions, lookupCopies(rows, answered)), missing
 
 
@@ -874,6 +894,63 @@ def dropShowNameEpisodes(rows, query):
         if len(kept) != len(hub.items):
             hub.items = kept
             hub.size = plexobjects.PlexValue(str(len(kept)), hub)
+    return rows
+
+
+def resolveCollections(rows):
+    """The search's collections as the collections themselves (the user, 2026-10-07). Plex sends
+    each as its tag (plexnet media.Collection): the tag's id, a filter key and TMDB's art - not
+    something to open, and the tag's id isn't the collection's ratingKey (84090 is an episode on
+    Animal). A library's collections whose index is the tags' ids are them, all in one request
+    (/library/sections/<id>/collections?index=a,b - about 20 ms, checked live), every library's
+    together: with the server's own poster, and opened as the Collections tab opens one. Each
+    keeps its tag's library, for its card and the type buttons. One not found - gone, or its
+    server too slow - is dropped: there'd be nothing to open."""
+    hub = next((h for h in rows if h.type == 'collection'), None)
+    if hub is None or not hub.items:
+        return rows
+    groups = {}
+    for tag in hub.items:
+        server = getattr(tag, 'server', None)
+        library = u'{0}'.format(tag.get('librarySectionID') or '')
+        groups.setdefault((getattr(server, 'uuid', None), library), (server, library, []))[2].append(tag)
+    found = {}
+    lock = threading.Lock()
+
+    def ask(server, library, tags):
+        try:
+            collections = plexobjects.listItems(server, '/library/sections/{0}/collections'.format(library), params={
+                'index': ','.join(u'{0}'.format(tag.get('id')) for tag in tags)})
+            with lock:
+                for collection in collections:
+                    found[(server.uuid, library, u'{0}'.format(collection.get('index')))] = collection
+        except Exception:
+            util.ERROR()
+
+    threads = []
+    for server, library, tags in groups.values():
+        if server is None or not library:
+            continue
+        thread = threading.Thread(target=ask, args=(server, library, tags), name='search.collections.' + server.name)
+        thread.daemon = True
+        thread.start()
+        threads.append(thread)
+    started = time.time()
+    for thread in threads:
+        thread.join(max(0, LOOKUP_TIMEOUT - (time.time() - started)))
+    items = []
+    with lock:
+        for tag in hub.items:
+            key = (getattr(getattr(tag, 'server', None), 'uuid', None),
+                   u'{0}'.format(tag.get('librarySectionID') or ''), u'{0}'.format(tag.get('id')))
+            collection = found.get(key)
+            if collection is None:
+                continue
+            collection.set('librarySectionTitle', tag.get('librarySectionTitle'))
+            collection.set('librarySectionType', tag.get('librarySectionType'))
+            items.append(collection)
+    hub.items = items
+    hub.size = plexobjects.PlexValue(str(len(items)), hub)
     return rows
 
 
