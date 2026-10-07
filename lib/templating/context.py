@@ -4,7 +4,6 @@ TEMPLATE_CONTEXTS = {
     "core": {
         "resolution": (1920, 1080),
         "needs_scaling": False,
-        "hub_count": 8,  # Default number of hub rows on home screen
         "search_hub_count": 12,  # Fixed search result rows; must match SearchWindow.SEARCH_HUB_COUNT
     },
     "indicators": {

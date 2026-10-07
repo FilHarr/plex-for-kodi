@@ -114,8 +114,8 @@ class PrepareTemplateDataTest(KodiTestCase):
 
     def test_core_overrides_survive(self):
         ctx = self.context()
-        ctx["core"]["hub_count"] = 3
-        self.assertEqual(3, prepare_template_data("modern", ctx)["core"]["hub_count"])
+        ctx["core"]["needs_scaling"] = True
+        self.assertTrue(prepare_template_data("modern", ctx)["core"]["needs_scaling"])
 
     def test_indicators_without_a_start_key_are_used_flat(self):
         ctx = self.context()
@@ -267,5 +267,4 @@ class ContextIntegrityTest(KodiTestCase):
         core = TEMPLATE_CONTEXTS["core"]
         self.assertEqual((1920, 1080), tuple(core["resolution"]))
         self.assertFalse(core["needs_scaling"])
-        self.assertGreater(core["hub_count"], 0)
         self.assertGreater(core["search_hub_count"], 0)

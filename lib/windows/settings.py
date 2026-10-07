@@ -680,15 +680,6 @@ class Settings(object):
                 ).description(
                     T(33025, "")
                 ),
-                OptionsSetting(
-                    'hub_count',
-                    T(34087, 'Hub Count'),
-                    8,
-                    ((6, '6'), (8, '8'), (10, '10'), (12, '12'), (16, '16')),
-                ).description(
-                    T(34088, 'Maximum number of hubs available to scroll through on the home screen. '
-                             'Higher values use more memory.')
-                ),
                 BoolSetting(
                     'clear_logos', T(35046, 'Show title logos on detail screens'), True
                 ).description(

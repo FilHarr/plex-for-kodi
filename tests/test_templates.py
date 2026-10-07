@@ -198,23 +198,6 @@ class TemplateRenderTest(KodiTestCase):
             with self.subTest(template=name):
                 ET.fromstring(scaled[name])
 
-    def test_hub_count_no_longer_affects_the_recommended_template(self):
-        # The Recommended tab (LibraryWindow's home_section, HomeWindow's former job - see
-        # quiet-orbiting-heron.md's Stage 5) renders a single fixed-position hub row (control id
-        # 50/51) - library.py rebinds its content as focus moves between hubs, rather than there
-        # being one physical control per hub. hub_count is a runtime soft cap on how many hubs are
-        # fetched, not a compile-time row count, so it must not affect the compiled template at
-        # all. Guards against accidentally re-coupling the two.
-        base = copy.deepcopy(TEMPLATE_CONTEXTS)
-        base["core"]["hub_count"] = 4
-        few = render_theme(make_engine(self.mktemp(), context=base), "modern")["recommended"]
-
-        more_ctx = copy.deepcopy(TEMPLATE_CONTEXTS)
-        more_ctx["core"]["hub_count"] = 12
-        many = render_theme(make_engine(self.mktemp(), context=more_ctx), "modern")["recommended"]
-
-        self.assertEqual(few, many)
-
     def test_recommended_defines_exactly_the_hub_ring(self):
         # The hub rows are a fixed rotation ring (LibraryWindow.HUB_ROTATION_RING, four controls
         # since 2026-09-24): the template's list controls and wrappers must match it exactly - a
