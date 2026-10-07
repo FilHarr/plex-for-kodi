@@ -963,7 +963,10 @@ class HubsMixin(object):
     # this file (those size the library grid's own poster panel tiles). Ported verbatim from
     # HomeWindow with the same names, deliberately scoped as self.THUMB_* / class attributes so
     # they don't collide with the bare module-level names used elsewhere in this file.
-    THUMB_POSTER_DIM = util.scaleResolution(244, 361)
+    # 240x360, the poster tile's own size (hub_itemlayout_poster.xml.tpl) - was 244x361, which at
+    # 400% came back 722 high, past Kodi's 720 cache limit (imageres), so Kodi resized each poster
+    # again as it cached it; 480x720 at 400% is exactly on it (the user, 2026-10-07)
+    THUMB_POSTER_DIM = util.scaleResolution(240, 360)
     # 512x288 since the 16:9 hub tile grew to the episode screen's art size
     # (hub_itemlayout_ar16x9.xml.tpl) - was 352x198.
     THUMB_AR16X9_DIM = util.scaleResolution(512, 288)
