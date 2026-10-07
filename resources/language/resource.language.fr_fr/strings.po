@@ -955,7 +955,7 @@ msgstr "Recherche en cours..."
 
 #: 
 msgctxt "#32435"
-msgid "No Results"
+msgid "No results"
 msgstr "Aucun résultat"
 
 #: 

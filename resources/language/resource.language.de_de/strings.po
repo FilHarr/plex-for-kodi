@@ -1036,7 +1036,7 @@ msgstr "Suche ..."
 
 #: 
 msgctxt "#32435"
-msgid "No Results"
+msgid "No results"
 msgstr "Keine Ergebnisse"
 
 #: 

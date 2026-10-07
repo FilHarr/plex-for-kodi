@@ -831,7 +831,7 @@ msgid "Searching..."
 msgstr "Vyhledávám..."
 
 msgctxt "#32435"
-msgid "No Results"
+msgid "No results"
 msgstr "Žádné výsledky"
 
 msgctxt "#32436"

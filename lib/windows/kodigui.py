@@ -2211,7 +2211,7 @@ class SafeControlEdit(object):
     CHARS_LOWER = 'abcdefghijklmnopqrstuvwxyz'
     CHARS_UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
     CHARS_NUMBERS = '0123456789'
-    CURSOR = '[COLOR FFCC7B19]|[/COLOR]'
+    CURSOR = '[COLOR FFE5A00D]|[/COLOR]'
 
     def __init__(self, control_id, label_id, window, key_callback=None, grab_focus=False):
         self.controlID = control_id
@@ -2238,7 +2238,9 @@ class SafeControlEdit(object):
             if controlID == self.controlID:
                 if self.processAction(action.getId()):
                     return
-            elif self.grabFocus:
+            # grab_focus: a key typed off the field types into it, from anywhere - or, a function
+            # of the focused control's id, from where it says
+            elif self.grabFocus and (not callable(self.grabFocus) or self.grabFocus(controlID)):
                 if self.processOffControlAction(action.getButtonCode()):
                     self._win.setFocusId(self.controlID)
                     return
@@ -2312,7 +2314,15 @@ class SafeControlEdit(object):
             return self._text
 
     def updateLabel(self):
-        self._labelControl.setLabel(self._getText() + self.CURSOR)
+        self._labelControl.setLabel(self._getText() + (self.CURSOR if self._showsCursor() else ''))
+
+    def _showsCursor(self):
+        # with grab_focus a function, only where a key would type in: the field, or where it says
+        # (call updateLabel() again as the focus moves)
+        if not callable(self.grabFocus):
+            return True
+        focusID = self._win.getFocusId()
+        return focusID == self.controlID or self.grabFocus(focusID)
 
     def processChar(self, char):
         self._setText(self.getText() + char)

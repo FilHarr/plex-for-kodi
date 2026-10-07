@@ -4,7 +4,6 @@ TEMPLATE_CONTEXTS = {
     "core": {
         "resolution": (1920, 1080),
         "needs_scaling": False,
-        "search_hub_count": 12,  # Fixed search result rows; must match SearchWindow.SEARCH_HUB_COUNT
     },
     "indicators": {
         "base": {

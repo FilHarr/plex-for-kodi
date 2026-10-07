@@ -954,7 +954,7 @@ msgstr "搜索中..."
 
 #: 
 msgctxt "#32435"
-msgid "No Results"
+msgid "No results"
 msgstr "无结果"
 
 #: 

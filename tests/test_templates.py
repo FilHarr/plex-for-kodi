@@ -122,19 +122,6 @@ class TemplateInventoryTest(KodiTestCase):
         self.assertEqual(set(), UNREFERENCED_TEMPLATES & referenced,
                          "now referenced - drop it from UNREFERENCED_TEMPLATES")
 
-    def test_search_hub_count_matches_the_search_window(self):
-        """
-        Both sides carry a comment saying they must agree; nothing enforced it.
-        Read the constant out of the source rather than importing the window,
-        which would drag in the whole GUI stack.
-        """
-        path = os.path.join(REPO_ROOT, "lib", "windows", "search.py")
-        with open(path, "r", encoding="utf-8") as fp:
-            match = re.search(r"^\s*SEARCH_HUB_COUNT\s*=\s*(\d+)", fp.read(), re.M)
-        self.assertIsNotNone(match, "SEARCH_HUB_COUNT not found in lib/windows/search.py")
-        self.assertEqual(int(match.group(1)), TEMPLATE_CONTEXTS["core"]["search_hub_count"])
-
-
 class TemplateRenderTest(KodiTestCase):
     def test_every_theme_renders_wellformed_windows(self):
         for theme in THEMES:
@@ -216,14 +203,12 @@ class TemplateRenderTest(KodiTestCase):
         self.assertEqual(ring, {i for i in ids if 400 <= i < 500})
         self.assertEqual(wrappers, {i for i in ids if 500 <= i < 510})
 
-    def test_search_window_defines_a_control_per_search_hub(self):
+    def test_search_window_has_its_results_grid(self):
+        """SearchWindow.RESULTS_ID: the one grid every result goes in."""
         xml = render_theme(make_engine(self.mktemp()), "modern")["search"]
         root = ET.fromstring(xml)
-        ids = {ctrl.get("id") for ctrl in root.iter("control") if ctrl.get("id")}
-        count = TEMPLATE_CONTEXTS["core"]["search_hub_count"]
-        missing = [2100 + i for i in range(count) if str(2100 + i) not in ids]
-        self.assertEqual([], missing, "search hub group controls missing from the skin")
-
+        panels = [ctrl for ctrl in root.iter("control") if ctrl.get("id") == "2100"]
+        self.assertEqual(["panel"], [ctrl.get("type") for ctrl in panels])
 
 class TemplateAssetTest(KodiTestCase):
     def test_referenced_pm4k_assets_exist(self):

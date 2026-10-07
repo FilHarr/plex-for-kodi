@@ -890,7 +890,7 @@ msgid "Searching..."
 msgstr ""
 
 msgctxt "#32435"
-msgid "No Results"
+msgid "No results"
 msgstr ""
 
 msgctxt "#32436"
@@ -3707,4 +3707,44 @@ msgstr ""
 
 msgctxt "#35143"
 msgid "Plex is temporarily limiting Watchlist requests. Try again in {0} seconds."
+msgstr ""
+
+msgctxt "#35144"
+msgid "Movie"
+msgstr ""
+
+msgctxt "#35145"
+msgid "Episode"
+msgstr ""
+
+msgctxt "#35146"
+msgid "Season"
+msgstr ""
+
+msgctxt "#35147"
+msgid "Track"
+msgstr ""
+
+msgctxt "#35148"
+msgid "Photo"
+msgstr ""
+
+msgctxt "#35149"
+msgid "Photo album"
+msgstr ""
+
+msgctxt "#35150"
+msgid "Playlist"
+msgstr ""
+
+msgctxt "#35151"
+msgid "Open from"
+msgstr ""
+
+msgctxt "#35152"
+msgid "Search results per type"
+msgstr ""
+
+msgctxt "#35153"
+msgid "How many results of each type a search asks each server for. A title in more than one library takes a place for each copy. More finds more, but is slower on low-powered devices."
 msgstr ""

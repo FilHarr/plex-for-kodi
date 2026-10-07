@@ -267,4 +267,3 @@ class ContextIntegrityTest(KodiTestCase):
         core = TEMPLATE_CONTEXTS["core"]
         self.assertEqual((1920, 1080), tuple(core["resolution"]))
         self.assertFalse(core["needs_scaling"])
-        self.assertGreater(core["search_hub_count"], 0)

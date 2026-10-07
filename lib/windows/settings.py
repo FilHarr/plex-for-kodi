@@ -459,6 +459,14 @@ class Settings(object):
                 BoolSetting(
                     'search_use_kodi_kbd', T(32955, 'Use Kodi keyboard for searching'), False
                 ),
+                OptionsSetting(
+                    'search_limit', T(35152, 'Search results per type'), 50,
+                    [(a, str(a)) for a in (10, 20, 30, 50, 75, 100)]
+                ).description(
+                    T(35153, 'How many results of each type a search asks each server for. A title in '
+                             'more than one library takes a place for each copy. More finds more, but '
+                             'is slower on low-powered devices.')
+                ),
                 ThemeMusicSetting('theme_music', T(32480, 'Theme music'), 5),
                 BoolSetting(
                     'theme_music_loop', T(33737, 'Loop theme music'), False

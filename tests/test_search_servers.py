@@ -78,8 +78,8 @@ class FanOutTest(KodiTestCase):
         animal.hubs.return_value = [Hub('movie', 'Movies', [Item('Alien', '0.9')])]
         oscar.hubs.return_value = [Hub('movie', 'Movies', [Item('Alien Nation', '0.7')])]
         rows, missing = search.searchServers('alien', [animal, oscar, down])
-        animal.hubs.assert_called_once_with(count=10, search_query='alien')
-        oscar.hubs.assert_called_once_with(count=10, search_query='alien')
+        animal.hubs.assert_called_once_with(count=search.SEARCH_LIMIT, search_query='alien')
+        oscar.hubs.assert_called_once_with(count=search.SEARCH_LIMIT, search_query='alien')
         down.hubs.assert_not_called()
         self.assertEqual([('Movies', ['Alien', 'Alien Nation'])], titles(rows))
         self.assertEqual(['Down'], missing)
@@ -190,3 +190,359 @@ class ChosenServersTest(KodiTestCase):
     def test_a_choice_of_servers_all_gone_falls_back_to_the_sidebars(self):
         self.settings['search.servers.7'] = json.dumps(['gone'])
         self.assertEqual([self.oscar, self.animal], search.searchedServers())
+
+
+class Media(object):
+    """A video's version as plexmedia.PlexMedia has it: get() answers with plain strings (live,
+    2026-10-06 - its asInt() isn't there to call)."""
+
+    def __init__(self, width, bitrate, resolution):
+        self.attrs = {'width': str(width), 'bitrate': str(bitrate), 'videoResolution': resolution}
+
+    def get(self, key, default=None):
+        return self.attrs.get(key, default)
+
+
+class Copy(object):
+    """A search result as dedupeResults() reads it: guid, library, server, score, progress and its
+    first version."""
+
+    TYPE = 'movie'
+
+    def __init__(self, title, guid, library, srv, score='0.5', viewOffset='', width=0, bitrate=0, resolution='',
+                 lastViewedAt=''):
+        self.title = title
+        self.server = srv
+        self.attrs = {'guid': guid, 'librarySectionTitle': library, 'score': score, 'viewOffset': viewOffset,
+                      'lastViewedAt': lastViewedAt,
+                      'librarySectionID': {'Films': '1', 'Movies': '2'}.get(library, '9')}
+        self.media = [Media(width, bitrate, resolution)] if width or bitrate else []
+
+    def get(self, key, default=''):
+        return plexobjects.PlexValue(self.attrs.get(key, default))
+
+
+class DedupeTest(KodiTestCase):
+    """Copies of one thing - in two libraries of a server, or on two servers - are one result
+    (dedupeResults()), by the agent's guid. Live 2026-10-06: Animal lists Alien in Films and in
+    Movies, both plex://movie/5d7768254de0ee001fcc83a5."""
+
+    ALIEN = 'plex://movie/5d7768254de0ee001fcc83a5'
+
+    def setUp(self):
+        super(DedupeTest, self).setUp()
+        self.animal, self.oscar = server('a', 'Animal'), server('o', 'Oscar')
+
+    def rows(self, items, type_='movie', positions=None):
+        return search.dedupeResults([Hub(type_, 'Movies', items)], [self.animal, self.oscar], positions)
+
+    def test_one_film_in_two_libraries_is_one_result(self):
+        films = Copy('Alien', self.ALIEN, 'Films', self.animal, '0.93')
+        movies = Copy('Alien', self.ALIEN, 'Movies', self.animal, '0.93')
+        aliens = Copy('Aliens', 'plex://movie/5d776827961905001eb91337', 'Films', self.animal, '0.53')
+        rows = self.rows([films, movies, aliens])
+        self.assertEqual(['Alien', 'Aliens'], [i.title for i in rows[0].items])
+        self.assertEqual(2, rows[0].size.asInt())
+        self.assertEqual([films, movies], search.copiesOf(rows[0].items[0]))
+        self.assertEqual([], search.copiesOf(rows[0].items[1]))
+
+    def test_a_language_suffix_is_the_same_thing(self):
+        rows = self.rows([Copy('Alien', 'com.plexapp.agents.imdb://tt0078748?lang=en', 'Films', self.animal),
+                          Copy('Alien', 'com.plexapp.agents.imdb://tt0078748?lang=de', 'Movies', self.animal)])
+        self.assertEqual(1, len(rows[0].items))
+
+    def test_unmatched_files_arent_merged(self):
+        rows = self.rows([Copy('Home video', 'local://1', 'Films', self.animal),
+                          Copy('Home video', 'local://1', 'Films', self.oscar)])
+        self.assertEqual(2, len(rows[0].items))
+
+    def test_playlists_arent_merged(self):
+        rows = self.rows([Copy('Mix', 'x://1', '', self.animal), Copy('Mix', 'x://1', '', self.oscar)], 'playlist')
+        self.assertEqual(2, len(rows[0].items))
+
+    def person(self, srv, library, tagKey='5d7768253c3c2a001fbcac3e', name='Alan Rickman'):
+        copy = Copy(name, '', library, srv)
+        copy.TYPE = 'Role'
+        copy.attrs['tagKey'] = tagKey
+        return copy
+
+    def test_one_person_in_every_library_is_one_result(self):
+        # live 2026-10-06: Alan Rickman in Films and Movies on Animal, and in Films on Oscar
+        oscarFilms = self.person(self.oscar, 'Films')
+        animalFilms = self.person(self.animal, 'Films')
+        rows = self.rows([oscarFilms, animalFilms, self.person(self.animal, 'Movies'),
+                          self.person(self.animal, 'Films', tagKey='5d776826eb5d26001f1dd578', name='Alan Tudyk')],
+                         'actor')
+        self.assertEqual(['Alan Rickman', 'Alan Tudyk'], [i.title for i in rows[0].items])
+        # the sidebar's first server's
+        self.assertIs(animalFilms, rows[0].items[0])
+        self.assertEqual(3, len(search.copiesOf(rows[0].items[0])))
+
+    def test_people_without_a_key_arent_merged(self):
+        rows = self.rows([self.person(self.animal, 'Films', tagKey=''), self.person(self.oscar, 'Films', tagKey='')],
+                         'director')
+        self.assertEqual(2, len(rows[0].items))
+
+    def test_the_part_watched_copy_opens(self):
+        best = Copy('Alien', self.ALIEN, 'Movies', self.oscar, viewOffset='1619778', width=1920)
+        rows = self.rows([Copy('Alien', self.ALIEN, 'Films', self.animal, width=3840), best])
+        self.assertIs(best, rows[0].items[0])
+
+    def test_of_two_part_watched_the_one_watched_last(self):
+        last = Copy('Alien', self.ALIEN, 'Movies', self.oscar, viewOffset='500', lastViewedAt='1759700000')
+        rows = self.rows([Copy('Alien', self.ALIEN, 'Films', self.animal, viewOffset='9000', lastViewedAt='1759000000',
+                               width=3840), last], positions={('a', '1'): 0})
+        self.assertIs(last, rows[0].items[0])
+
+    def test_an_unpinned_library_after_one_pinned_low(self):
+        # a place is the entry's index in the whole sidebar: past the number of libraries
+        pinned = Copy('Alien', self.ALIEN, 'Films', self.animal, width=1920)
+        rows = self.rows([Copy('Alien', self.ALIEN, 'Movies', self.oscar, width=3840), pinned],
+                         positions={('a', '1'): 7, ('a', '5'): 2})
+        self.assertIs(pinned, rows[0].items[0])
+
+    def test_then_a_pinned_library_whatever_the_quality(self):
+        # the user, 2026-10-06: a pinned library, and one pinned high, is the one watched from
+        pinned = Copy('Alien', self.ALIEN, 'Films', self.animal, width=1920)
+        rows = self.rows([Copy('Alien', self.ALIEN, 'Movies', self.oscar, width=3840), pinned],
+                         positions={('a', '1'): 3})
+        self.assertIs(pinned, rows[0].items[0])
+
+    def test_the_library_pinned_higher(self):
+        higher = Copy('Alien', self.ALIEN, 'Movies', self.animal, width=1920)
+        rows = self.rows([Copy('Alien', self.ALIEN, 'Films', self.animal, width=3840), higher],
+                         positions={('a', '1'): 4, ('a', '2'): 1})
+        self.assertIs(higher, rows[0].items[0])
+
+    def test_part_watched_still_first(self):
+        watched = Copy('Alien', self.ALIEN, 'Movies', self.oscar, viewOffset='1000')
+        rows = self.rows([Copy('Alien', self.ALIEN, 'Films', self.animal), watched],
+                         positions={('a', '1'): 0})
+        self.assertIs(watched, rows[0].items[0])
+
+    def test_then_the_best_quality(self):
+        best = Copy('Alien', self.ALIEN, 'Movies', self.oscar, width=3840, bitrate=40000)
+        rows = self.rows([Copy('Alien', self.ALIEN, 'Films', self.animal, width=1920, bitrate=12453), best])
+        self.assertIs(best, rows[0].items[0])
+
+    def test_then_the_sidebars_first_server(self):
+        best = Copy('Alien', self.ALIEN, 'Films', self.animal, width=1920)
+        rows = self.rows([Copy('Alien', self.ALIEN, 'Films', self.oscar, width=1920), best])
+        self.assertIs(best, rows[0].items[0])
+
+    def test_a_merged_result_keeps_the_first_copys_place(self):
+        rows = self.rows([Copy('Alien', self.ALIEN, 'Films', self.animal, '0.93'),
+                          Copy('Aliens', 'plex://movie/2', 'Films', self.animal, '0.6'),
+                          Copy('Alien', self.ALIEN, 'Movies', self.oscar, '0.4', width=3840)])
+        self.assertEqual(['Alien', 'Aliens'], [i.title for i in rows[0].items])
+        self.assertEqual('Movies', rows[0].items[0].get('librarySectionTitle'))
+
+
+class PlacesLineTest(KodiTestCase):
+    """The line under a result's type: where it is (placesLine())."""
+
+    def setUp(self):
+        super(PlacesLineTest, self).setUp()
+        self.animal, self.oscar = server('a', 'Animal'), server('o', 'Oscar')
+        manager = mock.Mock()
+        manager.getServers.return_value = [self.animal, self.oscar]
+        patch = mock.patch.object(search.plexapp, 'SERVERMANAGER', manager)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def merged(self, *copies):
+        rows = search.dedupeResults([Hub('movie', 'Movies', list(copies))], [self.animal, self.oscar])
+        return rows[0].items[0]
+
+    def test_copies_on_one_server_it_and_how_many_others(self):
+        item = self.merged(Copy('Alien', DedupeTest.ALIEN, 'Films', self.animal),
+                           Copy('Alien', DedupeTest.ALIEN, 'Movies', self.animal))
+        self.assertEqual(u'Animal + 1', search.placesLine(item))
+
+    def test_copies_on_one_server_of_a_single_server_account_still_name_it(self):
+        search.plexapp.SERVERMANAGER.getServers.return_value = [self.animal]
+        item = self.merged(Copy('Alien', DedupeTest.ALIEN, 'Films', self.animal),
+                           Copy('Alien', DedupeTest.ALIEN, 'Movies', self.animal))
+        self.assertEqual(u'Animal + 1', search.placesLine(item))
+
+    def test_the_server_is_the_one_it_opens_on(self):
+        # the part-watched copy on Oscar is the one opened (pickCopy()), though Animal is first
+        item = self.merged(Copy('Alien', DedupeTest.ALIEN, 'Films', self.animal),
+                           Copy('Alien', DedupeTest.ALIEN, 'Movies', self.animal),
+                           Copy('Alien', DedupeTest.ALIEN, 'Films', self.oscar, viewOffset='60000'))
+        self.assertEqual(u'Oscar + 2', search.placesLine(item))
+
+    def test_a_person_nothing(self):
+        def person(srv):
+            copy = Copy('Alan Rickman', '', 'Films', srv)
+            copy.TYPE = 'Role'
+            copy.attrs['tagKey'] = '5d7768253c3c2a001fbcac3e'
+            return copy
+        rows = search.dedupeResults([Hub('actor', 'Actors', [person(self.animal), person(self.oscar)])],
+                                    [self.animal, self.oscar])
+        self.assertTrue(search.copiesOf(rows[0].items[0]))
+        self.assertEqual('', search.placesLine(rows[0].items[0]))
+        self.assertEqual('', search.placesLine(person(self.oscar)))
+
+    def test_one_copy_its_server(self):
+        self.assertEqual('Oscar', search.placesLine(Copy('Alien', DedupeTest.ALIEN, 'Films', self.oscar)))
+
+    def test_the_open_from_rows(self):
+        copy = Copy('Alien', DedupeTest.ALIEN, 'Films', self.animal, width=1920, bitrate=12453, resolution='1080')
+        self.assertTrue(search.copyLabel(copy, True).startswith('Films, Animal, 1080p ('))
+        self.assertEqual('Films', search.copyLabel(Copy('Alien', DedupeTest.ALIEN, 'Films', self.animal), False))
+
+
+def copy(title, guid, library, srv, ratingKey, **kwargs):
+    item = Copy(title, guid, library, srv, **kwargs)
+    item.attrs['ratingKey'] = ratingKey
+    return item
+
+
+class LookupCopiesTest(KodiTestCase):
+    """Past its limit Plex sometimes sends one library's copies and leaves the other's out (shows
+    for "the" at 30 all from TV, none from TV shows, live 2026-10-07), so each server searched is
+    asked for the results' guids (lookupCopies(), /library/all?guid=), and the copies it has join
+    their results (dedupeResults()'s found)."""
+
+    ALIEN = 'plex://movie/5d7768254de0ee001fcc83a5'
+    EARTH = 'plex://show/6413cd3a5ea8bbd1c9e8e3ab'
+
+    def setUp(self):
+        super(LookupCopiesTest, self).setUp()
+        self.animal, self.oscar = server('a', 'Animal'), server('o', 'Oscar')
+
+    def test_a_copy_the_search_left_out_joins_its_result(self):
+        films = copy('Alien', self.ALIEN, 'Films', self.animal, '1')
+        found = {self.ALIEN: [copy('Alien', self.ALIEN, 'Films', self.animal, '1'),
+                              copy('Alien', self.ALIEN, 'Movies', self.animal, '2'),
+                              copy('Alien', self.ALIEN, 'Films', self.oscar, '1')]}
+        rows = search.dedupeResults([Hub('movie', 'Movies', [films])], [self.animal, self.oscar], None, found)
+        self.assertEqual(1, len(rows[0].items))
+        # the search's own copy once, not again as the lookup's
+        self.assertEqual(3, len(search.copiesOf(rows[0].items[0])))
+
+    def test_a_copy_found_makes_no_result_of_its_own(self):
+        films = copy('Alien', self.ALIEN, 'Films', self.animal, '1')
+        found = {self.EARTH: [copy('Alien: Earth', self.EARTH, 'TV', self.animal, '7')]}
+        rows = search.dedupeResults([Hub('movie', 'Movies', [films])], [self.animal], None, found)
+        self.assertEqual([films], rows[0].items)
+        self.assertEqual([], search.copiesOf(films))
+
+    def test_a_copy_found_can_be_the_one_opened(self):
+        films = copy('Alien', self.ALIEN, 'Films', self.animal, '1')
+        watching = copy('Alien', self.ALIEN, 'Films', self.oscar, '1', viewOffset='60000', lastViewedAt='100')
+        rows = search.dedupeResults([Hub('movie', 'Movies', [films])], [self.animal, self.oscar], None,
+                                    {self.ALIEN: [watching]})
+        self.assertIs(watching, rows[0].items[0])
+
+    def test_each_server_asked_once_a_type_for_the_results_guids(self):
+        rows = [Hub('movie', 'Movies', [copy('Alien', self.ALIEN + '?lang=en', 'Films', self.animal, '1'),
+                                        copy('Mine', 'local://9', 'Films', self.animal, '9')]),
+                Hub('show', 'Shows', [copy('Alien: Earth', self.EARTH, 'TV', self.animal, '7')]),
+                Hub('actor', 'Actors', [copy('Alan Rickman', '', 'Films', self.animal, '3')])]
+        asked = []
+        lock = threading.Lock()
+
+        def listItems(srv, path, params):
+            with lock:
+                asked.append((srv.name, path, params['type'], params['guid'], params['excludeFields']))
+            if srv is self.oscar and params['type'] == 1:
+                return [copy('Alien', self.ALIEN, 'Films', self.oscar, '1')]
+            return []
+
+        with mock.patch.object(search.plexobjects, 'listItems', side_effect=listItems):
+            found = search.lookupCopies(rows, [self.animal, self.oscar])
+        self.assertEqual(sorted([('Animal', '/library/all', 1, self.ALIEN, 'summary'),
+                                 ('Animal', '/library/all', 2, self.EARTH, 'summary'),
+                                 ('Oscar', '/library/all', 1, self.ALIEN, 'summary'),
+                                 ('Oscar', '/library/all', 2, self.EARTH, 'summary')]), sorted(asked))
+        self.assertEqual([self.ALIEN], list(found))
+        self.assertEqual(['o'], [item.server.uuid for item in found[self.ALIEN]])
+
+    def test_a_server_that_fails_adds_nothing(self):
+        rows = [Hub('movie', 'Movies', [copy('Alien', self.ALIEN, 'Films', self.animal, '1')])]
+
+        def listItems(srv, path, params):
+            if srv is self.oscar:
+                raise IOError('down')
+            return [copy('Alien', self.ALIEN, 'Movies', self.animal, '2')]
+
+        with mock.patch.object(search.plexobjects, 'listItems', side_effect=listItems), \
+                mock.patch.object(search.util, 'ERROR'):
+            found = search.lookupCopies(rows, [self.animal, self.oscar])
+        self.assertEqual(1, len(found[self.ALIEN]))
+
+
+class Episode(object):
+    def __init__(self, title, show):
+        self.title = title
+        self.attrs = {'title': title, 'grandparentTitle': show}
+
+    def get(self, key, default=None):
+        return plexobjects.PlexValue(self.attrs.get(key, default) or '')
+
+
+class ShowNameEpisodesTest(KodiTestCase):
+    """Episodes Plex sends only because their show's name matches are dropped
+    (dropShowNameEpisodes(), the user, 2026-10-07): checked live, all 30 of "arrow"'s episodes and 28
+    of "frasier"'s were those - no reason= marks them."""
+
+    def kept(self, query, *episodes):
+        rows = search.dropShowNameEpisodes([Hub('episode', 'Episodes', list(episodes))], query)
+        return [e.title for e in rows[0].items], rows[0].size.asInt()
+
+    def test_the_shows_name_alone_drops_it(self):
+        self.assertEqual((['Frasier Crane\'s Day Off'], 1),
+                         self.kept('frasier', Episode('The Matchmaker', 'Frasier'),
+                                   Episode('Frasier Crane\'s Day Off', 'Frasier')))
+
+    def test_its_own_title_keeps_it(self):
+        # the start of a word, or anywhere in one
+        self.assertEqual(['Starling City', 'Superstar'],
+                         self.kept('star', Episode('Starling City', 'Arrow'), Episode('Superstar', 'Glee'))[0])
+
+    def test_a_match_it_cant_explain_stays(self):
+        # neither title has it: Plex matched some other way (a corrected spelling, say)
+        self.assertEqual(['Aliens'], self.kept('alein', Episode('Aliens', 'Doctor Who'))[0])
+
+    def test_every_word_typed(self):
+        self.assertEqual(['Chapter 1: The Mandalorian'],
+                         self.kept('the mandalorian', Episode('Chapter 1: The Mandalorian', 'The Mandalorian'),
+                                   Episode('Chapter 8: Redemption', 'The Mandalorian'))[0])
+
+    def test_case_and_accents_ignored(self):
+        self.assertEqual([], self.kept('pokemon', Episode('Pikachu!', u'Pokémon'))[0])
+
+    def test_other_rows_untouched(self):
+        rows = search.dropShowNameEpisodes([Hub('show', 'Shows', [Episode('Arrow', 'Arrow')])], 'arrow')
+        self.assertEqual(1, len(rows[0].items))
+
+
+class SupersededLookupTest(KodiTestCase):
+    def test_overtaken_no_lookup(self):
+        animal = server('a', 'Animal')
+        animal.hubs.return_value = [Hub('movie', 'Movies', [Item('Alien', '0.9')])]
+        with mock.patch.object(search, 'lookupCopies') as lookup:
+            rows, missing = search.searchServers('alien', [animal], superseded=lambda: True)
+        self.assertIsNone(rows)
+        lookup.assert_not_called()
+
+
+class SearchLimitSettingTest(KodiTestCase):
+    """The search_limit setting (Settings > Main, 50 by default) is what each server is asked for."""
+
+    def asked(self, setting):
+        animal = server('a', 'Animal')
+        animal.hubs.return_value = []
+        real = search.util.getSetting
+        with mock.patch.object(search.util, 'getSetting',
+                               lambda key, default=None: setting if key == 'search_limit' else real(key, default)):
+            search.searchServers('alien', [animal])
+        return animal.hubs.call_args[1]['count']
+
+    def test_the_setting(self):
+        self.assertEqual(100, self.asked(100))
+
+    def test_unset_50(self):
+        self.assertEqual(50, self.asked(None))
