@@ -2864,13 +2864,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     def _homeRowPositions(self):
         """Each sidebar entry's place, by (server uuid, key), for Home's row order
         (home.sidebarOrder()) - a server's Playlists by (its uuid, 'playlists')."""
-        nav = self.sidebarNavSettings()
-        positions = {}
-        for index, sid in enumerate(nav.get('entries', ())):
-            uuid, sep, key = sid.partition(':')
-            if sep:
-                positions[(uuid, key)] = index
-        return positions
+        return sidebar_model.entryPositions(self.sidebarNavSettings())
 
     def _liveSidebarSection(self, placeholder):
         """A sidebar library its server hadn't listed yet, asked for now (sidebar_model.live()). If

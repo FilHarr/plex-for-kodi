@@ -545,6 +545,18 @@ def followSection(section, nav):
     return changed
 
 
+def entryPositions(nav):
+    """Each sidebar entry's place, by (server uuid, key) - a library by its key, a server's
+    Playlists by 'playlists'. For Home's row order (home.sidebarOrder()) and for which copy of a
+    search result opens (search.pickCopy())."""
+    positions = {}
+    for index, sid in enumerate(nav.get('entries', ())):
+        uuid, sep, key = sid.partition(':')
+        if sep:
+            positions[(uuid, key)] = index
+    return positions
+
+
 def libraryOf(item):
     """The library an item (a track, an album, a photo folder) is in, to open for its "Go to
     <library>": the server's own section, else one made from the item. The sidebar's isn't enough:

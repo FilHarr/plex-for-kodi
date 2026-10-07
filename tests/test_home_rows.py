@@ -482,6 +482,13 @@ class ContinueWatchingOnceTest(KodiTestCase):
                                      Item('movies copy', '2', 300, guid='plex://movie/s')], self.animal)
         self.assertEqual(['movies copy'], [i.title for i in home.mergeContinueWatching([a], positions).items])
 
+    def test_an_unpinned_library_after_one_pinned_low(self):
+        # a place is the entry's index in the whole sidebar: past the number of libraries (here 2)
+        positions = {(ANIMAL, '22'): 7, (ANIMAL, '5'): 2}
+        a = Hub('continueWatching', [Item('unpinned copy', '2', 300, guid='plex://movie/s'),
+                                     Item('films copy', '22', 300, guid='plex://movie/s')], self.animal)
+        self.assertEqual(['films copy'], [i.title for i in home.mergeContinueWatching([a], positions).items])
+
     def test_across_servers_the_one_watched_last_wins(self):
         positions = {(ANIMAL, '22'): 1, (OSCAR, '1'): 2}
         a = Hub('continueWatching', [Item('on animal', '22', 100, guid='plex://movie/s')], self.animal)

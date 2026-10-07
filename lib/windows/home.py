@@ -331,13 +331,16 @@ def mergeContinueWatching(hubs, positions=None):
     if not hubs:
         return None
     positions = positions or {}
+    # past every pinned library: a place is the entry's index in the whole sidebar, Watchlist and
+    # Playlists included, so it can be higher than the number of libraries
+    unpinned = max(positions.values()) + 1 if positions else 0
     entries = [(getattr(hub.server, 'uuid', None), item) for hub in hubs for item in hub.items]
 
     def rank(entry):
         uuid, item = entry
         viewed = item.lastViewedAt.asInt() if item.get('lastViewedAt') else 0
         place = positions.get((uuid, str(item.getLibrarySectionId())))
-        return (-viewed, place if place is not None else len(positions))
+        return (-viewed, place if place is not None else unpinned)
 
     items, seen = [], set()
     for _, item in sorted(entries, key=rank):
