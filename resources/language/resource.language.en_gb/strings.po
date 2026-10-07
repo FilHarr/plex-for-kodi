@@ -3748,3 +3748,11 @@ msgstr ""
 msgctxt "#35153"
 msgid "How many results of each type a search asks each server for. A title in more than one library takes a place for each copy. More finds more, but is slower on low-powered devices."
 msgstr ""
+
+msgctxt "#35154"
+msgid "Search typing delay"
+msgstr ""
+
+msgctxt "#35155"
+msgid "How long Search waits after you stop typing, or stop moving around its keyboard, before it searches. Shorter shows results sooner; longer searches less often while you type."
+msgstr ""

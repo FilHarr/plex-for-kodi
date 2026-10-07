@@ -260,7 +260,7 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             if self.resultsThread is None or self.updateResultsTimeout <= now:
                 return
             onKeyboard = 1000 < controlID < 1037 or controlID in (951, 952, 953, self.EDIT_CONTROL_ID)
-            self.updateResultsTimeout = now + self.TYPING_DELAY if onKeyboard else now
+            self.updateResultsTimeout = now + self.typingDelay() if onKeyboard else now
 
     def sidebarActiveSection(self, entries):
         """The Search entry (windowutils.SEARCH_ENTRY), for a sidebar this screen builds itself."""
@@ -314,12 +314,27 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         """Closed, or swapped out by its host: nothing more is shown here."""
         return self._closing or (self._hostRef is not None and self.hostedBy() is None)
 
-    # How long typing has to stop before what's typed is searched for (updateResults())
-    TYPING_DELAY = 1
+    # How long typing has to stop before what's typed is searched for (updateResults()), unless
+    # the search_typing_delay setting says otherwise (Settings > Main, the user, 2026-10-07)
+    TYPING_DELAY = 1.0
 
-    def updateResults(self, delay=TYPING_DELAY):
-        """Search for what's typed, delay seconds after the last key, on the results thread
-        (_updateResults()). The query is read here, on the main thread."""
+    def typingDelay(self):
+        """The search_typing_delay setting, in seconds, read once for this screen."""
+        delay = getattr(self, '_typingDelay', None)
+        if delay is None:
+            try:
+                delay = float(util.getSetting('search_typing_delay', self.TYPING_DELAY) or self.TYPING_DELAY)
+            except (TypeError, ValueError):
+                delay = self.TYPING_DELAY
+            self._typingDelay = delay
+        return delay
+
+    def updateResults(self, delay=None):
+        """Search for what's typed, delay seconds after the last key - the setting's
+        (typingDelay()) when not given - on the results thread (_updateResults()). The query is
+        read here, on the main thread."""
+        if delay is None:
+            delay = self.typingDelay()
         query = self.edit.getText()
         with self._resultsLock:
             self._query = query

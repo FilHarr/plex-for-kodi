@@ -718,3 +718,44 @@ class CollectionResultsTest(KodiTestCase):
         self.assertEqual(['Star Wars Collection'], [t for t, _ in self.shown('movie')])
         self.assertEqual(['Marvel'], [t for t, _ in self.shown('show')])
         self.assertEqual([], self.shown('photo'))
+
+
+class TypingDelaySettingTest(KodiTestCase):
+    """The wait after typing is the search_typing_delay setting (Settings > Main, 1 s by default;
+    the user, 2026-10-07), read once for the screen."""
+
+    def window(self, setting):
+        import threading
+        win = searchWindow()
+        win._resultsLock = threading.Lock()
+        win.resultsThread = 'running'
+        win.updateResultsTimeout = 0
+        real = search.util.getSetting
+        self.patch = mock.patch.object(search.util, 'getSetting',
+                                       lambda key, default=None: setting if key == 'search_typing_delay' else real(key, default))
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        return win
+
+    def test_the_setting(self):
+        import time
+        win = self.window(2.0)
+        win.updateResults()
+        self.assertGreater(win.updateResultsTimeout, time.time() + 1.5)
+        self.assertEqual(2.0, win.typingDelay())
+
+    def test_unset_1_second(self):
+        self.assertEqual(1.0, self.window(None).typingDelay())
+
+    def test_moving_on_the_keyboard_waits_the_setting(self):
+        import time
+        win = self.window(0.5)
+        win.updateResultsTimeout = time.time() + 0.3
+        win._holdSearch(1005)
+        self.assertLess(win.updateResultsTimeout, time.time() + 0.6)
+
+    def test_an_explicit_delay_wins(self):
+        import time
+        win = self.window(2.0)
+        win.updateResults(delay=0)
+        self.assertLessEqual(win.updateResultsTimeout, time.time())

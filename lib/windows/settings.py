@@ -467,6 +467,14 @@ class Settings(object):
                              'more than one library takes a place for each copy. More finds more, but '
                              'is slower on low-powered devices.')
                 ),
+                OptionsSetting(
+                    'search_typing_delay', T(35154, 'Search typing delay'), 1.0,
+                    [(a, T(33091).format(sec_or_ms='{0:g}'.format(a), unit_s_or_ms="s")) for a in (0.5, 1.0, 1.5, 2.0)]
+                ).description(
+                    T(35155, 'How long Search waits after you stop typing, or stop moving around its '
+                             'keyboard, before it searches. Shorter shows results sooner; longer searches '
+                             'less often while you type.')
+                ),
                 ThemeMusicSetting('theme_music', T(32480, 'Theme music'), 5),
                 BoolSetting(
                     'theme_music_loop', T(33737, 'Loop theme music'), False
