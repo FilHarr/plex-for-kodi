@@ -3142,14 +3142,6 @@ msgctxt "#32479"
 msgid "Not in Library"
 msgstr ""
 
-msgctxt "#34108"
-msgid "Unknown"
-msgstr ""
-
-msgctxt "#34109"
-msgid "Choose Version"
-msgstr ""
-
 msgctxt "#35004"
 msgid "History"
 msgstr ""

@@ -13,6 +13,7 @@ from lib.path_mapping import pmm
 from lib.util import T
 from . import hub_config
 from . import background
+from .copies import sameTitleKey
 from .section_ids import CONTINUE_WATCHING_ID
 
 
@@ -342,12 +343,14 @@ def mergeContinueWatching(hubs, positions=None):
         place = positions.get((uuid, str(item.getLibrarySectionId())))
         return (-viewed, place if place is not None else unpinned)
 
+    # copies by Search's rule (copies.sameTitleKey()): the language suffix aside, and never by a
+    # server-only guid - two servers' videos numbered alike aren't one (the user, 2026-10-07)
     items, seen = [], set()
     for _, item in sorted(entries, key=rank):
-        guid = item.get('guid')
-        if guid and guid in seen:
+        key = sameTitleKey(item)
+        if key is not None and key in seen:
             continue
-        seen.add(guid)
+        seen.add(key)
         items.append(item)
     merged = hubs[0]
     merged.items = items[:HUB_ROW_MAX_ITEMS]

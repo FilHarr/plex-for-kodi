@@ -7,7 +7,7 @@ import time
 import unicodedata
 
 from kodi_six import xbmcgui, xbmc
-from plexnet import plexapp, plexobjects, util as plexnetUtil
+from plexnet import plexapp, plexobjects
 
 from lib import util
 from lib.util import T
@@ -19,6 +19,8 @@ from . import optionsdialog
 from . import section_ids
 from . import sidebar_model
 from . import windowutils
+from .copies import (sameTitleKey as _sameKey, _versions, _int, _quality, VERSIONED_TYPES,  # noqa: F401
+                     pickCopy, versionEntries, chooseVersion, copyLabel, chooseFrom)
 
 
 class HistoryItem(object):
@@ -638,21 +640,9 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         entries = openFromEntries(mli.dataSource)
         if len(entries) < 2:
             return False
-        multiServer = len(plexapp.SERVERMANAGER.getServers()) > 1
-        options = [{'key': i, 'display': copyLabel(copy, multiServer, media)} for i, (copy, media) in enumerate(entries)]
-        choice = dropdown.showDropdown(
-            options=options,
-            pos=(660, 441),
-            close_direction='none',
-            set_dropdown_prop=False,
-            header=T(35151, 'Open from'),
-            align_items='left'
-        )
-        if choice is not None:
-            copy, media = entries[choice['key']]
-            if media is not None:
-                chooseVersion(copy, media)
-            self.resultClicked(copy)
+        picked = chooseFrom(entries, len(plexapp.SERVERMANAGER.getServers()) > 1)
+        if picked is not None:
+            self.resultClicked(picked[0])
         return True
 
     # A result's type, first on the line under its title (typeLine())
@@ -1068,16 +1058,6 @@ MERGED_TYPES = ('movie', 'show', 'season', 'episode', 'artist', 'album', 'track'
 PEOPLE_TYPES = ('actor', 'director')
 
 
-def _sameKey(item):
-    """What makes two results copies of one thing: the agent's guid, less any language suffix.
-    None for one no agent matched (local://, which only means something on its own server) or
-    with no guid."""
-    guid = u'{0}'.format(item.get('guid') or '')
-    if not guid or guid.startswith('local://'):
-        return None
-    return guid.split('?', 1)[0]
-
-
 def _personKey(item):
     """What makes two people results one person: their plex.tv key. None without one."""
     return u'{0}'.format(item.get('tagKey') or '') or None
@@ -1089,81 +1069,10 @@ def copiesOf(item):
     return item.__dict__.get('searchCopies') or []
 
 
-def _versions(item):
-    """An item's versions (its Media), [] for one with none (a show, a person)."""
-    try:
-        return list(item.media or [])
-    except Exception:
-        return []
-
-
-def _int(value):
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def _quality(item):
-    """A copy's best version's (width, bitrate), for pickCopy(); (0, 0) if it has none. The best,
-    not the first: Plex's order is its own, and a copy with a 4K version second was judged by its
-    1080p (the user, 2026-10-07). Read with _int(): a video's versions (plexmedia.PlexMedia)
-    answer get() with plain strings."""
-    return max([(_int(media.get('width')), _int(media.get('bitrate'))) for media in _versions(item)] or [(0, 0)])
-
-
-# The types whose versions Open from offers one by one, the one picked opened chosen
-# (chooseVersion()): the ones with a version to play
-VERSIONED_TYPES = ('movie', 'episode')
-
-
 def openFromEntries(item):
-    """Open from's rows for a result (SearchWindow.openFrom()): (copy, version) for each version of
-    each copy that has more than one - a film's 4K and 1080p in one library are two rows - else
-    (copy, None)."""
-    entries = []
-    for copy in copiesOf(item) or [item]:
-        versions = _versions(copy) if copy.TYPE in VERSIONED_TYPES else []
-        if len(versions) > 1:
-            entries.extend((copy, media) for media in versions)
-        else:
-            entries.append((copy, None))
-    return entries
-
-
-def chooseVersion(copy, media):
-    """copy opened with media its chosen version, as pre-play's Choose Version does
-    (preplayutils.chooseVersion()): pre-play keeps it through its first load, and the episode
-    screen gives it to its own copy of the episode (EpisodesPaginator.createListItem())."""
-    for version in _versions(copy):
-        version.set('selected', '')
-    media.set('selected', 1)
-    copy.setMediaChoice(media)
-
-
-def pickCopy(copies, serverOrder, positions=None):
-    """Which copy a merged result opens (the user, 2026-10-06): one part-watched - of several, the
-    one watched last (as Continue Watching keeps, home.mergeContinueWatching()); then the one in the
-    library highest in the sidebar - pinned beats unpinned whatever the quality: a library pinned,
-    and pinned high, is the one watched from (positions: {(server uuid, library key): place},
-    sidebar_model.entryPositions()); then the best quality; then the one on the server first in the
-    sidebar (serverOrder: uuid -> place); then the best scored. The others are on its context menu
-    (SearchWindow.openFrom())."""
-    positions = positions or {}
-    # past every pinned library: a place is the entry's index in the whole sidebar, Watchlist and
-    # Playlists included, so it can be higher than the number of libraries
-    unpinned = max(positions.values()) + 1 if positions else 0
-
-    def rank(indexed):
-        i, item = indexed
-        partWatched = bool(item.get('viewOffset').asInt())
-        viewed = item.get('lastViewedAt').asInt() if partWatched else 0
-        width, bitrate = _quality(item)
-        uuid = getattr(getattr(item, 'server', None), 'uuid', None)
-        place = positions.get((uuid, u'{0}'.format(item.get('librarySectionID') or '')), unpinned)
-        return (not partWatched, -viewed, place, -width, -bitrate,
-                serverOrder.get(uuid, len(serverOrder)), i)
-    return min(enumerate(copies), key=rank)[1]
+    """Open from's rows for a result (SearchWindow.openFrom()): every version of each of its copies
+    (copies.versionEntries())."""
+    return versionEntries(copiesOf(item) or [item])
 
 
 def _copyID(item):
@@ -1231,29 +1140,6 @@ def placesLine(item):
     if not copies:
         return resultServerName(item)
     return u'{0} + {1}'.format(getattr(getattr(item, 'server', None), 'name', '') or '', len(copies) - 1)
-
-
-def copyLabel(copy, multiServer, media=None):
-    """A row in the Open from list (SearchWindow.openFrom()): the copy's library, its server on a
-    multi-server account, then the quality of media - a version of it, else its first - "Films
-    \u00b7 Animal \u00b7 1080p (12.5 Mbps)", the dot the cards' lines use (the user, 2026-10-07)."""
-    parts = [u'{0}'.format(copy.get('librarySectionTitle') or '')]
-    server = getattr(copy, 'server', None)
-    if multiServer and server is not None:
-        parts.append(server.name)
-    if media is None:
-        versions = _versions(copy)
-        media = versions[0] if versions else None
-    if media is not None:
-        resolution = u'{0}'.format(media.get('videoResolution') or '')
-        resolution = resolution + 'p' if resolution.isdigit() else resolution.upper()
-        bitrate = _int(media.get('bitrate'))
-        rate = plexnetUtil.bitrateToString(bitrate * 1000) if bitrate else ''
-        if resolution and rate:
-            parts.append(u'{0} ({1})'.format(resolution, rate))
-        else:
-            parts.append(resolution or rate)
-    return u' \u00b7 '.join(part for part in parts if part)
 
 
 def resultServerName(item):

@@ -11,13 +11,14 @@ from kodi_six import xbmcgui
 from lib import backgroundthread
 from lib import util
 from lib.util import T
-from plexnet import util as plexnetUtil, plexapp
+from plexnet import plexapp
 from . import busy
 from . import dropdown
 from . import kodigui
 from . import opener
 from . import windowutils
 from . import sidebar_model
+from . import copies
 
 DISCOVER_HUB_SLOTS = 6
 NOT_IN_LIBRARY_BATCH_SIZE = 10
@@ -313,6 +314,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
                 self.doClose()
                 return
+            if action == xbmcgui.ACTION_CONTEXT_MENU and self.getFocusId() == self.FILMOGRAPHY_LIST_ID:
+                if self.openFrom():
+                    return
 
         except Exception:
             util.ERROR()
@@ -567,25 +571,38 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.filmographyItems.sort(key=lambda item: u'{0}'.format(item.get('titleSort') or item.get('title')).lower())
         self.fillFilmography()
 
-    def filmographyItemClicked(self):
+    def filmographyItemClicked(self, item=None):
+        """Open a film or show - the copy the pick rule chose for its card (groupFilmographyByGuid()),
+        or item (openFrom()). It used to ask which copy first, every time (the user, 2026-10-07)."""
+        if item is None:
+            mli = self.filmographyListControl.getSelectedItem()
+            if not mli or not mli.dataSource:
+                return
+            item = mli.dataSource
+        self.processCommand(opener.open(item, context=self,
+                                        entry_section_id=self.sectionId,
+                                        entry_from_watchlist=self.cameFromWatchlist))
+
+    def copiesOf(self, item):
+        """The copies of item's title in the filmography, the one shown first; [item] if alone."""
+        key = copies.sameTitleKey(item)
+        found = self.filmographyByGuid.get(key) if key is not None else None
+        return [item] + [copy for copy in found if copy is not item] if found else [item]
+
+    def openFrom(self):
+        """The filmography's context menu: Open from, every version of every copy of the focused
+        title (copies.versionEntries()), the one picked opened with that version chosen - as Search
+        does. True if it was one."""
         mli = self.filmographyListControl.getSelectedItem()
         if not mli or not mli.dataSource:
-            return
-
-        item = mli.dataSource
-        guid = self.getItemGuid(item)
-        versions = self.filmographyByGuid.get(guid, [item]) if guid else [item]
-
-        if len(versions) > 1:
-            selectedItem = self.showVersionPicker(versions, item.type if hasattr(item, 'type') else 'movie')
-            if selectedItem:
-                self.processCommand(opener.open(selectedItem, context=self,
-                                                entry_section_id=self.sectionId,
-                                                entry_from_watchlist=self.cameFromWatchlist))
-        else:
-            self.processCommand(opener.open(item, context=self,
-                                            entry_section_id=self.sectionId,
-                                            entry_from_watchlist=self.cameFromWatchlist))
+            return False
+        entries = copies.versionEntries(self.copiesOf(mli.dataSource))
+        if len(entries) < 2:
+            return False
+        picked = copies.chooseFrom(entries, len(plexapp.SERVERMANAGER.getServers()) > 1)
+        if picked is not None:
+            self.filmographyItemClicked(picked[0])
+        return True
 
     def sidebarActiveSection(self, entries):
         # A person isn't tied to one library section (their filmography can span several), but
@@ -628,94 +645,26 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         except (ValueError, IndexError):
             return None
 
-    def getItemGuid(self, item):
-        if hasattr(item, 'guid') and item.guid:
-            return str(item.guid)
-        return None
-
-    def groupFilmographyByGuid(self, items, existingByGuid=None):
-        byGuid = existingByGuid if existingByGuid is not None else {}
-        uniqueItems = []
-        seenGuids = set(byGuid.keys()) if existingByGuid else set()
-
+    def groupFilmographyByGuid(self, items):
+        """One entry per title (copies.sameTitleKey(): a film in two libraries or on two servers is
+        one) and {key: its copies}. The one shown, and opened, is the one Search would open
+        (copies.pickCopy()): part-watched, then the library highest in the sidebar, then the best
+        quality - it was the highest bitrate's (the user, 2026-10-07)."""
+        byKey, order = {}, []
         for item in items:
-            guid = self.getItemGuid(item)
-            if guid:
-                if guid not in byGuid:
-                    byGuid[guid] = []
-                byGuid[guid].append(item)
-                if guid not in seenGuids:
-                    seenGuids.add(guid)
-                    uniqueItems.append(item)
+            key = copies.sameTitleKey(item)
+            if key is None:
+                order.append([item])
+            elif key in byKey:
+                byKey[key].append(item)
             else:
-                uniqueItems.append(item)
-
-        for guid, versions in byGuid.items():
-            if len(versions) > 1:
-                versions.sort(key=lambda v: self.getItemBitrate(v), reverse=True)
-                for i, uitem in enumerate(uniqueItems):
-                    if self.getItemGuid(uitem) == guid:
-                        uniqueItems[i] = versions[0]
-                        break
-
-        return uniqueItems, byGuid
-
-    def getItemBitrate(self, item):
-        try:
-            if hasattr(item, 'media') and item.media:
-                for media in item.media:
-                    if hasattr(media, 'bitrate'):
-                        return int(media.bitrate) if media.bitrate else 0
-        except (ValueError, TypeError, AttributeError):
-            pass
-        return 0
-
-    def getItemResolution(self, item):
-        try:
-            if hasattr(item, 'media') and item.media:
-                for media in item.media:
-                    if hasattr(media, 'videoResolution') and media.videoResolution:
-                        return str(media.videoResolution)
-        except (AttributeError, TypeError):
-            pass
-        return ''
-
-    def getItemLibraryTitle(self, item):
-        if hasattr(item, 'getLibrarySectionTitle'):
-            return item.getLibrarySectionTitle()
-        elif hasattr(item, 'librarySectionTitle'):
-            return str(item.librarySectionTitle)
-        return ''
-
-    def formatVersionLabel(self, item, media_type='movie'):
-        library = self.getItemLibraryTitle(item) or T(34108, 'Unknown')
-        server = getattr(item, 'server', None)
-        if server is not None and len(plexapp.SERVERMANAGER.getServers()) > 1:
-            # which server, on a multi-server account (the person screen asks them all)
-            library = u'{0}, {1}'.format(library, server.name)
-        if media_type == 'movie':
-            resolution = self.getItemResolution(item)
-            bitrate = self.getItemBitrate(item)
-            res_str = '{}p'.format(resolution) if resolution and 'k' not in str(resolution).lower() else (resolution.upper() if resolution else T(34108, 'Unknown'))
-            if bitrate:
-                return '{}, {} ({})'.format(library, res_str, plexnetUtil.bitrateToString(bitrate * 1000))
-            return '{}, {}'.format(library, res_str)
-        return library
-
-    def showVersionPicker(self, versions, media_type='movie'):
-        options = [{'key': idx, 'display': self.formatVersionLabel(item, media_type)}
-                   for idx, item in enumerate(versions)]
-        choice = dropdown.showDropdown(
-            options=options,
-            pos=(660, 441),
-            close_direction='none',
-            set_dropdown_prop=False,
-            header=T(34109, 'Choose Version'),
-            align_items='left'
-        )
-        if choice is not None:
-            return versions[choice['key']]
-        return None
+                byKey[key] = [item]
+                order.append(byKey[key])
+        if not any(len(group) > 1 for group in order):
+            return [group[0] for group in order], byKey
+        serverOrder = dict((server.uuid, i) for i, server in enumerate(getattr(self, 'servers', None) or []))
+        positions = sidebar_model.entryPositions(sidebar_model.loadNavSettings())
+        return [group[0] if len(group) == 1 else copies.pickCopy(group, serverOrder, positions) for group in order], byKey
 
 
 class ActorWindow(PersonWindow):

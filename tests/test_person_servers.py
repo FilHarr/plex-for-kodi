@@ -44,6 +44,7 @@ class Film(object):
     def __init__(self, title, guid, srv, type_='movie', titleSort=''):
         self.title = title
         self.type = type_
+        self.TYPE = type_
         self.server = srv
         self.guid = guid
         self.attrs = {'title': title, 'titleSort': titleSort, 'guid': guid}
@@ -130,10 +131,10 @@ class FilmographyListTest(KodiTestCase):
         win = person.PersonWindow.__new__(person.PersonWindow)
         win.filmographyAllItems = items
         win.filmographyFilter = filter_
-        win.getItemBitrate = lambda item: 0
         win.filled = None
         win.fillFilmography = lambda: setattr(win, 'filled', [i.title for i in win.filmographyItems])
-        win.applyFilmographyFilter()
+        with mock.patch.object(person.sidebar_model, 'loadNavSettings', lambda: {'entries': []}):
+            win.applyFilmographyFilter()
         return win
 
     def test_copies_on_two_servers_are_one_by_title(self):
@@ -150,6 +151,40 @@ class FilmographyListTest(KodiTestCase):
         win = self.window([Film('Die Hard', 'plex://movie/1', animal),
                            Film('Fortitude', 'plex://show/2', animal, type_='show')], filter_='show')
         self.assertEqual(['Fortitude'], win.filled)
+
+    def test_the_copy_shown_is_the_one_search_would_open(self):
+        # Oscar's part-watched over Animal's, whatever the quality (copies.pickCopy())
+        animal, oscar = server('a', 'Animal'), server('o', 'Oscar')
+        watching = Film('Die Hard', 'plex://movie/diehard', oscar)
+        watching.attrs.update(viewOffset='60000', lastViewedAt='100')
+        win = self.window([Film('Die Hard', 'plex://movie/diehard', animal), watching])
+        self.assertIs(watching, win.filmographyItems[0])
+
+    def test_a_server_only_guid_is_its_own_title(self):
+        animal, oscar = server('a', 'Animal'), server('o', 'Oscar')
+        win = self.window([Film('Home video', 'tv.plex.agents.none://98691', animal),
+                           Film('Other video', 'tv.plex.agents.none://98691', oscar)])
+        self.assertEqual(['Home video', 'Other video'], win.filled)
+
+    def test_open_from_lists_every_copy(self):
+        animal, oscar = server('a', 'Animal'), server('o', 'Oscar')
+        first, second = Film('Die Hard', 'plex://movie/diehard', animal), Film('Die Hard', 'plex://movie/diehard', oscar)
+        win = self.window([first, second])
+        shown = win.filmographyItems[0]
+        self.assertEqual([shown, first if shown is second else second], win.copiesOf(shown))
+        win.filmographyListControl = mock.Mock()
+        win.filmographyListControl.getSelectedItem.return_value = mock.Mock(dataSource=shown)
+        opened = []
+        win.filmographyItemClicked = opened.append
+        with mock.patch.object(person.copies, 'chooseFrom', lambda entries, multi: entries[1]),                 mock.patch.object(person.plexapp, 'SERVERMANAGER', mock.Mock(getServers=lambda: [animal, oscar])):
+            self.assertTrue(win.openFrom())
+        self.assertEqual([win.copiesOf(shown)[1]], opened)
+
+    def test_one_copy_no_open_from(self):
+        win = self.window([Film('Dogma', 'plex://movie/dogma', server('a', 'Animal'))])
+        win.filmographyListControl = mock.Mock()
+        win.filmographyListControl.getSelectedItem.return_value = mock.Mock(dataSource=win.filmographyItems[0])
+        self.assertFalse(win.openFrom())
 
     def test_title_sort_wins(self):
         animal = server('a', 'Animal')

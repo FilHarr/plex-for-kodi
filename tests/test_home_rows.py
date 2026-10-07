@@ -489,6 +489,19 @@ class ContinueWatchingOnceTest(KodiTestCase):
                                      Item('films copy', '22', 300, guid='plex://movie/s')], self.animal)
         self.assertEqual(['films copy'], [i.title for i in home.mergeContinueWatching([a], positions).items])
 
+    def test_server_only_guids_are_never_one_title(self):
+        # a library with no agent: the guid is the item's number on its server (checked live) - the
+        # same number on two servers is two videos (copies.sameTitleKey(), the user, 2026-10-07)
+        a = Hub('continueWatching', [Item('home video', '32', 300, guid='tv.plex.agents.none://98691')], self.animal)
+        o = Hub('continueWatching', [Item('another video', '1', 200, guid='tv.plex.agents.none://98691')], self.oscar)
+        self.assertEqual(['home video', 'another video'],
+                         [i.title for i in home.mergeContinueWatching([a, o], {}).items])
+
+    def test_the_language_suffix_is_one_title(self):
+        a = Hub('continueWatching', [Item('english', '22', 300, guid='com.plexapp.agents.imdb://tt1?lang=en'),
+                                     Item('german', '2', 200, guid='com.plexapp.agents.imdb://tt1?lang=de')], self.animal)
+        self.assertEqual(['english'], [i.title for i in home.mergeContinueWatching([a], {}).items])
+
     def test_across_servers_the_one_watched_last_wins(self):
         positions = {(ANIMAL, '22'): 1, (OSCAR, '1'): 2}
         a = Hub('continueWatching', [Item('on animal', '22', 100, guid='plex://movie/s')], self.animal)
