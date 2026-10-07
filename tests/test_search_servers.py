@@ -389,7 +389,7 @@ class PlacesLineTest(KodiTestCase):
 
     def test_the_open_from_rows(self):
         copy = Copy('Alien', DedupeTest.ALIEN, 'Films', self.animal, width=1920, bitrate=12453, resolution='1080')
-        self.assertTrue(search.copyLabel(copy, True).startswith('Films, Animal, 1080p ('))
+        self.assertTrue(search.copyLabel(copy, True).startswith(u'Films \u00b7 Animal \u00b7 1080p ('))
         self.assertEqual('Films', search.copyLabel(Copy('Alien', DedupeTest.ALIEN, 'Films', self.animal), False))
 
 
@@ -636,3 +636,63 @@ class ResolveCollectionsTest(KodiTestCase):
         with mock.patch.object(search.plexobjects, 'listItems') as listItems:
             search.resolveCollections(rows)
         listItems.assert_not_called()
+
+
+class Version(object):
+    """A version (Media) with an id, as chooseVersion() sets it selected."""
+
+    def __init__(self, mediaID, width, bitrate, resolution):
+        self.id = mediaID
+        self.attrs = {'width': str(width), 'bitrate': str(bitrate), 'videoResolution': resolution}
+
+    def get(self, key, default=None):
+        return self.attrs.get(key, default)
+
+    def set(self, key, value):
+        self.attrs[key] = value
+
+
+class VersionsTest(KodiTestCase):
+    """A copy's versions (the user, 2026-10-07): the pick judges a copy by its best, Open from has a
+    row for each, and the one picked opens chosen."""
+
+    def setUp(self):
+        super(VersionsTest, self).setUp()
+        self.animal = server('a', 'Animal')
+
+    def copy(self, library, *versions, **kwargs):
+        item = copy('Alien: Romulus', DedupeTest.ALIEN, library, self.animal, kwargs.get('ratingKey', '1'))
+        item.media = list(versions)
+        item.chosen = []
+        item.setMediaChoice = item.chosen.append
+        return item
+
+    def test_a_copy_is_judged_by_its_best_version(self):
+        # Films lists its 1080p first, its 4K second
+        films = self.copy('Films', Version('1', 1920, 6188, '1080'), Version('2', 3840, 61599, '4k'))
+        movies = self.copy('Movies', Version('3', 1920, 9000, '1080'), ratingKey='2')
+        self.assertIs(films, search.pickCopy([movies, films], {'a': 0}))
+
+    def test_open_from_a_row_per_version(self):
+        k4, hd = Version('1', 3840, 61599, '4k'), Version('2', 1920, 6188, '1080')
+        films = self.copy('Films', k4, hd)
+        movies = self.copy('Movies', Version('3', 1920, 6188, '1080'), ratingKey='2')
+        films.searchCopies = [films, movies]
+        self.assertEqual([(films, k4), (films, hd), (movies, None)], search.openFromEntries(films))
+        self.assertEqual(u'Films · Animal · 1080p (6.2 Mbps)', search.copyLabel(films, True, hd))
+        self.assertTrue(search.copyLabel(movies, True).startswith(u'Movies · Animal · 1080p'))
+
+    def test_one_copy_with_versions_has_rows_too(self):
+        films = self.copy('Films', Version('1', 3840, 61599, '4k'), Version('2', 1920, 6188, '1080'))
+        self.assertEqual(2, len(search.openFromEntries(films)))
+
+    def test_a_show_one_row_a_copy(self):
+        show = self.copy('TV')
+        show.TYPE = 'show'
+        self.assertEqual([(show, None)], search.openFromEntries(show))
+
+    def test_the_version_picked_opens_chosen(self):
+        k4, hd = Version('1', 3840, 61599, '4k'), Version('2', 1920, 6188, '1080')
+        films = self.copy('Films', k4, hd)
+        search.chooseVersion(films, hd)
+        self.assertEqual(([hd], 1, ''), (films.chosen, hd.get('selected'), k4.get('selected')))

@@ -808,7 +808,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.video.related_source = "more-from-credits"
         self.paintClickedItem()
         kodigui.markStep(timing, 'paint clicked')
-        self.video.reload(checkFiles=1, **VIDEO_RELOAD_KW)
+        # a version chosen before opening (Search's Open from) kept, as onReInit() keeps one -
+        # dropped if the reload no longer has it
+        self.video.reload(checkFiles=1, fromMediaChoice=self.video.mediaChoice is not None, **VIDEO_RELOAD_KW)
+        if self.video.mediaChoice is not None and self.video.mediaChoice.media is None:
+            self.video.mediaChoice = None
         if self.video.reloadFailed:
             # Deleted, or the server's gone: setInfo() below reads fields only a full reload
             # fills, and raised a TypeError, leaving a half-painted screen that never finished

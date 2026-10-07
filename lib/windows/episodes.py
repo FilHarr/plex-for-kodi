@@ -140,12 +140,30 @@ class EpisodesPaginator(pagination.MCLPaginator):
             self.fetchMs += (time.time() - started) * 1000
 
     def createListItem(self, data):
+        self._carryVersion(data)
         mli = super(EpisodesPaginator, self).createListItem(data)
         started, cpuStarted = time.time(), time.thread_time()
         self.parentWindow.setItemInfo(data, mli)
         self.itemInfoMs += (time.time() - started) * 1000
         self.itemInfoCpuMs += (time.thread_time() - cpuStarted) * 1000
         return mli
+
+    def _carryVersion(self, data):
+        """The episode this screen was opened on, with a version chosen (Search's Open from, the
+        user 2026-10-07): the list's own copy of it - the season's, fetched fresh - takes the same
+        version, by its id, before its info is shown; its reloads keep it (EpisodesReloadTask's
+        fromMediaChoice)."""
+        episode = self.parentWindow.episode
+        choice = getattr(episode, 'mediaChoice', None) if episode is not None else None
+        if not choice or not choice.media or data is episode or data.mediaChoice or data != episode:
+            return
+        for media in data.media:
+            if media.id == choice.media.id:
+                for version in data.media:
+                    version.set('selected', '')
+                media.set('selected', 1)
+                data.setMediaChoice(media, partIndex=choice.partIndex)
+                return
 
     def prepareListItem(self, data, mli):
         mli.setBoolProperty('watched', mli.dataSource.isPlayed)

@@ -612,16 +612,19 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.processCommand(command)
 
     def openFrom(self):
-        """The context menu on a result with more than one copy (dedupeResults()): which to open -
-        each copy's library, its server on a multi-server account, and its quality. True if it
-        was one."""
+        """The context menu on a result with more than one copy (dedupeResults()) or version: which
+        to open - a row for each version of each copy (the user, 2026-10-07), its library, its
+        server on a multi-server account and its quality, the copy then opened with that version
+        chosen (chooseVersion()). True if it was one."""
         mli = self.resultsList.getSelectedItem()
         # not for a person: their screen has every server's films whichever copy opens it
-        copies = copiesOf(mli.dataSource) if mli and mli.dataSource.TYPE not in ('Role', 'Director') else []
-        if len(copies) < 2:
+        if not mli or mli.dataSource.TYPE in ('Role', 'Director'):
+            return False
+        entries = openFromEntries(mli.dataSource)
+        if len(entries) < 2:
             return False
         multiServer = len(plexapp.SERVERMANAGER.getServers()) > 1
-        options = [{'key': i, 'display': copyLabel(copy, multiServer)} for i, copy in enumerate(copies)]
+        options = [{'key': i, 'display': copyLabel(copy, multiServer, media)} for i, (copy, media) in enumerate(entries)]
         choice = dropdown.showDropdown(
             options=options,
             pos=(660, 441),
@@ -631,7 +634,10 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             align_items='left'
         )
         if choice is not None:
-            self.resultClicked(copies[choice['key']])
+            copy, media = entries[choice['key']]
+            if media is not None:
+                chooseVersion(copy, media)
+            self.resultClicked(copy)
         return True
 
     # A result's type, first on the line under its title (typeLine())
@@ -1068,11 +1074,12 @@ def copiesOf(item):
     return item.__dict__.get('searchCopies') or []
 
 
-def _media(item):
+def _versions(item):
+    """An item's versions (its Media), [] for one with none (a show, a person)."""
     try:
-        return item.media[0]
+        return list(item.media or [])
     except Exception:
-        return None
+        return []
 
 
 def _int(value):
@@ -1083,12 +1090,40 @@ def _int(value):
 
 
 def _quality(item):
-    """A copy's first version's (width, bitrate), for pickCopy(); (0, 0) if it has none. Read with
-    _int(): a video's versions (plexmedia.PlexMedia) answer get() with plain strings."""
-    media = _media(item)
-    if media is None:
-        return 0, 0
-    return _int(media.get('width')), _int(media.get('bitrate'))
+    """A copy's best version's (width, bitrate), for pickCopy(); (0, 0) if it has none. The best,
+    not the first: Plex's order is its own, and a copy with a 4K version second was judged by its
+    1080p (the user, 2026-10-07). Read with _int(): a video's versions (plexmedia.PlexMedia)
+    answer get() with plain strings."""
+    return max([(_int(media.get('width')), _int(media.get('bitrate'))) for media in _versions(item)] or [(0, 0)])
+
+
+# The types whose versions Open from offers one by one, the one picked opened chosen
+# (chooseVersion()): the ones with a version to play
+VERSIONED_TYPES = ('movie', 'episode')
+
+
+def openFromEntries(item):
+    """Open from's rows for a result (SearchWindow.openFrom()): (copy, version) for each version of
+    each copy that has more than one - a film's 4K and 1080p in one library are two rows - else
+    (copy, None)."""
+    entries = []
+    for copy in copiesOf(item) or [item]:
+        versions = _versions(copy) if copy.TYPE in VERSIONED_TYPES else []
+        if len(versions) > 1:
+            entries.extend((copy, media) for media in versions)
+        else:
+            entries.append((copy, None))
+    return entries
+
+
+def chooseVersion(copy, media):
+    """copy opened with media its chosen version, as pre-play's Choose Version does
+    (preplayutils.chooseVersion()): pre-play keeps it through its first load, and the episode
+    screen gives it to its own copy of the episode (EpisodesPaginator.createListItem())."""
+    for version in _versions(copy):
+        version.set('selected', '')
+    media.set('selected', 1)
+    copy.setMediaChoice(media)
 
 
 def pickCopy(copies, serverOrder, positions=None):
@@ -1183,14 +1218,17 @@ def placesLine(item):
     return u'{0} + {1}'.format(getattr(getattr(item, 'server', None), 'name', '') or '', len(copies) - 1)
 
 
-def copyLabel(copy, multiServer):
-    """A copy's row in the Open from list (SearchWindow.openFrom()): its library, its server on a
-    multi-server account, then its quality - "Films, Animal, 1080p (12.5 Mbps)"."""
+def copyLabel(copy, multiServer, media=None):
+    """A row in the Open from list (SearchWindow.openFrom()): the copy's library, its server on a
+    multi-server account, then the quality of media - a version of it, else its first - "Films
+    \u00b7 Animal \u00b7 1080p (12.5 Mbps)", the dot the cards' lines use (the user, 2026-10-07)."""
     parts = [u'{0}'.format(copy.get('librarySectionTitle') or '')]
     server = getattr(copy, 'server', None)
     if multiServer and server is not None:
         parts.append(server.name)
-    media = _media(copy)
+    if media is None:
+        versions = _versions(copy)
+        media = versions[0] if versions else None
     if media is not None:
         resolution = u'{0}'.format(media.get('videoResolution') or '')
         resolution = resolution + 'p' if resolution.isdigit() else resolution.upper()
@@ -1200,7 +1238,7 @@ def copyLabel(copy, multiServer):
             parts.append(u'{0} ({1})'.format(resolution, rate))
         else:
             parts.append(resolution or rate)
-    return u', '.join(part for part in parts if part)
+    return u' \u00b7 '.join(part for part in parts if part)
 
 
 def resultServerName(item):
