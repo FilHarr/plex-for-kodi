@@ -35,6 +35,7 @@ from lib.windows import subitems  # noqa: E402
 from lib.windows import tracks  # noqa: E402
 from lib.windows import person as person_window  # noqa: E402
 from lib.windows import playlist  # noqa: E402
+from lib.windows import collection as collection_window  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
@@ -241,6 +242,15 @@ class ItemClickedFunctionsTest(KodiTestCase):
         opener.playlistClicked(pl, context=context)
 
         self.assertEqual([(playlist.PlaylistWindow, {'playlist': pl})], context.openWindowCalls)
+
+    def test_collection_with_context_opens_its_grid(self):
+        # as the Collections tab does - it went down sectionClicked() and showed as a library
+        context = FakeContext()
+        col = FakeTyped('collection')
+
+        self.assertEqual('', opener.collectionClicked(col, context=context))
+
+        self.assertEqual([(collection_window.CollectionWindow, {'collection': col})], context.openWindowCalls)
 
     def test_without_context_each_falls_back_to_handleOpen_unchanged(self):
         """Regression check, all eight at once - context=None must behave exactly as before this
@@ -476,28 +486,22 @@ class PhotoDirectoryClickedContextTest(KodiTestCase):
 
 class CollectionClickedContextTest(KodiTestCase):
     """Same gap, same fix, found during hashed-orbiting-pizza.md's Phase 5 dead-branch audit:
-    collectionClicked() forwarded neither its own context param (didn't have one) nor did open()'s
-    TYPE == 'collection' branch pass context through to it - so a collection reached generically
-    (a hub, search) always opened standalone even though sectionClicked() underneath already
-    supports hosting it. Mirrors PhotoDirectoryClickedContextTest's shape exactly."""
+    open()'s TYPE == 'collection' branch didn't pass context through to collectionClicked(), so a
+    collection reached generically (a hub, search) always opened standalone. collectionClicked()
+    itself now opens the collection's grid (CollectionWindow) through the context, as the
+    Collections tab does - not sectionClicked(), which showed it as a library with 404ing rows
+    (live, 2026-10-07; ItemClickedFunctionsTest.test_collection_with_context_opens_its_grid)."""
 
-    def test_forwards_context_to_sectionClicked(self):
+    def test_doesnt_go_through_sectionClicked(self):
         calls = []
         originalSectionClicked = opener.sectionClicked
-
-        def fakeSectionClicked(section, filter_=None, context=None, **kwargs):
-            calls.append((section, filter_, context))
-            return ''
-
-        opener.sectionClicked = fakeSectionClicked
+        opener.sectionClicked = lambda *args, **kwargs: calls.append(args)
         try:
-            context = object()
-            collection = object()
-            opener.collectionClicked(collection, context=context)
+            opener.collectionClicked(object(), context=FakeContext())
         finally:
             opener.sectionClicked = originalSectionClicked
 
-        self.assertEqual([(collection, None, context)], calls)
+        self.assertEqual([], calls)
 
     def test_open_dispatch_forwards_context_for_collection(self):
         calls = []

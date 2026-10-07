@@ -249,7 +249,15 @@ def playlistClicked(pl, context=None, **kwargs):
 
 
 def collectionClicked(collection, context=None, **kwargs):
-    return sectionClicked(collection, context=context, **kwargs)
+    """A collection's grid (collection.CollectionWindow), as the Collections tab opens it
+    (library_grid). It went through sectionClicked(), which showed it as a library - the
+    library's Recommended rows asked for at the collection's key, 404 (live, 2026-10-07, from
+    Search; a Recommended row's collection went the same way)."""
+    from . import collection as collection_
+    if context is not None:
+        context.openWindow(collection_.CollectionWindow, collection=collection, **kwargs)
+        return ''
+    return handleOpen(collection_.CollectionWindow, collection=collection, **kwargs)
 
 
 def sectionClicked(section, filter_=None, context=None, **kwargs):
