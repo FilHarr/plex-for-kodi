@@ -286,22 +286,6 @@ class Role(MediaTag):
     ID = '6'
     translated_role = ''
 
-    def sectionRoles(self):
-        hubs = self.server.hubs(count=10, search_query=self.tag)
-        for hub in hubs:
-            if hub.type == self.FILTER:
-                break
-        else:
-            return None
-
-        roles = []
-
-        for actor in hub.items:
-            if actor.id == self.id:
-                roles.append(actor)
-
-        return roles or None
-
     def getDetails(self):
         """
         Fetch full actor metadata including biography, birth date, photo, etc.
