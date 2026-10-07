@@ -28,6 +28,7 @@ from .mixins.watchlist import WatchlistUtilsMixin, removeFromWatchlistBlind
 from .mixins.roles import RolesMixin
 from .mixins.common import CommonMixin
 from .mixins.tasks import TasksMixin
+from .mixins.row_restore import RowRestoreMixin
 
 VIDEO_RELOAD_KW = dict(includeExtras=1, includeExtrasCount=10, includeChapters=1, includeReviews=1)
 
@@ -86,7 +87,7 @@ class CollectionPaginator(pagination.BaseRelatedPaginator):
 
 class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, RatingsMixin,
                     MediaInfoPillsMixin, PlaybackBtnMixin, ThemeMusicMixin, RolesMixin, CommonMixin,
-                    WatchlistUtilsMixin, TasksMixin):
+                    WatchlistUtilsMixin, TasksMixin, RowRestoreMixin):
     xmlFile = 'script-plex-pre_play.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -181,6 +182,28 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         # standalone/un-hosted open) - a hosted open (LibraryWindow._setupCurrent(), library.py)
         # overwrites this with the host's own sectionList object before onFirstInit() runs.
         self.sectionList = None
+        # (row list id, position) to focus once that row is filled, instead of Play: Back from a
+        # screen this one opened (RowRestoreMixin).
+        self.restoreFocus = kwargs.get('restore_focus')
+
+    def restoreRows(self):
+        """The rows Back returns focus to (RowRestoreMixin), by list id: the ones that open a screen
+        in this one's place - a cast member, a related title, another film in the collection (on
+        request, 2026-10-07). Not Extras: they play on top of this screen, which keeps its focus;
+        nor Reviews, which open nothing."""
+        rows = {self.ROLES_LIST_ID: self.rolesListControl,
+                self.RELATED_LIST_ID: self.relatedListControl}
+        rows.update(zip(self.COLLECTION_LIST_IDS, self.collectionListControls))
+        return rows
+
+    def asyncRestoreRows(self):
+        # All of them: setup()'s batch_simple() fills every row on a worker.
+        return tuple(self.restoreRows())
+
+    def restoreDefaultFocusIds(self):
+        # Play or Resume, or a watchlist screen's own buttons (watchlistItemAvailable()).
+        return ((0, self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID) + tuple(self.WL_RELEVANT_BTNS) +
+                tuple(self.WL_BTN_STATE_BTNS))
 
     def doClose(self, **kw):
         self.relatedPaginator = None
@@ -840,11 +863,12 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         if not self.fromWatchlist:
             self.focusPlayButton()
         kodigui.markStep(timing, 'focus')
-        self.batch_simple([(self.fillRoles, None, None),
+        # The row fills that can hold a Back restore are followed by it (RowRestoreMixin).
+        self.batch_simple([(self._fillThenRestore(self.fillRoles, self.ROLES_LIST_ID), None, None),
                            (self.fillReviews, None, None),
                            (self.fillExtras, None, None),
-                           (self.fillRelated, None, None),
-                           (self.fillCollections, None, None)])
+                           (self._fillThenRestore(self.fillRelated, self.RELATED_LIST_ID), None, None),
+                           (self._fillThenRestore(self.fillCollections, *self.COLLECTION_LIST_IDS), None, None)])
 
     def paintClickedItem(self):
         """Show what the clicked item already carries before the reload below blocks on the server

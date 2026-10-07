@@ -19,6 +19,7 @@ from . import opener
 from . import windowutils
 from . import sidebar_model
 from . import copies
+from .mixins.row_restore import RowRestoreMixin
 
 DISCOVER_HUB_SLOTS = 6
 NOT_IN_LIBRARY_BATCH_SIZE = 10
@@ -208,7 +209,7 @@ class DiscoverCreditsTask(backgroundthread.Task):
             self.callback(discover_hubs, library_guids)
 
 
-class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin):
+class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, RowRestoreMixin):
     xmlFile = 'script-plex-person.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -240,7 +241,11 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.filmographyItems = []
         self.filmographyAllItems = []
         self.filmographyByGuid = {}
-        self.filmographyFilter = None
+        # All (None), 'movie' or 'show' - kept through Back (restoreState())
+        self.filmographyFilter = kwargs.get('filmography_filter')
+        # (row list id, position) to focus once that row is filled: Back from a screen this one
+        # opened (RowRestoreMixin)
+        self.restoreFocus = kwargs.get('restore_focus')
         self.discoverListControls = []
         # {guid: a server it's in a library on} for the Discover credits (libraryPresence())
         self.libraryGuids = {}
@@ -254,6 +259,27 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         # standalone/un-hosted open) - a hosted open (LibraryWindow._setupCurrent(), library.py)
         # overwrites this with the host's own sectionList object before onFirstInit() runs.
         self.sectionList = None
+
+    def restoreRows(self):
+        """The rows Back returns focus to (RowRestoreMixin): the filmography and the Discover
+        rows, all of which open a screen in this one's place (on request, 2026-10-07)."""
+        rows = {self.FILMOGRAPHY_LIST_ID: self.filmographyListControl}
+        rows.update((self.DISCOVER_LIST_BASE_ID + i, control) for i, control in enumerate(self.discoverListControls))
+        return rows
+
+    def asyncRestoreRows(self):
+        # all of them: each is filled by a background task's callback
+        return tuple(self.restoreRows())
+
+    def restoreDefaultFocusIds(self):
+        return (0, self.FILMOGRAPHY_LIST_ID)
+
+    def restoreState(self):
+        """RowRestoreMixin's row item, plus the filmography's filter (All, Movies, Shows), which the
+        item's position is in."""
+        state = RowRestoreMixin.restoreState(self)
+        state['filmography_filter'] = self.filmographyFilter
+        return state
 
     def paintInitialBackground(self):
         """No art, and no colours of a person's own: the neutral colour panel from the first
@@ -293,7 +319,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
         self.setProperty('person.name', self.role.tag or '')
         self.setProperty('person.type_label', T(self.TYPE_LABEL_ID, self.PRIMARY_TYPE.title()))
-        self.setProperty('filmography.filter', T(32345, 'All'))
+        self.setProperty('filmography.filter', self.filterLabel(self.filmographyFilter))
         if self.role.thumb:
             self.setProperty('person.thumb', self.role.thumb.asTranscodedImageURL(*self.THUMB_DIM))
 
@@ -429,6 +455,11 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         util.DEBUG_LOG('PersonWindow: Discover credits: {0} groups, {1} in library, {2} hubs populated',
                        len(discover_hubs), len(library_guids), slot)
 
+        # A Back restore to the Discover item opened, if there is one (RowRestoreMixin)
+        for i in range(slot):
+            if self._restoreRowFocus(filled=self.DISCOVER_LIST_BASE_ID + i):
+                return
+
         # Avoid focus trap: if filmography is empty but Discover hubs filled, move focus there
         if slot > 0 and self.filmographyListControl.size() == 0:
             self.setFocusId(self.DISCOVER_LIST_BASE_ID)
@@ -540,15 +571,25 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.filmographyListControl.reset()
         self.filmographyListControl.addItems(listItems)
         self.setProperty('filmography.count', str(len(self.filmographyItems)))
+        # a Back restore to the film or show opened, if there is one (RowRestoreMixin)
+        self._restoreRowFocus(filled=self.FILMOGRAPHY_LIST_ID)
 
-    def filterButtonClicked(self):
-        options = [
+    def filterOptions(self):
+        return [
             {'key': None,    'display': T(32345, 'All')},
             {'key': 'movie', 'display': T(32348, 'Movies')},
             {'key': 'show',  'display': T(32350, 'Shows')},
         ]
+
+    def filterLabel(self, key):
+        for option in self.filterOptions():
+            if option['key'] == key:
+                return option['display']
+        return T(32345, 'All')
+
+    def filterButtonClicked(self):
         choice = dropdown.showDropdown(
-            options=options,
+            options=self.filterOptions(),
             pos=(560, 515),
             close_direction='none',
             set_dropdown_prop=False,

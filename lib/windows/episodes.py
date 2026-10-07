@@ -37,6 +37,7 @@ from .mixins.ratings import RatingsMixin
 from .mixins.roles import RolesMixin
 from .mixins.common import CommonMixin
 from .mixins.tasks import TasksMixin
+from .mixins.row_restore import RowRestoreMixin
 from .mixins.text_metrics import FONT10_POINT_SIZE, measureTextWidth
 
 VIDEO_RELOAD_KW = dict(includeExtras=1, includeExtrasCount=10, includeChapters=1)
@@ -455,7 +456,7 @@ VIDEO_PROGRESS = OrderedDict()
 
 class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, SeasonsMixin,
                      RatingsMixin, SpoilersMixin, MediaInfoPillsMixin, RolesMixin, PlaybackBtnMixin,
-                     ThemeMusicMixin, WatchlistUtilsMixin, CommonMixin, TasksMixin,
+                     ThemeMusicMixin, WatchlistUtilsMixin, CommonMixin, TasksMixin, RowRestoreMixin,
                      playbacksettings.PlaybackSettingsMixin):
     xmlFile = 'script-plex-episodes.xml'
     path = util.ADDON.getAddonInfo('path')
@@ -556,6 +557,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # immediately, well before the debounce here ever gets a chance to fetch it. Tracking our
         # own fetch attempts by ratingKey here survives that clobbering.
         self._extrasFetched = set()
+        # The episode whose cast the Roles row holds (fillRoles()), so a second fill for the same
+        # one leaves the row - and a Back restore's selection in it - alone.
+        self._rolesFilledFor = None
+        # (row list id, position) to focus once that row is filled: Back from a screen this one
+        # opened (RowRestoreMixin). Set here, not in reset(): it's this open's, not an episode's.
+        self.restoreFocus = kwargs.get('restore_focus')
 
         # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
         # mellow-pondering-magpie.md, 2026-08-18) - see preplay.py's PrePlayWindow.__init__ for the
@@ -574,6 +581,36 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # in __init__, not reset() below - reset() re-runs on every episode navigation within
         # this same window and must not force a rebuild each time.
         self.sectionList = None
+
+    def restoreRows(self):
+        """The rows Back returns focus to (RowRestoreMixin): the ones that open a screen in this
+        one's place - a cast member, and the season tabs' Show tab. Not Extras, which play on top
+        of this screen; the episode itself comes back through restoreState()'s episode."""
+        return {self.SEASONS_LIST_ID: self.seasonsListControl,
+                self.ROLES_LIST_ID: self.rolesListControl}
+
+    def asyncRestoreRows(self):
+        # Both filled after the episode row: the tabs on a worker, the cast once an episode is
+        # selected (fillRoles()).
+        return (self.SEASONS_LIST_ID, self.ROLES_LIST_ID)
+
+    def restoreDefaultFocusIds(self):
+        return (0, self.EPISODE_LIST_ID, self.PLAY_BUTTON_ID, self.PLAY_BUTTON_DISABLED_ID,
+                self.RESUME_BUTTON_ID)
+
+    def restoreState(self):
+        """RowRestoreMixin's row item, plus the season and episode showing (on request,
+        2026-10-07): a season switched to with the tabs is switched in place (switchSeason()),
+        so the kwargs this screen opened with still named the first one, and Back rebuilt that.
+        The selected episode, or None on the season card, which then picks as a season's own
+        open does. Left to the opening kwargs for a show without seasons (skipChildren, where
+        self.season is the show itself), which has none to switch."""
+        state = RowRestoreMixin.restoreState(self)
+        if getattr(self.season, 'type', None) == 'season':
+            mli = self.episodeListControl.getSelectedItem()
+            episode = (mli.dataSource or None) if mli and not mli.getProperty('is.boundary') else None
+            state.update({'season': self.season, 'episode': episode})
+        return state
 
     def reset(self, episode, season=None, show=None):
         timing = kodigui.StepTiming('Episodes reset')
@@ -1081,9 +1118,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.fillEpisodes(from_redirect=from_redirect, timing=timing)
 
         # postpone less important tasks
+        showTab = self._showTabItem()
         self.batch_simple([
-            (self.fillSeasons, (self.show_,), dict(seasonsFilter=lambda x: len(x) > 1, selectSeason=self.season,
-                                                    extraFirstItem=self._showTabItem())),
+            # followed by a Back restore to the season tabs (the Show tab), if there is one
+            (self._fillThenRestore(lambda: self.fillSeasons(self.show_, seasonsFilter=lambda x: len(x) > 1,
+                                                            selectSeason=self.season, extraFirstItem=showTab),
+                                   self.SEASONS_LIST_ID), None, None),
             (self.fillExtras, None, None),
             (self.fillRoles, None, None),
         ])
@@ -1701,6 +1741,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         push=False only means something while genuinely chained (_liveChainHost() live) - passing it
         while unhosted would reach ShowWindow's own constructor as a stray, unexpected kwarg."""
         if self.initialEpisode is None:
+            # ... but the show opens as it would fresh, on Play, not on the season it was left
+            # from (a Back restore - LibraryWindow.dropBackRestore())
+            host = self._liveChainHost()
+            if host is not None:
+                host.dropBackRestore()
             self.onAction(xbmcgui.ACTION_NAV_BACK)
             return
 
@@ -2798,14 +2843,23 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             # has no dataSource - can be the selected item here if it was given initial focus
             # (EpisodesPaginator.populate()'s "nothing watched" case) and this runs before the
             # user has moved off it, eg. via _setup()'s postponed batch_simple() call.
+            self._rolesFilledFor = None
             self.rolesListControl.reset()
             return False
 
         ds = mli.dataSource
 
         if not ds.roles:
+            self._rolesFilledFor = None
             self.rolesListControl.reset()
             return False
+
+        if self._rolesFilledFor == ds.ratingKey and self.rolesListControl.size():
+            # This episode's cast already: two paths fill it on open (_setup()'s batch and
+            # postSetup()'s _fillRowData()), and refilling reset the row's selection - a Back
+            # restore's included.
+            self._restoreRowFocus(filled=self.ROLES_LIST_ID)
+            return True
 
         roles = ds.combined_roles if util.getUserSetting('show_directors', True) else ds.roles
 
@@ -2823,4 +2877,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         self.rolesListControl.reset()
         self.rolesListControl.addItems(items)
+        self._rolesFilledFor = ds.ratingKey
+        # followed by a Back restore to the cast member opened, if there is one (RowRestoreMixin)
+        self._restoreRowFocus(filled=self.ROLES_LIST_ID)
         return True

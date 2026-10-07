@@ -6,6 +6,7 @@ from kodi_six import xbmcgui
 from plexnet import playlist, playqueue, util as pnUtil, plexapp, plexlibrary
 
 from lib import metadata
+from lib import player
 from lib import util
 from lib.util import T
 from lib.language_util import getNativeLanguages
@@ -29,6 +30,7 @@ from .mixins.thememusic import ThemeMusicMixin
 from .mixins.roles import RolesMixin
 from .mixins.common import CommonMixin
 from .mixins.tasks import TasksMixin
+from .mixins.row_restore import RowRestoreMixin
 from .mixins.text_metrics import FONT10_POINT_SIZE, measureTextWidth
 
 
@@ -39,7 +41,8 @@ class RelatedPaginator(pagination.BaseRelatedPaginator):
 
 class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, SeasonsMixin,
                  DeleteMediaMixin, RatingsMixin, RolesMixin, PlaybackBtnMixin, WatchlistUtilsMixin,
-                 ThemeMusicMixin, CommonMixin, TasksMixin, playbacksettings.PlaybackSettingsMixin):
+                 ThemeMusicMixin, CommonMixin, TasksMixin, RowRestoreMixin,
+                 playbacksettings.PlaybackSettingsMixin):
     xmlFile = 'script-plex-seasons.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -150,6 +153,28 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         # standalone/un-hosted open) - a hosted open (LibraryWindow._setupCurrent(), library.py)
         # overwrites this with the host's own sectionList object before onFirstInit() runs.
         self.sectionList = None
+        # (row list id, position) to focus once that row is filled, instead of Play: Back from a
+        # screen this one opened (RowRestoreMixin).
+        self.restoreFocus = kwargs.get('restore_focus')
+
+
+    def restoreRows(self):
+        """The rows Back returns focus to (RowRestoreMixin), by list id: every row something opens
+        from - a season, an extra, a similar show, a cast member (on request, 2026-10-07)."""
+        return {self.SEASON_TABS_LIST_ID: self.seasonTabsControl,
+                self.SUB_ITEM_LIST_ID: self.subItemListControl,
+                self.ROLES_LIST_ID: self.rolesListControl,
+                self.EXTRA_LIST_ID: self.extraListControl,
+                self.RELATED_LIST_ID: self.relatedListControl}
+
+    def asyncRestoreRows(self):
+        # Filled on a worker (setup()'s batch_simple()), so their restore waits for the fill
+        # (RowRestoreMixin._fillThenRestore()); the season row and tabs are filled by the time
+        # onFirstInit() restores.
+        return (self.ROLES_LIST_ID, self.EXTRA_LIST_ID, self.RELATED_LIST_ID)
+
+    def restoreDefaultFocusIds(self):
+        return (0, self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID)
 
     def doClose(self, **kw):
         self.relatedPaginator = None
@@ -184,7 +209,12 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         # setup(): the row is still hidden then, so Kodi refused focus on Resume, then hid Play,
         # which had it - leaving nothing focused, only Back working (live-caught 2026-09-25 on
         # part-watched shows on the AM6B, where the queued focus request beat the property).
-        if not self.fromWatchlist and self.getFocusId() in (0, self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
+        # Unless Back is returning to a row item (restoreState()): the season row and tabs are
+        # filled by now, so theirs is restored here; a worker-filled row's waits for its fill
+        # (_fillThenRestore()), Play focused meanwhile.
+        if self.restoreFocus and self._restoreRowFocus():
+            pass
+        elif not self.fromWatchlist and self.getFocusId() in (0, self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
             self.focusPlayButton(wait_visible=True)
         timing.mark('focus')
         self.themeMusicInit(self.mediaItem)
@@ -230,9 +260,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         # populated before it can focus the season row as the screen's default control. The rest are
         # secondary content, postponed to background threads same as before.
         self.fill(timing=timing)
-        self.batch_simple([(self.fillExtras, None, None),
-                           (self.fillRelated, None, None),
-                           (self.fillRoles, None, None)])
+        # Each followed by the Back restore waiting on its row, if there is one (_restoreRowFocus()).
+        self.batch_simple([(self._fillThenRestore(self.fillExtras, self.EXTRA_LIST_ID), None, None),
+                           (self._fillThenRestore(self.fillRelated, self.RELATED_LIST_ID), None, None),
+                           (self._fillThenRestore(self.fillRoles, self.ROLES_LIST_ID), None, None)])
 
 
     def onDeckPick(self):
@@ -1199,6 +1230,14 @@ class ArtistWindow(ShowWindow):
         401: 9,  # Related Artists (group id 500)
     }
 
+    def restoreRows(self):
+        # Every row: Popular Tracks, the album rows and Similar Artists (RowRestoreMixin).
+        return self.backResetRows()
+
+    def asyncRestoreRows(self):
+        # None: every row here is filled in setup() itself, before onFirstInit() restores.
+        return ()
+
     def onFirstInit(self):
         self.subItemListControl = kodigui.ManagedControlList(self, self.SUB_ITEM_LIST_ID, 5)
         self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
@@ -1220,8 +1259,45 @@ class ArtistWindow(ShowWindow):
 
         self.setup()
         self.initialized = True
+        player.PLAYER.on('started.audio', self.updatePopularPlayingHere)
 
-        self.setFocusId(self.PLAY_BUTTON_ID)
+        if not (self.restoreFocus and self._restoreRowFocus()):
+            self.setFocusId(self.PLAY_BUTTON_ID)
+
+    def onReInit(self):
+        ShowWindow.onReInit(self)
+        self.updatePopularPlayingHere()
+
+    def doClose(self, **kw):
+        player.PLAYER.off('started.audio', self.updatePopularPlayingHere)
+        ShowWindow.doClose(self, **kw)
+
+    def _settlePopularTracksBelow(self, controlID, lastFocusID):
+        """Up from the rows under Popular Tracks lands on its selected track, which is its last
+        whenever focus went down through it (a vertical list is only left downwards from its last
+        item). Arriving in those rows any other way - a Back restore straight onto an album
+        (RowRestoreMixin), say - left it on the first, so up jumped to the top of the list
+        (live-reported 2026-10-07). Set to the last here instead, while it isn't focused, so
+        nothing on screen moves."""
+        tier = self.HUB_FOCUS_TIERS.get(controlID)
+        if tier is None or tier < 2:
+            return
+        lastTier = self.HUB_FOCUS_TIERS.get(lastFocusID)
+        if lastTier is not None:
+            return  # within the rows already, or straight down out of Popular Tracks
+        popular = getattr(self, 'popularTracksListControl', None)
+        if popular is not None and popular.size():
+            popular.setSelectedItemByPos(popular.size() - 1)
+
+    def updatePopularPlayingHere(self, *args, **kwargs):
+        """popular.playing.here: whether the music playing comes from this artist's Popular Tracks
+        queue (popularTrackClicked() queues the popular-tracks listing; PlexPlayer.
+        isPlayingAudioFrom()). The row's now-playing accent needs it as well as the track's id
+        (script-plex-artist.xml.tpl's list 402), so a popular track playing from its album isn't
+        marked here (on request, 2026-10-07) - the Album screen's playing.here, the other way
+        round."""
+        self.setBoolProperty('popular.playing.here',
+                             player.PLAYER.isPlayingAudioFrom(self.mediaItem.popularTracksKey))
 
     def backResetRows(self):
         # Own list, not ShowWindow's: this screen has no Roles/Extras controls (ShowWindow's version
@@ -1251,6 +1327,7 @@ class ArtistWindow(ShowWindow):
         # is never reset back to 0 (same as Pre-play - other controls key off it staying "seen at
         # least once", not off returning to exactly 0).
         self.reselectActiveSection(controlID, self.lastFocusID)
+        self._settlePopularTracksBelow(controlID, self.lastFocusID)
         self.lastFocusID = controlID
 
         if 399 < controlID < 500:
@@ -1273,6 +1350,7 @@ class ArtistWindow(ShowWindow):
         self.fill()
         self.fillRelated()
         self.fillPopularTracks()
+        self.updatePopularPlayingHere()
         self.fillAlbumTypeRows()
 
     def playButtonClicked(self, shuffle=False):

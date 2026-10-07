@@ -292,6 +292,24 @@ def durationToHoursMinutes(ms):
     return ' '.join(p for p in (hours and '{0}h'.format(hours), mins and '{0}m'.format(mins)) if p)
 
 
+def playlistSubtitle(playlistType, count, duration):
+    """A playlist hero's second line - the playlist screen's and Recommended's: the item count in
+    its own kind's word ("24 tracks", "12 videos", "items" for any other kind), then a bullet and
+    the total runtime as durationToHoursMinutes() writes it (hours and minutes even past a day -
+    All Music is 146h). No runtime, no bullet."""
+    if playlistType == 'audio':
+        text = T(35074, '{} track') if count == 1 else T(35073, '{} tracks')
+    elif playlistType == 'video':
+        text = T(35157, '{} video') if count == 1 else T(35156, '{} videos')
+    else:
+        text = T(35158, '{} item') if count == 1 else T(35055, '{0} items')
+    parts = [text.format(count)]
+    runtime = durationToHoursMinutes(duration)
+    if runtime:
+        parts.append(runtime)
+    return u' • '.join(parts)
+
+
 def remainingTimeToShortText(ms):
     """
     Formats a remaining-playback-time duration in the same short, no-space style as

@@ -385,9 +385,12 @@
                              playing row is tinted FFE5A00D (the theme's own accent, what the button focus
                              textures use) rather than carrying a now-playing glyph in a left gutter: with
                              the track number gone there's no column for one to live in, and reserving one
-                             would indent every title for a marker that shows on at most one row. -->
+                             would indent every title for a marker that shows on at most one row.
+                             Only for music playing from this row's own queue (popular.playing.here,
+                             updatePopularPlayingHere(), subitems.py): a popular track playing from
+                             its album isn't marked here. -->
                         <control type="label">
-                            <visible>!String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+                            <visible>!String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID)) | String.IsEmpty(Window.Property(popular.playing.here))</visible>
                             <scroll>false</scroll>
                             <posx>18</posx>
                             <posy>{{ vscale(23) }}</posy>
@@ -400,7 +403,7 @@
                             <label>$INFO[ListItem.Label]</label>
                         </control>
                         <control type="label">
-                            <visible>String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+                            <visible>String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID)) + !String.IsEmpty(Window.Property(popular.playing.here))</visible>
                             <scroll>false</scroll>
                             <posx>18</posx>
                             <posy>{{ vscale(23) }}</posy>
@@ -494,7 +497,7 @@
                         </control>
                         <!-- Text stack - see the itemlayout's own copy above. -->
                         <control type="label">
-                            <visible>!String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+                            <visible>!String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID)) | String.IsEmpty(Window.Property(popular.playing.here))</visible>
                             <scroll>Control.HasFocus(402)</scroll>
                             <posx>18</posx>
                             <posy>{{ vscale(23) }}</posy>
@@ -507,7 +510,7 @@
                             <label>$INFO[ListItem.Label]</label>
                         </control>
                         <control type="label">
-                            <visible>String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+                            <visible>String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID)) + !String.IsEmpty(Window.Property(popular.playing.here))</visible>
                             <scroll>Control.HasFocus(402)</scroll>
                             <posx>18</posx>
                             <posy>{{ vscale(23) }}</posy>

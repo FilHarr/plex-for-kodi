@@ -226,7 +226,20 @@ def trackClicked(track, container_path=None, **kwargs):
     Falls back to playing the single track on its own if the server won't give us a queue (a
     secondary server, or an item that isn't a library item - see
     PlayQueueFactory.canCreateRemotePlayQueue).
+
+    The track already playing, from a queue of this same container: just the player again, with no
+    new queue - one would replace the playing queue on the server (PMS keeps one per client;
+    checked live 2026-10-07) while Kodi carried on with the old. Playing from anywhere else (Popular
+    Tracks, say, clicked again on its album screen): this container's queue, restarting the track
+    in it (on request, 2026-10-07), so the rest of the container follows.
     """
+    from lib import player
+    parentRatingKey = track.get('parentRatingKey')
+    source = container_path or (parentRatingKey and '/library/metadata/' + parentRatingKey)
+    if util.trackIsPlaying(track) and player.PLAYER.isPlayingAudioFrom(source):
+        from . import musicplayer
+        return handleOpen(musicplayer.MusicPlayerWindow, **kwargs)
+
     pq = playqueue.createPlayQueueForItem(track, options={'containerPath': container_path})
     if pq:
         return open(pq, **kwargs)

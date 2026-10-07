@@ -9,9 +9,10 @@ from . import kodigui
 from . import opener
 from . import windowutils
 from . import sidebar_model
+from .mixins.row_restore import RowRestoreMixin
 
 
-class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin):
+class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, RowRestoreMixin):
     xmlFile = 'script-plex-genres.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -35,6 +36,12 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
         # overwrites this with the host's own sectionList object before onFirstInit() runs.
         self.sectionList = None
         self.tabList = None
+        # (GENRE_PANEL_ID, position): Back from the genre opened here lands on it again, not on the
+        # first genre (RowRestoreMixin; on request, 2026-10-07)
+        self.restoreFocus = kwargs.get('restore_focus')
+
+    def restoreRows(self):
+        return {self.GENRE_PANEL_ID: self.genreListControl}
 
     def onFirstInit(self):
         self.genreListControl = kodigui.ManagedControlList(self, self.GENRE_PANEL_ID, 5)
@@ -64,7 +71,8 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
             self._chainHost.updateActiveTabMarker(active_override='categories')
 
         self.setBoolProperty('initialized', True)
-        self.setFocusId(self.GENRE_PANEL_ID)
+        if not (self.restoreFocus and self._restoreRowFocus()):
+            self.setFocusId(self.GENRE_PANEL_ID)
 
     def fillGenres(self):
         if self.section.key.startswith('/'):

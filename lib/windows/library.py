@@ -815,11 +815,12 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         never restored at all for collection.py's CollectionWindow/SubDirWindow, the two hosted
         shells with their own grid concept.
 
-        Deliberately scoped to collection.BoundedGridWindow (and search.SearchWindow, whose own
-        restoreState() gives its query and focus) - the real shells are otherwise too
-        structurally different from each other (PrePlayWindow/EpisodesWindow/ShowWindow/
-        ArtistWindow/GenreBrowserWindow each have their own, unrelated internal state/control
-        shape) to share one generic restore mechanism; out of scope here.
+        Deliberately scoped to collection.BoundedGridWindow, plus any shell with a restoreState()
+        of its own (search.SearchWindow's query and focus; the focused row item of the screens using
+        mixins/row_restore.py's RowRestoreMixin - Show, Artist,
+        Pre-play, Episodes, Actor/Director, Categories) - the real shells are
+        otherwise too structurally different from each other to share one generic restore
+        mechanism.
 
         Captures the item's *absolute* position in the full list, not its raw control-relative
         index - BoundedGridPaginator's sliding-window model (pagination.py) only ever materializes
@@ -833,10 +834,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         back to the shell's own existing item-0 default only if neither applies (e.g. the position
         no longer exists at all)."""
         current = self._current
-        if isinstance(current, search.SearchWindow):
-            # the query, the type button and the result focused, which the rebuilt Search reruns
-            # and focuses again
-            return current.restoreState()
+        restoreState = getattr(current, 'restoreState', None)
+        if restoreState is not None:
+            # A shell that says what it keeps, as its own constructor kwargs: Search (the query,
+            # the type button and the result focused, which the rebuilt Search reruns and focuses
+            # again) and the RowRestoreMixin screens (the row item focused -
+            # mixins/row_restore.py).
+            return restoreState()
         if (isinstance(current, collection.BoundedGridWindow) and current.paginator is not None
                 and current.gridControl):
             mli = current.gridControl.getSelectedItem()
@@ -938,6 +942,15 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self.popBack()
         else:
             util.DEBUG_LOG("Library: posted Back found no chain left, ignored")
+
+    def dropBackRestore(self):
+        """The screen Back goes to next opens as it would fresh, not on the row item it was left
+        from (restore_focus - _captureHostedShellRestoreState()): for a Back that's really an open
+        of that screen - the Episodes screen's Show tab, which goes Back to the show it came from
+        (EpisodesWindow._goToShow()), and should land on Play there like any other open of a show
+        (on request, 2026-10-07)."""
+        if self._backStack and self._backStack[-1][0] is not None:
+            self._backStack[-1][1].pop('restore_focus', None)
 
     def popBack(self, view_gone=False):
         """view_gone: the current view has already closed (viewClosed()), so openSection() mustn't

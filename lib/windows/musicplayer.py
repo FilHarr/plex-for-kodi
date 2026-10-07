@@ -109,7 +109,13 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
         if not self.track:
             return
 
-        if util.trackIsPlaying(self.track):
+        # Left alone only when it's playing from the very queue this window was handed. Every
+        # caller passing a track has just built a fresh queue (opener.open(), the album/artist
+        # Play buttons, a track click that isn't from the playing container -
+        # opener.trackClicked()), and that one restarts it: skipping it whenever the track was
+        # playing at all kept Kodi on the old queue (Popular Tracks, say) with the album never
+        # queued, while the new queue had already replaced it on the server.
+        if util.trackIsPlaying(self.track) and self.playlist is player.PLAYER.playingAudioQueue():
             return
 
         self.onAudioStarting()

@@ -1814,8 +1814,8 @@ class GridMixin(object):
 
     def createPlaylistGridListItem(self, obj):
         # Square tiles for both audio/video, 'thumb' composite (matches what the playlist detail
-        # screen shows, not the old 'art' backdrop-style video rendering), item count instead of
-        # duration. Ported from the Sidebar-Tab-Unification branch's identical method (commit
+        # screen shows, not the old 'art' backdrop-style video rendering), total runtime under the
+        # title. Ported from the Sidebar-Tab-Unification branch's identical method (commit
         # f0e6340f), which itself mirrors HomeWindow.createPlaylistListItem() (home.py, f69b1e7e).
         # Named distinctly from the pre-existing createPlaylistListItem() (below,
         # CREATE_LI_MAP/createListItem()'s hub-tile dispatch, a different rendering context - hub
@@ -1828,10 +1828,13 @@ class GridMixin(object):
         # HubsMixin.createPlaylistListItem() (library_hubs.py)
         thumb = obj.buildComposite(width=w, height=h, media='thumb') or util.standInThumb(fallback)
 
-        itemCount = T(35055, '{0} items').format(obj.leafCount.asInt())
+        # Second line is the total runtime, as the Recommended rows' playlist tiles show it
+        # (HubsMixin.createPlaylistListItem(), library_hubs.py - on request, 2026-10-07: was the
+        # item count); '' for an empty playlist, which leaves the tile with just its title.
+        runtime = util.durationToHoursMinutes(obj.get('duration') and obj.duration.asInt())
         mli = kodigui.ManagedListItem(
             util.colorizeEmoji(obj.title) or '',
-            itemCount,
+            runtime,
             thumbnailImage=thumb,
             data_source=obj
         )
@@ -1840,7 +1843,7 @@ class GridMixin(object):
         # album.artist property (not ListItem.Label2, unlike the listview-square template, which
         # does use Label2 - set above too, for that view). Reusing the same property/mechanism the
         # Artist grid already renders rather than touching the shared squares template's layout.
-        mli.setProperty('album.artist', itemCount)
+        mli.setProperty('album.artist', runtime)
         return mli
 
     @busy.dialog()

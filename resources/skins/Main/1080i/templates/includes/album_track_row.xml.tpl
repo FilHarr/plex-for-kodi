@@ -72,10 +72,10 @@
     </control>
 {% endif %}
 
-    <!-- Number column, or the now-playing marker in its place - the same swap this screen has
-         always done, kept because the number is exactly the right thing to give up for it. -->
+    <!-- Number column, on every row: the playing track is marked by its title in the accent alone
+         (below), as in the music list view's rows and the playlist screen's - the now-playing glyph
+         that used to take the number's place went on request, 2026-10-07. -->
     <control type="label">
-        <visible>String.IsEmpty(Window(10000).Property(script.plex.track.ID)) | !String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
         <posx>0</posx>
         <posy>0</posy>
         <width>86</width>
@@ -86,23 +86,14 @@
         <textcolor>D8FFFFFF</textcolor>
         <label>$INFO[ListItem.Property(track.number)]</label>
     </control>
-    <control type="image">
-        <visible>!String.IsEmpty(Window(10000).Property(script.plex.track.ID)) + String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
-        <!-- Centred on the same 0..86 column as the number it replaces: (86-35)/2 across,
-             (100-35)/2 down. -->
-        <posx>26</posx>
-        <posy>{{ vscale(33) }}</posy>
-        <width>35</width>
-        <height>{{ vscale(35) }}</height>
-        <texture>script.plex/indicators/playing-circle.png</texture>
-        <colordiffuse>FFE5A00D</colordiffuse>
-    </control>
 
     <!-- Title, written twice because Kodi can't switch a label's textcolor on a condition. The
          explicit non-empty test matters: String.IsEqual("","") is TRUE, so without it every row
-         would render as the playing track whenever nothing was playing. -->
+         would render as the playing track whenever nothing was playing. playing.here
+         (updatePlayingHere(), tracks.py) limits it to music playing from this album's own queue:
+         the same track playing from Popular Tracks or a playlist isn't marked. -->
     <control type="label">
-        <visible>String.IsEmpty(Window(10000).Property(script.plex.track.ID)) | !String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+        <visible>String.IsEmpty(Window(10000).Property(script.plex.track.ID)) | !String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID)) | String.IsEmpty(Window.Property(playing.here))</visible>
         <scroll>{% if focused %}Control.HasFocus(101){% else %}false{% endif %}</scroll>
         <posx>86</posx>
         <posy>0</posy>
@@ -115,7 +106,7 @@
         <label>$INFO[ListItem.Label]</label>
     </control>
     <control type="label">
-        <visible>!String.IsEmpty(Window(10000).Property(script.plex.track.ID)) + String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID))</visible>
+        <visible>!String.IsEmpty(Window(10000).Property(script.plex.track.ID)) + String.IsEqual(ListItem.Property(track.ID),Window(10000).Property(script.plex.track.ID)) + !String.IsEmpty(Window.Property(playing.here))</visible>
         <scroll>{% if focused %}Control.HasFocus(101){% else %}false{% endif %}</scroll>
         <posx>86</posx>
         <posy>0</posy>

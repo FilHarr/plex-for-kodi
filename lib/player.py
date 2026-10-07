@@ -20,6 +20,7 @@ from . import seamless_branching
 from .language_util import getNativeLanguages, resolveLanguage
 from plexnet import plexplayer
 from plexnet import plexapp
+from plexnet import playqueue
 from plexnet import plexstream as plexstreamModule
 from plexnet import signalsmixin
 from plexnet import util as plexnetUtil
@@ -2964,6 +2965,7 @@ class PlexPlayer(xbmc.Player, signalsmixin.SignalsMixin):
 
         self.ignoreStopEvents = True
         self.sessionID = "AUD%s" % track.ratingKey
+        self._retireAudioQueue()
         self.handler = AudioPlayerHandler(self, session_id=self.sessionID)
         self.handler.setup()
         self.playerObject = plexplayer.PlexAudioPlayer(track, session_id=self.sessionID)
@@ -2975,12 +2977,42 @@ class PlexPlayer(xbmc.Player, signalsmixin.SignalsMixin):
         self.trigger('starting.audio')
         self.play(url, li, **kwargs)
 
+    def playingAudioQueue(self):
+        """The server play queue the music playing now comes from, or None (nothing playing, a
+        single track played without one, a local queue)."""
+        if not isinstance(self.handler, AudioPlayerHandler) or not self.isPlayingAudio():
+            return None
+        return getattr(self.handler, 'playQueue', None)
+
+    def isPlayingAudioFrom(self, path):
+        """Whether the music playing now comes from a queue built from the directory at path -
+        an album's /library/metadata/<ratingKey>, say, or an artist's popular tracks. Matched on
+        PMS's own record of what the queue was built from (PlayQueue.sourcePath), so a track of
+        the album playing from some other list (Popular Tracks, a playlist) doesn't count."""
+        pq = self.playingAudioQueue()
+        if pq is None or not path:
+            return False
+        return playqueue.sameQueueSource(getattr(pq, 'sourcePath', ''), playqueue.queueSourcePath(path))
+
+    def _retireAudioQueue(self, keep=None):
+        """Before a new audio handler replaces this one: drops the outgoing play queue's pending
+        delayed refresh (PlayQueue.cancelRefresh()). Each track start schedules one for 5 s later,
+        and the server has deleted that queue by then whenever another was started inside those
+        5 s - Play then Shuffle, say - so it came back 404 into the log. keep: the queue about to
+        play, left alone if it's the same one."""
+        if not isinstance(self.handler, AudioPlayerHandler):
+            return
+        old = getattr(self.handler, 'playQueue', None)
+        if old is not None and old is not keep and hasattr(old, 'cancelRefresh'):
+            old.cancelRefresh()
+
     def playAudioPlaylist(self, playlist, startpos=-1, fanart=None, **kwargs):
         if self.bgmPlaying:
             self.stopAndWait()
 
         self.ignoreStopEvents = True
         self.sessionID = "PLS%s" % getattr(playlist, "ratingKey", getattr(playlist, "id", random.randint(0, 1000)))
+        self._retireAudioQueue(keep=playlist)
         self.handler = AudioPlayerHandler(self, session_id=self.sessionID)
         self.handler.setup()
         self.playerObject = plexplayer.PlexAudioPlayer(session_id=self.sessionID)

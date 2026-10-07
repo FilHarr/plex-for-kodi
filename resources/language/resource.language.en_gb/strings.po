@@ -3748,3 +3748,19 @@ msgstr ""
 msgctxt "#35155"
 msgid "How long Search waits after you stop typing, or stop moving around its keyboard, before it searches. Shorter shows results sooner; longer searches less often while you type."
 msgstr ""
+
+msgctxt "#35156"
+msgid "{} videos"
+msgstr ""
+
+msgctxt "#35157"
+msgid "{} video"
+msgstr ""
+
+msgctxt "#35158"
+msgid "{} item"
+msgstr ""
+
+msgctxt "#35159"
+msgid "Smart playlist"
+msgstr ""

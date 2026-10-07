@@ -1399,14 +1399,11 @@ class HubsMixin(object):
         elif ds_type == 'playlist':
             # Playlists (on request, 2026-09-20): the template renders the heading in the episode
             # screen's no-logo title style and this line where the episode title would go -
-            # "<n> items" + bullet + total runtime (util.durationToHoursMinutes(): hours and
-            # minutes even past a day, All Music is 146h - not durationToShortText()'s day
-            # rollover, but its no-space style so it reads like the other rows' durations).
-            parts = [T(35055, '{0} items').format(getattr(ds, 'leafCount', None) and ds.leafCount.asInt() or 0)]
-            runtime = util.durationToHoursMinutes(getattr(ds, 'duration', None) and ds.duration.asInt())
-            if runtime:
-                parts.append(runtime)
-            subtitle = u' \u2022 '.join(parts)
+            # "<n> tracks"/"<n> videos" + bullet + total runtime, the same line as the playlist
+            # screen's own hero (util.playlistSubtitle()).
+            subtitle = util.playlistSubtitle(getattr(ds, 'playlistType', ''),
+                                             getattr(ds, 'leafCount', None) and ds.leafCount.asInt() or 0,
+                                             getattr(ds, 'duration', None) and ds.duration.asInt())
         elif ds_type == 'album':
             # Albums (on request): the playlist layout, with the album artist on the second line.
             subtitle = getattr(ds, 'parentTitle', '') or ''

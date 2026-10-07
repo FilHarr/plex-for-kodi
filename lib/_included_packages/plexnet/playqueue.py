@@ -142,6 +142,43 @@ class PlayQueueFactory(object):
         return self.item.type == "artist"
 
 
+def queueSourcePath(path):
+    """A directory path as createRemotePlayQueue() sends it in a queue's uri - with a few params
+    renamed to the PQ spec - and so as PMS hands it back in the queue's playQueueSourceURI
+    (PlayQueue.sourcePath; the two match exactly, checked live 2026-10-07)."""
+    if "/search" in path:
+        return path
+
+    # Convert a few params to the PQ spec
+    convert = {
+        'type': "sourceType",
+        'unwatchedLeaves': "unwatched"
+    }
+
+    for key in convert:
+        regex = re.compile(r"(?i)([?&])" + key + "=")
+        # r"\1", not "\1": the latter is chr(1), so this used to swallow the ? or & it
+        # matched and splice a control character into the path instead of keeping the
+        # separator. It never fired before - the one caller that got here already passed
+        # sourceType, and "sourceType=" doesn't match "([?&])type=" - but the artist's
+        # <PopularLeaves> key ends in "&type=10", so now it does.
+        path = regex.sub(r"\1" + convert[key] + "=", path)
+    return path
+
+
+def sameQueueSource(a, b):
+    """Whether two queue source paths name the same container: equal, once a trailing /children
+    is dropped from each - /library/metadata/<album>/children lists the album's tracks, so a
+    queue of it is the album's, the same as one of /library/metadata/<album> (what both a track
+    click and the album's Play button queue - PlayQueue.sourcePath)."""
+    if not a or not b:
+        return False
+
+    def strip(p):
+        return p[:-len('/children')] if p.endswith('/children') else p
+    return strip(a) == strip(b)
+
+
 def createPlayQueueForItem(item, children=None, options=None, args=None, use_async=True, method="GET", **kwargs):
     obj = PlayQueueFactory()
 
@@ -241,6 +278,23 @@ class PlayQueue(signalsmixin.SignalsMixin):
         return getattr(self, name, plexobjects.PlexValue('', parent=self))
 
     @property
+    def sourcePath(self):
+        """The path this queue was built from, from PMS's own playQueueSourceURI (kept through
+        refreshes - checked live): "/library/metadata/31785" for an album, whether as the directory
+        a track click queues (library://<id>/directory/...) or the item the album's own Play and
+        Shuffle buttons queue (library://<id>/item/..., either way - checked live 2026-10-07); the
+        artist's popular-tracks listing for one of those. '' for a playlist's queue
+        (library://<id>/playlist/...) or one that hasn't answered yet."""
+        # `is None`, not truthiness: a container can define __len__ (PlexServerContainer).
+        if self.container is None:
+            return ''
+        uri = self.container.get('playQueueSourceURI') or ''
+        for kind in ('/directory/', '/item/'):
+            if kind in uri:
+                return six.moves.urllib.parse.unquote(uri.split(kind, 1)[1])
+        return ''
+
+    @property
     def defaultArt(self):
         return self.current().defaultArt
 
@@ -264,6 +318,14 @@ class PlayQueue(signalsmixin.SignalsMixin):
     def onRefreshTimer(self):
         self.refreshTimer = None
         self.refresh(True, False)
+
+    def cancelRefresh(self):
+        """Drops a delayed refresh still pending (refresh(delay=True)'s 5 s timer): for a queue
+        being replaced by another, which PMS deletes as soon as the new one is made (one queue per
+        client), so the refresh only ever came back 404 (PlexPlayer._retireAudioQueue())."""
+        timer, self.refreshTimer = self.refreshTimer, None
+        if timer:
+            timer.cancel()
 
     def refresh(self, force=True, delay=False, wait=False):
         # Ignore refreshing local PQs
@@ -916,21 +978,7 @@ def createRemotePlayQueue(item, contentType, options, args, use_async=True, meth
 
         util.DEBUG_LOG("playQueue path: " + str(path))
 
-        if "/search" not in path:
-            # Convert a few params to the PQ spec
-            convert = {
-                'type': "sourceType",
-                'unwatchedLeaves': "unwatched"
-            }
-
-            for key in convert:
-                regex = re.compile(r"(?i)([?&])" + key + "=")
-                # r"\1", not "\1": the latter is chr(1), so this used to swallow the ? or & it
-                # matched and splice a control character into the path instead of keeping the
-                # separator. It never fired before - the one caller that got here already passed
-                # sourceType, and "sourceType=" doesn't match "([?&])type=" - but the artist's
-                # <PopularLeaves> key ends in "&type=10", so now it does.
-                path = regex.sub(r"\1" + convert[key] + "=", path)
+        path = queueSourcePath(path)
 
         util.DEBUG_LOG("playQueue path: " + str(path))
         uri = uri + itemType + "/" + six.moves.urllib.parse.quote_plus(path)

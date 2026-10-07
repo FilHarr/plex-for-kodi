@@ -145,22 +145,7 @@ class ScreensOwnItemTest(KodiTestCase):
         coll.__dict__['collection'] = 'the collection'
         self.assertEqual('the collection', collection.CollectionWindow.backgroundItem(coll))
 
-    def test_playlist_paints_its_composite_first(self):
-        class Composite(object):
-            def __bool__(self):
-                return True
-            __nonzero__ = __bool__
-
-            def asTranscodedImageURL(self, w, h, **kwargs):
-                return 'composite %dx%d' % (w, h)
-
-        class FakePlaylist(object):
-            composite = Composite()
-
+    def test_playlist_paints_no_art(self):
+        # The colour panel alone (setProperties(), playlist.py): no hero art, from the first frame.
         window = object.__new__(playlist.PlaylistWindow)
-        window.__dict__['playlist'] = FakePlaylist()
-        orig = util.addonSettings.backgroundResolutionScalePerc
-        util.addonSettings.backgroundResolutionScalePerc = 100
-        self.addCleanup(setattr, util.addonSettings, 'backgroundResolutionScalePerc', orig)
-        self.assertEqual('composite %dx%d' % kodigui.HERO_ART_SIZE,
-                         playlist.PlaylistWindow.initialBackgroundURL(window))
+        self.assertIsNone(playlist.PlaylistWindow.initialBackgroundURL(window))

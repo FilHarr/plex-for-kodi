@@ -96,11 +96,22 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         self.lastFocusID = controlID
 
     def onReInit(self):
+        self.updatePlayingHere()
         if self.lastPlayingRK:
             self.selectTrack(self.lastPlayingRK)
 
     def onPlayingTrackChanged(self, *args, **kwargs):
         self.lastPlayingRK = util.getGlobalProperty("track.ID")
+        self.updatePlayingHere()
+
+    def updatePlayingHere(self):
+        """playing.here: whether the music playing comes from this album's own queue
+        (PlexPlayer.isPlayingAudioFrom()). The rows' now-playing accent needs it as well as the
+        track's id (includes/album_track_row.xml.tpl), so a track of this album playing from
+        Popular Tracks or a playlist isn't marked as playing here (on request, 2026-10-07). Once
+        playback stops the track id clears, which takes the accent off whatever this says."""
+        self.setBoolProperty('playing.here',
+                             player.PLAYER.isPlayingAudioFrom('/library/metadata/{0}'.format(self.album.ratingKey)))
 
     def setup(self):
         # The album arrives as a partial object from whatever list was clicked, and Album._setData()
@@ -113,6 +124,7 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             util.ERROR('AlbumWindow: album reload failed, meta line may be incomplete')
 
         self.updateProperties()
+        self.updatePlayingHere()
         self.fillTracks()
 
     def doClose(self, **kw):
