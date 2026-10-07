@@ -696,3 +696,20 @@ class VersionsTest(KodiTestCase):
         films = self.copy('Films', k4, hd)
         search.chooseVersion(films, hd)
         self.assertEqual(([hd], 1, ''), (films.chosen, hd.get('selected'), k4.get('selected')))
+
+
+class SearchHubContainerTest(KodiTestCase):
+    """A search's hubs have no key; their container's address was '', which plexnet logged as
+    FATAL once per hub with results, every search (124 lines in one day's log)."""
+
+    def test_no_fatal_for_a_keyless_hub(self):
+        from xml.etree import ElementTree
+        from plexnet import plexlibrary, util as plexnetUtil
+        from plexnet import video  # noqa: F401 - registers the film type the hub builds
+        xml = ElementTree.fromstring(
+            '<Hub type="movie" hubIdentifier="movie" size="1" title="Movies">'
+            '<Video type="movie" title="Alien" ratingKey="1" key="/library/metadata/1"/></Hub>')
+        with mock.patch.object(plexnetUtil, 'FATAL') as fatal:
+            hub = plexlibrary.Hub(xml, server=mock.Mock())
+        fatal.assert_not_called()
+        self.assertEqual(1, len(hub.items))

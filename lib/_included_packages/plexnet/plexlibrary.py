@@ -841,7 +841,10 @@ class Hub(BaseHub):
         self.items = []
         self._totalSize = None
 
-        container = plexobjects.PlexContainer(data, self.key, self.server, self.key or '')
+        # a search's hubs have no key: '/hubs', the path their items are built with below, rather
+        # than '' - which PlexContainer logged as FATAL ("not an expected path") once per hub
+        # with results, every search
+        container = plexobjects.PlexContainer(data, self.key, self.server, self.key or '/hubs')
 
         if container.totalSize:
             self._totalSize = container.totalSize.asInt()
