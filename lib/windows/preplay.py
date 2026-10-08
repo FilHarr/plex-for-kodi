@@ -1117,30 +1117,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.collectionPaginators[i] = paginator
             self.setProperty('collection.header.{0}'.format(i), collection.tag)
 
+    def creditsItem(self):
+        return self.video
+
     def fillRoles(self):
-        items = []
-        idx = 0
-
-        if not self.video.roles:
-            self.rolesListControl.reset()
-            return False
-
-        roles = self.video.combined_roles if util.getUserSetting('show_directors', True) else self.video.roles
-
-        for role in roles:
-            mli = kodigui.ManagedListItem(role.tag, role.role or util.TRANSLATED_ROLES[role.translated_role],
-                                          thumbnailImage=role.thumb.asTranscodedImageURL(*self.ROLES_DIM),
-                                          data_source=role)
-            mli.setProperty('index', str(idx))
-            items.append(mli)
-            idx += 1
-
-        if not items:
-            return False
-
-        self.rolesListControl.reset()
-        self.rolesListControl.addItems(items)
-        return True
+        return self.fillCreditsRow()
 
     def fillReviews(self):
         items = []

@@ -78,7 +78,9 @@ def open(obj, context=None, **kwargs):
         return genreClicked(obj, context=context, **kwargs)
     elif obj.TYPE in ('Director'):
         return directorClicked(obj, context=context, **kwargs)
-    elif obj.TYPE in ('Role'):
+    elif obj.TYPE in ('Role', 'Writer', 'Producer'):
+        # a writer or producer is a person like any other: the credits grid's crew, from the
+        # server's own list (credits._fromServer())
         return actorClicked(obj, context=context, **kwargs)
 
 

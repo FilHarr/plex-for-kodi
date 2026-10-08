@@ -1160,26 +1160,11 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
         return True
 
+    def creditsItem(self):
+        return self.mediaItem
+
     def fillRoles(self):
-        items = []
-        idx = 0
-        if not self.mediaItem.roles:
-            self.rolesListControl.reset()
-            return
-
-        roles = self.mediaItem.combined_roles if util.getUserSetting('show_directors', True) else self.mediaItem.roles
-
-        for role in roles:
-            mli = kodigui.ManagedListItem(role.tag, role.role or util.TRANSLATED_ROLES[role.translated_role],
-                                          thumbnailImage=role.thumb.asTranscodedImageURL(*self.ROLES_DIM),
-                                          data_source=role)
-            mli.setProperty('index', str(idx))
-            items.append(mli)
-            idx += 1
-
-        self.rolesListControl.reset()
-        self.rolesListControl.addItems(items)
-        return True
+        return self.fillCreditsRow()
 
 
 class ArtistWindow(ShowWindow):

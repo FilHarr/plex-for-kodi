@@ -7,6 +7,7 @@
 
      Params:
        hub_id - the row's list control id, for the focus gate
+       focused - True from a focusedlayout: draws the focus ring
        px, py - this group's own position inside the item's outer group. px is 3 everywhere:
                 the card's own art inset, so the pill's left edge sits exactly where this item's
                 art would start - 32px after the previous tile's art, the row's own gap (left-
@@ -55,4 +56,21 @@
         <textcolor>FFFFFFFF</textcolor>
         <label>$INFO[ListItem.Label]</label>
     </control>
+    {% if focused %}
+    <!-- The focus ring, as every tile has one (on request, 2026-10-08), on the poster and square
+         tiles' recipe (ring-mask-poster/-square): the ring orange through a mask on white, a 1.5px
+         stroke on the box's outer edge, 1.5px clear of the pill all round. The mask is made for
+         this exact box - 143x56, the pill plus 3 each side, its corners the pill's 6 plus 3 - and
+         drawn unsliced, so the stroke keeps its weight (a 9-sliced 5px outline was too heavy and
+         ran into the pill). Only in a focusedlayout (focused=True), while the row has focus. -->
+    <control type="image">
+        <visible>Control.HasFocus({{ hub_id }})</visible>
+        <posx>-3</posx>
+        <posy>{{ vscale(-3) }}</posy>
+        <width>143</width>
+        <height>{{ vscale(56) }}</height>
+        <texture diffuse="script.plex/masks/ring-mask-pill.png">script.plex/white-square.png</texture>
+        <colordiffuse>FFE9A20D</colordiffuse>
+    </control>
+    {% endif %}
 </control>

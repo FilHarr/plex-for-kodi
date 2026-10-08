@@ -3788,3 +3788,7 @@ msgstr ""
 msgctxt "#35165"
 msgid "Died"
 msgstr ""
+
+msgctxt "#35166"
+msgid "Crew"
+msgstr ""

@@ -71,6 +71,6 @@
                 <colordiffuse>FFE9A20D</colordiffuse>
             </control>
         </control>
-        {% include "includes/hub_see_more_pill.xml.tpl" with px=3 & py=158 %}
+        {% include "includes/hub_see_more_pill.xml.tpl" with px=3 & py=158 & focused=True %}
     </control>
 </focusedlayout>
