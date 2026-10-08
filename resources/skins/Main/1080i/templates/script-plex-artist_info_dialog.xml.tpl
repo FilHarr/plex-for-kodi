@@ -30,18 +30,9 @@
         <width>600</width>
         <height>{{ vscale(1000) }}</height>
         <texture border="10">script.plex/white-square-rounded.png</texture>
-        <colordiffuse>D3111111</colordiffuse>
-    </control>
-    <!-- 240, not the original 400: same 40% of the panel's own width proportion
-         (script-plex-media_details_dialog.xml.tpl's own 400/1000), just scaled down with this
-         panel's own narrower 600. -->
-    <control type="image">
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>240</width>
-        <height>{{ vscale(1000) }}</height>
-        <texture border="12">script.plex/white-square-left-rounded.png</texture>
-        <colordiffuse>30000000</colordiffuse>
+        <!-- F2, 95%, one colour across the panel (on request, 2026-10-08) - was D3, 83%, with a
+             30000000 strip down its left 240 -->
+        <colordiffuse>F2111111</colordiffuse>
     </control>
     <!-- Title - its own control/font (font13, independent of the summary's font10 below) so the two
          can be sized separately, on request. Bold via [B] markup (same as this dialog's own previous
@@ -92,17 +83,23 @@
      than re-derived from scratch (that one's own hitrect y/h don't line up with a literal
      recomputation from its visible posy/height either - likely hand-tuned live rather than
      computed) - live-check this one's own click zone once the dialog's actually up. -->
+<!-- The Libraries picker's scrollbar as it looks (script-plex-card_list.xml.tpl, on request
+     2026-10-08): 12 wide, rounded, a 40000000 track and a 77FFFFFF bar - its right edge where the old
+     10-wide one's was, on the panel's. The bar keeps 77FFFFFF focused too, unlike the shared style
+     (includes/scrollbar_style.xml.tpl) it's otherwise written from: this scrollbar always has the
+     focus (SummaryDialog focuses it so the remote scrolls the text, info.py), so its focused bar is
+     the only one ever seen, where the picker's never takes focus and never turns orange. -->
 <control type="scrollbar" id="101">
     <hitrect x="1208" y="33" w="90" h="1044" />
-    <left>1250</left>
+    <left>1248</left>
     <top>{{ vperc(vscale(1000)) + vscale(110) }}</top>
-    <width>10</width>
+    <width>12</width>
     <height>{{ vscale(870) }}</height>
     <onleft>noop</onleft>
     <visible>true</visible>
-    <texturesliderbackground colordiffuse="30000000" border="5">script.plex/white-square.png</texturesliderbackground>
-    <texturesliderbar colordiffuse="33FFFFFF" border="5">script.plex/white-square.png</texturesliderbar>
-    <texturesliderbarfocus colordiffuse="FFE5A00D" border="5">script.plex/white-square.png</texturesliderbarfocus>
+    <texturesliderbackground colordiffuse="40000000" border="5">script.plex/white-square-rounded.png</texturesliderbackground>
+    <texturesliderbar colordiffuse="77FFFFFF" border="5">script.plex/white-square-rounded.png</texturesliderbar>
+    <texturesliderbarfocus colordiffuse="77FFFFFF" border="5">script.plex/white-square-rounded.png</texturesliderbarfocus>
     <textureslidernib>-</textureslidernib>
     <textureslidernibfocus>-</textureslidernibfocus>
     <pulseonselect>false</pulseonselect>
