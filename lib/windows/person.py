@@ -5,7 +5,6 @@ import datetime
 import threading
 import time
 
-from kodi_six import xbmc
 from kodi_six import xbmcgui
 
 from lib import backgroundthread
@@ -20,10 +19,6 @@ from . import windowutils
 from . import sidebar_model
 from . import copies
 from .mixins.row_restore import RowRestoreMixin
-
-DISCOVER_HUB_SLOTS = 6
-NOT_IN_LIBRARY_BATCH_SIZE = 10
-
 
 class PersonDetailsTask(backgroundthread.Task):
     def __init__(self, role, callback):
@@ -74,20 +69,108 @@ def personKey(role):
 
 
 def libraryFilmography(server, key):
-    """A person's movies and shows in server's libraries: /library/people/{key}/media, whole - it
-    only pages when asked (checked live, PMS 1.43.4). One in two libraries comes twice."""
-    from plexnet import video
+    """A person's movies and shows in server's libraries by its own credits:
+    /library/people/{key}/media, whole - it only pages when asked (checked live, PMS 1.43.4). One in
+    two libraries comes twice."""
     data = server.query('/library/people/{0}/media'.format(key))
-    items = []
     if data is None:
-        return items
-    for elem in list(data.findall('Video')) + list(data.findall('Metadata')) + list(data.findall('Directory')):
+        return []
+    elems = list(data.findall('Video')) + list(data.findall('Metadata')) + list(data.findall('Directory'))
+    for elem in elems:
+        _dropRepeatedVersions(elem)
+    return libraryItems(server, elems, '/library/people')
+
+
+def _dropRepeatedVersions(elem):
+    """/library/people/{key}/media lists an item's versions (Media) once for each credit the person
+    has on it: Stan Lee is cast and writer on Animal's Films copy of The Avengers, which came with
+    its two versions twice, and Open from offered four (live, 2026-10-08). Repeats go, by id."""
+    seen = set()
+    for media in list(elem.findall('Media')):
+        if media.get('id') in seen:
+            elem.remove(media)
+        else:
+            seen.add(media.get('id'))
+
+
+def addVersions(server, elems):
+    """elems, from /library/all (Role.libraryItemsByGuid()), with their films' versions (Media):
+    the listing leaves them out, includeMedia or not, and without them Open from shows no quality
+    and pickCopy() can't judge one copy against another. A library's own listing has them, so the
+    films are asked for again there, a library at a time, by guid - and their versions copied
+    across, so each keeps /library/all's library title and id, which that listing doesn't give
+    its items (checked live, 2026-10-08)."""
+    from plexnet.compat import quote_plus
+    from plexnet import media as plexmedia
+    bySection = {}
+    for elem in elems:
+        if elem.get('type') == 'movie' and elem.find('Media') is None and elem.get('librarySectionID'):
+            bySection.setdefault(elem.get('librarySectionID'), {})[elem.get('ratingKey')] = elem
+    for sectionID, byKey in bySection.items():
+        guids = sorted(set(elem.get('guid') for elem in byKey.values()))
+        for i in range(0, len(guids), plexmedia.Role.PRESENCE_BATCH):
+            path = '/library/sections/{0}/all?guid={1}'.format(
+                sectionID, ','.join(quote_plus(guid) for guid in guids[i:i + plexmedia.Role.PRESENCE_BATCH]))
+            try:
+                data = server.query(path)
+            except Exception as e:
+                util.DEBUG_LOG('Person: no versions from {0} library {1}: {2}', server.name, sectionID, e)
+                continue
+            for listed in data if data is not None else ():
+                elem = byKey.get(listed.get('ratingKey'))
+                if elem is not None:
+                    for media in listed.findall('Media'):
+                        elem.append(media)
+    return elems
+
+
+def libraryItems(server, elems, initpath):
+    """The movies and shows among elems, server's XML elements, as items."""
+    from plexnet import video
+    items = []
+    for elem in elems:
         kind = elem.get('type', '')
         if kind == 'movie':
-            items.append(video.Movie(elem, '/library/people', server))
+            items.append(video.Movie(elem, initpath, server))
         elif kind == 'show':
-            items.append(video.Show(elem, '/library/people', server))
+            items.append(video.Show(elem, initpath, server))
     return items
+
+
+def discoverCredits(role, key):
+    """Discover's credits for the person, [(type, title, credits)] in its order
+    (Role.getDiscoverCredits()) - [] in local mode."""
+    from plexnet import util as pnUtil
+    if pnUtil.LOCAL_MODE:
+        return []
+    if not getattr(role, 'tagKey', None):
+        role.tagKey = key
+    return role.getDiscoverCredits(titled=True) or []
+
+
+def creditGuids(groups):
+    """The plex GUIDs of the movies and shows in discoverCredits()'s groups, whatever the credit."""
+    guids = set()
+    for group_type, title, credits in groups:
+        for credit in credits:
+            item = DiscoverItem(credit)
+            if item.ratingKey and item.type in ('movie', 'show'):
+                guids.add(item.guid)
+    return list(guids)
+
+
+# The credit types the person screen lists under the name (creditTypesLine()): Discover's, less
+# Appearances and Additional Credits (on request, 2026-10-08) - being on a talk show, or the crew
+# jobs that have no group of their own, say little about what someone does
+NAMED_CREDIT_TYPES_EXCLUDED = ('appeared', 'other')
+
+
+def creditTypesLine(groups):
+    """"Producer, Actor, Writer, Editor": the credit types of discoverCredits()'s groups, their
+    names and order Discover's own (the person's main work first), Appearances and Additional
+    Credits left out."""
+    return u', '.join(u'{0}'.format(title) for group_type, title, credits in groups
+                      if group_type not in NAMED_CREDIT_TYPES_EXCLUDED)
 
 
 def _askServers(servers, fn):
@@ -116,21 +199,66 @@ def _askServers(servers, fn):
 class PersonFilmographyTask(backgroundthread.Task):
     """A person's movies and shows in every server's libraries (personServers()), in the servers'
     order - the person screen's filmography (the user, 2026-10-06: it showed only the library
-    the person was opened from, and another server's films under "Not in Library")."""
+    the person was opened from, and another server's films under "Not in Library").
 
-    def __init__(self, role, servers, callback):
+    Everything in a library the person is credited on, by the servers or by Discover (on request,
+    2026-10-08): a server keeps cast and writers but next to no producers or "Characters" credits,
+    so its own answer (libraryFilmography()) had Stan Lee's writer-only films but not the ones he
+    was an executive producer of. Discover's credits are asked while the servers are, and those of
+    its titles in a library (Role.libraryItemsByGuid()) join each server's answer - so the row is
+    what the filmography screen marks "On <server>"."""
+
+    def __init__(self, role, servers, callback, on_credit_types=None):
         super(PersonFilmographyTask, self).__init__()
         self.role = role
         self.servers = servers
         self.callback = callback
+        # called with creditTypesLine() as soon as Discover answers, not waiting for the servers
+        self.onCreditTypes = on_credit_types
 
     def run(self):
         if self.isCanceled():
             return
         key = personKey(self.role)
-        # without a plex.tv key, only the role's own server can be asked, by its own id
+        # without a plex.tv key, only the role's own server can be asked, by its own id - and
+        # Discover not at all
         servers = self.servers if key else [self.role.server]
+        discover = {}
+        asking = None
+        if key:
+            def askDiscover():
+                try:
+                    groups = discoverCredits(self.role, key)
+                    if self.onCreditTypes is not None and not self.isCanceled():
+                        self.onCreditTypes(creditTypesLine(groups))
+                    discover['guids'] = creditGuids(groups)
+                except Exception as e:
+                    util.DEBUG_LOG('Person: no Discover credits for {0}: {1}', self.role.tag, e)
+            asking = threading.Thread(target=askDiscover, name='person.discover')
+            asking.daemon = True
+            asking.start()
+
+        started = time.time()
         answers = _askServers(servers, lambda server: libraryFilmography(server, key or self.role.id))
+        if asking is not None:
+            asking.join(max(0, SERVER_TIMEOUT - (time.time() - started)))
+
+        guids = discover.get('guids')
+        if guids and not self.isCanceled():
+            from plexnet import media as plexmedia
+            known = dict((server.uuid, set(u'{0}'.format(item.ratingKey) for item in answers.get(server.uuid, ())))
+                         for server in servers)
+
+            def notKnown(server):
+                # those the server's own answer has already are dropped first: only the rest need
+                # their versions fetched (addVersions())
+                elems = [elem for elem in plexmedia.Role.libraryItemsByGuid(server, guids)
+                         if elem.get('ratingKey') not in known[server.uuid]]
+                return libraryItems(server, addVersions(server, elems), '/library/all')
+            found = _askServers(servers, notKnown)
+            for server in servers:
+                answers[server.uuid] = answers.get(server.uuid, []) + found.get(server.uuid, [])
+
         items = [item for server in servers for item in answers.get(server.uuid, ())]
         if not self.isCanceled():
             self.callback(items)
@@ -149,6 +277,45 @@ def libraryPresence(servers, guids):
     return present
 
 
+def openCredit(window, item, local_server):
+    """Open a Discover credit (DiscoverItem) from window - the filmography screen
+    (filmography.py): from local_server's library if it's in one there (libraryPresence()),
+    otherwise Discover's."""
+    if not item.ratingKey:
+        return
+
+    from plexnet import util as pnUtil
+    from plexnet.compat import quote_plus
+    if local_server:
+        try:
+            # Resolve plex:// guid against the local PMS — getObject builds a proper PlexObject
+            window.processCommand(opener.open(
+                '/library/metadata/{0}'.format(quote_plus(item.guid)), context=window, server=local_server,
+                entry_section_id=window.sectionId, entry_from_watchlist=window.cameFromWatchlist))
+            return
+        except Exception as e:
+            util.DEBUG_LOG('Person: Local open failed for {0}: {1}', item.guid, e)
+
+    if pnUtil.LOCAL_MODE:
+        util.DEBUG_LOG('Person: Not opening discover item in local mode')
+        return
+
+    discover_server = pnUtil.SERVERMANAGER.getDiscoverServer()
+    if not discover_server:
+        util.DEBUG_LOG('Person: No discover server available')
+        return
+
+    window.processCommand(opener.open(
+        item.ratingKey,
+        context=window,
+        server=discover_server,
+        from_watchlist=True,
+        external_item=True,
+        entry_section_id=window.sectionId,
+        entry_from_watchlist=window.cameFromWatchlist
+    ))
+
+
 class DiscoverItem(object):
     def __init__(self, credit_data):
         meta = credit_data.get('Metadata', {})
@@ -164,51 +331,6 @@ class DiscoverItem(object):
         self.is_discover = True
 
 
-class DiscoverCreditsTask(backgroundthread.Task):
-    def __init__(self, role, servers, callback, credit_type=None):
-        super(DiscoverCreditsTask, self).__init__()
-        self.role = role
-        self.servers = servers
-        self.callback = callback
-        self.credit_type = credit_type
-
-    def run(self):
-        if self.isCanceled():
-            return
-
-        credit_groups = self.role.getDiscoverCredits(credit_type=self.credit_type)
-        if self.isCanceled() or not credit_groups:
-            self.callback([], {})
-            return
-        if self.credit_type is not None:
-            # One type asked for (DirectorWindow): getDiscoverCredits() returns that group's
-            # credits as a flat list, not (type, credits) pairs.
-            credit_groups = [(self.credit_type, credit_groups)]
-
-        discover_hubs = []
-        all_guids = []
-
-        for group_type, credits in credit_groups:
-            group_items = []
-            for credit in credits:
-                item = DiscoverItem(credit)
-                if item.ratingKey:
-                    group_items.append(item)
-                    all_guids.append(item.guid)
-            if group_items:
-                discover_hubs.append((group_type, group_items))
-
-        if self.isCanceled():
-            self.callback([], {})
-            return
-
-        # {guid: a server that has it}: in a library on any server isn't "Not in Library"
-        library_guids = libraryPresence(self.servers, list(set(all_guids)))
-
-        if not self.isCanceled():
-            self.callback(discover_hubs, library_guids)
-
-
 class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, RowRestoreMixin):
     xmlFile = 'script-plex-person.xml'
     path = util.ADDON.getAddonInfo('path')
@@ -217,19 +339,24 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
     width = 1920
     height = 1080
 
-    THUMB_DIM = util.scaleResolution(300, 300)
-    POSTER_DIM = util.scaleResolution(244, 361)
+    # The photo: Discover's 2:3 cover poster, 376x564 - the text column's height at its longest,
+    # name to Filmography button (on request, 2026-10-08)
+    THUMB_DIM = util.scaleResolution(376, 564)
+    # a Recommended row's poster request (library_hubs.py's THUMB_POSTER_DIM), for the same card
+    POSTER_DIM = util.scaleResolution(240, 360)
 
     FILMOGRAPHY_LIST_ID = 400
-    DISCOVER_LIST_BASE_ID = 401
-    DISCOVER_GROUP_BASE_ID = 501
     PLAYER_STATUS_BUTTON_ID = 204
     FILTER_BUTTON_ID = 300
-
-    # Override in subclasses
-    CREDIT_TYPE = None      # passed to getDiscoverCredits — None fetches all types
-    PRIMARY_TYPE = 'actor'  # which credit group to use for filmography filtering
-    TYPE_LABEL_ID = 32473   # strings.po ID for the role type label shown on screen
+    FILMOGRAPHY_BUTTON_ID = 302
+    # the click target over the bio, opening the whole of it (pre-play's SUMMARY_BUTTON_ID recipe)
+    SUMMARY_BUTTON_ID = 310
+    # the social link lines under the bio (script-plex-person.xml.tpl), one per link, in Discover's
+    # order
+    SOCIAL_SLOTS = 3
+    # the networks with an icon of their own (script.plex/social/<source>.png); any other gets the
+    # link icon
+    SOCIAL_ICONS = ('facebook', 'instagram', 'twitter')
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -246,9 +373,6 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         # (row list id, position) to focus once that row is filled: Back from a screen this one
         # opened (RowRestoreMixin)
         self.restoreFocus = kwargs.get('restore_focus')
-        self.discoverListControls = []
-        # {guid: a server it's in a library on} for the Discover credits (libraryPresence())
-        self.libraryGuids = {}
         # the servers asked for the person's films (personServers())
         self.servers = []
         self.tasks = backgroundthread.Tasks()
@@ -261,18 +385,17 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.sectionList = None
 
     def restoreRows(self):
-        """The rows Back returns focus to (RowRestoreMixin): the filmography and the Discover
-        rows, all of which open a screen in this one's place (on request, 2026-10-07)."""
-        rows = {self.FILMOGRAPHY_LIST_ID: self.filmographyListControl}
-        rows.update((self.DISCOVER_LIST_BASE_ID + i, control) for i, control in enumerate(self.discoverListControls))
-        return rows
+        """The row Back returns focus to (RowRestoreMixin): the filmography, which opens a screen
+        in this one's place (on request, 2026-10-07)."""
+        return {self.FILMOGRAPHY_LIST_ID: self.filmographyListControl}
 
     def asyncRestoreRows(self):
-        # all of them: each is filled by a background task's callback
-        return tuple(self.restoreRows())
+        # filled by a background task's callback
+        return (self.FILMOGRAPHY_LIST_ID,)
 
     def restoreDefaultFocusIds(self):
-        return (0, self.FILMOGRAPHY_LIST_ID)
+        # where the screen puts focus itself (focusDefault()): a Back restore takes it from these
+        return (0, self.FILMOGRAPHY_BUTTON_ID, self.SUMMARY_BUTTON_ID, self.FILMOGRAPHY_LIST_ID)
 
     def restoreState(self):
         """RowRestoreMixin's row item, plus the filmography's filter (All, Movies, Shows), which the
@@ -290,15 +413,6 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
     def onFirstInit(self):
         self.setProperty('loading', '1')
         self.filmographyListControl = kodigui.ManagedControlList(self, self.FILMOGRAPHY_LIST_ID, 5)
-
-        self.discoverListControls = []
-        for i in range(DISCOVER_HUB_SLOTS):
-            list_id = self.DISCOVER_LIST_BASE_ID + i
-            try:
-                control = kodigui.ManagedControlList(self, list_id, 5)
-                self.discoverListControls.append(control)
-            except Exception:
-                break
 
         if self.sectionList is None:
             self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
@@ -318,14 +432,12 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.servers = personServers(self.role)
 
         self.setProperty('person.name', self.role.tag or '')
-        self.setProperty('person.type_label', T(self.TYPE_LABEL_ID, self.PRIMARY_TYPE.title()))
         self.setProperty('filmography.filter', self.filterLabel(self.filmographyFilter))
-        if self.role.thumb:
-            self.setProperty('person.thumb', self.role.thumb.asTranscodedImageURL(*self.THUMB_DIM))
+        self.updateFilmographyButton()
+        self.focusDefault()
 
         self.fetchPersonDetails()
         self.fetchFilmography()
-        self.fetchDiscoverCredits()
 
         self.initialized = True
 
@@ -358,12 +470,14 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             self.sectionClicked()
         elif controlID == self.FILTER_BUTTON_ID:
             self.filterButtonClicked()
+        elif controlID == self.FILMOGRAPHY_BUTTON_ID:
+            self.openFilmography()
+        elif controlID == self.SUMMARY_BUTTON_ID:
+            self.summaryButtonClicked()
         elif controlID == self.FILMOGRAPHY_LIST_ID:
             self.filmographyItemClicked()
         elif controlID == self.PLAYER_STATUS_BUTTON_ID:
             self.showAudioPlayer()
-        elif self.DISCOVER_LIST_BASE_ID <= controlID < self.DISCOVER_LIST_BASE_ID + DISCOVER_HUB_SLOTS:
-            self.openDiscoverItem(controlID)
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
@@ -371,14 +485,6 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             return
         self.reselectActiveSection(controlID, self.lastFocusID)
         self.lastFocusID = controlID
-
-        if self.FILMOGRAPHY_LIST_ID <= controlID <= self.DISCOVER_LIST_BASE_ID + DISCOVER_HUB_SLOTS:
-            self.setProperty('hub.focus', str(controlID - self.FILMOGRAPHY_LIST_ID))
-
-        if controlID > self.FILMOGRAPHY_LIST_ID and xbmc.getCondVisibility('ControlGroup(50).HasFocus(0)'):
-            self.setProperty('on.extras', '1')
-        else:
-            self.setProperty('on.extras', '')
 
     def doClose(self, **kw):
         self.tasks.kill()
@@ -391,7 +497,8 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
     def fetchFilmography(self):
         self.setProperty('loading', '1')
-        task = PersonFilmographyTask(self.role, self.servers, self.onFilmography)
+        task = PersonFilmographyTask(self.role, self.servers, self.onFilmography,
+                                     on_credit_types=self.onCreditTypes)
         self.tasks.add(task)
         backgroundthread.BGThreader.addTask(task)
 
@@ -402,137 +509,108 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
         self.personDetails = details
         self.setProperty('person.name', details.get('name', ''))
-        self.setProperty('person.summary', util.widenParagraphBreaks(details.get('summary', '')))
-        self.setProperty('person.birthPlace', details.get('birthPlace', ''))
+        # pre-play's summary box (util.summaryForBox()): cut to its three lines, the whole of it
+        # a click away (summaryButtonClicked())
+        self.setProperty('person.summary', util.summaryForBox(details.get('summary', '')))
+        born, died = self.lifeLines(details.get('birthDate', ''), details.get('deathDate', ''))
+        self.setProperty('person.born', born)
+        self.setProperty('person.died', died)
+        self.setSocialLinks(details.get('external') or [])
+        # the bio, or the Filmography button its key brought below, may be the first focus now
+        self.focusDefault()
 
-        birthDate = details.get('birthDate', '')
-        deathDate = details.get('deathDate', '')
-
-        if birthDate:
-            self.setProperty('person.birthDate', self.formatDate(birthDate))
-            age = self.calculateAge(birthDate, deathDate)
-            if age:
-                self.setProperty('person.age', str(age))
-
-        if deathDate:
-            self.setProperty('person.deathDate', self.formatDate(deathDate))
-            self.setProperty('person.deceased', '1')
-
-        thumb = details.get('thumb', '')
+        # Discover's cover poster; the square photo without one (local mode, or a person Discover
+        # doesn't know), cropped to the poster's shape by the template
+        thumb = details.get('coverPoster') or details.get('thumb', '')
         if thumb:
             self.setProperty('person.thumb', self.role.server.getImageTranscodeURL(thumb, *self.THUMB_DIM))
 
         tag_key = details.get('tagKey', '')
         if tag_key and not getattr(self.role, 'tagKey', None):
             self.role.tagKey = tag_key
-            self.fetchDiscoverCredits()
+            self.updateFilmographyButton()
+            self.focusDefault()
 
-    def fetchDiscoverCredits(self):
-        if not hasattr(self.role, 'tagKey') or not self.role.tagKey:
-            util.DEBUG_LOG('PersonWindow: No tagKey, skipping discover credits')
+    def focusDefault(self):
+        """The screen's first focus (on request, 2026-10-08): the Filmography button - it was the
+        poster row, and focusing that slid the screen down to it as it opened - or the bio without
+        one. Each shows once its property is set, which comes after the skin's own default is
+        tried, so it's focused here, once visible (kodigui.waitForVisibility()). Only while
+        nothing has focus, or the bio has it and the button has just come: never away from where
+        the user has gone, or from a Back restore (RowRestoreMixin)."""
+        if self.getFocusId() not in (0, self.SUMMARY_BUTTON_ID):
             return
-
-        task = DiscoverCreditsTask(
-            self.role, self.servers, self.onDiscoverCredits,
-            credit_type=self.CREDIT_TYPE
-        )
-        self.tasks.add(task)
-        backgroundthread.BGThreader.addTask(task)
-
-    def onDiscoverCredits(self, discover_hubs, library_guids):
-        self.libraryGuids = library_guids
-
-        slot = 0
-        for group_type, items in discover_hubs:
-            if slot >= DISCOVER_HUB_SLOTS:
-                break
-            not_in_library = [item for item in items if item.guid not in library_guids]
-            if not_in_library:
-                label = '{0} - {1}'.format(T(32479, 'Not in Library'), group_type.title())
-                self.fillDiscoverHub(slot, not_in_library, label)
-                slot += 1
-
-        util.DEBUG_LOG('PersonWindow: Discover credits: {0} groups, {1} in library, {2} hubs populated',
-                       len(discover_hubs), len(library_guids), slot)
-
-        # A Back restore to the Discover item opened, if there is one (RowRestoreMixin)
-        for i in range(slot):
-            if self._restoreRowFocus(filled=self.DISCOVER_LIST_BASE_ID + i):
-                return
-
-        # Avoid focus trap: if filmography is empty but Discover hubs filled, move focus there
-        if slot > 0 and self.filmographyListControl.size() == 0:
-            self.setFocusId(self.DISCOVER_LIST_BASE_ID)
-
-    def fillDiscoverHub(self, slot, items, label):
-        if slot >= len(self.discoverListControls):
+        if self.getProperty('filmography.available'):
+            target = self.FILMOGRAPHY_BUTTON_ID
+        elif self.getProperty('person.summary') and not self.getFocusId():
+            target = self.SUMMARY_BUTTON_ID
+        else:
             return
+        kodigui.waitForVisibility(target, amount=1)
+        self.setFocusId(target)
 
-        listControl = self.discoverListControls[slot]
-        listItems = [self.createNotInLibraryListItem(item) for item in items]
-        listControl.reset()
-        listControl.addItems(listItems)
-        self.setProperty('discover.hub.{0}.label'.format(slot), label)
+    def lifeLines(self, birthDate, deathDate):
+        """The dates for the born and died lines under the credit types (the template puts "Born"
+        and "Died" before them), '' for one without a date: "2 April 1975 (51)" - the age with the
+        birth while they're alive - or "28 December 1922" then "12 November 2018 (95)" (on request,
+        2026-10-08)."""
+        age = self.calculateAge(birthDate, deathDate) if birthDate else None
+        born = self.formatDate(birthDate) if birthDate else ''
+        died = self.formatDate(deathDate) if deathDate else ''
+        if age is not None:
+            if died:
+                died = u'{0} ({1})'.format(died, age)
+            elif born:
+                born = u'{0} ({1})'.format(born, age)
+        return born, died
 
-    def createNotInLibraryListItem(self, item):
-        mli = kodigui.ManagedListItem(
-            item.title, item.year, thumbnailImage=item.thumb, data_source=item
-        )
-        mli.setProperty('media.type', item.type)
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/{0}.png'.format(
-            'show' if item.type == 'show' else 'movie'))
-        if item.role:
-            mli.setProperty('role', item.role)
-        return mli
+    def setSocialLinks(self, links):
+        """The social link lines (SOCIAL_SLOTS of them): each network's icon and the handle,
+        Discover's order; '' hides a line."""
+        links = [link for link in links if link.get('id')]
+        for i in range(self.SOCIAL_SLOTS):
+            icon = label = ''
+            if i < len(links):
+                source = (links[i].get('source') or '').lower()
+                icon = 'script.plex/social/{0}.png'.format(source if source in self.SOCIAL_ICONS else 'link')
+                label = links[i].get('id')
+            self.setProperty('person.social.{0}.icon'.format(i), icon)
+            self.setProperty('person.social.{0}.label'.format(i), label)
 
-    def openDiscoverItem(self, controlID):
-        slot = controlID - self.DISCOVER_LIST_BASE_ID
-        if slot < 0 or slot >= len(self.discoverListControls):
-            return
+    def onCreditTypes(self, line):
+        """The credit types line under the name (PersonFilmographyTask)."""
+        self.setProperty('person.credit_types', line)
 
-        mli = self.discoverListControls[slot].getSelectedItem()
-        if not mli or not mli.dataSource:
-            return
+    def summaryButtonClicked(self):
+        """The whole bio, as pre-play's summary box opens the whole summary."""
+        from . import info
+        details = self.personDetails or {}
+        if details.get('summary'):
+            info.showSummary(details.get('name') or self.role.tag, details.get('summary'))
 
-        item = mli.dataSource
-        if not item.ratingKey:
-            return
-
+    def updateFilmographyButton(self):
+        """The Filmography button shows once the person's plex.tv key is known: Discover's credits,
+        which the filmography screen lists, are asked for by it - and never in local mode."""
         from plexnet import util as pnUtil
-        from plexnet.compat import quote_plus
-        # in a library on one of the servers: opened from there
-        local_server = self.libraryGuids.get(item.guid)
-        if local_server:
-            try:
-                # Resolve plex:// guid against the local PMS — getObject builds a proper PlexObject
-                self.processCommand(opener.open(
-                    '/library/metadata/{0}'.format(quote_plus(item.guid)), context=self, server=local_server,
-                    entry_section_id=self.sectionId, entry_from_watchlist=self.cameFromWatchlist))
-                return
-            except Exception as e:
-                util.DEBUG_LOG('PersonWindow: Local open failed for {0}: {1}', item.guid, e)
+        self.setBoolProperty('filmography.available',
+                             bool(getattr(self.role, 'tagKey', None)) and not pnUtil.LOCAL_MODE)
 
-        if pnUtil.LOCAL_MODE:
-            util.DEBUG_LOG('PersonWindow: Not opening discover item in local mode')
-            return
-
-        discover_server = pnUtil.SERVERMANAGER.getDiscoverServer()
-        if not discover_server:
-            util.DEBUG_LOG('PersonWindow: No discover server available')
-            return
-
-        self.processCommand(opener.open(
-            item.ratingKey,
-            context=self,
-            server=discover_server,
-            from_watchlist=True,
-            external_item=True,
-            entry_section_id=self.sectionId,
-            entry_from_watchlist=self.cameFromWatchlist
-        ))
+    def openFilmography(self):
+        """Every credit Discover has for the person, by type (filmography.FilmographyWindow)."""
+        from . import filmography
+        self.openWindow(filmography.FilmographyWindow, role=self.role, section_id=self.sectionId,
+                        from_watchlist=self.cameFromWatchlist)
 
     def onFilmography(self, items):
-        """Every server's movies and shows for the person (PersonFilmographyTask)."""
+        """Every server's movies and shows for the person (PersonFilmographyTask). The filter button
+        shows only for a row of both (filmography.mixed; on request, 2026-10-08) - with one kind
+        the filter is All, whatever a Back restore kept."""
+        types = set(getattr(item, 'type', None) for item in items)
+        mixed = 'movie' in types and 'show' in types
+        if not mixed and self.filmographyFilter:
+            self.filmographyFilter = None
+            self.setProperty('filmography.filter', self.filterLabel(None))
+        self.setBoolProperty('filmography.mixed', mixed)
         self.setProperty('loading', '')
         self.filmographyAllItems = items
         self.applyFilmographyFilter()
@@ -549,13 +627,29 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         elif hasattr(item, 'defaultThumb') and item.defaultThumb:
             thumb = item.defaultThumb.asTranscodedImageURL(*self.POSTER_DIM)
 
-        mli = kodigui.ManagedListItem(title, year, thumbnailImage=thumb, data_source=item)
+        mli = kodigui.ManagedListItem(title, thumbnailImage=thumb, data_source=item)
+        # under the card in the movie grid's way, as its 'year' (script-plex-person.xml.tpl)
+        mli.setProperty('year', year)
 
         item_type = item.type if hasattr(item, 'type') else item.TYPE if hasattr(item, 'TYPE') else ''
         mli.setProperty('media.type', item_type)
 
-        if hasattr(item, 'isPlayed') and item.isPlayed:
-            mli.setProperty('watched', '1')
+        # the card's watched tick, unwatched count and progress pill, as a Recommended row's
+        # (library_hubs.py)
+        played = bool(getattr(item, 'isPlayed', False))
+        mli.setBoolProperty('watched', played)
+        if item_type == 'show' and not played:
+            mli.setProperty('unwatched.count', str(item.unViewedLeafCount))
+            mli.setBoolProperty('unwatched.count.large', item.unViewedLeafCount > 999)
+        mli.setProperty('progress', util.getProgressImage(item))
+
+        # Where it is, on every card (on request, 2026-10-08): the server of the copy the card opens,
+        # and for a title in more than one library or on more than one server how many others -
+        # Search's line for one with copies, "Animal + 1" (search.placesLine()). Unlike Search,
+        # the server shows on a one-server account too.
+        server = getattr(item.server, 'name', '')
+        others = len(self.copiesOf(item)) - 1
+        mli.setProperty('copies', u'{0} + {1}'.format(server, others) if others else server)
 
         mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/{0}.png'.format(
             item_type in ('show', 'season', 'episode') and 'show' or 'movie'))
@@ -572,7 +666,14 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.filmographyListControl.addItems(listItems)
         self.setProperty('filmography.count', str(len(self.filmographyItems)))
         # a Back restore to the film or show opened, if there is one (RowRestoreMixin)
-        self._restoreRowFocus(filled=self.FILMOGRAPHY_LIST_ID)
+        if self._restoreRowFocus(filled=self.FILMOGRAPHY_LIST_ID):
+            return
+        # nothing else to focus (no Filmography button and no bio - local mode, say): the row,
+        # as the screen's first focus was
+        if not self.getFocusId() and not self.getProperty('filmography.available') \
+                and not self.getProperty('person.summary') and self.filmographyItems:
+            kodigui.waitForVisibility(self.FILMOGRAPHY_LIST_ID, amount=1)
+            self.setFocusId(self.FILMOGRAPHY_LIST_ID)
 
     def filterOptions(self):
         return [
@@ -590,7 +691,7 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
     def filterButtonClicked(self):
         choice = dropdown.showDropdown(
             options=self.filterOptions(),
-            pos=(560, 515),
+            pos=self.filterDropdownPos(),
             close_direction='none',
             set_dropdown_prop=False,
             align_items='left'
@@ -601,15 +702,32 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         self.setProperty('filmography.filter', choice['display'])
         self.applyFilmographyFilter()
 
+    def filterDropdownPos(self):
+        """The filter dropdown's top-left: 10 right of the filter button, level with its top (on
+        request, 2026-10-08). The button follows the row's heading (script-plex-person.xml.tpl), so
+        where it ends is measured: x 120 (group 50's 60 and the heading grouplist's 60), the
+        heading's text in font30_title (Inter Bold 30), the grouplist's 30 gap, then the button -
+        its label in font12 and 15 either side. Its top is the row's 730 plus its own 15, less the
+        225 the screen slides up while the row has focus, as it does when the button is clicked."""
+        from .mixins.text_metrics import measureTextWidth, FONT12_POINT_SIZE
+        heading = measureTextWidth(T(32476, 'Movies & Shows in Media Libraries'), 30, bold=True)
+        button = measureTextWidth(self.getProperty('filmography.filter'), FONT12_POINT_SIZE) + 2 * 15
+        return int(round(120 + heading + 30 + button + 10)), util.vscalei(730 + 15 - 225)
+
     def applyFilmographyFilter(self):
         """The filmography as the filter has it (All, Movies, Shows): from what's loaded, one entry
         for copies of a film on several servers or in several libraries (groupFilmographyByGuid()),
-        by title."""
+        newest first (on request, 2026-10-08 - it was by title): by release date, or year without
+        one, those with neither last, and by title within a date."""
         items = self.filmographyAllItems
         if self.filmographyFilter:
             items = [item for item in items if getattr(item, 'type', None) == self.filmographyFilter]
         self.filmographyItems, self.filmographyByGuid = self.groupFilmographyByGuid(items)
         self.filmographyItems.sort(key=lambda item: u'{0}'.format(item.get('titleSort') or item.get('title')).lower())
+        # Stable, reversed too, so titles stay A-Z within a date. A bare year sorts before that
+        # year's dates.
+        self.filmographyItems.sort(key=lambda item: u'{0}'.format(item.get('originallyAvailableAt') or item.get('year')),
+                                   reverse=True)
         self.fillFilmography()
 
     def filmographyItemClicked(self, item=None):
@@ -659,7 +777,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             parts = dateStr.split('-')
             if len(parts) == 3:
                 year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
-                return datetime.date(year, month, day).strftime('%B %d, %Y')
+                # "2 April 1975": day, month, year, no commas, the day unpadded (on request,
+                # 2026-10-08) - built, as strftime can't drop the day's zero portably
+                return u'{0} {1} {2}'.format(day, datetime.date(year, month, day).strftime('%B'), year)
         except (ValueError, IndexError):
             pass
         return dateStr
@@ -709,12 +829,8 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
 
 class ActorWindow(PersonWindow):
-    CREDIT_TYPE = None
-    PRIMARY_TYPE = 'actor'
-    TYPE_LABEL_ID = 32473  # "Actor"
+    pass
 
 
 class DirectorWindow(PersonWindow):
-    CREDIT_TYPE = 'director'
-    PRIMARY_TYPE = 'director'
-    TYPE_LABEL_ID = 32474  # "Director"
+    pass

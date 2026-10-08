@@ -3764,3 +3764,27 @@ msgstr ""
 msgctxt "#35159"
 msgid "Smart playlist"
 msgstr ""
+
+msgctxt "#35160"
+msgid "Filmography"
+msgstr ""
+
+msgctxt "#35161"
+msgid "as {0}"
+msgstr ""
+
+msgctxt "#35162"
+msgid "On {0}"
+msgstr ""
+
+msgctxt "#35163"
+msgid "No credits found"
+msgstr ""
+
+msgctxt "#35164"
+msgid "Born"
+msgstr ""
+
+msgctxt "#35165"
+msgid "Died"
+msgstr ""
