@@ -381,16 +381,28 @@ class Role(MediaTag):
                                     url.split('/')[2], data.tag, [c.tag for c in data]))
                                 
                                 for elem in list(data.findall('Directory')) + list(data.findall('Metadata')) + list(data):
-                                    if elem.get('summary') or elem.get('birthDate'):
+                                    # Discover's dates are bornAt/diedAt (checked live, 2026-10-08):
+                                    # birthDate/deathDate, read alone, were never there
+                                    born = elem.get('bornAt') or elem.get('birthDate')
+                                    if elem.get('summary') or born:
                                         util.DEBUG_LOG('Found rich actor metadata!')
                                         result['summary'] = elem.get('summary', result.get('summary', ''))
-                                        result['birthDate'] = elem.get('birthDate', result.get('birthDate', ''))
-                                        result['deathDate'] = elem.get('deathDate', result.get('deathDate', ''))
+                                        result['birthDate'] = born or result.get('birthDate', '')
+                                        result['deathDate'] = elem.get('diedAt') or elem.get('deathDate') or result.get('deathDate', '')
                                         result['birthPlace'] = elem.get('birthPlace', result.get('birthPlace', ''))
+                                        # social links: [{'source': 'instagram', 'sourceTitle':
+                                        # 'Instagram', 'id': handle, 'url': profile}] - no icons come
+                                        # with them
+                                        result['external'] = [dict(ext.attrib) for ext in elem.findall('External')]
+                                        # the 2:3 portrait the person screen shows: the same photo as
+                                        # thumb (Image type="avatar"), framed wider
+                                        result['coverPoster'] = next(
+                                            (img.get('url') for img in elem.findall('Image')
+                                             if img.get('type') == 'coverPoster' and img.get('url')), '')
                                         if elem.get('thumb'):
                                             result['thumb'] = elem.get('thumb')
                                         break
-                                
+
                                 # If we found data, stop trying other endpoints
                                 if result.get('summary') or result.get('birthDate'):
                                     break
@@ -598,17 +610,20 @@ class Role(MediaTag):
 
         return items
 
-    def getDiscoverCredits(self, credit_type=None):
+    def getDiscoverCredits(self, credit_type=None, titled=False):
         """
         Fetch full filmography from Plex's discover API (not just local library).
 
         Args:
             credit_type: None to return all credit groups, or a string like
                          'actor', 'director', 'producer' to filter to one group.
+            titled: with credit_type None, each group as (type_name, title, credits) -
+                    title being Discover's own name for it ('Appearances' for 'appeared',
+                    'Additional Credits' for 'other'), as the filmography screen shows it.
 
         Returns:
             When credit_type is None: list of (type_name, credits) tuples for each
-            group the API returns, in API order.
+            group the API returns, in API order (newest credit first within each).
             When credit_type is set: flat list of credit dicts for that type only.
             Returns empty list if tagKey is not available or request fails.
         """
@@ -658,7 +673,9 @@ class Role(MediaTag):
             for group in credit_groups:
                 group_type = group.get('type', '')
                 credits = group.get('Credit', [])
-                if credits:
+                if credits and titled:
+                    result.append((group_type, group.get('title') or group_type.title(), credits))
+                elif credits:
                     result.append((group_type, credits))
             util.DEBUG_LOG('getDiscoverCredits: Found {0} credit groups for {1}: {2}'.format(
                 len(result), self.tag, [r[0] for r in result]))
@@ -668,46 +685,67 @@ class Role(MediaTag):
             util.DEBUG_LOG('getDiscoverCredits: Failed for {0}: {1}'.format(self.tag, e))
             return []
 
+    # checkLibraryPresence(): how many guids one query asks about, and how many queries go to a
+    # server at once. Measured on a real library (444 guids, 2026-10-08): 50 x 4 took 0.33 s where
+    # 10 at a time, one after another, against /library/metadata took 3.4 s; more at once gained
+    # little (all 9 together, 0.28 s), the server's own lookups (~2.6 ms a guid) being the limit.
+    PRESENCE_BATCH = 50
+    PRESENCE_WORKERS = 4
+
     @staticmethod
-    def checkLibraryPresence(server, guids):
+    def libraryItemsByGuid(server, guids):
         """
-        Batch-check which plex GUIDs exist in the user's library.
+        The items in server's libraries with any of guids (plex GUIDs, e.g.
+        'plex://movie/5d7769d0...'), as the XML elements the server lists them with - one per
+        library a title is in.
 
-        Args:
-            server: PlexServer instance to query
-            guids: list of plex GUIDs (e.g. ['plex://movie/5d7769d0...', ...])
-
-        Returns:
-            set of GUIDs that ARE in the library
+        /library/all?guid=a,b,... - the listing, which answers with only the items found, each in
+        its short form: 215 KB for a whole filmography where /library/metadata/a,b,... (used
+        before) sent each found item's full record, 1.5 MB. Batches of PRESENCE_BATCH, up to
+        PRESENCE_WORKERS at once. A batch that fails counts as none found.
         """
+        import threading
         from .compat import quote_plus
 
-        present = set()
-        # Batch in groups of 10 (matching Plex Web's behaviour)
-        batch_size = 10
-        for i in range(0, len(guids), batch_size):
-            batch = guids[i:i + batch_size]
-            # URL-encode each GUID and join with commas
-            encoded = ','.join(quote_plus(g) for g in batch)
-            path = '/library/metadata/{0}'.format(encoded)
+        batches = [guids[i:i + Role.PRESENCE_BATCH] for i in range(0, len(guids), Role.PRESENCE_BATCH)]
+        found = []
+        lock = threading.Lock()
+
+        def ask(batch):
+            path = '/library/all?guid={0}'.format(','.join(quote_plus(g) for g in batch))
             try:
                 data = server.query(path)
-                if data is not None:
-                    # 200 response — all items in this batch are in the library
-                    # Extract the GUIDs from the response to be precise
-                    for elem in data:
-                        guid = elem.get('guid', '')
-                        if guid:
-                            present.add(guid)
-                    # If no guid attributes in response, assume all batch GUIDs are present
-                    if not present.intersection(set(batch)):
-                        present.update(batch)
-            except Exception:
-                # 404 or error — none of these items are in the library
-                pass
+            except Exception as e:
+                util.DEBUG_LOG('libraryItemsByGuid: a batch failed on {0}: {1}', server.name, e)
+                return
+            if data is None:
+                return
+            with lock:
+                found.extend(elem for elem in data if elem.get('guid'))
 
-        util.DEBUG_LOG('checkLibraryPresence: {0}/{1} GUIDs found in library'.format(
-            len(present), len(guids)))
+        def work():
+            while True:
+                with lock:
+                    if not batches:
+                        return
+                    batch = batches.pop(0)
+                ask(batch)
+
+        threads = [threading.Thread(target=work, name='presence.{0}'.format(server.name))
+                   for _ in range(min(Role.PRESENCE_WORKERS, len(batches)))]
+        for thread in threads:
+            thread.daemon = True
+            thread.start()
+        for thread in threads:
+            thread.join()
+        return found
+
+    @staticmethod
+    def checkLibraryPresence(server, guids):
+        """Which of guids are in server's libraries (libraryItemsByGuid()): a set of those that are."""
+        present = set(elem.get('guid') for elem in Role.libraryItemsByGuid(server, guids)).intersection(guids)
+        util.DEBUG_LOG('checkLibraryPresence: {0}/{1} GUIDs found in library on {2}',
+                       len(present), len(guids), server.name)
         return present
 
 
