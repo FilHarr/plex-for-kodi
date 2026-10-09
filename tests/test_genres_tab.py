@@ -39,6 +39,8 @@ set first - same guard the other lib.windows.* tests use for the same reason.
 
 from __future__ import absolute_import
 
+from unittest import mock
+
 from kodienv import ENV
 
 ENV.abort_requested = True
@@ -532,3 +534,68 @@ class GenresOnClickDelegationTest(KodiTestCase):
         genresOnClick(host, host.TAB_LIST_ID)
 
         self.assertEqual([], getattr(host._chainHost, "posts", []))
+
+
+class SectionTabsCheckTest(KodiTestCase):
+    """The Collections and Categories answers come from a worker (SectionTabsCheckTask); the tab row
+    reads the last answer and never asks the server as a view opens - a size-0 request there held
+    the screen for the connect timeout on a server that had just stopped answering (2026-10-09)."""
+
+    def setUp(self):
+        for cache in (library._sectionHasCollectionsCache, library._sectionHasCategoriesCache):
+            cache.clear()
+            self.addCleanup(cache.clear)
+
+    def section(self, type_='movie', collections=3, categories=0):
+        server = mock.Mock(uuid='uuid', offline=False, suspect=False)
+        section = mock.Mock(key='32', server=server, TYPE=type_, title='Other videos')
+        section.all.return_value.totalSize.asInt.return_value = collections
+        server.query.return_value.attrib = {'totalSize': str(categories)}
+        return section
+
+    def test_the_readers_never_ask(self):
+        section = self.section()
+        self.assertIsNone(library._sectionHasCollections(section))
+        self.assertIsNone(library._sectionHasCategories(section))
+        section.all.assert_not_called()
+        section.server.query.assert_not_called()
+
+    def test_the_check_stores_both_answers_and_says_they_changed(self):
+        section = self.section(collections=3, categories=0)
+        changed = []
+        library.SectionTabsCheckTask(section, changed.append).run()
+        self.assertIs(True, library._sectionHasCollections(section))
+        self.assertIs(False, library._sectionHasCategories(section))
+        self.assertEqual([section], changed)
+
+    def test_the_same_answers_again_change_nothing(self):
+        section = self.section()
+        library.SectionTabsCheckTask(section, None).run()
+        changed = []
+        library.SectionTabsCheckTask(section, changed.append).run()
+        self.assertEqual([], changed)
+
+    def test_no_categories_asked_for_music(self):
+        section = self.section(type_='artist')
+        library.SectionTabsCheckTask(section, None).run()
+        section.server.query.assert_not_called()
+        self.assertIs(True, library._sectionHasCollections(section))
+
+    def test_an_offline_server_is_not_asked(self):
+        section = self.section()
+        section.server.offline = True
+        library.SectionTabsCheckTask(section, None).run()
+        section.all.assert_not_called()
+        self.assertIsNone(library._sectionHasCollections(section))
+
+    def test_a_section_left_on_collections_keeps_it_until_answered(self):
+        """Not asked yet is no answer: the item type isn't reset from Collections then."""
+        FakeLibrarySettings.itemType = 'collection'
+        self.addCleanup(lambda: setattr(FakeLibrarySettings, 'itemType', None))
+        host = TabListNeedsRebuildTest.FakeHost()
+        section = FakeSection('movie')
+        section.key = '22'
+        section.server = mock.Mock(uuid='uuid')
+        tabListNeedsRebuild(host, section)
+        self.assertEqual([], host.librarySettings.itemTypeCalls)
+        self.assertFalse(host._tabListHasCollections)

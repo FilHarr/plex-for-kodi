@@ -440,6 +440,13 @@ class HomeHubsTask(backgroundthread.Task):
             return
         try:
             hubs = server.hubs(None, count=HUB_ROW_MAX_ITEMS, section_ids=list(keys))
+            if server.suspect or server.offline:
+                # A request in it got no answer (plexserver.query() marks the server suspect and
+                # answers the rest with None): the empty list it came back with isn't the server's
+                # rows. Live on the AM6B after a wake (2026-10-09): bound as Home's rows, it blanked
+                # Home.
+                util.DEBUG_LOG('Home: {0} stopped answering while giving its rows', repr(server.name))
+                return
             # windows and limits, on this server's own thread (hub_limits.py)
             hub_limits.applyAll(hubs, HUB_ROW_MAX_ITEMS)
             # episodes' panels in their season's colours (panel_colors.py), before the bind
@@ -484,7 +491,12 @@ class HomeHubsTask(backgroundthread.Task):
         util.DEBUG_LOG('Home: rows from {0} of {1} servers in {2} ms{3}', len(answers), len(threads),
                        int((time.time() - started) * 1000), late and ' (not waited for: {0})'.format(', '.join(late)) or '')
         bound = set(answers)
-        self.callback(self.section, self._combined(answers))
+        combined = self._combined(answers)
+        # Asked but gave no rows (failed, refused, stopped answering): an in-place refresh keeps
+        # what it shows rather than lose their rows (LibraryWindow._rebindHubsInPlace())
+        combined.unanswered = [server.uuid for server, thread in threads
+                               if server.uuid not in answers and not thread.is_alive()]
+        self.callback(self.section, combined)
         if late and self.lateCallback:
             # the rest, in place as they come - on a thread of its own, not holding a worker
             waiter = threading.Thread(target=self._awaitLate, args=(threads, answers, bound, started),

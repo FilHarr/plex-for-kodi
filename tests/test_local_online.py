@@ -102,8 +102,7 @@ class CollectionsCheckTest(KodiTestCase):
         server = make_server('refusing-uuid', 'Oscar')
         section = mock.Mock(key='1', server=server, title='Films')
         section.all.side_effect = exceptions.BadRequest('(401) unauthorized')
-        self.addCleanup(library._sectionHasCollectionsCache.clear)
         with mock.patch.object(library.util, 'ERROR') as error, mock.patch.object(library.util, 'LOG') as log:
-            self.assertFalse(library._sectionHasCollections(section))
+            self.assertIsNone(library._askSection(section, 'collections', library._countCollections))
         error.assert_not_called()
         self.assertIn('(401) unauthorized', str(log.call_args))

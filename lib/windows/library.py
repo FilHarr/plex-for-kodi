@@ -65,98 +65,137 @@ MUSIC_VIEWTYPE_BY_ITEM_TYPE = {
 }
 
 
+# Whether each section has any collections, and any categories, by (server uuid, section key): the
+# Collections and Categories tabs show only then. The last answer, kept for the session; a section
+# not asked yet has none (None). Asked on a worker, never as a view opens (SectionTabsCheckTask).
 _sectionHasCollectionsCache = {}
-# The same for the Categories tab (_sectionHasCategories())
 _sectionHasCategoriesCache = {}
+# Sections to ask again at their next tab build: each visit, so collections made or removed since
+# show (openSection(), _invalidateSectionHasCollectionsCache())
+_sectionTabsRecheck = set()
+# Sections being asked
+_sectionTabsChecking = set()
+_sectionTabsLock = threading.Lock()
+
+# Section types each tab can be for
+COLLECTIONS_TYPES = ('movie', 'show', 'artist')
+CATEGORIES_TYPES = ('movie', 'show')
 
 # Sections found empty (server uuid, section key): their tab row is hidden as soon as they open
 # next time, rather than shown while loading and then taken away. Dropped the moment one shows
 # content. LibraryWindow._noteSectionEmpty().
 _emptySections = set()
 
+
+def _sectionKey(section):
+    server = getattr(section, 'server', None)
+    return (server.uuid, section.key) if server is not None else None
+
+
 def _sectionHasCollections(section):
-    """Cheap existence probe (X-Plex-Container-Size=0, same shape as collection.py's own
-    leafCount probe) for the Collections tab's visibility gate.
+    """Whether the section has collections, for the Collections tab: the last answer
+    (SectionTabsCheckTask), None if it hasn't been asked yet. Never asks the server itself: it's
+    read on the main thread as a view opens, and it used to ask there - a size-0 request, which on
+    a server that had just stopped answering held the screen for its connect timeout (5 s; parked
+    from the connectivity review, 2026-10-02, done 2026-10-09).
 
-    Cached in a module-level dict keyed by (server uuid, section key), NOT as an attribute on the
-    section object itself - live-confirmed as the actual reason the Collections tab never appeared
-    at all: PlexObject.__getattr__ (plexobjects.py) auto-vivifies ANY undefined attribute access
-    into an empty PlexValue('', self) instead of raising AttributeError, and even writes that
-    sentinel back onto the instance via setattr() as a side effect of the lookup itself - so
-    getattr(section, '<made-up-name>', None) can never see a real cache miss (default None); the
-    very first check already returns that non-None empty sentinel, short-circuiting before the
-    real probe ever ran. No exception, nothing to log - exactly the symptom seen live. A plain
-    module-level dict sidesteps PlexObject entirely.
+    Kept in a module-level dict, NOT on the section object: PlexObject.__getattr__ (plexobjects.py)
+    makes up any attribute it lacks as an empty PlexValue and writes it back, so a made-up cache
+    attribute on a section can never miss - the reason the Collections tab once never appeared.
 
-    Scoped to "for as long as we're in that section", not the process lifetime: openSection()
-    evicts a section's entry the moment it actually swaps to it (see its own call to
-    _invalidateSectionHasCollectionsCache()), so re-entering a section always re-probes live
-    (picks up collections created/removed since the last visit) while every onFirstInit() within
-    that same visit - including content-mode swaps, which trigger onFirstInit() too, not just
-    section changes - reuses the cached answer instead of re-hitting the server each time.
+    Callers only ask for the types that can have collections (COLLECTIONS_TYPES)."""
+    key = _sectionKey(section)
+    with _sectionTabsLock:
+        return _sectionHasCollectionsCache.get(key) if key else False
 
-    Callers are expected to only call this for section types the item-type dropdown already
-    offered 'collection' for (movie/show/artist) - no point probing types that structurally can't
-    have any."""
-    return _probeSection(section, _sectionHasCollectionsCache, 'collections', lambda: section.all(
-        start=0, size=0, type_=plexobjects.SEARCHTYPES.get('collection')).totalSize.asInt())
 
 def _sectionHasCategories(section):
-    """The same probe for the Categories tab: whether the section has any categories (genres.py's
-    GenreBrowserWindow lists /library/sections/<key>/categories). An Other Videos section has
-    none, and its tab opened an empty screen (the user, 2026-10-09). A size-0 request carries the
-    count (totalSize; checked on Animal and Oscar, 2026-10-09, 15-45 ms)."""
-    def count():
-        data = section.server.query(categoriesPath(section), offset=0, limit=0)
-        if data is None:
-            # no connection (plexserver.query()): no answer
-            return None
-        return int(data.attrib.get('totalSize') or data.attrib.get('size') or 0)
-    return _probeSection(section, _sectionHasCategoriesCache, 'categories', count)
+    """The same for the Categories tab (genres.py's GenreBrowserWindow lists
+    /library/sections/<key>/categories): an Other Videos section has none, and its tab opened an
+    empty screen (the user, 2026-10-09)."""
+    key = _sectionKey(section)
+    with _sectionTabsLock:
+        return _sectionHasCategoriesCache.get(key) if key else False
+
 
 def categoriesPath(section):
-    """The section's categories listing: GenreBrowserWindow.fillGenres() and the probe above."""
+    """The section's categories listing: GenreBrowserWindow.fillGenres() and the check below."""
     if section.key.startswith('/'):
         return '{0}/categories'.format(section.key)
     return '/library/sections/{0}/categories'.format(section.key)
 
-def _probeSection(section, cache, what, count):
-    """Whether count() finds any, cached in `cache` per section (see _sectionHasCollections()).
-    count() giving None is no answer: no tab, and nothing cached."""
-    if section.server is None:
-        return False
-    cache_key = (section.server.uuid, section.key)
-    if cache_key in cache:
-        return cache[cache_key]
-    if section.server.offline or section.server.suspect:
-        # Not answering (or being retested): no tab, and nothing cached, so the next visit asks
-        # again. This runs on the main thread as a view opens, and live on the AM6B (2026-10-03)
-        # asking a server that had stopped answering held the screen for its connect timeout.
-        return False
+
+def _countCollections(section):
+    return section.all(start=0, size=0, type_=plexobjects.SEARCHTYPES.get('collection')).totalSize.asInt()
+
+
+def _countCategories(section):
+    """A size-0 request carries the count (totalSize; checked on Animal and Oscar, 2026-10-09,
+    15-45 ms on the PC, 14-78 on the AM6B). None: no connection, no answer."""
+    data = section.server.query(categoriesPath(section), offset=0, limit=0)
+    if data is None:
+        return None
+    return int(data.attrib.get('totalSize') or data.attrib.get('size') or 0)
+
+
+def _askSection(section, what, count):
+    """True/False: whether count() finds any; None: no answer (refused, failed, no connection)."""
     try:
-        found = count()
-        if found is None:
-            return False
-        has = bool(found)
+        found = count(section)
+        return None if found is None else bool(found)
     except plexExceptions.BadRequest as e:
-        # refused (e.g. a 401): an answer, not a fault - no traceback for it
+        # refused (e.g. a 401): no answer, not a fault - no traceback for it
         util.LOG('Library: {0} would not say whether it has {1}: {2}', repr(section.title), what, e)
-        has = False
-    except:
+    except Exception:
         util.ERROR()
-        has = False
-    cache[cache_key] = has
-    return has
+    return None
+
 
 def _invalidateSectionHasCollectionsCache(section):
-    """Called from openSection() the moment it actually swaps to `section`, so the next
-    _sectionHasCollections() call for it (from _tabListNeedsRebuild(), via onFirstInit()
-    immediately after) re-probes live instead of trusting a possibly stale answer left over from
-    a previous visit - see _sectionHasCollections()'s own docstring for the caching scheme this is
-    half of."""
-    if section.server is not None:
-        _sectionHasCollectionsCache.pop((section.server.uuid, section.key), None)
-        _sectionHasCategoriesCache.pop((section.server.uuid, section.key), None)
+    """Called from openSection() the moment it swaps to `section`: its tabs are asked about again
+    at the next tab build (LibraryWindow._checkSectionTabs()), on a worker. The last answer stays
+    meanwhile, so the tabs show at once."""
+    key = _sectionKey(section)
+    if key:
+        with _sectionTabsLock:
+            _sectionTabsRecheck.add(key)
+
+
+class SectionTabsCheckTask(backgroundthread.Task):
+    """Asks a section whether it has collections and categories, on a worker, and stores the
+    answers; onChange() (on this worker) when either differs from the last."""
+    def __init__(self, section, onChange):
+        backgroundthread.Task.__init__(self)
+        self.section = section
+        self.onChange = onChange
+
+    def run(self):
+        key = _sectionKey(self.section)
+        try:
+            server = self.section.server
+            if self.isCanceled() or server.offline or server.suspect:
+                return
+            changed = False
+            for types, cache, what, count in ((COLLECTIONS_TYPES, _sectionHasCollectionsCache, 'collections',
+                                               _countCollections),
+                                              (CATEGORIES_TYPES, _sectionHasCategoriesCache, 'categories',
+                                               _countCategories)):
+                if self.section.TYPE not in types:
+                    continue
+                answer = _askSection(self.section, what, count)
+                if answer is None:
+                    continue
+                with _sectionTabsLock:
+                    changed = changed or cache.get(key) != answer
+                    cache[key] = answer
+            if changed and self.onChange and not self.isCanceled():
+                self.onChange(self.section)
+        except Exception:
+            util.ERROR()
+        finally:
+            with _sectionTabsLock:
+                _sectionTabsChecking.discard(key)
+
 
 class LibrarySettings(object):
     def __init__(self, section_or_server_id):
@@ -1285,10 +1324,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # open; any other section lets it go (sidebar_model.followSection()). onFirstInit()
         # rebuilds the sidebar when that changed.
         sidebar_model.followSection(section, self.sidebarNavSettings())
-        # Force a fresh live Collections probe for the section we're now entering, rather than
-        # trusting whatever was cached from a previous visit - see _sectionHasCollections()'s own
-        # docstring. Harmless no-op for section types that were never eligible for the probe in
-        # the first place (nothing to evict).
+        # Ask again whether the section has collections and categories, on a worker, at its tab
+        # build - the last answer shows meanwhile (_checkSectionTabs()).
         _invalidateSectionHasCollectionsCache(section)
         # hashed-orbiting-pizza.md Phase 4: a sidebar section click reaches here even while a
         # descendant chain is hosted (bubbled via PrePlayWindow etc.'s own goHome(section=...),
@@ -1889,6 +1926,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if self._shuttingDown:
             return
         self._lastReachabilityCheck = self._lastAliveCheck = time.time()
+        # connections kept from before the sleep are dead: new ones for everything after it
+        # (PlexServer.dropIdleConnections())
+        for server in list(plexapp.SERVERMANAGER.serversByUuid.values()):
+            server.dropIdleConnections()
         plexapp.SERVERMANAGER.periodicReachabilityCheck()
         plexapp.SERVERMANAGER.resumeOfflineRetry()
         self.postUI('refresh after wake', self.refreshLastSection)
@@ -1965,7 +2006,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
     def onServerRecovered(self, server=None, **kwargs):
         """The server of what's on screen answered its retest after all (a blip): a view the failed
-        query left empty is loaded again, quietly - the toast already said it was retrying."""
+        query left empty is loaded again, quietly - the toast already said it was retrying. For
+        Home, its rows are fetched again in place: a refresh that ran into the blip kept the old
+        ones (_rebindHubsInPlace()) - live on the AM6B after a wake, 2026-10-09."""
+        if self._isHomeServer(server) and not self._isViewServer(server):
+            self.refreshHubsInPlace(u'{0} answers again'.format(server.name))
         if not self._isViewServer(server):
             return
         self._unavailableNotified = None
@@ -2193,6 +2238,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # (library_hubs.py) also checks it directly before redirecting focus there, since a hidden
         # control can't usefully receive focus.
         self.setBoolProperty('hide.section_tabs', self._hideSectionTabs())
+        self._checkSectionTabs(self.section)
 
         if self.userList is None:
             self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5, guard=sidebarGuard)
@@ -3329,11 +3375,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         """True (and updates self._tabListIsPlaylists/self._tabListHasCategories/
         self._tabListHasCollections to match `section`) if buildTabList() needs to fully rebuild
         the tab-list's item set for it, not just rebind (newControl()) - three independent
-        boundaries: the playlists/non-playlists one (Music/Video vs. Recommended/Library), the
-        movie-or-show/other one (whether the Categories tab belongs there), and whether the
-        Collections tab belongs there (movie/show/artist AND an actual existence probe -
-        _sectionHasCollections(), cached in a module-level dict, so this is cheap on every call
-        after the first for a given section). Live-confirmed bug this guards against: before this
+        boundaries: the playlists/non-playlists one (Music/Video vs. Recommended/Library), whether
+        the Categories tab belongs there (movie/show AND the section has categories), and whether
+        the Collections tab does (movie/show/artist AND it has collections) - the last answers
+        (_sectionHasCategories(), _sectionHasCollections()), read without asking the server; a
+        worker asks (_checkSectionTabs()) and _sectionTabsAnswered() calls this again. Live-confirmed bug this guards against: before this
         existed, onFirstInit() only ever compared the playlists boundary, so a swap between two
         non-playlists sections that differed only in Categories-eligibility (e.g. Show -> Artist,
         or worse, whichever section this LibraryWindow instance happened to build its tab list for
@@ -3346,8 +3392,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # Open on a tab that has playlists: the remembered one - or Music, on a first visit
             # (reset()) - may have none.
             self.librarySettings.setItemType(playlist_types[0])
-        has_categories = section.TYPE in ('movie', 'show') and _sectionHasCategories(section)
-        has_collections = section.TYPE in ('movie', 'show', 'artist') and _sectionHasCollections(section)
+        # The last answers (None, not asked yet: no tab until _checkSectionTabs() has one)
+        has_categories = section.TYPE in CATEGORIES_TYPES and bool(_sectionHasCategories(section))
+        collections_known = _sectionHasCollections(section) if section.TYPE in COLLECTIONS_TYPES else False
+        has_collections = bool(collections_known)
         # Guards against the Collections tab vanishing out from under a still-'collection'
         # ITEM_TYPE: LibrarySettings persists ITEM_TYPE per-section, so returning to a section
         # that was left on Collections restores ITEM_TYPE='collection' (openSection() ->
@@ -3358,7 +3406,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # doRefill() keeps querying type=collection underneath it - an empty grid masquerading as
         # the section having no content at all. Same reset _libraryTabItemType() already does for
         # an explicit Library-tab click, just triggered here by the probe instead of a click.
-        if not has_collections and self.itemType == 'collection':
+        # (only on an answer: a section not asked yet may well have them)
+        if collections_known is False and self.itemType == 'collection':
             self.librarySettings.setItemType(section.TYPE)
         needsRebuild = (is_playlists != self._tabListIsPlaylists
                          or playlist_types != self._tabListPlaylistTypes
@@ -3369,6 +3418,36 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._tabListHasCategories = has_categories
         self._tabListHasCollections = has_collections
         return needsRebuild
+
+    def _checkSectionTabs(self, section):
+        """Asks, on a worker, whether the section has collections and categories when it hasn't
+        been asked yet or is due again (each visit, _invalidateSectionHasCollectionsCache()); the
+        tabs follow if the answer changes (_sectionTabsAnswered())."""
+        if section.TYPE not in COLLECTIONS_TYPES:
+            return
+        key = _sectionKey(section)
+        if key is None:
+            return
+        with _sectionTabsLock:
+            due = (key in _sectionTabsRecheck or _sectionHasCollectionsCache.get(key) is None
+                   or (section.TYPE in CATEGORIES_TYPES and _sectionHasCategoriesCache.get(key) is None))
+            if not due or key in _sectionTabsChecking:
+                return
+            _sectionTabsRecheck.discard(key)
+            _sectionTabsChecking.add(key)
+        SectionTabsCheckTask(section, self._sectionTabsChanged).start()
+
+    def _sectionTabsChanged(self, section):
+        # on the check's worker: the tabs are the main thread's
+        self.postUI('section tabs', self._sectionTabsAnswered, (section,))
+
+    def _sectionTabsAnswered(self, section):
+        """A section's collections or categories answer changed: its tab row follows, if it's still
+        the section on screen."""
+        if self.tabList is None or self._tabListIsPlaylists or _sectionKey(section) != _sectionKey(self.section):
+            return
+        if self._tabListNeedsRebuild(self.section):
+            self.buildTabList()
 
     # The Playlists section's tabs, in order
     PLAYLIST_TYPES = ('audio', 'video')

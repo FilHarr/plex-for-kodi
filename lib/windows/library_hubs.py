@@ -2565,6 +2565,16 @@ class HubsMixin(object):
                 return
             if section_ids.hubSettingsId(section) != section_ids.hubSettingsId(self.section):
                 return
+            unanswered = getattr(hubs, 'unanswered', None)
+            if unanswered and self.visibleHubs:
+                # A server asked gave no rows this time - most likely a blip, as on waking from
+                # sleep, when it came back as none at all and Home went blank (AM6B, 2026-10-09).
+                # The rows showing stay; one that's really gone goes offline, and that refresh
+                # (onServerOffline()) skips it, while one that answers again refreshes them
+                # (onServerRecovered()).
+                util.DEBUG_LOG('Library: hub rows kept ({0}): {1} gave none', reason, len(unanswered))
+                self.updateServerUnavailable()
+                return
             new = self._visibleHubsFor(section, hubs)
             if self._hubsSignature(new) == self._hubsSignature(self.visibleHubs or []):
                 util.DEBUG_LOG('Library: hub rows unchanged ({0})', reason)

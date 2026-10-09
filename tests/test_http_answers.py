@@ -244,6 +244,28 @@ class ReachabilityRoundTest(KodiTestCase):
         manager.resetLastTest.assert_called_once_with()
         self.assertEqual(0, self.server.pendingReachabilityRequests)
 
+    def test_local_mode_tries_the_lan_address_when_only_plex_direct_is_secure(self):
+        """Oscar in local mode (AM6B, 2026-10-09): its secure connections are all plex.direct, which
+        local mode never tests, so its plain LAN address - the insecure fallback - was never tried
+        either, and it sat offline."""
+        secure = plexconnection.PlexConnection(
+            plexconnection.PlexConnection.SOURCE_MYPLEX,
+            "https://192-168-1-69.2f63be9aea2046c79fce9e29ff36d46d.plex.direct:32400", True, "tok",
+            skipLocalCheck=True)
+        lan = plexconnection.PlexConnection(plexconnection.PlexConnection.SOURCE_DISCOVERED,
+                                            "http://192.168.1.69:32400", True, "tok", isFallback=True,
+                                            skipLocalCheck=True)
+        self.server.connections = [secure, lan]
+        tried = []
+        with mock.patch("plexnet.asyncadapter.PlainSession.get", autospec=True,
+                        side_effect=lambda s, url, **kw: tried.append(url) or FakeResponse(200)),                 mock.patch.object(pnUtil, "LOCAL_MODE", True),                 mock.patch.object(pnUtil.INTERFACE, "getPreference",
+                                  side_effect=lambda key, default=None: "always" if key == "allow_insecure" else default):
+            self.server.updateReachability(force=True)
+            self._join()
+        self.assertEqual(["http://192.168.1.69:32400/"], [u.split("?")[0] for u in tried])
+        self.assertIs(lan, self.server.activeConnection)
+        self.assertEqual(0, self.server.pendingReachabilityRequests)
+
     def test_a_non_xml_answer_counts_as_unreachable(self):
         with mock.patch("plexnet.asyncadapter.PlainSession.get", autospec=True,
                         return_value=FakeResponse(200, "<html><body>Sign in to the Wi-Fi</body>")):

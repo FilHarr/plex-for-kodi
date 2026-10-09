@@ -496,9 +496,9 @@ class SuspectTest(KodiTestCase):
         self.server.session.get.assert_not_called()
 
     def test_the_collections_check_skips_a_server_being_retested_and_remembers_nothing(self):
-        section = mock.Mock(key="1", server=self.server)
+        section = mock.Mock(key="1", server=self.server, TYPE="movie")
         self.server.suspect = True
-        self.assertFalse(library._sectionHasCollections(section))
+        library.SectionTabsCheckTask(section, None).run()
         section.all.assert_not_called()
         self.assertNotIn((self.server.uuid, "1"), library._sectionHasCollectionsCache)
 
@@ -614,6 +614,27 @@ class LibraryWindowTest(KodiTestCase):
         self.win.onServerOnline(server=oscar)
         self.assertEqual(2, self.win._rebuildSidebar.call_count)
         self.win.openSection.assert_not_called()
+
+    def test_a_home_server_answering_again_refreshes_homes_rows(self):
+        """A refresh that met the blip kept Home's rows; the server's recovery fetches them again
+        (AM6B after a wake, 2026-10-09)."""
+        oscar = make_server(OSCAR, "Oscar")
+        self.win.section = library.home.home_section
+        self.win._homeServers = lambda: [(oscar, ['1'])]
+        self.win.refreshHubsInPlace = mock.Mock()
+        self.win.onServerRecovered(server=oscar)
+        self.win.refreshHubsInPlace.assert_called_once_with('Oscar answers again')
+
+    def test_dropping_idle_connections_leaves_a_working_session(self):
+        srv = plexserver.PlexServer.__new__(plexserver.PlexServer)
+        srv.session = plexserver.http.Session()
+        adapter = srv.session.get_adapter('https://example.invalid/')
+        adapter.poolmanager.connection_from_url('https://example.invalid/')
+        self.assertEqual(1, len(adapter.poolmanager.pools))
+        srv.dropIdleConnections()
+        self.assertEqual(0, len(adapter.poolmanager.pools))
+        adapter.poolmanager.connection_from_url('https://example.invalid/')
+        self.assertEqual(1, len(adapter.poolmanager.pools))
 
     def test_other_servers_are_ignored(self):
         self.win.onServerSuspect(server=make_server(OSCAR, "Oscar"))
@@ -842,7 +863,11 @@ class TickTest(KodiTestCase):
 
     def test_waking_checks_the_server_then_refreshes(self):
         self.win._ignoreTick = True
+        animal = mock.Mock()
+        self.servers.serversByUuid = {'animal': animal}
         self.win._afterWake(0)
+        # pre-sleep connections dropped first (PlexServer.dropIdleConnections())
+        animal.dropIdleConnections.assert_called_once_with()
         self.servers.periodicReachabilityCheck.assert_called_once_with()
         self.servers.resumeOfflineRetry.assert_called_once_with()
         self.assertEqual(['refresh after wake'], [p[0] for p in self.posted])

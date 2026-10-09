@@ -29,7 +29,7 @@ OSCAR = 'oscar-uuid-0000bbbb'
 
 
 def server(uuid, name, offline=False, connected=True):
-    s = mock.Mock(uuid=uuid, offline=offline, gone=False, pendingReachabilityRequests=0)
+    s = mock.Mock(uuid=uuid, offline=offline, gone=False, suspect=False, pendingReachabilityRequests=0)
     s.name = name
     s.activeConnection = connected and mock.Mock() or None
     return s
@@ -606,3 +606,41 @@ class RebindInPlaceTest(KodiTestCase):
     def test_every_row_gone_the_sidebar(self):
         self.win._rebindHubsInPlace(home.home_section, [], 7, 'test')
         self.win.setFocusId.assert_called_once_with(library.LibraryWindow.SECTION_LIST_ID)
+
+    def test_a_server_that_gave_no_rows_keeps_what_shows(self):
+        """After a wake both servers' refreshes failed and came back as no rows: bound, Home went
+        blank and focus went to the sidebar (AM6B, 2026-10-09)."""
+        rows = home.HubsList([]).init()
+        rows.unanswered = [ANIMAL]
+        self.win._rebindHubsInPlace(home.home_section, rows, 7, 'wake')
+        self.win._bindAllHubSlots.assert_not_called()
+        self.win.setFocusId.assert_not_called()
+        self.assertEqual([self.films, self.tv], self.win.visibleHubs)
+
+
+class FailedFetchTest(KodiTestCase):
+    """A server that stops answering while giving Home's rows didn't answer: its empty list isn't
+    its rows (AM6B after a wake, 2026-10-09)."""
+
+    def test_a_server_gone_suspect_gives_no_rows_and_is_named(self):
+        animal, oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
+        animal.hubs = mock.Mock(return_value=[Hub('home.movies.recent', [Item('a', '22')], animal)])
+
+        def failing(section, count=None, section_ids=None):
+            oscar.suspect = True
+            return []
+        oscar.hubs = mock.Mock(side_effect=failing)
+        bound = []
+        task = home.HomeHubsTask().setup(home.home_section, lambda section, rows: bound.append(rows),
+                                         [(animal, ['22']), (oscar, ['1'])])
+        task.run()
+        self.assertEqual([OSCAR], bound[0].unanswered)
+        self.assertEqual(['a'], [h.items[0].title for h in bound[0]])
+
+    def test_every_server_answering_names_none(self):
+        animal = server(ANIMAL, 'Animal')
+        animal.hubs = mock.Mock(return_value=[Hub('home.movies.recent', [Item('a', '22')], animal)])
+        bound = []
+        home.HomeHubsTask().setup(home.home_section, lambda section, rows: bound.append(rows),
+                                  [(animal, ['22'])]).run()
+        self.assertEqual([], bound[0].unanswered)

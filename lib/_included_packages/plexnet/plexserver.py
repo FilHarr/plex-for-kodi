@@ -163,6 +163,22 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
     def close(self):
         self.session.cancel()
 
+    def dropIdleConnections(self):
+        """Closes the connections kept open for reuse (the session's pools), so the next requests
+        open new ones. After the system sleeps, those sockets are dead but still pooled, and a
+        request that picks one up waits out the timeout: live on the AM6B (2026-10-09), Home's
+        refresh after wake hung 5 s on both servers and marked them suspect, while the wake's
+        connection tests - new connections - answered in milliseconds. A connection in use isn't in
+        a pool, so a request under way is left alone."""
+        for adapter in list(self.session.adapters.values()):
+            try:
+                adapter.close()
+                connections = getattr(adapter, 'connections', None)
+                if connections is not None:
+                    del connections[:]
+            except Exception:
+                util.ERROR()
+
     def get(self, attr, default=None):
         return default
 
@@ -593,6 +609,15 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                 conn.testReachability(self, allowFallback)
 
         if self.pendingReachabilityRequests <= 0:
+            if util.LOCAL_MODE and self.hasFallback and not allowFallback:
+                # Nothing secure was tested: local mode never tests a plex.direct connection
+                # (PlexConnection.testReachability()), and a server whose only secure connections
+                # are plex.direct - Oscar, the dev PC - is left with its plain LAN address, the
+                # insecure fallback. That round starts when the secure tests finish
+                # (onReachabilityResult()), and with none started none ever finished: the server
+                # sat offline in local mode (AM6B, 2026-10-09). Start it now.
+                self.updateReachability(force, True)
+                return
             self.trigger("completed:reachability")
 
     def markSuspect(self):
