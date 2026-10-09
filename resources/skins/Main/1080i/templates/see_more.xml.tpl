@@ -25,7 +25,11 @@
      page_slide      - the page slide; a grid of other than 6 columns gives its own, with its
                        first row's last index (columns - 1) in place of 5
      hitrect_y       - where the tiles start, for the mouse #}
-{% block headers %}<defaultcontrol>101</defaultcontrol>{% endblock %}
+{# The grid's group, not the grid (101): the grid is hidden until its items are in, and Kodi logged
+   "Control 101 ... has been asked to focus, but it can't" on every open (AM6B, 2026-10-09). A group
+   with nothing to focus yet is passed over quietly - the library grid's way (library.xml.tpl);
+   SeeMoreWindow.setup() and HubGridWindow.setup() focus the grid once it has items. #}
+{% block headers %}<defaultcontrol>100</defaultcontrol>{% endblock %}
 {# The 30% row dim (includes/default_background.xml.tpl) all the time, on request (2026-10-08):
    the screen is all rows, opened from one the screen behind it had already dimmed for. #}
 {% block background %}{% include "includes/default_background.xml.tpl" with row_dim_condition="true" %}{% endblock %}
@@ -53,7 +57,7 @@
          with every other screen's headings. -->
     <posx>52</posx>
     <posy>{{ vscale(125) }}</posy>
-    <defaultcontrol>101</defaultcontrol>
+    <defaultcontrol>100</defaultcontrol>
 
     <!-- HEADER: the title and the group buttons, which scroll with the grid as one page (on
          request, 2026-10-08): the panel below covers the screen and draws every row far enough down
@@ -129,6 +133,7 @@
          Scrolled, the row above's foot shows there instead, as on any scrolling page. -->
     <control type="group" id="100">
         <visible>Integer.IsGreater(Container(101).NumItems,0) + String.IsEmpty(Window.Property(drawing))</visible>
+        <defaultcontrol>101</defaultcontrol>
         <posx>53</posx>
         <posy>{{ vscale(-125) }}</posy>
         <control type="panel" id="101">

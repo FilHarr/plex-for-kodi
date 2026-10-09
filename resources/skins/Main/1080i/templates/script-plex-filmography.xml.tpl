@@ -1,5 +1,5 @@
 {% extends "default.xml.tpl" %}
-{% block headers %}<defaultcontrol>101</defaultcontrol>{% endblock %}
+{% block headers %}<defaultcontrol>100</defaultcontrol>{% endblock %}
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
@@ -103,6 +103,14 @@
          8 rows of 100 showing (to 1075 - on request, 2026-10-08), without art: the year in a column of its own, then the title with
          "as" its role after it in grey (one label - createListItem() - so the role follows the
          title), and "On <server>" right-aligned in the accent for one in a library. -->
+    <!-- The list's own group, the screen's default control (headers): an empty list can't take
+         focus, and Kodi logged "Control 101 ... has been asked to focus, but it can't" on every
+         open (AM6B, 2026-10-09); a group with nothing to focus is passed over quietly. Not group 50,
+         whose fallback would focus a type button. Kodi focuses the default control on the first
+         key press while nothing has focus - through this group, the list once it has items - and
+         a Back restore focuses its credit (FilmographyWindow.onCredits()). -->
+    <control type="group" id="100">
+    <defaultcontrol>101</defaultcontrol>
     <control type="list" id="101">
         <posx>53</posx>
         <posy>{{ vscale(150) }}</posy>
@@ -185,6 +193,7 @@
             </control>
         </{% if focused %}focusedlayout{% else %}itemlayout{% endif %}>
         {% endfor %}
+    </control>
     </control>
 </control>
 {% endblock content %}

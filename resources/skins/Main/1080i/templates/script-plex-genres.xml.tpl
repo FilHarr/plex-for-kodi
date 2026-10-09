@@ -109,7 +109,11 @@
              posx=60) the filteropts_grouplist label above aligns to - that pins the overall
              thumbnail span at a fixed 120-1845 (1725px: 4*399 + 3*43), which is what set the
              399 art width in the first place (art width solved from 4W+3*43=1725, not the other
-             way around). Art height 211->225 to hold its ~16:9 aspect ratio at the new width. -->
+             way around). Art height 211->225 to hold its ~16:9 aspect ratio at the new width,
+             then 226: zoomed 104% about its centre when focused, an odd height put both of the
+             art's edges on half pixels at 1080p, which Kodi rounds the same way, so the art sat
+             half a pixel low in its ring - the gap above it twice the gap below (the user,
+             2026-10-09, AM6B; 4K was even). An even height keeps both gaps the same. -->
         <itemlayout width="442" height="{{ vscale(287) }}">
             <control type="group">
                 <posx>60</posx>
@@ -119,7 +123,7 @@
                     <posx>0</posx>
                     <posy>0</posy>
                     <width>399</width>
-                    <height>{{ vscale(225) }}</height>
+                    <height>{{ vscale(226) }}</height>
                     <texture background="true" diffuse="script.plex/masks/ar16x9-mask-399.png">$INFO[ListItem.Thumb]</texture>
                     <aspectratio scalediffuse="false">scale</aspectratio>
                 </control>
@@ -128,7 +132,7 @@
                     <posx>0</posx>
                     <posy>0</posy>
                     <width>399</width>
-                    <height>{{ vscale(225) }}</height>
+                    <height>{{ vscale(226) }}</height>
                     <texture diffuse="script.plex/masks/ar16x9-mask-399.png">script.plex/white-square.png</texture>
                     <colordiffuse>55000000</colordiffuse>
                 </control>
@@ -137,7 +141,7 @@
                     <posx>0</posx>
                     <posy>0</posy>
                     <width>399</width>
-                    <height>{{ vscale(225) }}</height>
+                    <height>{{ vscale(226) }}</height>
                     <font>font13</font>
                     <align>center</align>
                     <aligny>center</aligny>
@@ -154,16 +158,16 @@
                 <posx>60</posx>
                 <posy>15</posy>
                 <control type="group">
-                    <!-- center=art midpoint (399/2, 225/2). 104%, the 16:9 card's own (hub_focusedlayout_
+                    <!-- center=art midpoint (399/2, 226/2). 104%, the 16:9 card's own (hub_focusedlayout_
                          ar16x9.xml.tpl), on request (2026-10-09) - was 105. -->
-                    <animation effect="zoom" start="100" end="104" time="100" center="199.5,{{ vscale(112.5) }}" reversible="false">Focus</animation>
-                    <animation effect="zoom" start="104" end="100" time="100" center="199.5,{{ vscale(112.5) }}" reversible="false">UnFocus</animation>
+                    <animation effect="zoom" start="100" end="104" time="100" center="199.5,{{ vscale(113) }}" reversible="false">Focus</animation>
+                    <animation effect="zoom" start="104" end="100" time="100" center="199.5,{{ vscale(113) }}" reversible="false">UnFocus</animation>
                     <!-- Genre art -->
                     <control type="image">
                         <posx>0</posx>
                         <posy>0</posy>
                         <width>399</width>
-                        <height>{{ vscale(225) }}</height>
+                        <height>{{ vscale(226) }}</height>
                         <texture background="true" diffuse="script.plex/masks/ar16x9-mask-399.png">$INFO[ListItem.Thumb]</texture>
                         <aspectratio scalediffuse="false">scale</aspectratio>
                     </control>
@@ -172,7 +176,7 @@
                         <posx>0</posx>
                         <posy>0</posy>
                         <width>399</width>
-                        <height>{{ vscale(225) }}</height>
+                        <height>{{ vscale(226) }}</height>
                         <texture diffuse="script.plex/masks/ar16x9-mask-399.png">script.plex/white-square.png</texture>
                         <colordiffuse>55000000</colordiffuse>
                     </control>
@@ -182,7 +186,7 @@
                         <posx>0</posx>
                         <posy>0</posy>
                         <width>399</width>
-                        <height>{{ vscale(225) }}</height>
+                        <height>{{ vscale(226) }}</height>
                         <font>font13</font>
                         <align>center</align>
                         <aligny>center</aligny>
@@ -202,7 +206,7 @@
                             <posx>-3</posx>
                             <posy>{{ vscale(-3) }}</posy>
                             <width>405</width>
-                            <height>{{ vscale(231) }}</height>
+                            <height>{{ vscale(232) }}</height>
                             <texture diffuse="script.plex/masks/ring-mask-ar16x9-399.png">script.plex/white-square.png</texture>
                             <colordiffuse>FFE9A20D</colordiffuse>
                         </control>

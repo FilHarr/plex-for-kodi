@@ -2,7 +2,11 @@
 {# The Filmography button, not the poster row (on request, 2026-10-08): focusing the row slides
    the screen down to it (group 50 below), which it did as the screen opened. The button shows
    once its property is set, after this is read, so person.py focuses it too (focusDefault()). #}
-{% block headers %}<defaultcontrol>302</defaultcontrol>{% endblock %}
+{# The Filmography button's group (303), not the button (302): the button shows only once
+   filmography.available is set, after the window opens, and Kodi logged "Control 302 ... has been
+   asked to focus, but it can't" each time (AM6B, 2026-10-09). A group with nothing to focus yet is
+   passed over quietly; focusDefault() (person.py) focuses the button once it shows. #}
+{% block headers %}<defaultcontrol>303</defaultcontrol>{% endblock %}
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
@@ -240,9 +244,10 @@
                  the person's plex.tv key is known (updateFilmographyButton()). Search's type
                  buttons' tile (script-plex-search.xml.tpl) - 22FFFFFF at rest, 55FFFFFF focused,
                  60 tall, font12 - sized to its caption, 25 above it. -->
-            <control type="group">
+            <control type="group" id="303">
                 <posx>5</posx>
                 <visible>!String.IsEmpty(Window.Property(filmography.available))</visible>
+                <defaultcontrol>302</defaultcontrol>
                 <width>813</width>
                 <height>{{ vscale(85) }}</height>
                 <control type="button" id="302">
