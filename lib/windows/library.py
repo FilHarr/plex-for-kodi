@@ -66,6 +66,8 @@ MUSIC_VIEWTYPE_BY_ITEM_TYPE = {
 
 
 _sectionHasCollectionsCache = {}
+# The same for the Categories tab (_sectionHasCategories())
+_sectionHasCategoriesCache = {}
 
 # Sections found empty (server uuid, section key): their tab row is hidden as soon as they open
 # next time, rather than shown while loading and then taken away. Dropped the moment one shows
@@ -96,26 +98,54 @@ def _sectionHasCollections(section):
     Callers are expected to only call this for section types the item-type dropdown already
     offered 'collection' for (movie/show/artist) - no point probing types that structurally can't
     have any."""
+    return _probeSection(section, _sectionHasCollectionsCache, 'collections', lambda: section.all(
+        start=0, size=0, type_=plexobjects.SEARCHTYPES.get('collection')).totalSize.asInt())
+
+def _sectionHasCategories(section):
+    """The same probe for the Categories tab: whether the section has any categories (genres.py's
+    GenreBrowserWindow lists /library/sections/<key>/categories). An Other Videos section has
+    none, and its tab opened an empty screen (the user, 2026-10-09). A size-0 request carries the
+    count (totalSize; checked on Animal and Oscar, 2026-10-09, 15-45 ms)."""
+    def count():
+        data = section.server.query(categoriesPath(section), offset=0, limit=0)
+        if data is None:
+            # no connection (plexserver.query()): no answer
+            return None
+        return int(data.attrib.get('totalSize') or data.attrib.get('size') or 0)
+    return _probeSection(section, _sectionHasCategoriesCache, 'categories', count)
+
+def categoriesPath(section):
+    """The section's categories listing: GenreBrowserWindow.fillGenres() and the probe above."""
+    if section.key.startswith('/'):
+        return '{0}/categories'.format(section.key)
+    return '/library/sections/{0}/categories'.format(section.key)
+
+def _probeSection(section, cache, what, count):
+    """Whether count() finds any, cached in `cache` per section (see _sectionHasCollections()).
+    count() giving None is no answer: no tab, and nothing cached."""
     if section.server is None:
         return False
     cache_key = (section.server.uuid, section.key)
-    if cache_key in _sectionHasCollectionsCache:
-        return _sectionHasCollectionsCache[cache_key]
+    if cache_key in cache:
+        return cache[cache_key]
     if section.server.offline or section.server.suspect:
         # Not answering (or being retested): no tab, and nothing cached, so the next visit asks
         # again. This runs on the main thread as a view opens, and live on the AM6B (2026-10-03)
         # asking a server that had stopped answering held the screen for its connect timeout.
         return False
     try:
-        has = bool(section.all(start=0, size=0, type_=plexobjects.SEARCHTYPES.get('collection')).totalSize.asInt())
+        found = count()
+        if found is None:
+            return False
+        has = bool(found)
     except plexExceptions.BadRequest as e:
         # refused (e.g. a 401): an answer, not a fault - no traceback for it
-        util.LOG('Library: {0} would not say whether it has collections: {1}', repr(section.title), e)
+        util.LOG('Library: {0} would not say whether it has {1}: {2}', repr(section.title), what, e)
         has = False
     except:
         util.ERROR()
         has = False
-    _sectionHasCollectionsCache[cache_key] = has
+    cache[cache_key] = has
     return has
 
 def _invalidateSectionHasCollectionsCache(section):
@@ -126,6 +156,7 @@ def _invalidateSectionHasCollectionsCache(section):
     half of."""
     if section.server is not None:
         _sectionHasCollectionsCache.pop((section.server.uuid, section.key), None)
+        _sectionHasCategoriesCache.pop((section.server.uuid, section.key), None)
 
 class LibrarySettings(object):
     def __init__(self, section_or_server_id):
@@ -515,12 +546,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # a section swap crosses the playlists/non-playlists boundary.
         self._tabListIsPlaylists = False
         # Same idea, second independent boundary: whether the Categories tab should be present
-        # (section.TYPE in ('movie', 'show') only) - see onFirstInit()'s own comment.
+        # (section.TYPE in ('movie', 'show') AND an existence probe, _sectionHasCategories()) - see
+        # onFirstInit()'s own comment.
         self._tabListHasCategories = False
         # Third independent boundary: whether the Collections tab should be present - gated on
         # section.TYPE in ('movie', 'show', 'artist') (same types the item-type dropdown used to
-        # offer 'collection' for) AND an actual existence probe (_sectionHasCollections()), unlike
-        # Categories which never checks genre existence.
+        # offer 'collection' for) AND an actual existence probe (_sectionHasCollections()), as
+        # Categories has.
         self._tabListHasCollections = False
         # Fourth: which playlist types the Playlists section's tabs are for - only those the
         # server has (_playlistTypes()).
@@ -3314,7 +3346,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # Open on a tab that has playlists: the remembered one - or Music, on a first visit
             # (reset()) - may have none.
             self.librarySettings.setItemType(playlist_types[0])
-        has_categories = section.TYPE in ('movie', 'show')
+        has_categories = section.TYPE in ('movie', 'show') and _sectionHasCategories(section)
         has_collections = section.TYPE in ('movie', 'show', 'artist') and _sectionHasCollections(section)
         # Guards against the Collections tab vanishing out from under a still-'collection'
         # ITEM_TYPE: LibrarySettings persists ITEM_TYPE per-section, so returning to a section
@@ -3420,7 +3452,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 mli.setProperty('item', '1')
                 mli.setProperty('content.mode', 'collections')
                 items.append(mli)
-            if self.section.TYPE in ('movie', 'show'):
+            if self._tabListHasCategories:
                 # Categories (genres.py's GenreBrowserWindow) - not a real contentMode (see
                 # switchTab()'s own comment), just another tab entry pointing at browseGenres()
                 # instead of switchTab() - see tabListClicked().

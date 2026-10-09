@@ -75,12 +75,8 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
             self.setFocusId(self.GENRE_PANEL_ID)
 
     def fillGenres(self):
-        if self.section.key.startswith('/'):
-            path = '{0}/categories'.format(self.section.key)
-        else:
-            path = '/library/sections/{0}/categories'.format(self.section.key)
-
-        categories = plexobjects.listItems(self.section.server, path, bytag=True)
+        from .library import categoriesPath
+        categories = plexobjects.listItems(self.section.server, categoriesPath(self.section), bytag=True)
         if not categories:
             return
 

@@ -120,8 +120,8 @@
                     <posy>0</posy>
                     <width>399</width>
                     <height>{{ vscale(225) }}</height>
-                    <texture background="true">$INFO[ListItem.Thumb]</texture>
-                    <aspectratio>scale</aspectratio>
+                    <texture background="true" diffuse="script.plex/masks/ar16x9-mask-399.png">$INFO[ListItem.Thumb]</texture>
+                    <aspectratio scalediffuse="false">scale</aspectratio>
                 </control>
                 <!-- Dark overlay to make label readable -->
                 <control type="image">
@@ -129,7 +129,7 @@
                     <posy>0</posy>
                     <width>399</width>
                     <height>{{ vscale(225) }}</height>
-                    <texture>script.plex/white-square.png</texture>
+                    <texture diffuse="script.plex/masks/ar16x9-mask-399.png">script.plex/white-square.png</texture>
                     <colordiffuse>55000000</colordiffuse>
                 </control>
                 <!-- Genre name -->
@@ -154,17 +154,18 @@
                 <posx>60</posx>
                 <posy>15</posy>
                 <control type="group">
-                    <!-- center=art midpoint (399/2, 225/2), not the old 375/211 art's -->
-                    <animation effect="zoom" start="100" end="105" time="100" center="199.5,{{ vscale(112.5) }}" reversible="false">Focus</animation>
-                    <animation effect="zoom" start="105" end="100" time="100" center="199.5,{{ vscale(112.5) }}" reversible="false">UnFocus</animation>
+                    <!-- center=art midpoint (399/2, 225/2). 104%, the 16:9 card's own (hub_focusedlayout_
+                         ar16x9.xml.tpl), on request (2026-10-09) - was 105. -->
+                    <animation effect="zoom" start="100" end="104" time="100" center="199.5,{{ vscale(112.5) }}" reversible="false">Focus</animation>
+                    <animation effect="zoom" start="104" end="100" time="100" center="199.5,{{ vscale(112.5) }}" reversible="false">UnFocus</animation>
                     <!-- Genre art -->
                     <control type="image">
                         <posx>0</posx>
                         <posy>0</posy>
                         <width>399</width>
                         <height>{{ vscale(225) }}</height>
-                        <texture background="true">$INFO[ListItem.Thumb]</texture>
-                        <aspectratio>scale</aspectratio>
+                        <texture background="true" diffuse="script.plex/masks/ar16x9-mask-399.png">$INFO[ListItem.Thumb]</texture>
+                        <aspectratio scalediffuse="false">scale</aspectratio>
                     </control>
                     <!-- Dark overlay -->
                     <control type="image">
@@ -172,7 +173,7 @@
                         <posy>0</posy>
                         <width>399</width>
                         <height>{{ vscale(225) }}</height>
-                        <texture>script.plex/white-square.png</texture>
+                        <texture diffuse="script.plex/masks/ar16x9-mask-399.png">script.plex/white-square.png</texture>
                         <colordiffuse>55000000</colordiffuse>
                     </control>
                     <!-- Genre name -->
@@ -192,19 +193,18 @@
                     <!-- Focus ring -->
                     <control type="group">
                         <visible>Control.HasFocus(101)</visible>
+                        <!-- The 16:9 card's ring (ring-mask-ar16x9.png, drawn at 518x294 round
+                             512x288 art) made for this art's size, ring-mask-ar16x9-399.png: 3 out
+                             each side, a 2 stroke 1 clear of the art, the art's 11 corners + 3 -
+                             not stretched, which would thin the stroke and the corners by 0.78
+                             (on request, 2026-10-09; was the 9-slice home/selected.png). -->
                         <control type="image">
-                            <!-- posx/posy=-5, not 0: the ring is 10px bigger than the 399x225 art
-                                 in both dimensions, but shares the art's own posx=0/posy=0 origin
-                                 - pulling it out by half that (5px) on top-left centers the other
-                                 5px on bottom-right too, instead of dumping all 10px there.
-                                 Posters/Squares get this for free by nesting their art in its own
-                                 +5,+5 inner group instead; simpler to just offset the ring here
-                                 since genre art has no such wrapper. -->
-                            <posx>-5</posx>
-                            <posy>-5</posy>
-                            <width>409</width>
-                            <height>{{ vscale(235) }}</height>
-                            <texture border="10">script.plex/home/selected.png</texture>
+                            <posx>-3</posx>
+                            <posy>{{ vscale(-3) }}</posy>
+                            <width>405</width>
+                            <height>{{ vscale(231) }}</height>
+                            <texture diffuse="script.plex/masks/ring-mask-ar16x9-399.png">script.plex/white-square.png</texture>
+                            <colordiffuse>FFE9A20D</colordiffuse>
                         </control>
                     </control>
                 </control>

@@ -138,6 +138,13 @@ def patchSectionHasCollections(testcase, return_value=False):
     testcase.addCleanup(lambda: setattr(library, '_sectionHasCollections', original))
 
 
+def patchSectionHasCategories(testcase, return_value=True):
+    """The same for the Categories probe (_sectionHasCategories(), a server query)."""
+    original = library._sectionHasCategories
+    library._sectionHasCategories = lambda section: return_value
+    testcase.addCleanup(lambda: setattr(library, '_sectionHasCategories', original))
+
+
 class TabListNeedsRebuildTest(KodiTestCase):
     """Live-confirmed bug: onFirstInit() used to compare only the playlists/non-playlists
     boundary, so a swap between two non-playlists sections that differ only in
@@ -161,6 +168,7 @@ class TabListNeedsRebuildTest(KodiTestCase):
 
     def setUp(self):
         patchSectionHasCollections(self, return_value=False)
+        patchSectionHasCategories(self, return_value=True)
 
     def _setItemType(self, value):
         """The item type every FakeHost built afterwards starts with."""
@@ -269,18 +277,21 @@ class TabListNeedsRebuildTest(KodiTestCase):
 
 class BuildTabListCategoriesGatingTest(KodiTestCase):
     class FakeHost(object):
-        def __init__(self, section_type):
+        def __init__(self, section_type, has_categories=None):
             self.section = FakeSection(section_type)
             self._tabListIsPlaylists = False
             self._tabListHasCollections = False
+            # as _tabListNeedsRebuild() leaves it for a section with categories
+            self._tabListHasCategories = (section_type in ('movie', 'show') if has_categories is None
+                                          else has_categories)
             self.contentMode = 'library'
             self.tabList = FakeTabListContainer()
 
         def updateActiveTabMarker(self, active_override=None):
             pass
 
-    def _modesFor(self, section_type):
-        host = self.FakeHost(section_type)
+    def _modesFor(self, section_type, has_categories=None):
+        host = self.FakeHost(section_type, has_categories)
         buildTabList(host)
         return [mli.getProperty('content.mode') for mli in host.tabList.items]
 
@@ -288,6 +299,33 @@ class BuildTabListCategoriesGatingTest(KodiTestCase):
         for section_type in ('movie', 'show'):
             self.assertEqual(['recommended', 'library', 'categories'], self._modesFor(section_type),
                               "section.TYPE={0}".format(section_type))
+
+    def test_categories_absent_for_a_section_without_any(self):
+        """An Other Videos section: a movie section whose probe found none (the user,
+        2026-10-09)."""
+        self.assertEqual(['recommended', 'library'], self._modesFor('movie', has_categories=False))
+
+    def test_categories_probe_only_runs_for_movie_and_show(self):
+        host = TabListNeedsRebuildTest.FakeHost()
+        patchSectionHasCollections(self, return_value=False)
+        probeCalls = []
+        original = library._sectionHasCategories
+        library._sectionHasCategories = lambda section: probeCalls.append(section.TYPE) or True
+        self.addCleanup(lambda: setattr(library, '_sectionHasCategories', original))
+
+        for section_type in ('movie', 'show', 'artist', 'photo', 'photodirectory', 'movies_shows', 'playlists'):
+            tabListNeedsRebuild(host, FakeSection(section_type))
+
+        self.assertEqual(['movie', 'show'], probeCalls)
+
+    def test_a_movie_section_without_categories_has_no_categories_tab(self):
+        host = TabListNeedsRebuildTest.FakeHost()
+        patchSectionHasCollections(self, return_value=False)
+        patchSectionHasCategories(self, return_value=False)
+
+        tabListNeedsRebuild(host, FakeSection('movie'))
+
+        self.assertFalse(host._tabListHasCategories)
 
     def test_categories_absent_for_other_section_types(self):
         for section_type in ('artist', 'photo', 'photodirectory', 'movies_shows'):
@@ -305,6 +343,8 @@ class BuildTabListCollectionsGatingTest(KodiTestCase):
             self.section = FakeSection(section_type)
             self._tabListIsPlaylists = False
             self._tabListHasCollections = has_collections
+            # as _tabListNeedsRebuild() leaves it for a section with categories
+            self._tabListHasCategories = section_type in ('movie', 'show')
             self.contentMode = 'library'
             self.tabList = FakeTabListContainer()
 
