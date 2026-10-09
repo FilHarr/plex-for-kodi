@@ -85,6 +85,16 @@ class CollectionPaginator(pagination.BaseRelatedPaginator):
         mli.setProperty('progress', util.getProgressImage(item))
 
 
+# A server item's rows: the first 20 and "See more", as the hub rows (pagination.RowMaxMixin). A
+# Watchlist item's keep paging (the user, 2026-10-09): its Related is Discover's.
+class RelatedRowPaginator(pagination.RowMaxMixin, RelatedPaginator):
+    pass
+
+
+class CollectionRowPaginator(pagination.RowMaxMixin, CollectionPaginator):
+    pass
+
+
 class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, RatingsMixin,
                     MediaInfoPillsMixin, PlaybackBtnMixin, ThemeMusicMixin, RolesMixin, CommonMixin,
                     WatchlistUtilsMixin, TasksMixin, RowRestoreMixin):
@@ -407,9 +417,18 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         elif controlID == self.EXTRA_LIST_ID:
             self.openItem(self.extraListControl)
         elif controlID == self.RELATED_LIST_ID:
-            self.openItem(self.relatedListControl)
+            if pagination.isMoreSelected(self.relatedListControl):
+                self.seeMoreRow(self.video.relatedKey(), self.getProperty('related.header'), self.relatedListControl)
+            else:
+                self.openItem(self.relatedListControl)
         elif controlID in self.COLLECTION_LIST_IDS:
-            self.openItem(self.collectionListControls[self.COLLECTION_LIST_IDS.index(controlID)])
+            idx = self.COLLECTION_LIST_IDS.index(controlID)
+            control = self.collectionListControls[idx]
+            paginator = self.collectionPaginators[idx]
+            if pagination.isMoreSelected(control) and paginator:
+                self.seeMoreRow(paginator._path, self.getProperty('collection.header.{0}'.format(idx)), control)
+            else:
+                self.openItem(control)
         elif controlID == self.ROLES_LIST_ID:
             if not self.roleClicked():
                 return
@@ -1048,8 +1067,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 count = int(self.video.relatedCount)
             except ValueError:
                 count = 0
-            self.relatedPaginator = RelatedPaginator(self.relatedListControl, leaf_count=count,
-                                                     parent_window=self)
+            cls = RelatedPaginator if self.fromWatchlist else RelatedRowPaginator
+            self.relatedPaginator = cls(self.relatedListControl, leaf_count=count, parent_window=self)
         paginator = self.relatedPaginator
         if not paginator.leafCount:
             self.relatedListControl.reset()
@@ -1103,7 +1122,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 # Fallback: filter-based path. Works but ignores custom sort order.
                 path = '/library/sections/{0}/all?type=1&{1}'.format(section_id, collection.filter)
 
-            paginator = CollectionPaginator(list_control, parent_window=self, leaf_count=0)
+            cls = CollectionPaginator if self.fromWatchlist else CollectionRowPaginator
+            paginator = cls(list_control, parent_window=self, leaf_count=0)
             paginator.setup(self.video.server, path)
             try:
                 paginator.paginate()
@@ -1116,6 +1136,12 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
             self.collectionPaginators[i] = paginator
             self.setProperty('collection.header.{0}'.format(i), collection.tag)
+
+    def seeMoreRow(self, key, title, control):
+        """A Related or collection row's "See more": its whole list, key, in the poster grid
+        (see_more.openRowGrid())."""
+        from . import see_more
+        see_more.openRowGrid(self, self.video.server, key, title, control)
 
     def creditsItem(self):
         return self.video

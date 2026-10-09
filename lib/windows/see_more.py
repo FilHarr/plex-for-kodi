@@ -14,7 +14,8 @@ CreditsGridWindow: a film's or show's every credit, from the Cast & Crew row - i
 going into the grid whole (GroupPaginator).
 HubGridWindow (Poster/Poster3/Square/Ar16x9GridWindow): a Recommended row's every item, from its
 "See more" tile - from the server, a chunk at a time into a grid of placeholders, as the library
-grid."""
+grid. A screen's own poster row (Related, a collection) opens PosterGridWindow the same way, with a
+RowList for its hub (openRowGrid())."""
 from __future__ import absolute_import
 
 import threading
@@ -386,6 +387,28 @@ class Ar16x9GridWindow(HubGridWindow):
         if obj.TYPE == 'movie':
             return obj.defaultArt.asTranscodedImageURL(*self.THUMB_DIM)
         return HubGridWindow.thumbFor(self, obj)
+
+
+class RowList(object):
+    """A screen's own poster row (Pre-play's Related and collections, Seasons' and Episodes'
+    Related - pagination.RowMaxMixin) as the hub PosterGridWindow takes: its listing (key, on
+    server), the title its row shows and the items it holds (the fallback art is the first's
+    type). No hubIdentifier, so the grid's captions are each item type's own (grid_labels)."""
+    hubIdentifier = ''
+
+    def __init__(self, server, key, title, items):
+        self.server = server
+        self.key = key
+        self.title = title
+        self.items = items
+
+
+def openRowGrid(window, server, key, title, control):
+    """A poster row's "See more" (is.more): its whole list in the poster grid, under the row's
+    title. control: the row's list, for the items it holds."""
+    items = [mli.dataSource for mli in control if mli.dataSource is not None]
+    window.openWindow(PosterGridWindow, hub=RowList(server, key, title, items), title=title,
+                      entry_section_id=window.entrySectionId, entry_from_watchlist=window.entryFromWatchlist)
 
 
 def hubGridWindow(display_type, base):

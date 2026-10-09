@@ -846,6 +846,10 @@ class RelatedMixin(object):
     def related(self):
         return self.getRelated(0, 8)
 
+    def relatedKey(self, _max=36):
+        """getRelated()'s listing as one key, for a caller paging it itself (a See more grid)."""
+        return '/library/metadata/{}/{}?count={}'.format(self.ratingKey, self.related_source, _max)
+
     def getRelated(self, offset=None, limit=None, _max=36):
         path = '/library/metadata/{}/{}'.format(self.ratingKey, self.related_source)
         try:

@@ -3,7 +3,12 @@ from __future__ import absolute_import
 from kodi_six import xbmcgui
 
 from lib import util
+from lib.util import T
 from . import kodigui
+
+# A poster row's items before its "See more" tile (RowMaxMixin) - the hub rows' own number
+# (home.HUB_ROW_MAX_ITEMS)
+ROW_MAX = 20
 
 
 class MCLPaginator(object):
@@ -368,3 +373,54 @@ class BaseRelatedPaginator(MCLPaginator):
             mli.setProperty('unwatched', not mli.dataSource.isWatched and '1' or '')
             mli.setBoolProperty('watched', mli.dataSource.isPlayed)
             mli.setProperty('progress', util.getProgressImage(mli.dataSource))
+
+
+def isMoreSelected(control):
+    """Whether a row's selected item is its "See more" tile (RowMaxMixin)."""
+    mli = control.getSelectedItem()
+    return bool(mli and mli.getProperty('is.more'))
+
+
+class RowMaxMixin(object):
+    """A BaseRelatedPaginator row as the hub rows are: its first ROW_MAX items in one request, then
+    a "See more" tile (is.more, includes/hub_see_more_pill.xml.tpl) when its list holds more - no
+    paging. Goes first in the bases, ahead of the paginator whose getData()/createListItem() it
+    uses. total: how many the list holds - leafCount once getData() has run (the caller's count,
+    or the listing's totalSize), at least what came back."""
+    ROW_MAX = ROW_MAX
+    total = 0
+
+    @property
+    def initialPage(self):
+        data = self.getData(0, self.ROW_MAX) or []
+        self.total = max(int(self.leafCount or 0), len(data))
+        self._lastAmount = self._currentAmount
+        self._currentAmount = len(data)
+        return data
+
+    def populate(self, items):
+        finalItems = []
+        thumbFallback = self.thumbFallback
+        for item in (items or [])[:self.ROW_MAX]:
+            mli = self.createListItem(item)
+            if not mli:
+                continue
+            mli.setProperty('index', str(len(finalItems)))
+            self.prepareListItem(item, mli)
+            if thumbFallback:
+                mli.setProperty('thumb.fallback', thumbFallback(item) if callable(thumbFallback) else thumbFallback)
+            finalItems.append(mli)
+
+        if not finalItems:
+            self.control.reset()
+            return finalItems
+
+        rowItems = list(finalItems)
+        if self.total > len(finalItems):
+            more = kodigui.ManagedListItem(T(35093, 'See more'))
+            more.setBoolProperty('is.more', True)
+            rowItems.append(more)
+        else:
+            finalItems[-1].setBoolProperty('last.item', True)
+        self.control.replaceItems(rowItems)
+        return finalItems

@@ -455,9 +455,9 @@ SELECT_POLL_SECONDS = 0.01
 
 VIDEO_PROGRESS = OrderedDict()
 
-class RelatedPaginator(pagination.BaseRelatedPaginator):
+class RelatedPaginator(pagination.RowMaxMixin, pagination.BaseRelatedPaginator):
     """The show's Related row, for a skipChildren show's season card - subitems.py's own, which
-    reads the show from mediaItem."""
+    reads the show from mediaItem: the first 20 and "See more" (pagination.RowMaxMixin)."""
     def getData(self, offset, amount):
         return self.parentWindow.show_.getRelated(offset=offset, limit=amount)
 
@@ -1595,7 +1595,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.openItem(self.extraListControl)
         elif controlID == self.RELATED_LIST_ID:
             mli = self.relatedListControl.getSelectedItem()
-            if mli and mli.dataSource:
+            if mli and mli.getProperty('is.more'):
+                # its whole list in the poster grid (RelatedPaginator)
+                from . import see_more
+                see_more.openRowGrid(self, self.show_.server, self.show_.relatedKey(),
+                                     self.getProperty('related.header'), self.relatedListControl)
+            elif mli and mli.dataSource:
                 self.openItem(item=mli.dataSource)
 
     def onFocus(self, controlID):

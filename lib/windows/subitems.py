@@ -39,6 +39,12 @@ class RelatedPaginator(pagination.BaseRelatedPaginator):
         return self.parentWindow.mediaItem.getRelated(offset=offset, limit=amount)
 
 
+class RelatedRowPaginator(pagination.RowMaxMixin, RelatedPaginator):
+    """A server show's Related row: the first 20 and "See more", as the hub rows
+    (pagination.RowMaxMixin). A Watchlist show's keeps paging (the user, 2026-10-09): it's
+    Discover's."""
+
+
 class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, SeasonsMixin,
                  DeleteMediaMixin, RatingsMixin, RolesMixin, PlaybackBtnMixin, WatchlistUtilsMixin,
                  ThemeMusicMixin, CommonMixin, TasksMixin, RowRestoreMixin,
@@ -611,7 +617,13 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         elif controlID == self.EXTRA_LIST_ID:
             self.openItem(self.extraListControl)
         elif controlID == self.RELATED_LIST_ID:
-            self.openItem(self.relatedListControl)
+            if pagination.isMoreSelected(self.relatedListControl):
+                # its whole list in the poster grid (RelatedRowPaginator)
+                from . import see_more
+                see_more.openRowGrid(self, self.mediaItem.server, self.mediaItem.relatedKey(),
+                                     self.getProperty('related.header'), self.relatedListControl)
+            else:
+                self.openItem(self.relatedListControl)
         elif controlID == self.POPULAR_TRACKS_LIST_ID:
             self.popularTrackClicked()
         elif controlID in self.ALBUM_TYPE_LIST_IDS:
@@ -1146,8 +1158,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 count = int(self.mediaItem.relatedCount)
             except ValueError:
                 count = 0
-            self.relatedPaginator = RelatedPaginator(self.relatedListControl, leaf_count=count,
-                                                     parent_window=self)
+            cls = RelatedPaginator if self.fromWatchlist else RelatedRowPaginator
+            self.relatedPaginator = cls(self.relatedListControl, leaf_count=count, parent_window=self)
         paginator = self.relatedPaginator
         if not paginator.leafCount:
             self.relatedListControl.reset()

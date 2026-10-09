@@ -984,6 +984,7 @@
                         <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="image">
+                            <visible>String.IsEmpty(ListItem.Property(is.more))</visible>
                             <posx>0</posx>
                             <posy>0</posy>
                             <width>264</width>
@@ -991,6 +992,7 @@
                             <texture border="24">script.plex/drop-shadow-directional.png</texture>
                         </control>
                         <control type="group">
+                            <visible>String.IsEmpty(ListItem.Property(is.more))</visible>
                             <posx>3</posx>
                             <posy>3</posy>
                             <control type="image">
@@ -1069,6 +1071,9 @@
                                 </control>
                             </control>
                         </control>
+                        <!-- The card is hidden for the row's "See more" item (is.more -
+                             pagination.RowMaxMixin); the pill shows in its place, as the hub rows'. -->
+                        {% include "includes/hub_see_more_pill.xml.tpl" with hub_id=403 & px=3 & py=158 %}
                     </control>
                 </itemlayout>
 
@@ -1079,6 +1084,7 @@
                         <posx>5</posx>
                         <posy>{{ vscale(61) }}</posy>
                         <control type="group">
+                            <visible>String.IsEmpty(ListItem.Property(is.more))</visible>
                             <animation effect="zoom" start="100" end="104" time="100" center="123,{{ vscale(183) }}" reversible="false">Focus</animation>
                             <animation effect="zoom" start="104" end="100" time="100" center="123,{{ vscale(183) }}" reversible="false">UnFocus</animation>
                             <posx>0</posx>
@@ -1185,6 +1191,9 @@
                                 </control>
                             </control>
                         </control>
+                        <!-- The card is hidden for the row's "See more" item (is.more -
+                             pagination.RowMaxMixin); the pill shows in its place, as the hub rows'. -->
+                        {% include "includes/hub_see_more_pill.xml.tpl" with hub_id=403 & px=3 & py=158 & focused=True %}
                     </control>
                 </focusedlayout>
             </control>
