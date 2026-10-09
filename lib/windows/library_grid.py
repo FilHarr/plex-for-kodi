@@ -28,6 +28,7 @@ from . import kodigui
 from . import opener
 from . import videoplayer
 from . import optionsdialog
+from . import panel_colors
 from . import preplay
 from . import subitems
 from . import sidebar_model
@@ -321,6 +322,11 @@ class ChunkRequestTask(backgroundthread.Task):
                 items = self.section.all(self.start, self.size, self.filter, self.sort, type_=type_,
                                          bool_filters=self.bool_filters)
 
+            if self.isCanceled():
+                return
+            # episodes' panels in their season's colours (panel_colors.py), before they show; no
+            # request for anything but episodes
+            panel_colors.warm(items)
             if self.isCanceled():
                 return
             self.callback(items, self.start)
@@ -1432,11 +1438,18 @@ class GridMixin(object):
             item = random.choice(items)
             self.updatePanelFrom(item)
         else:
-            # we want the first item of the first chunk
-            if position != 0:
+            # The focused item's, once its chunk is in: the first, or the one Back left
+            # (_fillShows() selects it before any chunk arrives). Was always the first chunk's
+            # first, so Back from an item painted item 0's colours under the restored focus (the
+            # user, 2026-10-09).
+            selected = self.showPanelControl.getSelectedPos() if self.showPanelControl else None
+            selected = selected or 0
+            if not position <= selected < position + len(items):
                 return
-
-            self.updatePanelFrom(items[0])
+            item = items[selected - position]
+            if not item:
+                return
+            self.updatePanelFrom(item)
         self.backgroundSet = True
 
     def fill(self, keep_focus=False):

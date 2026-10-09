@@ -11,6 +11,7 @@ from . import info
 from . import kodigui
 from . import opener
 from . import pagination
+from . import panel_colors
 from . import preplay
 from . import windowutils
 from .mixins.common import CommonMixin
@@ -90,7 +91,10 @@ class BoundedGridPaginator(pagination.MCLPaginator):
 
 class CollectionPaginator(BoundedGridPaginator):
     def getData(self, offset, amount):
-        return self.parentWindow.collection.all(offset, amount)
+        items = self.parentWindow.collection.all(offset, amount)
+        # a collection can hold episodes: their panels in their season's colours (panel_colors.py)
+        panel_colors.warm(items)
+        return items
 
 
 class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin,
@@ -482,7 +486,9 @@ def buildSubDirSection(section, datasource):
 
 class SubDirPaginator(BoundedGridPaginator):
     def getData(self, offset, amount):
-        return self.parentWindow.section.folder(offset, amount, subDir=True)
+        items = self.parentWindow.section.folder(offset, amount, subDir=True)
+        panel_colors.warm(items)
+        return items
 
 
 class SubDirWindow(BoundedGridWindow):

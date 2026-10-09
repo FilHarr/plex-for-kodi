@@ -503,8 +503,12 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
         # hero-art box is hidden on this screen throughout (paintInitialBackground()).
         # hidePostPlay() clears the panel for the next item's start-up.
         if util.addonSettings.dynamicBackgrounds:
+            # an episode's season's colours, as everywhere (panel_colors.py): asked for here if
+            # not kept yet - postPlay() runs behind its busy dialog
+            from . import panel_colors
+            panel_colors.warm([self.prev])
             self._setPanelCorners(util.backgroundPanelCorners(
-                getattr(self.prev, 'ultraBlurColors', None),
+                panel_colors.coloursFor(self.prev),
                 seed=self.prev.get('ratingKey') or self.prev.get('title')))
 
     def resetPassoutProtection(self):

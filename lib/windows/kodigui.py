@@ -17,6 +17,7 @@ from six.moves import zip
 
 from .. import util
 from . import navintent
+from . import panel_colors
 
 from plexnet import plexapp
 from plexnet import exceptions as plexExceptions
@@ -666,7 +667,10 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             # (Photo/most Music items, or any item the server just didn't return it for),
             # backgroundPanelCorners() hashes this into a deterministic, neutral-but-colorful
             # stand-in instead of leaving the panel flat black - see its own docstring (util.py).
-            corners = util.backgroundPanelCorners(getattr(ds, 'ultraBlurColors', None),
+            #
+            # Which colours: panel_colors.coloursFor() - an episode's season's (or show's), else the
+            # item's own.
+            corners = util.backgroundPanelCorners(panel_colors.coloursFor(ds),
                                                   seed=ds.get('ratingKey') or ds.get('title'))
             self._setPanelCorners(corners)
 
