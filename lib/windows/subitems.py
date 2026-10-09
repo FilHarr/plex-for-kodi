@@ -318,7 +318,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         When there's no on-deck entry the episode isn't known yet: the label starts as a plain
         "Play" and resolvePlayButtonEpisode() fills it in from a background thread.
         """
-        if self.mediaItem.type != 'show':
+        # A Watchlist show's buttons are hidden (disable_playback), and its allLeaves request 404s
+        # on Discover.
+        if self.mediaItem.type != 'show' or self.fromWatchlist:
             return
 
         pick = self.onDeckPick()

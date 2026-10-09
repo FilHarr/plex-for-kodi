@@ -318,42 +318,51 @@ class ClearLogoTest(KodiTestCase):
         super(ClearLogoTest, self).setUp()
         self.rendered = render_theme(make_engine(self.mktemp()), "modern-colored")
 
+    HAS_LOGO = "!String.IsEmpty(Window.Property(clear.logo))"
+
     def controlsFor(self, window):
+        """The title label and every logo image. The title is the first String.IsEmpty-gated label:
+        later ones are lines under it (Episodes' no-logo episode title), and "!String.IsEmpty" ones
+        sit under the logo. Episodes has two logo sizes, split on is.skip.children.card."""
         root = ET.fromstring(self.rendered[window])
-        title, logo = None, None
+        title, logos = None, []
         for control in root.iter("control"):
             visible = control.findtext("visible") or ""
             if "clear.logo" not in visible:
                 continue
-            # the title is the no-logo fallback label (visible on String.IsEmpty, the exact opposite
-            # of the logo image's own !String.IsEmpty) - not any "!String.IsEmpty"-gated label, which
-            # would be a logo-present-only companion line instead (e.g. Episodes' own episode-title
-            # line under the show's logo, script-plex-episodes.xml.tpl - matches Recommended's own
-            # hero overlay treatment for a focused episode, not an alternative to the logo).
-            if (control.get("type") == "label" and control.findtext("label")
+            if (title is None and control.get("type") == "label" and control.findtext("label")
                     and visible.startswith("String.IsEmpty")):
                 title = control
             elif control.get("type") == "image":
-                logo = control
-        return title, logo
+                logos.append(control)
+        return title, logos
 
     def test_both_windows_carry_a_logo_and_a_title(self):
         for window in self.WINDOWS:
             with self.subTest(window=window):
-                title, logo = self.controlsFor(window)
+                title, logos = self.controlsFor(window)
                 self.assertIsNotNone(title, "no title label gated on clear.logo")
-                self.assertIsNotNone(logo, "no logo image gated on clear.logo")
+                self.assertTrue(logos, "no logo image gated on clear.logo")
 
     def test_the_two_are_mutually_exclusive(self):
         for window in self.WINDOWS:
             with self.subTest(window=window):
-                title, logo = self.controlsFor(window)
+                title, logos = self.controlsFor(window)
                 self.assertEqual("String.IsEmpty(Window.Property(clear.logo))", title.findtext("visible"))
-                self.assertEqual("!String.IsEmpty(Window.Property(clear.logo))", logo.findtext("visible"))
+                # each logo only with a logo, and between them one for every item that has one:
+                # either an unconditional logo, or a pair split on a condition and its negation
+                extras = set()
+                for logo in logos:
+                    visible = logo.findtext("visible")
+                    self.assertTrue(visible == self.HAS_LOGO or visible.startswith(self.HAS_LOGO + " + "), visible)
+                    extras.add(visible[len(self.HAS_LOGO + " + "):] if visible != self.HAS_LOGO else "")
+                self.assertTrue("" in extras or any("!" + e in extras for e in extras if not e.startswith("!")),
+                                "no logo shows for some items with one: {0}".format(sorted(extras)))
 
     def test_the_logo_keeps_its_aspect_ratio(self):
         # logos run from near-square to 4:1 wordmarks; scaling one to the box would distort it
         for window in self.WINDOWS:
             with self.subTest(window=window):
-                _, logo = self.controlsFor(window)
-                self.assertEqual("keep", logo.findtext("aspectratio"))
+                _, logos = self.controlsFor(window)
+                for logo in logos:
+                    self.assertEqual("keep", logo.findtext("aspectratio"))
