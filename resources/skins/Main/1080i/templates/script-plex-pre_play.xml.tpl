@@ -404,9 +404,9 @@
                  Kodi/ibis blocks can only be defined once, so a subclass's override would only ever reach
                  one of two physical copies. Now laid out horizontally (see includes/media_info_pills.xml.tpl
                  for how/why the pills themselves are sized - position is the only thing pre_play-specific
-                 left here). posx=998 is 1920 (screen width) minus 85 (the row's target inset from the
+                 left here). posx=994 is 1920 (screen width) minus 85 (the row's target inset from the
                  screen's right edge, on request - matching episodes' own identical inset now) minus the
-                 row's own 785 width (200 + 295 + 260 + 2*15 PILLS_ITEMGAP in the mixin) minus 52 to
+                 row's own 789 width (204 + 295 + 260 + 2*15 PILLS_ITEMGAP in the mixin) minus 52 to
                  cancel out group 50's own +52 sidebar-clearance shift (52, not the original 60, since
                  group 50's own posx moved, see that control's own comment). posy=447, not 417: dropped
                  an explicit 30px on request (three 10px nudges) from the position that put the row's
@@ -420,7 +420,7 @@
             <control type="group">
                 <posy>{{ vscale(30) }}</posy>
             {% block streams %}
-                {% include "includes/media_info_pills.xml.tpl" with posx=998 & posy=447 %}
+                {% include "includes/media_info_pills.xml.tpl" with posx=994 & posy=447 %}
             {% endblock %}
             </control>
         </control>

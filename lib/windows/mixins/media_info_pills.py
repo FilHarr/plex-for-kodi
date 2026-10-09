@@ -21,7 +21,7 @@ class MediaInfoPillsMixin(object):
     PILL_ICON_TEXT_GAP = 6
     # each pill's own column group shrinks to its actual width, capped at these maximums - must
     # stay in sync with the matching <control type="group"> widths in media_info_pills.xml.tpl
-    VIDEO_PILL_MAX_WIDTH = 200
+    VIDEO_PILL_MAX_WIDTH = 204
     AUDIO_PILL_MAX_WIDTH = 295
     SUBTITLE_PILL_MAX_WIDTH = 260
     # spacing between pills - used below to derive the row's total max width, the fixed anchor the

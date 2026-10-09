@@ -45,13 +45,13 @@
 <control type="group">
     <posx>{{ posx }}</posx>
     <posy>{{ posy|vscale }}</posy>
-    <width>785</width>
+    <width>789</width>
     <height>{{ vscale(30) }}</height>
 
     <control type="group" id="320">
         <visible>!String.IsEmpty({{ propref|default("Window.Property") }}(video.res))</visible>
         <posx>0</posx>
-        <width>200</width>
+        <width>204</width>
         <height>{{ vscale(30) }}</height>
         <control type="image" id="310">
             <width>100</width>

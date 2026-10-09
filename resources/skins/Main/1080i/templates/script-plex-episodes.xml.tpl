@@ -354,8 +354,8 @@
         </control>
 
         <!-- Video/audio/subtitles pill row, shared with pre_play (see includes/media_info_pills.xml.tpl).
-             posx=990 is 1920 (screen width) minus 85 (the row's target inset from the screen's right
-             edge, on request) minus the row's own 785 width (200 + 295 + 260 + 2*15 PILLS_ITEMGAP in
+             posx=986 is 1920 (screen width) minus 85 (the row's target inset from the screen's right
+             edge, on request) minus the row's own 789 width (204 + 295 + 260 + 2*15 PILLS_ITEMGAP in
              the mixin) minus 60 to cancel out group 50's own +60 sidebar-clearance shift (see group
              50's own posx comment above, and pre_play's identical -52 treatment of this same include,
              both now landing at the same 85px inset). posy=425 is no longer tied to the button row's
@@ -366,7 +366,7 @@
              own comment), not below the buttons any more. propref reads off the currently-focused
              episode row item instead of the window, since this screen has one row per episode rather
              than pre_play's single video. -->
-        {% include "includes/media_info_pills.xml.tpl" with posx=990 & posy=425 & propref="Container(400).ListItem.Property" %}
+        {% include "includes/media_info_pills.xml.tpl" with posx=986 & posy=425 & propref="Container(400).ListItem.Property" %}
 
     </control>
 
