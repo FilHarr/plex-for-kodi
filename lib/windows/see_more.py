@@ -12,8 +12,9 @@ see_more.xml.tpl's children) says what the grid holds:
 
 CreditsGridWindow: a film's or show's every credit, from the Cast & Crew row - in memory, a group
 going into the grid whole (GroupPaginator).
-HubGridWindow (Poster/Poster3/SquareGridWindow): a Recommended row's every item, from its "See
-more" tile - from the server, a chunk at a time into a grid of placeholders, as the library grid."""
+HubGridWindow (Poster/Poster3/Square/Ar16x9GridWindow): a Recommended row's every item, from its
+"See more" tile - from the server, a chunk at a time into a grid of placeholders, as the library
+grid."""
 from __future__ import absolute_import
 
 import threading
@@ -373,11 +374,26 @@ class SquareGridWindow(HubGridWindow):
     THUMB_DIM = util.scaleResolution(240, 240)
 
 
+class Ar16x9GridWindow(HubGridWindow):
+    """The 16:9 row's card, three to a row. A film shows its art, as in the row (LibraryWindow.
+    createMovieListItem(), wide); episodes and clips their own thumb, which is 16:9 already."""
+    xmlFile = 'script-plex-see_more_ar16x9.xml'
+    # The row's own (LibraryWindow.THUMB_AR16X9_DIM)
+    THUMB_DIM = util.scaleResolution(512, 288)
+    FALLBACKS = dict(HubGridWindow.FALLBACKS, movie='movie16x9', clip='movie16x9')
+
+    def thumbFor(self, obj):
+        if obj.TYPE == 'movie':
+            return obj.defaultArt.asTranscodedImageURL(*self.THUMB_DIM)
+        return HubGridWindow.thumbFor(self, obj)
+
+
 def hubGridWindow(display_type, base):
-    """The grid class for a row of this display type (LibraryWindow.getHubDisplayType()). A 16:9
-    row's grid isn't built yet (stage 3): it opens as posters meanwhile."""
+    """The grid class for a row of this display type (LibraryWindow.getHubDisplayType())."""
     if display_type == 'square':
         return SquareGridWindow
+    if display_type == 'ar16x9':
+        return Ar16x9GridWindow
     if base in grid_labels.THREE_LINE_ROWS:
         return Poster3GridWindow
     return PosterGridWindow

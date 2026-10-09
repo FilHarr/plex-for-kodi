@@ -15,11 +15,12 @@
    For the rows to clip only at the screen's edges once slid, the panel runs 60 past the bottom:
    1139 tall. Kodi scrolls a panel as focus passes the last row its height holds whole (height over
    pitch, rounded down), which has to stay two - so every pitch is over 1139 / 3 and at most 1139 / 2
-   (credits and squares 380, posters 455, three-line posters 480).
+   (credits and squares 380, 16:9 383, posters 455, three-line posters 480).
 
    Blocks:
      layouts         - the panel's itemlayout and focusedlayout (cell width = column pitch, 6
-                       columns of 270/272 in the 1867 the rows use; height = row pitch)
+                       columns of 270/272 in the 1867 the rows use, or 3 of 544 for 16:9;
+                       height = row pitch)
      header_scroll   - the title's two slides on the panel's scroll, by the row pitch
      page_slide      - the page slide; a grid of other than 6 columns gives its own, with its
                        first row's last index (columns - 1) in place of 5

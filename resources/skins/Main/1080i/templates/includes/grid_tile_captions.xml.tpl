@@ -11,12 +11,15 @@
                  library poster grid's own (script-plex-posters.xml.tpl), on request (2026-10-09);
                  line 3 is 25 below line 2: each label's text starts at its box's top, so a line
                  ends its own font size down - font10 23, font8 18 (skin.plextuary's Font.xml) -
-                 and the same step again left a gap 5 bigger under the font8 line 2 (live). -->
+                 and the same step again left a gap 5 bigger under the font8 line 2 (live).
+       width    - the art's width, which the lines are centred under (240; 512 on the 16:9 grid)
+       rating_x - the rating group's left, centring its 91 under the art: (width - 91) / 2,
+                  precomputed (74; 210 on the 16:9 grid) -->
 <control type="label">
     <scroll>{% if focused %}Control.HasFocus(101){% else %}false{% endif %}</scroll>
     <posx>0</posx>
     <posy>{{ top1|vscale }}</posy>
-    <width>240</width>
+    <width>{{ width|default(240) }}</width>
     <height>{{ vscale(35) }}</height>
     <font>font10</font>
     <align>center</align>
@@ -28,7 +31,7 @@
     <scroll>{% if focused %}Control.HasFocus(101){% else %}false{% endif %}</scroll>
     <posx>0</posx>
     <posy>{{ top2|vscale }}</posy>
-    <width>240</width>
+    <width>{{ width|default(240) }}</width>
     <height>{{ vscale(35) }}</height>
     <font>font8</font>
     <align>center</align>
@@ -38,7 +41,7 @@
 <control type="group">
     <!-- 91 wide, as pre-play's: the logo right-aligned in its 40, the score 7 after it -->
     <visible>!String.IsEmpty(ListItem.Property(rating.image))</visible>
-    <posx>74</posx>
+    <posx>{{ rating_x|default(74) }}</posx>
     <posy>{{ top2|vscale }}</posy>
     <!-- Two copies of the logo, by its source. Every logo's visible part is centred near 17 here,
          but the score is a top-aligned font8 line whose digits sit about 5-18 down (Inter 18px,
@@ -80,7 +83,7 @@
     <scroll>{% if focused %}Control.HasFocus(101){% else %}false{% endif %}</scroll>
     <posx>0</posx>
     <posy>{{ top3|vscale }}</posy>
-    <width>240</width>
+    <width>{{ width|default(240) }}</width>
     <height>{{ vscale(35) }}</height>
     <font>font8</font>
     <align>center</align>
