@@ -31,13 +31,13 @@ from lib.windows import library_grid  # noqa: E402
 from .base import KodiTestCase, make_engine  # noqa: E402
 from .test_templates import render_theme  # noqa: E402
 
-# Every view the chunk writer fills: the poster grids for video sections, the square grid for
-# music (artists, albums, collections) and the tracks list.
-CHUNK_VIEWS = (library.PostersWindow, library.PostersSmallWindow, library.SquaresWindow,
-               library.TrackListWindow)
+# Every view the chunk writer fills: the poster grids for video sections, the 16:9 grid for Other
+# Videos, the square grid for music (artists, albums, collections) and the tracks list.
+CHUNK_VIEWS = (library.PostersWindow, library.PostersSmallWindow, library.Ar16x9Window,
+               library.SquaresWindow, library.TrackListWindow)
 NOT_WRITTEN = ('summary', 'art', 'initialized', 'unwatched')
 # The Collection and folder screens: collection.BoundedGridWindow's own item writers.
-BOUNDED_VIEWS = (collection.CollectionWindow, collection.SubDirWindow)
+BOUNDED_VIEWS = (collection.CollectionWindow, collection.SubDirWindow, collection.SubDirAr16x9Window)
 READ_RE = re.compile(r'ListItem\.Property\(([^)$]+)\)')
 
 
@@ -74,7 +74,8 @@ class GridItemPropertiesTest(KodiTestCase):
 
     def test_their_writers_leave_them_out(self):
         source = (inspect.getsource(collection.BoundedGridWindow.setItemInfo)
-                  + inspect.getsource(collection.BoundedGridWindow.setWatchedInfo))
+                  + inspect.getsource(collection.BoundedGridWindow.setWatchedInfo)
+                  + inspect.getsource(collection.SubDirAr16x9Window))
         for prop in NOT_WRITTEN:
             with self.subTest(prop=prop):
                 self.assertNotIn("setProperty('{0}'".format(prop), source)
@@ -88,3 +89,24 @@ class GridItemPropertiesTest(KodiTestCase):
     def test_video_sections_are_posters_only(self):
         self.assertEqual((library.PostersWindow, library.PostersSmallWindow), library.VIEWS_POSTER['all'])
         self.assertNotIn('list', library.VIEWS_POSTER)
+
+    def test_other_videos_have_the_16x9_grid_alone(self):
+        self.assertEqual((library.Ar16x9Window,), library.VIEWS_AR16X9['all'])
+
+    def test_other_videos_are_movie_sections_without_an_agent(self):
+        class Section(object):
+            def __init__(self, type_, agent):
+                self.TYPE = type_
+                self.agent = agent
+
+            def get(self, name):
+                return getattr(self, name)
+
+        for type_, agent, expected in (('movie', 'tv.plex.agents.none', True),
+                                       ('movie', 'com.plexapp.agents.none', True),
+                                       ('movie', 'tv.plex.agents.movie', False),
+                                       ('movie', None, False),
+                                       ('photo', 'com.plexapp.agents.none', False)):
+            with self.subTest(type=type_, agent=agent):
+                self.assertIs(expected, library_grid.isOtherVideos(Section(type_, agent)))
+        self.assertFalse(library_grid.isOtherVideos(None))

@@ -244,6 +244,17 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         # EpisodesWindow.createListItem() (episodes.py:1727-1731)'s identical split.
         return kodigui.ManagedListItem('', data_source=data)
 
+    # The poster's (THUMB_DIM); SubDirAr16x9Window's the 16:9 card's
+    THUMB_DIM = THUMB_DIM
+
+    def thumbFor(self, data):
+        if data.TYPE == 'collection':
+            # Collections often have no own poster - fall back to a composite of member posters,
+            # same as library.py's _chunkCallback() (library.py:4071-4076) and the dead-code
+            # createCollectionListItem() (library.py:5291-5294) both already do.
+            return data.artCompositeURL(*self.THUMB_DIM)
+        return data.defaultThumb.asTranscodedImageURL(*self.THUMB_DIM)
+
     def setItemInfo(self, data, mli):
         # Shared by CollectionWindow and SubDirWindow - genuinely generic, not collection-specific:
         # handles the same movie/show/nested-collection/plain-directory mix either shell's grid can
@@ -258,13 +269,7 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         # subDisplay variants don't apply here, there's no sort. Nested collections/folders
         # carry no year, so theirs stays a single line.
         mli.setProperty('year', data.TYPE != 'collection' and data.get('year') or '')
-        if data.TYPE == 'collection':
-            # Collections often have no own poster - fall back to a composite of member posters,
-            # same as library.py's _chunkCallback() (library.py:4071-4076) and the dead-code
-            # createCollectionListItem() (library.py:5291-5294) both already do.
-            mli.setThumbnailImage(data.artCompositeURL(*THUMB_DIM))
-        else:
-            mli.setThumbnailImage(data.defaultThumb.asTranscodedImageURL(*THUMB_DIM))
+        mli.setThumbnailImage(self.thumbFor(data))
         if not data.isDirectory() and data.get('duration').asInt():
             mli.setLabel2(util.durationToText(data.fixedDuration()))
 
@@ -510,4 +515,26 @@ class SubDirWindow(BoundedGridWindow):
             self.updateBackgroundFrom(mli.dataSource)
 
     def openDirectory(self, data, extra_kwargs):
-        self.openWindow(SubDirWindow, section=buildSubDirSection(self.section, data), **extra_kwargs)
+        self.openWindow(subDirWindowFor(self.section), section=buildSubDirSection(self.section, data),
+                        **extra_kwargs)
+
+
+class SubDirAr16x9Window(SubDirWindow):
+    """A folder of an Other Videos section: its library grid's 16:9 tile (library.Ar16x9Window),
+    three to a row (script-plex-subdir-ar16x9.xml.tpl), on request (2026-10-09)."""
+    xmlFile = 'script-plex-subdir-ar16x9.xml'
+    # The library grid's (library_grid.THUMB_AR16X9_DIM)
+    THUMB_DIM = util.scaleResolution(512, 288)
+
+    def thumbFor(self, data):
+        if data.TYPE == 'movie':
+            # its art, as the library grid shows it - or its thumb, a frame too, without: an empty
+            # path never falls back (util.standInThumb())
+            return (data.defaultArt or data.defaultThumb).asTranscodedImageURL(*self.THUMB_DIM)
+        return SubDirWindow.thumbFor(self, data)
+
+
+def subDirWindowFor(section):
+    """The folder screen for a folder of this section: Other Videos' 16:9 one, or the poster one."""
+    from .library_grid import isOtherVideos
+    return SubDirAr16x9Window if isOtherVideos(section) else SubDirWindow

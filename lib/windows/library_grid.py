@@ -54,7 +54,9 @@ MOVE_SET = frozenset(
 
 
 THUMB_POSTER_DIM = util.scaleResolution(268, 402)
-THUMB_AR16X9_DIM = util.scaleResolution(619, 348)
+# The 16:9 grid's (Other Videos), the Recommended 16:9 row's own (LibraryWindow.THUMB_AR16X9_DIM), so
+# the two share their images
+THUMB_AR16X9_DIM = util.scaleResolution(512, 288)
 THUMB_SQUARE_DIM = util.scaleResolution(355, 355)
 
 TYPE_KEYS = {
@@ -99,6 +101,15 @@ TYPE_KEYS = {
         'thumb_dim': THUMB_POSTER_DIM
     },
 }
+
+def isOtherVideos(section):
+    """An Other Videos section: the movie type with no metadata agent (tv.plex.agents.none, the
+    Plex Video Files scanner; com.plexapp.agents.none before it), its items films only in name -
+    clips, home videos. Its library grid is the 16:9 one (library.Ar16x9Window), as its
+    Recommended rows are. A section with no agent known (LibrarySection.fromFilter()) isn't."""
+    return (section is not None and section.TYPE == 'movie'
+            and '.agents.none' in (section.get('agent') or ''))
+
 
 TYPE_PLURAL = {
     'artist': T(32347, 'artists'),
@@ -903,6 +914,11 @@ class GridMixin(object):
         # Passing a class still short-circuits to None when it's the one already showing, so the
         # ordinary in-place refill below is unaffected for every other section type.
         if not self.nextWindow(self.forcedViewWindow() or False):
+            # Both as the view's first fill sets them (LibraryWindow's onFirstInit()):
+            # media.itemType hides the filter row's sort and filter buttons for Folders, so without
+            # it they stayed hidden after Folders -> Films until the screen was opened again (the
+            # user, 2026-10-09)
+            self.setProperty('media.itemType', self.itemType or self.section.TYPE)
             self.setProperty('media.type', TYPE_PLURAL.get(self.itemType or self.section.TYPE, self.section.TYPE))
             display = self.sortDisplay()
             if display is None:
@@ -1332,8 +1348,8 @@ class GridMixin(object):
                 # (below, in the now-superseded nested-LibraryWindow path this replaced) fixed - the
                 # new shell never touches LibrarySettings/ITEM_TYPE, so it has nothing left to
                 # clobber. See hashed-orbiting-pizza.md's Phase 4.
-                self.openWindow(collection.SubDirWindow, section=collection.buildSubDirSection(self.section, datasource),
-                                **extra_kwargs)
+                self.openWindow(collection.subDirWindowFor(self.section),
+                                section=collection.buildSubDirSection(self.section, datasource), **extra_kwargs)
             else:
                 # hashed-orbiting-pizza.md Phase 4 item 1: self.openWindow(), not
                 # opener.handleOpen() directly - swaps PrePlayWindow in place via this window's
@@ -1555,6 +1571,8 @@ class GridMixin(object):
 
     @property
     def thumb_fallback(self):
+        if isOtherVideos(self.section):
+            return 'script.plex/thumb_fallbacks/movie16x9.png'
         return 'script.plex/thumb_fallbacks/{0}.png'.format(TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['fallback'])
 
     @busy.dialog()
@@ -2020,7 +2038,8 @@ class GridMixin(object):
             if marks is not None:
                 marks['background'] = time.time()
 
-            thumbDim = TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['thumb_dim']
+            wide = isOtherVideos(self.section)
+            thumbDim = THUMB_AR16X9_DIM if wide else TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['thumb_dim']
             # Only what the grid templates read (step 12 stage F in the navigation review, checked
             # by tests/test_grid_item_properties.py): no summary or art, which only the 16:9 list
             # view read, and no per-item initialized or unwatched, which nothing read. Each write is
@@ -2129,6 +2148,11 @@ class GridMixin(object):
                         else:
                             if obj.TYPE == 'photodirectory' and obj.composite:
                                 mli.setThumbnailImage(obj.composite.asTranscodedImageURL(*thumbDim))
+                            elif wide and obj.TYPE == 'movie':
+                                # its art, as the Recommended 16:9 row shows it (LibraryWindow.
+                                # createMovieListItem(), wide) - or its thumb, a frame too, without:
+                                # an empty path never falls back (util.standInThumb())
+                                mli.setThumbnailImage((obj.defaultArt or obj.defaultThumb).asTranscodedImageURL(*thumbDim))
                             else:
                                 mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
                         mli.dataSource = obj

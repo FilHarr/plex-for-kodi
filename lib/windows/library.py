@@ -35,7 +35,7 @@ from . import section_ids
 from . import sidebar_model
 from . import navintent
 from . import windowutils
-from .library_grid import GridMixin, TYPE_PLURAL
+from .library_grid import GridMixin, TYPE_PLURAL, isOtherVideos
 from .library_hubs import HubsMixin
 from .mixins.playbackbtn import PlaybackBtnMixin
 from .mixins.common import CommonMixin
@@ -561,10 +561,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         """The window class this section/item-type combination is pinned to, or None to honour
         the stored viewtype setting.
 
-        Only music sections pin anything (MUSIC_VIEWTYPE_BY_ITEM_TYPE) - Photos and Playlists
+        Music sections pin by item type (MUSIC_VIEWTYPE_BY_ITEM_TYPE) - Photos and Playlists
         keep their grid/list toggle. ITEM_TYPE can still be unset the first time a section is
         opened, hence the section-type fallback, which resolves to 'artist' (the grid) for music.
+        Other Videos sections have the one view, the 16:9 grid (VIEWS_AR16X9).
         """
+        if isOtherVideos(self.section):
+            return VIEWS_AR16X9['panel']
         if self.section.TYPE != 'artist':
             return None
 
@@ -619,6 +622,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             views = self.squareViews()
             self.setWindows(views.get('all'))
             self.setDefault(self.forcedViewWindow() or views.get(viewtype))
+        elif isOtherVideos(self.section):
+            # One view, whatever viewtype a poster grid left stored
+            self.setWindows(VIEWS_AR16X9.get('all'))
+            self.setDefault(VIEWS_AR16X9.get('panel'))
         else:
             self.setWindows(VIEWS_POSTER.get('all'))
             self.setDefault(VIEWS_POSTER.get(viewtype))
@@ -3588,6 +3595,21 @@ VIEWS_POSTER = {
     'panel2': PostersSmallWindow,
     'all': (PostersWindow, PostersSmallWindow)
 }
+
+class Ar16x9Window(PostersWindow):
+    """An Other Videos section's grid: its Recommended rows' 16:9 card, three to a row, and no
+    other view (script-plex-ar16x9.xml.tpl), on request (2026-10-09)."""
+    xmlFile = 'script-plex-ar16x9.xml'
+    VIEWTYPE = 'panel'
+    MULTI_WINDOW_ID = 0
+    ROW_SIZE = 3
+
+
+VIEWS_AR16X9 = {
+    'panel': Ar16x9Window,
+    'all': (Ar16x9Window,)
+}
+
 
 class TrackListWindow(ListViewSquareWindow):
     # The music section's own list view. Only ever shows Tracks (MUSIC_VIEWTYPE_BY_ITEM_TYPE pins

@@ -31,7 +31,7 @@
          well. View carries no visibility condition in this chain, so it is the safe fallback. -->
     <onright condition="Control.IsVisible(301)">301</onright>
     <onright condition="!Control.IsVisible(301) + Control.IsVisible(303)">303</onright>
-    <onright>304</onright>
+    {% block filteropts_onright_last %}<onright>304</onright>{% endblock %}
     <ondown>101</ondown>
     <onup condition="Control.IsVisible(320)">320</onup>
     <onup condition="Player.HasAudio + String.IsEmpty(Window(10000).Property(script.plex.theme_playing))">204</onup>

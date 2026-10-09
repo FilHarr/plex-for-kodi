@@ -377,7 +377,8 @@ class SquareGridWindow(HubGridWindow):
 
 class Ar16x9GridWindow(HubGridWindow):
     """The 16:9 row's card, three to a row. A film shows its art, as in the row (LibraryWindow.
-    createMovieListItem(), wide); episodes and clips their own thumb, which is 16:9 already."""
+    createMovieListItem(), wide) - its thumb without one; episodes and clips their own thumb,
+    which is 16:9 already."""
     xmlFile = 'script-plex-see_more_ar16x9.xml'
     # The row's own (LibraryWindow.THUMB_AR16X9_DIM)
     THUMB_DIM = util.scaleResolution(512, 288)
@@ -385,7 +386,8 @@ class Ar16x9GridWindow(HubGridWindow):
 
     def thumbFor(self, obj):
         if obj.TYPE == 'movie':
-            return obj.defaultArt.asTranscodedImageURL(*self.THUMB_DIM)
+            # an empty path never falls back (util.standInThumb())
+            return (obj.defaultArt or obj.defaultThumb).asTranscodedImageURL(*self.THUMB_DIM)
         return HubGridWindow.thumbFor(self, obj)
 
 

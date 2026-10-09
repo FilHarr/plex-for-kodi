@@ -41,7 +41,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>1800</width>
-            <height>1190</height>
+            <height>{% block panel_height %}1190{% endblock %}</height>
             <onleft>9000</onleft>
             <!-- wraparound=false alone didn't stop top<->bottom wrapping live for the collection
                  grid this is lifted from - 'noop' (this codebase's own established "consume the
@@ -52,6 +52,7 @@
             <orientation>vertical</orientation>
             <preloaditems>2</preloaditems>
             <wraparound>false</wraparound>
+            {% block grid_layouts %}
             <!-- ITEM LAYOUT ########################################## -->
             <!-- The poster grid's own tile (script-plex-posters.xml.tpl), copied as is on request
                  (2026-09-29): this screen's panel sits where the poster grid's does, and its old
@@ -255,6 +256,7 @@
                     </control>
                 </control>
             </focusedlayout>
+            {% endblock grid_layouts %}
         </control>
     </control>
 </control>

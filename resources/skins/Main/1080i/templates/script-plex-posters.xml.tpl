@@ -1,7 +1,7 @@
 {% extends "library_posters.xml.tpl" %}
 {% block content %}
 <control type="group" id="50">
-    <animation effect="slide" time="200" end="0,{{ vscale(-115, negpos=True) }}" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <animation effect="slide" time="200" end="0,{{ vscale(-115, negpos=True) }}" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
     <posx>60</posx>
     <posy>{{ vscale(125) }}</posy>
@@ -24,7 +24,7 @@
             <posx>0</posx>
             <posy>0</posy>
             <width>1800</width>
-            <height>1190</height>
+            <height>{% block panel_height %}1190{% endblock %}</height>
             <!-- The actual fix for "scrollbar doesn't drive the grid": Kodi links a scrollbar to
                  a list/panel's real scroll position (and drag-to-scroll) via <pagecontrol>
                  referencing the scrollbar's own control id - it does NOT require nesting the
@@ -36,8 +36,8 @@
                  applied to it before, for no benefit once pagecontrol alone does the job with 152
                  staying exactly where it always was, as a standalone sibling below. -->
             <pagecontrol>152</pagecontrol>
-            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),3)">600</onup>
-            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),6) + Integer.IsGreaterOrEqual(Container(101).ListItem.Property(index),3)">300</onup>
+            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),{% block onup_split %}3{% endblock %})">600</onup>
+            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),{% block row_size %}6{% endblock %}) + Integer.IsGreaterOrEqual(Container(101).ListItem.Property(index),{% block onup_split %}3{% endblock %})">300</onup>
             <onleft>9000</onleft>
             <!-- Straight to the scrollbar (152) when it's the only one of the two showing
                  (non-alpha orderings) - the scrubber (151) isn't in the chain at all then, so
@@ -56,6 +56,7 @@
             <orientation>vertical</orientation>
             <preloaditems>2</preloaditems>
             <wraparound>false</wraparound>
+            {% block grid_layouts %}
             <!-- ITEM LAYOUT ########################################## -->
             <itemlayout width="272" height="{{ vscale(460) }}">
                 <control type="group">
@@ -256,6 +257,7 @@
                     </control>
                 </control>
             </focusedlayout>
+            {% endblock grid_layouts %}
         </control>
     </control>
 
@@ -283,7 +285,7 @@
          posy=132.5, so the delta needed to land its bottom edge (posy+height) at 0 is
          -(132.5+145)=-277.5) - same condition group 50 uses for its own header-hide slide, so
          this moves in lockstep with the grid rather than on its own timing. -->
-    <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
     <defaultcontrol>301</defaultcontrol>
     <!-- 184, not the old 120: moves the whole row left so the view button's new label-pill
          (overlay 393 below) ends flush with the grid's own right edge when focused, instead of
@@ -362,6 +364,7 @@
            It used to also show on any section while music played, for a "Play Next" entry that
            skipped the track; dropped, the header's now-playing popout covers that now. #}
         {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(no.options))" %}
+        {% block view_button %}
         {% include template with name="view" & id=304 & overlay=True %}
         <!-- label_width=146: "Change view" measured at font10/23px via Inter-Regular.ttf (PIL
              font.getlength, 142px; 140 in the old InterUI.ttf) + the +2px clipping-safety buffer every other call site here
@@ -374,6 +377,7 @@
             label_width=146 & pill_width=208 & group_width=164 &
             onleft=304
         %}
+        {% endblock view_button %}
     {% endwith %}
 
 </control>
@@ -393,7 +397,7 @@
          End position centers the scrubber's full 27-key extent (26 letters + '#', 34px each =
          918) in the 1080-tall screen: (1080-918)/2 = 81 top margin, a 150-81=69px move up from
          the resting posy. -->
-    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
     <posx>1836</posx>
     <posy>{{ vscale(150) }}</posy>
     <width>20</width>
@@ -403,14 +407,14 @@
         <posy>0</posy>
         <width>34</width>
         <height>1050</height>
-        <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
+        <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
         <!-- 304 (View), not 300: entering the button row from the right has to land on its
              RIGHTMOST button rather than restoring the row's own remembered child. Targeting the
              grouplist by id gives you whatever was focused last, which is right for up/down entry
              but wrong from the side. View is the last real button in the row and carries no
              visibility condition here, so no fallback chain is needed in this direction (unlike
              the leftmost, see library_posters.xml.tpl). -->
-        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),5) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">304</onleft>
+        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">{% block rightmost_button %}304{% endblock %}</onleft>
         <onright>152</onright>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
@@ -441,14 +445,14 @@
          Same delta as the scrubber rather than independently centering this control's own 910
          height (which would want -85, (1080-910)/2) so the two stay level with each other, since
          they sit side by side and started level (both resting at posy/top=150). -->
-    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
     {% include "includes/scrollbar_style.xml.tpl" %}
     <!-- Back to the scrubber when it's also showing (alpha orderings); straight to the grid/
          filter-row otherwise, mirroring the scrubber's own two-tier index routing (100 once the
          header's scrolled out of view past index 5, 300 while it's still up) since the scrubber
          itself isn't in the chain to make that hop for us then. -->
     <onleft condition="!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">151</onleft>
-    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).ListItem.Property(index),5)">100</onleft>
-    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),5)">304</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %})">100</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %})">{% block rightmost_button %}304{% endblock %}</onleft>
 </control>
 {% endblock content %}
