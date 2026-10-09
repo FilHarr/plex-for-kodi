@@ -732,6 +732,20 @@ class Settings(object):
                 BoolUserSetting(
                     'show_directors', T(34061, 'Show directors in cast lists'), True
                 ),
+                # hub_limits.py
+                OptionsSetting(
+                    'see_more_recent_months', T(35167, 'Recently released and watched rows go back'), 12,
+                    [(a, T(35169, '{0} months').format(a)) for a in (3, 6, 9, 12)]
+                ).description(
+                    T(35168, 'How far back the Recently Released and Recently Watched rows reach, and '
+                             'the See more grids behind them.')
+                ),
+                IntegerSetting(
+                    'see_more_added_limit', T(35170, 'Recently added: See more shows up to'), 50
+                ).description(
+                    T(35171, "How many items a Recently Added row's See more shows. Recently Added TV "
+                             "and Photos are limited to 50 by the Plex server.")
+                ),
                 MultiOptionsSetting(
                     'no_episode_spoilers4', T(33006, ''),
                     ['unwatched', 'blur_images', 'hide_summary'],

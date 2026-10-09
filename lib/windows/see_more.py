@@ -9,15 +9,22 @@ see_more.xml.tpl's children) says what the grid holds:
   - groups(): [(label, [item])] - a button per named group over the grid (Cast / Crew); a
     single group with no label has none
   - createListItem(), itemClicked(): an item's tile and what selecting it opens
-The items are in memory, and a group goes into the grid whole (GroupPaginator).
 
-CreditsGridWindow is the first: a film's or show's every credit, from the Cast & Crew row."""
+CreditsGridWindow: a film's or show's every credit, from the Cast & Crew row - in memory, a group
+going into the grid whole (GroupPaginator).
+HubGridWindow (Poster/Poster3/SquareGridWindow): a Recommended row's every item, from its "See
+more" tile - from the server, a chunk at a time into a grid of placeholders, as the library grid."""
 from __future__ import absolute_import
+
+import threading
 
 from lib import util
 from lib.util import T
+from plexnet import plexobjects
 from . import collection
 from . import credits
+from . import grid_labels
+from . import hub_limits
 from . import kodigui
 from . import opener
 
@@ -178,3 +185,199 @@ class CreditsGridWindow(SeeMoreWindow):
             return
         self.processCommand(opener.open(mli.dataSource, context=self, section_id=self.entrySectionId,
                                         from_watchlist=self.entryFromWatchlist))
+
+
+class HubGridWindow(SeeMoreWindow):
+    """A Recommended row's every item, from its "See more" tile (LibraryWindow.hubSeeMoreClicked()):
+    the row's whole list from the server - as far as hub_limits lets it reach: a Recently Released or
+    Watched row's window, a Recently Added row's number - in the row's tile shape, with the grid's own
+    caption lines (grid_labels). No group buttons: the title is the row's, as the row shows it.
+
+    Such a list runs to hundreds, so it's the library grid's way rather than the credits': every
+    position an empty tile at once (setup()), and the items fetched a chunk at a time, the first
+    where focus starts and the rest as it moves (_requestAround(), library_grid.ChunkRequestTask's
+    way)."""
+    # No hero art, only the colour panel, from the focused item - the library grid's background
+    # (on request, 2026-10-09; the credits grid keeps its film's or show's art): onAction() and
+    # _fetchChunk(), not BoundedGridWindow's updateBackgroundFrom(), which paints the art too
+    BACKGROUND_FOLLOWS_FOCUS = False
+    CHUNK_SIZE = 60
+    # How far past the focused item a chunk is asked for: two rows of six, so the next screenful is
+    # there before it's reached
+    CHUNK_AHEAD = 12
+    # The rows' own (LibraryWindow.THUMB_POSTER_DIM / THUMB_SQUARE_DIM)
+    THUMB_DIM = util.scaleResolution(240, 360)
+    FALLBACKS = {
+        'movie': 'movie', 'clip': 'movie', 'show': 'show', 'season': 'show', 'episode': 'show',
+        'album': 'music', 'artist': 'music', 'track': 'music', 'photo': 'photo', 'playlist': 'movie',
+        'collection': 'movie',
+    }
+    VIDEO_TYPES = ('movie', 'clip', 'show', 'season', 'episode')
+
+    def __init__(self, *args, **kwargs):
+        SeeMoreWindow.__init__(self, *args, **kwargs)
+        self.hub = kwargs.get('hub')
+        self.rowTitle = kwargs.get('title') or self.hub.title or ''
+        self.base = hub_limits.baseIdentifier(self.hub)
+        self.total = 0
+        self._requested = set()
+        self._fillLock = threading.Lock()
+
+    def title(self):
+        return self.rowTitle
+
+    def groups(self):
+        return []
+
+    @property
+    def gridKey(self):
+        return self.hub.__dict__.get('gridKey') or self.hub.key
+
+    def count(self):
+        """How many the grid holds: the list's own total (a size-0 request), no more than a
+        Recently Added row's limit (hub.gridMax)."""
+        try:
+            data = self.hub.server.query(self.gridKey, limit=0)
+        except Exception as e:
+            util.DEBUG_LOG('See more: no count for {0}: {1}', self.gridKey, e)
+            return 0
+        total = data.attrib.get('totalSize') if data is not None else None
+        total = int(total) if total is not None else len(self.hub.items)
+        gridMax = self.hub.__dict__.get('gridMax')
+        return min(total, gridMax) if gridMax is not None else total
+
+    def setup(self):
+        self.setProperty('grid.title', self.rowTitle)
+        self.setBoolProperty('grid.groups', False)
+        self.labelGroupButtons()
+        self.total = self.count()
+        kind = self.hub.items[0].TYPE if self.hub.items else None
+        fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(self.FALLBACKS.get(kind, 'movie'))
+        placeholders = []
+        for pos in range(self.total):
+            mli = kodigui.ManagedListItem('')
+            mli.setProperty('thumb.fallback', fallback)
+            mli.setProperty('index', str(pos))
+            placeholders.append(mli)
+        self.gridControl.reset()
+        if not placeholders:
+            return
+        self.gridControl.addItems(placeholders)
+        pos = self._restoreItemPos
+        self._restoreItemPos = None
+        if pos is None or not 0 <= pos < self.total:
+            pos = 0
+        self.gridControl.selectItem(pos)
+        self.setFocusId(self.GRID_ID)
+        self._requestAround(pos)
+
+    def restoreState(self):
+        """The item focused, for Back (LibraryWindow._captureHostedShellRestoreState()): every
+        position is in the grid, so its position is the absolute one."""
+        mli = self.gridControl.getSelectedItem() if self.gridControl else None
+        return {'_restoreItemPos': mli.pos() if mli else None}
+
+    def handleBack(self):
+        # the first item's chunk, if Back to it (SeeMoreWindow.handleBack()) comes from far down
+        if SeeMoreWindow.handleBack(self):
+            self._requestAround(0)
+            return True
+        return False
+
+    def onAction(self, action):
+        SeeMoreWindow.onAction(self, action)
+        if self.gridControl and self.getFocusId() == self.GRID_ID and action.getId() in collection.MOVE_SET:
+            mli = self.gridControl.getSelectedItem()
+            if mli:
+                self._requestAround(mli.pos())
+                # `is not None`: an unopened Playlist is falsy (library_grid's own note)
+                if mli.dataSource is not None:
+                    self.updatePanelFrom(mli.dataSource)
+
+    def _requestAround(self, pos):
+        for start in set(((pos // self.CHUNK_SIZE) * self.CHUNK_SIZE,
+                          (min(pos + self.CHUNK_AHEAD, self.total - 1) // self.CHUNK_SIZE) * self.CHUNK_SIZE)):
+            if start in self._requested or start >= self.total:
+                continue
+            self._requested.add(start)
+            self.postpone_simple(self._fetchChunk, start)
+
+    def _fetchChunk(self, start):
+        """On a worker: the chunk at start, written into its placeholders."""
+        size = min(self.CHUNK_SIZE, self.total - start)
+        try:
+            items = plexobjects.listItems(self.hub.server, self.gridKey, offset=start, limit=size)
+        except Exception as e:
+            util.DEBUG_LOG('See more: chunk {0} of {1} failed: {2}', start, self.gridKey, e)
+            self._requested.discard(start)
+            return
+        try:
+            with self._fillLock:
+                for offset, obj in enumerate(items):
+                    pos = start + offset
+                    if pos >= self.total:
+                        break
+                    self.fillItem(self.gridControl[pos], obj)
+                # the panel's first colours: the item focus starts on, once its chunk is in
+                selected = self.gridControl.getSelectedPos()
+                if selected is not None and start <= selected < start + len(items):
+                    self.updatePanelFrom(items[selected - start])
+        except kodigui.ScreenClosed:
+            pass
+
+    def fillItem(self, mli, obj):
+        lines = grid_labels.lines(self.base, obj)
+        mli.dataSource = obj
+        mli.setLabel(lines.line1)
+        mli.setLabel2(lines.line2)
+        mli.setProperty('line3', lines.line3)
+        if lines.rating is not None:
+            mli.setProperty('rating.image', lines.rating[0])
+            mli.setProperty('rating', lines.rating[1])
+        mli.setThumbnailImage(self.thumbFor(obj))
+        if obj.TYPE == 'photo':
+            mli.setProperty('is.photo', '1')
+        if obj.TYPE in self.VIDEO_TYPES:
+            self.setWatchedInfo(obj, mli)
+
+    def thumbFor(self, obj):
+        w, h = self.THUMB_DIM
+        if obj.TYPE == 'playlist':
+            fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(
+                obj.playlistType == 'audio' and 'music' or 'movie')
+            return obj.buildComposite(width=w, height=h, media='thumb') or util.standInThumb(fallback)
+        if obj.TYPE == 'collection' and not obj.defaultThumb:
+            return obj.server.getImageTranscodeURL(obj.artCompositeURL(w * 2, h * 2), w, h)
+        return obj.defaultThumb.asTranscodedImageURL(w, h)
+
+    def itemClicked(self):
+        """Opens the item as its row does (LibraryWindow.hubItemClicked() - opener.open())."""
+        mli = self.gridControl.getSelectedItem()
+        if not mli or mli.dataSource is None:
+            return
+        self.processCommand(opener.open(mli.dataSource, context=self, entry_section_id=self.entrySectionId,
+                                        entry_from_watchlist=self.entryFromWatchlist))
+
+
+class PosterGridWindow(HubGridWindow):
+    xmlFile = 'script-plex-see_more_poster.xml'
+
+
+class Poster3GridWindow(HubGridWindow):
+    """The poster grid of three caption lines (episode rows - grid_labels.THREE_LINE_ROWS)."""
+    xmlFile = 'script-plex-see_more_poster3.xml'
+
+
+class SquareGridWindow(HubGridWindow):
+    xmlFile = 'script-plex-see_more_square.xml'
+    THUMB_DIM = util.scaleResolution(240, 240)
+
+
+def hubGridWindow(display_type, base):
+    """The grid class for a row of this display type (LibraryWindow.getHubDisplayType()). A 16:9
+    row's grid isn't built yet (stage 3): it opens as posters meanwhile."""
+    if display_type == 'square':
+        return SquareGridWindow
+    if base in grid_labels.THREE_LINE_ROWS:
+        return Poster3GridWindow
+    return PosterGridWindow

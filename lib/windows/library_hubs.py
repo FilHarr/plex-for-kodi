@@ -16,6 +16,7 @@ from . import busy
 from . import dropdown
 from . import home
 from . import hub_config
+from . import hub_limits
 from . import kodigui
 from . import opener
 from . import optionsdialog
@@ -1817,12 +1818,16 @@ class HubsMixin(object):
                         str(mli.dataSource.ratingKey), pos)
             kodigui.markStep(timing, 'position')
 
-    def hubSeeMoreClicked(self, hub):
-        """The row's trailing "See more" item (is.more, _bindHubToControl()) was clicked. Meant
-        to open a grid of the hub's full listing (hub.key / hub.hubKey is that endpoint) - that
-        screen isn't built yet, so this only logs for now (on request, 2026-09-21: the item and
-        the 20-item row cap first, the grid afterwards)."""
-        util.DEBUG_LOG('Hub "See more" clicked (grid not built yet): {0}', hub)
+    def hubSeeMoreClicked(self, hub, hub_control_id):
+        """The row's trailing "See more" item (is.more, _bindHubToControl()): the row's every item
+        in a grid of its own tile shape (see_more.HubGridWindow), under the row's title as the row
+        shows it (its hub.4NN property) - as far as hub_limits lets the list reach."""
+        from . import see_more
+        identifier = hub.getCleanHubIdentifier(is_home=self.section.key is None)
+        title = self.getProperty('hub.4{0:02d}'.format(hub_control_id - self.HUB_CONTROL_ID))
+        window = see_more.hubGridWindow(self.getHubDisplayType(hub, identifier), hub_limits.baseIdentifier(hub))
+        self.openWindow(window, hub=hub, title=title, entry_section_id=self.entrySectionId,
+                        entry_from_watchlist=self.entryFromWatchlist)
 
     def _anchorControlId(self):
         """Whichever physical control (400-403) is currently serving the anchor role. Ported
@@ -1899,7 +1904,7 @@ class HubsMixin(object):
         # showPanelClicked()/setHeroInfo() document.
         if not mli or mli.dataSource is None:
             if mli and mli.getProperty('is.more') == '1':
-                self.hubSeeMoreClicked(control.dataSource)
+                self.hubSeeMoreClicked(control.dataSource, hub_control_id)
             return
 
         # A click can land on the row a slide is leaving: the press moves the logical focus at
@@ -2328,7 +2333,9 @@ class HubsMixin(object):
         # items up front and never pages. Its empty label/no dataSource is what checkHubItem()/
         # hubItemClicked() key off (is.more); the label is the item's own caption
         # (hub_itemlayout_*.xml.tpl's "See more" pill reads ListItem.Label). HUBS_NO_SEE_MORE:
-        # hubs whose hub.more flag lies (see its own comment).
+        # hubs whose hub.more flag lies (see its own comment). A windowed or limited row (Recently
+        # Released, Watched, Added - hub_limits.py) has it only when its limited list holds more than
+        # the row (hub_limits.hasSeeMore()), on request (2026-10-09).
         #
         # Reselect-position memory (plan item 10, Group A) - ported from
         # HomeWindow._hubReselectPositions, restored here since every rebind path (the initial
@@ -2338,7 +2345,7 @@ class HubsMixin(object):
         # then back" any more: the row is a fixedlist now (script-plex-recommended.xml.tpl), which
         # places a selected item deterministically (pinned at the row's start, or spread across
         # the last slots when the tail fits), not "scrolled the minimum to bring it on-screen".
-        if ((hub.more.asBool() or len(hub.items) > home.HUB_ROW_MAX_ITEMS)
+        if (hub_limits.hasSeeMore(hub, home.HUB_ROW_MAX_ITEMS)
                 and identifier not in self.HUBS_NO_SEE_MORE):
             more = kodigui.ManagedListItem(T(35093, 'See more'))
             more.setBoolProperty('is.more', True)

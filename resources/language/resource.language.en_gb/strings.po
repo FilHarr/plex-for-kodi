@@ -3792,3 +3792,35 @@ msgstr ""
 msgctxt "#35166"
 msgid "Crew"
 msgstr ""
+
+msgctxt "#35167"
+msgid "Recently released and watched rows go back"
+msgstr ""
+
+msgctxt "#35168"
+msgid "How far back the Recently Released and Recently Watched rows reach, and the See more grids behind them."
+msgstr ""
+
+msgctxt "#35169"
+msgid "{0} months"
+msgstr ""
+
+msgctxt "#35170"
+msgid "Recently added: See more shows up to"
+msgstr ""
+
+msgctxt "#35171"
+msgid "How many items a Recently Added row's See more shows. Recently Added TV and Photos are limited to 50 by the Plex server."
+msgstr ""
+
+msgctxt "#35172"
+msgid "Today"
+msgstr ""
+
+msgctxt "#35173"
+msgid "Yesterday"
+msgstr ""
+
+msgctxt "#35174"
+msgid "{0} days ago"
+msgstr ""

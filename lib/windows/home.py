@@ -12,6 +12,7 @@ from lib import util
 from lib.path_mapping import pmm
 from lib.util import T
 from . import hub_config
+from . import hub_limits
 from . import background
 from .copies import sameTitleKey
 from .section_ids import CONTINUE_WATCHING_ID
@@ -279,7 +280,10 @@ class SectionHubsTask(backgroundthread.Task):
             return
 
         try:
-            hubs = HubsList(self.section.server.hubs(self.section.key, count=HUB_ROW_MAX_ITEMS)).init()
+            hubs = self.section.server.hubs(self.section.key, count=HUB_ROW_MAX_ITEMS)
+            # windows and limits, here on the worker: a windowed row may ask how many it holds
+            hub_limits.applyAll(hubs, HUB_ROW_MAX_ITEMS)
+            hubs = HubsList(hubs).init()
             hubs.identifier = self.section.key
             if self.isCanceled():
                 return
@@ -432,7 +436,10 @@ class HomeHubsTask(backgroundthread.Task):
         if self.isCanceled() or server.offline or not server.activeConnection:
             return
         try:
-            answers[server.uuid] = server.hubs(None, count=HUB_ROW_MAX_ITEMS, section_ids=list(keys))
+            hubs = server.hubs(None, count=HUB_ROW_MAX_ITEMS, section_ids=list(keys))
+            # windows and limits, on this server's own thread (hub_limits.py)
+            hub_limits.applyAll(hubs, HUB_ROW_MAX_ITEMS)
+            answers[server.uuid] = hubs
         except plexnet.exceptions.BadRequest:
             util.DEBUG_LOG('Home: {0} would not give its rows', repr(server.name))
         except:
