@@ -1082,8 +1082,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         return True
 
     def fillCollections(self):
-        collections = self.video.collections() if self.video.type == 'movie' and self.video.collections else []
         section_id = self.video.getLibrarySectionId()
+        # Both ways to a collection's listing below are in the film's library section, so none
+        # without one: a Watchlist (Discover) film's every row 404'd on '/library/sections//all'.
+        collections = self.video.collections() if (self.video.type == 'movie' and self.video.collections
+                                                   and section_id) else []
 
         # Fetch the section's collection metadata items to get their proper keys,
         # which respect the sort order set in Plex (Custom / Alphabetical / Release Date).
