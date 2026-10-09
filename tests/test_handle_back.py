@@ -173,7 +173,8 @@ class BackResetRowsTest(KodiTestCase):
 
     def test_episodes(self):
         rows = episodes.EpisodesWindow.backResetRows(_Controls(episodes.EpisodesWindow))
-        self.assertEqual({402, 403}, set(rows))
+        # 404: Related, a skipChildren show's season card only
+        self.assertEqual({402, 403, 404}, set(rows))
         self.assertNotIn(episodes.EpisodesWindow.EPISODE_LIST_ID, rows)
 
     def test_each_screen_hands_back_to_the_shared_steps(self):

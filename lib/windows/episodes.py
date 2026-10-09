@@ -17,6 +17,7 @@ from lib import util
 from lib.util import T
 from lib.language_util import getNativeLanguages
 from . import busy
+from . import credits
 from . import dropdown
 from . import info
 from . import kodigui
@@ -454,6 +455,13 @@ SELECT_POLL_SECONDS = 0.01
 
 VIDEO_PROGRESS = OrderedDict()
 
+class RelatedPaginator(pagination.BaseRelatedPaginator):
+    """The show's Related row, for a skipChildren show's season card - subitems.py's own, which
+    reads the show from mediaItem."""
+    def getData(self, offset, amount):
+        return self.parentWindow.show_.getRelated(offset=offset, limit=amount)
+
+
 class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, SeasonsMixin,
                      RatingsMixin, SpoilersMixin, MediaInfoPillsMixin, RolesMixin, PlaybackBtnMixin,
                      ThemeMusicMixin, WatchlistUtilsMixin, CommonMixin, TasksMixin, RowRestoreMixin,
@@ -476,6 +484,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     # 299x168 art this row used before that resize.
     EXTRA_DIM = util.scaleResolution(533, 300)
     ROLES_DIM = util.scaleResolution(334, 334)
+    # ShowWindow's own (subitems.py): the Related row here is that screen's, for a skipChildren show
+    RELATED_DIM = util.scaleResolution(268, 402)
     # 660x98, not the old 784x106: matches Recommended's own episode-variant clearlogo box exactly
     # (CLEAR_LOGO_DIM_EPISODE, library.py), now that the header was resized to match it
     # (script-plex-episodes.xml.tpl).
@@ -485,6 +495,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     SEASONS_LIST_ID = 205
     ROLES_LIST_ID = 402
     EXTRA_LIST_ID = 403
+    # The season card of a skipChildren show only (fillRelated())
+    RELATED_LIST_ID = 404
 
     OPTIONS_GROUP_ID = 200
     PLAYER_STATUS_BUTTON_ID = 204
@@ -534,6 +546,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         WatchlistUtilsMixin.__init__(self)
         TasksMixin.__init__(self)
         self.episode = None
+        # Open on the season card, not the episode picked for it: Back to a skipChildren show's card,
+        # where its cast and Related rows open from (restoreState()). Spent by selectEpisode().
+        self.landOnSeasonCard = kwargs.get('season_card', False)
         self.reset(kwargs.get('episode'), kwargs.get('season'), kwargs.get('show'))
         self.parentList = kwargs.get('parentList')
         self.cameFrom = kwargs.get('came_from')
@@ -558,8 +573,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # own fetch attempts by ratingKey here survives that clobbering.
         self._extrasFetched = set()
         # The episode whose cast the Roles row holds (fillRoles()), so a second fill for the same
-        # one leaves the row - and a Back restore's selection in it - alone.
+        # one leaves the row - and a Back restore's selection in it - alone. The show's key when it's
+        # a skipChildren show's own cast, on its season card.
         self._rolesFilledFor = None
+        # fillShowCredits() queued or running (fillRoles()), so a second ask doesn't fetch it twice
+        self._showCreditsPending = False
+        self.relatedPaginator = None
         # (row list id, position) to focus once that row is filled: Back from a screen this one
         # opened (RowRestoreMixin). Set here, not in reset(): it's this open's, not an episode's.
         self.restoreFocus = kwargs.get('restore_focus')
@@ -584,15 +603,17 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     def restoreRows(self):
         """The rows Back returns focus to (RowRestoreMixin): the ones that open a screen in this
-        one's place - a cast member, and the season tabs' Show tab. Not Extras, which play on top
-        of this screen; the episode itself comes back through restoreState()'s episode."""
+        one's place - a cast member, a related show, and the season tabs' Show tab. Not Extras,
+        which play on top of this screen; the episode itself comes back through restoreState()'s
+        episode."""
         return {self.SEASONS_LIST_ID: self.seasonsListControl,
-                self.ROLES_LIST_ID: self.rolesListControl}
+                self.ROLES_LIST_ID: self.rolesListControl,
+                self.RELATED_LIST_ID: self.relatedListControl}
 
     def asyncRestoreRows(self):
-        # Both filled after the episode row: the tabs on a worker, the cast once an episode is
-        # selected (fillRoles()).
-        return (self.SEASONS_LIST_ID, self.ROLES_LIST_ID)
+        # All filled after the episode row: the tabs and Related on a worker, the cast once an
+        # episode is selected (fillRoles()).
+        return (self.SEASONS_LIST_ID, self.ROLES_LIST_ID, self.RELATED_LIST_ID)
 
     def restoreDefaultFocusIds(self):
         return (0, self.EPISODE_LIST_ID, self.PLAY_BUTTON_ID, self.PLAY_BUTTON_DISABLED_ID,
@@ -604,12 +625,16 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         so the kwargs this screen opened with still named the first one, and Back rebuilt that.
         The selected episode, or None on the season card, which then picks as a season's own
         open does. Left to the opening kwargs for a show without seasons (skipChildren, where
-        self.season is the show itself), which has none to switch."""
+        self.season is the show itself), which has none to switch - except its season card, which
+        Back has to land on again: its cast and Related rows are the show's, and only it shows
+        them."""
         state = RowRestoreMixin.restoreState(self)
+        mli = self.episodeListControl.getSelectedItem()
         if getattr(self.season, 'type', None) == 'season':
-            mli = self.episodeListControl.getSelectedItem()
             episode = (mli.dataSource or None) if mli and not mli.getProperty('is.boundary') else None
             state.update({'season': self.season, 'episode': episode})
+        elif self.season is self.show_:
+            state['season_card'] = bool(mli and mli.getProperty('is.skip.children.card'))
         return state
 
     def reset(self, episode, season=None, show=None):
@@ -643,7 +668,13 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # keep whatever the previous subject left here.
         self._seasonCardPick = None
 
-        if not self.episode:
+        if self.landOnSeasonCard:
+            # Back to the card (restoreState()): no episode, so the first page is the season's start,
+            # the only one the card is on (EpisodesPaginator.populate()) - the pick still seeds the
+            # card's own Play button.
+            self._defaultEpisode()
+            self.episode = None
+        elif not self.episode:
             # Opened from a season tile (subitems.py) with no specific episode - EpisodesPaginator.
             # initialPage only knows how to center its window on self.episode; with nothing set it
             # just loads from the very start of the season (episode 1), stranding any unwatched/
@@ -913,6 +944,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.seasonsListControl = kodigui.ManagedControlList(self, self.SEASONS_LIST_ID, 5)
         self.rolesListControl = kodigui.ManagedControlList(self, self.ROLES_LIST_ID, 5)
         self.extraListControl = kodigui.ManagedControlList(self, self.EXTRA_LIST_ID, 5)
+        self.relatedListControl = kodigui.ManagedControlList(self, self.RELATED_LIST_ID, 5)
 
         if self.sectionList is None:
             self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 15)
@@ -1127,6 +1159,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             (self.fillExtras, None, None),
             (self.fillRoles, None, None),
         ])
+        if self.season is self.show_ and self.relatedPaginator is None:
+            # followed by a Back restore to the related show opened, if there is one
+            self._inBackground(self._fillThenRestore(self.fillRelated, self.RELATED_LIST_ID))
 
         if not self.directlyFromWatchlist:
             self.checkIsWatchlisted(self.show_)
@@ -1138,7 +1173,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         if not self.episodesPaginator:
             return
 
-        if not self.episode and not from_reinit and self.season.viewedLeafCount.asInt() == 0:
+        # Back to a skipChildren show's card (restoreState()) lands there the same way - once only
+        landOnSeasonCard, self.landOnSeasonCard = self.landOnSeasonCard, False
+        if not self.episode and not from_reinit and (landOnSeasonCard or self.season.viewedLeafCount.asInt() == 0):
             # Nothing in the season has ever been watched - same condition EpisodesWindow.
             # _defaultEpisode() already used to return None instead of episode 1 (see that method's
             # own comment) - reused here since this method has its own, separate "no self.episode ->
@@ -1341,7 +1378,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     def backResetRows(self):
         # EPISODE_LIST_ID is left out: the selected episode is what this screen is showing.
         return {self.ROLES_LIST_ID: self.rolesListControl,
-                self.EXTRA_LIST_ID: self.extraListControl}
+                self.EXTRA_LIST_ID: self.extraListControl,
+                self.RELATED_LIST_ID: self.relatedListControl}
 
     def onAction(self, action):
         # Hosted: the host sees the action first (kodigui.BaseWindow.routeActionToHost()).
@@ -1397,6 +1435,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 elif action == xbmcgui.ACTION_CONTEXT_MENU:
                     self.optionsButtonClicked(from_item=True)
                     return
+
+            elif controlID == self.RELATED_LIST_ID and self.relatedPaginator and \
+                    self.relatedPaginator.boundaryHit:
+                self.relatedPaginator.paginate()
+                return
 
             elif self.isWatchedAction(action) and xbmc.getCondVisibility('ControlGroup({}).HasFocus(0)'.format(self.MAIN_BUTTON_GROUP_ID)):
                 mli = self.episodeListControl.getSelectedItem()
@@ -1550,6 +1593,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 return
         elif controlID == self.EXTRA_LIST_ID:
             self.openItem(self.extraListControl)
+        elif controlID == self.RELATED_LIST_ID:
+            mli = self.relatedListControl.getSelectedItem()
+            if mli and mli.dataSource:
+                self.openItem(item=mli.dataSource)
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
@@ -2164,7 +2211,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 self.fillSeasonCardExtras()
                 # fillRoles() already blanks itself on any boundary item (including this one) via
                 # its own is.boundary guard - just never got called at all on this branch before,
-                # so whatever the last real episode's Roles were stayed on screen untouched.
+                # so whatever the last real episode's Roles were stayed on screen untouched. A
+                # skipChildren show's card gets the show's cast instead (fillShowCredits()).
                 self.fillRoles()
             return
 
@@ -2310,6 +2358,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # here, which stayed wrong (season-only wording) for the common case of a specific episode
         # being focused, now that Extras is per-episode, not per-season (fillExtras() above).
         self.setProperty('extras.header', T(32305, 'Extras'))
+        # A skipChildren show's season card only (fillRelated())
+        self.setProperty('related.header', T(32306, 'Related Shows'))
 
         # First 2 genres, comma-joined - matches Pre-play's/Seasons' own genres.short exactly
         # (PrePlayWindow.updateProperties(), preplay.py; ShowWindow.setup(), subitems.py). Episodes
@@ -2549,6 +2599,17 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         mli.setProperty('show.title', self.show_.title if self.show_ else '')
         mli.setProperty('title', seasonOrShow.title)
         mli.setProperty('summary', util.summaryForBox(seasonOrShow.summary))
+        if self.season is self.show_:
+            # A skipChildren show never shows its own screen (opener.showClicked()), so its card
+            # carries what that screen would: the show's meta row and ratings, as
+            # ShowWindow.updateProperties() fills them (subitems.py). Its cast and Related rows
+            # follow the card too (fillRoles(), fillRelated()).
+            show = self.show_
+            mli.setProperty('duration', util.durationToShortText(show.fixedDuration(), noSpaces=True))
+            mli.setProperty('date', str(show.year or ''))
+            mli.setProperty('genres.short', self.genres_short)
+            mli.setProperty('content.rating', show.contentRating.split('/', 1)[-1])
+            self.populateRatings(show, mli)
 
         # watched/unwatched: same properties, same meaning, as a real episode's own
         # (EpisodesPaginator.prepareListItem()) - Season has the same isFullyWatched/isWatched
@@ -2838,6 +2899,14 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         idx = 0
 
         mli = self.episodeListControl.getSelectedItem()
+        if mli and mli.getProperty('is.skip.children.card'):
+            if self._rolesFilledFor != self.show_.ratingKey:
+                # not the last episode's cast under the card while the show's is fetched
+                self.rolesListControl.reset()
+            if not self._showCreditsPending:
+                self._showCreditsPending = True
+                self._inBackground(self.fillShowCredits)
+            return True
         if not mli or mli.getProperty("is.boundary"):
             # The season card (also a boundary marker, see createSeasonCardItem()'s own comment)
             # has no dataSource - can be the selected item here if it was given initial focus
@@ -2881,3 +2950,67 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # followed by a Back restore to the cast member opened, if there is one (RowRestoreMixin)
         self._restoreRowFocus(filled=self.ROLES_LIST_ID)
         return True
+
+    def creditsItem(self):
+        # The show, for a skipChildren show's card (fillShowCredits()) - the row's "See more" grid.
+        # An episode's own cast has no "See more".
+        return self.show_ if self.season is self.show_ else None
+
+    def fillShowCredits(self):
+        """The show's Cast & Crew on a skipChildren show's season card, as its show screen fills
+        it (fillCreditsRow()). On its own thread (fillRoles()): the first ask may go to Discover."""
+        try:
+            key = self.show_.ratingKey
+            if self._rolesFilledFor == key and self.rolesListControl.size():
+                self._restoreRowFocus(filled=self.ROLES_LIST_ID)
+                return True
+
+            # Asked first, so fillCreditsRow() below finds Discover's answer cached - and whether
+            # focus is still on the card can be checked after the wait
+            credits.forItem(self.show_)
+            mli = self.episodeListControl.getSelectedItem()
+            if self.closing or not mli or not mli.getProperty('is.skip.children.card'):
+                return False
+
+            if not self.fillCreditsRow():
+                self._rolesFilledFor = None
+                return False
+            self._rolesFilledFor = key
+            self._restoreRowFocus(filled=self.ROLES_LIST_ID)
+            return True
+        finally:
+            self._showCreditsPending = False
+
+    def _inBackground(self, func):
+        """func on a thread of its own, not a task: checkForHeaderFocus() holds back the episode
+        row's own updates while any task is pending (self.tasks), and the show's cast and Related
+        fetches (fillShowCredits(), fillRelated()) have nothing to do with that row."""
+        def run():
+            try:
+                func()
+            except kodigui.ScreenClosed:
+                # closed while this ran (kodigui.WriteGuard) - nothing else catches it on a plain thread
+                pass
+            except Exception:
+                util.ERROR()
+        threading.Thread(target=run, name='episodesshowrows').start()
+
+    def fillRelated(self):
+        """The show's Related row, for a skipChildren show only - whose show screen, the row's usual
+        place, is never shown (opener.showClicked()). The template shows it on the season card only.
+        On its own thread (_setup()): the count is a server query (relatedCount)."""
+        if self.tasks is None or self.season is not self.show_:
+            # closed before this task ran, or a show with real seasons
+            return False
+        if self.relatedPaginator is None:
+            try:
+                count = int(self.show_.relatedCount)
+            except ValueError:
+                count = 0
+            self.relatedPaginator = RelatedPaginator(self.relatedListControl, leaf_count=count,
+                                                     parent_window=self)
+        if not self.relatedPaginator.leafCount:
+            self.relatedListControl.reset()
+            return False
+
+        return bool(self.relatedPaginator.paginate())
