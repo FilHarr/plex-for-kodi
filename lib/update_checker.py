@@ -34,9 +34,9 @@ def disable_enable_addon():
     log("Toggling")
     try:
         xbmc.executeJSONRPC(json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'Addons.SetAddonEnabled',
-                                 'params': {'addonid': 'script.plexmod', 'enabled': False}}))
+                                 'params': {'addonid': lib.kodi_util.ADDON_ID, 'enabled': False}}))
         xbmc.executeJSONRPC(json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'Addons.SetAddonEnabled',
-                                 'params': {'addonid': 'script.plexmod', 'enabled': True}}))
+                                 'params': {'addonid': lib.kodi_util.ADDON_ID, 'enabled': True}}))
     except:
         raise
 
@@ -78,7 +78,8 @@ def update_loop():
         if (last_update_check + check_interval <= now or check_immediate or ui_trigger_update) and not MONITOR.device_sleeping:
             if not any([
                     xbmc.Player().isPlaying(),
-                    getGlobalProperty('running') != '1',
+                    # 'running' holds the running copy's ID and is shared with renamed copies of the add-on
+                    getGlobalProperty('running') != lib.kodi_util.ADDON_ID,
                     getGlobalProperty('started') != '1',
                     getGlobalProperty('is_active') != '1',
                     getGlobalProperty('waiting_for_start')
@@ -136,7 +137,7 @@ def update_loop():
                                 #raise UpdateException('Timeout waiting for UI to close')
                                 log('Timeout waiting for UI to close')
                                 try:
-                                    xbmc.executebuiltin('StopScript(script.plexmod)')
+                                    xbmc.executebuiltin('StopScript({})'.format(lib.kodi_util.ADDON_ID))
                                 except:
                                     pass
                         else:
@@ -211,7 +212,7 @@ def update_loop():
                                 lib.kodi_util.ADDON = xbmcaddon.Addon()
 
                                 if do_start:
-                                    xbmc.executebuiltin('RunScript(script.plexmod,0,0,1)')
+                                    xbmc.executebuiltin('RunScript({},0,0,1)'.format(lib.kodi_util.ADDON_ID))
 
                                 if "updater" in major_changes or "service" in major_changes:
                                     return True

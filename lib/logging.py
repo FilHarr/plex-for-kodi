@@ -9,7 +9,7 @@ import logging
 
 from kodi_six import xbmc
 
-from .kodi_util import ADDON, translatePath
+from .kodi_util import ADDON, ADDON_ID, translatePath
 from .addonsettings import addonSettings
 
 _SHUTDOWN = False
@@ -33,18 +33,18 @@ def log(msg, *args, **kwargs):
     if kwargs:
         # resolve dynamic kwargs
         msg = msg.format(**dict((k, v()) if isinstance(v, types.FunctionType) else v for k, v in kwargs.items()))
-    xbmc.log('script.plexmod: {0}'.format(msg), level)
+    xbmc.log('{0}: {1}'.format(ADDON_ID, msg), level)
 
 
 def log_error(txt='', hide_tb=False):
     short = str(sys.exc_info()[1])
     if hide_tb:
-        xbmc.log('script.plexmod: ERROR: {0} - {1}'.format(txt, short), xbmc.LOGERROR)
+        xbmc.log('{0}: ERROR: {1} - {2}'.format(ADDON_ID, txt, short), xbmc.LOGERROR)
         return short
 
     tb = traceback.format_exc()
     xbmc.log("_________________________________________________________________________________", xbmc.LOGERROR)
-    xbmc.log('script.plexmod: ERROR: ' + txt, xbmc.LOGERROR)
+    xbmc.log(ADDON_ID + ': ERROR: ' + txt, xbmc.LOGERROR)
     for l in tb.splitlines():
         xbmc.log('    ' + l, xbmc.LOGERROR)
     xbmc.log("_________________________________________________________________________________", xbmc.LOGERROR)
@@ -117,7 +117,7 @@ def showNotification(message, time_ms=3000, icon_path=None, header=ADDON.getAddo
 
 
 def service_log(msg, level=xbmc.LOGINFO, realm="Updater"):
-    xbmc.log('script.plexmod/{}: {}'.format(realm, msg), level)
+    xbmc.log('{}/{}: {}'.format(ADDON_ID, realm, msg), level)
 
 
 class KodiLogProxyHandler(logging.Handler):

@@ -112,7 +112,7 @@ def realExit():
         xbmc.executebuiltin('Quit')
 
     elif restart:
-        xbmc.executebuiltin('RunScript(script.plexmod)')
+        xbmc.executebuiltin('RunScript({})'.format(util.ADDON_ID))
     else:
         if not skipEnsureLastUsed and not hadReauth and util.getSetting('ensure_lastused'):
             updateLastUsedAddon()
@@ -189,7 +189,7 @@ exit_timer_started = False
 
 def hardExit():
     util.LOG('Main: script.plexmod: timer hit, triggering hard exit...')
-    xbmc.executebuiltin('StopScript(script.plexmod)')
+    xbmc.executebuiltin('StopScript({})'.format(util.ADDON_ID))
     interrupt_main()
 
 
@@ -246,7 +246,7 @@ def main(force_render=False):
             with util.Cron(1 / util.addonSettings.tickrate):
                 BACKGROUND = background.BackgroundWindow.create(function=_main)
                 if BACKGROUND.waitForOpen():
-                    with kodigui.GlobalProperty('running'):
+                    with kodigui.GlobalProperty('running', util.ADDON_ID):
                         BACKGROUND.modal()
 
                         # we've had an XMLError during modalizing, rebuild templates
@@ -279,7 +279,7 @@ def updateLastUsedAddon():
     """
     try:
         util.setGlobalProperty('ignore_spinner', '1', wait=True)
-        xbmc.executebuiltin("RunAddon(script.plexmod,stub)")
+        xbmc.executebuiltin("RunAddon({},stub)".format(util.ADDON_ID))
         xbmc.executebuiltin('Action(back)')
     finally:
         util.setGlobalProperty('ignore_spinner', '')

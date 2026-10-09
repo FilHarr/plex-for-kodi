@@ -6,7 +6,7 @@ import copy
 
 from .core import engine
 # noinspection PyUnresolvedReferences
-from lib.util import (DEF_THEME, ADDON, PROFILE, getSetting, translatePath, THEME_VERSION, setSetting, DEBUG_LOG, LOG,
+from lib.util import (DEF_THEME, ADDON, ADDON_ID, PROFILE, getSetting, translatePath, THEME_VERSION, setSetting, DEBUG_LOG, LOG,
                       T, MONITOR, xbmcvfs, addonSettings, DISPLAY_RESOLUTION, NEEDS_SCALING)
 from .context import TEMPLATE_CONTEXTS
 from .util import deep_update
@@ -94,12 +94,15 @@ def render_templates(theme=None, templates=None, force=False):
     lastRes = getSetting('last_resolution', "1920x1080").split("x")
     lastSeenRes = [int(lastRes[0]), int(lastRes[1])]
 
-    if curThemeVer != THEME_VERSION or (force or
+    # theme_addon_id: settings migrated from another copy arrive with its theme_version, while the XML on disk
+    # may have been rendered under a different add-on ID (core.py's compile() swaps the ID in)
+    if curThemeVer != THEME_VERSION or getSetting('theme_addon_id', '') != ADDON_ID or (force or
                                        lastSeenRes != DISPLAY_RESOLUTION or
                                        addonSettings.alwaysCompileTemplates or
                                        len(fast_glob(os.path.join(engine.template_dir, "script-plex-*.xml.tpl"))) !=
                                        len(fast_glob(os.path.join(engine.target_dir, "script-plex-*.xml")))):
         setSetting('theme_version', THEME_VERSION)
+        setSetting('theme_addon_id', ADDON_ID)
         setSetting('last_resolution', "x".join(list(map(str, DISPLAY_RESOLUTION))))
         # apply seekdialog button theme
         apply()

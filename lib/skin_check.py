@@ -18,15 +18,20 @@ from .util import T
 
 AUTO = 'auto'
 
+# A renamed copy of the add-on (script.plexmod-uno) has Plextuary builds of its own, renamed the same
+# way (skin.plextuary-uno), carrying the Inter 4 fonts text_metrics.py is measured for
+SKIN_SUFFIX = util.ADDON_ID[len(util.UPSTREAM_ADDON_ID):]
+
 # All three share the same Font.xml for every font we use; they differ in PlayerProcessInfo. font8
 # is only in the releases from August 2026 (pm4k1.13, pm4k1.15ce, 1.15cpm.a14.26) in FilHarr's fork of
-# dontpanickodi; pannal's upstream ones don't have it, and there Kodi falls back to font13 (see
-# _checkSmallFont()).
-VARIANTS = (
+# dontpanickodi, and in the renamed builds; pannal's upstream ones don't have it, and there Kodi falls
+# back to font13 (see _checkSmallFont()).
+VARIANTS = tuple((skin_id + SKIN_SUFFIX, ' '.join([name, SKIN_SUFFIX.lstrip('-').title()]).strip())
+                 for skin_id, name in (
     ('skin.plextuary', 'Plextuary'),
     ('skin.plextuaryce', 'Plextuary CoreELEC'),
     ('skin.plextuarycpm', 'Plextuary CE Custom Builds'),
-)
+                 ))
 
 # Kodi's own "Keep this change?" after the reload reverts by itself after about 10 s
 SKIN_SETTLE_TIMEOUT = 15
@@ -37,8 +42,8 @@ STARTUP_QUIET_PERIOD = 1.5
 # Inter UI, shown by Kodi as "Inter UI (default, bundled)"; text_metrics.py's widths are measured for it
 PLEXTUARY_FONTSET = 'Default'
 
-# The repository serving that fork, beside pannal's "Don't Panic" (repository.dontpanic); back to that
-# one if the font8 releases are merged upstream. Kodi installs whichever carries the higher version.
+# FilHarr's test repository (github.com/FilHarr/maybepanic), serving the renamed add-on and skins beside
+# pannal's "Don't Panic" (repository.dontpanic)
 REPOSITORY_NAME = 'Maybe Panic'
 
 
@@ -49,8 +54,8 @@ def variantName(skin_id):
 def detectedVariant():
     # CE_VS10 is set for the CoreELEC custom builds (U3k, avdvplus, p3i, CPM), which all get the cpm variant
     if util.platformFlavor == 'CoreELEC':
-        return 'skin.plextuarycpm' if util.CE_VS10 else 'skin.plextuaryce'
-    return 'skin.plextuary'
+        return ('skin.plextuarycpm' if util.CE_VS10 else 'skin.plextuaryce') + SKIN_SUFFIX
+    return 'skin.plextuary' + SKIN_SUFFIX
 
 
 def deviceDescription():
@@ -64,14 +69,15 @@ def deviceDescription():
 
 def _target():
     """
-    The variant to offer, or None when the active skin already suits us. With Automatic, any
-    Plextuary variant is fine; an explicit choice has to be the active skin itself.
+    The variant to offer, or None when the active skin already suits us. With Automatic, any of our
+    Plextuary variants is fine (for a renamed copy, not the stock ones); an explicit choice has to be
+    the active skin itself.
     """
     choice = util.getSetting('plextuary_variant', AUTO)
     if choice in dict(VARIANTS):
         return None if xbmc.getSkinDir() == choice else choice
 
-    return None if util.SKIN_PLEXTUARY else detectedVariant()
+    return None if xbmc.getSkinDir() in dict(VARIANTS) else detectedVariant()
 
 
 def _isInstalled(skin_id):
@@ -136,9 +142,10 @@ def check():
     if util.getSetting('plextuary_offer', True):
         _offerSkin()
     # Also after a skin switch or install: either can bring a Plextuary without font8, or keep a
-    # font set other than Default. Each step's "Don't ask/remind" ends the rest.
+    # font set other than Default. Each step's "Don't ask/remind" ends the rest. The update reminder
+    # only for our own variants: a renamed copy's repository doesn't carry the stock ones.
     if util.getSetting('plextuary_offer', True) and util.SKIN_PLEXTUARY:
-        if _checkSmallFont():
+        if xbmc.getSkinDir() in dict(VARIANTS) and _checkSmallFont():
             return True
         if util.getSetting('plextuary_offer', True):
             _offerFontset()

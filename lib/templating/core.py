@@ -9,7 +9,7 @@ from kodi_six import xbmcvfs, xbmc
 from ibis.context import ContextDict
 from lib.logging import log as LOG, log_error as ERROR
 from .util import deep_update
-from ..util import PROFILE
+from ..util import PROFILE, ADDON_ID, UPSTREAM_ADDON_ID
 from lib.os_utils import fast_iglob
 from .filters import *
 
@@ -103,7 +103,13 @@ class TemplateEngine(object):
 
     def compile(self, fn, data):
         template = self.loader(fn)
-        return template.render(data)
+        rendered = template.render(data)
+        if ADDON_ID != UPSTREAM_ADDON_ID:
+            # the templates name the add-on as script.plexmod ($ADDON[] strings, addon_data paths), often in
+            # include-macro arguments where {{ }} can't reach, so a renamed copy swaps in its own ID here
+            rendered = rendered.replace('$ADDON[{} '.format(UPSTREAM_ADDON_ID), '$ADDON[{} '.format(ADDON_ID)) \
+                .replace('addon_data/{}/'.format(UPSTREAM_ADDON_ID), 'addon_data/{}/'.format(ADDON_ID))
+        return rendered
 
     def write(self, template, data, retry=0):
         def ensure_file_exists(file_name, expected_size):

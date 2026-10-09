@@ -1,6 +1,7 @@
 # coding=utf-8
 
 from kodi_six import xbmc
+from .kodi_util import ADDON_ID
 from .settings_util import getSetting
 from .properties_core import _setGlobalProperty
 from plexnet import signalsmixin
@@ -69,7 +70,7 @@ class UtilityMonitor(xbmc.Monitor, signalsmixin.SignalsMixin):
             return
 
         LOG("Notification: {} {} {}".format(sender, method, data))
-        if sender == 'script.plexmod' and method.endswith('RESTORE'):
+        if sender == ADDON_ID and method.endswith('RESTORE'):
             from .windows import kodigui, windowutils
 
             def exit_mainloop():
@@ -77,8 +78,8 @@ class UtilityMonitor(xbmc.Monitor, signalsmixin.SignalsMixin):
                 try:
                     windowutils.HOME.doClose()
                 except:
-                    xbmc.executebuiltin('StopScript(script.plexmod)')
-                    xbmc.executebuiltin('RunScript(script.plexmod)')
+                    xbmc.executebuiltin('StopScript({})'.format(ADDON_ID))
+                    xbmc.executebuiltin('RunScript({})'.format(ADDON_ID))
 
             if not kodigui.BaseFunctions.lastWinID:
                 LOG("No lastWinID, restarting")

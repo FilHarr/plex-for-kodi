@@ -34,7 +34,7 @@ from .logging import log, DEBUG_LOG, LOG, ERROR, setShutdown, showNotification
 from .i18n import T, TRANSLATED_ROLES
 from . import aspectratio
 # noinspection PyUnresolvedReferences
-from .kodi_util import (ADDON, xbmc, xbmcvfs, xbmcaddon, xbmcgui, translatePath, KODI_VERSION_MAJOR, KODI_VERSION_MINOR,
+from .kodi_util import (ADDON, ADDON_ID, UPSTREAM_ADDON_ID, xbmc, xbmcvfs, xbmcaddon, xbmcgui, translatePath, KODI_VERSION_MAJOR, KODI_VERSION_MINOR,
                         KODI_BUILD_NUMBER, FROM_KODI_REPOSITORY, PYTHON_VERSION, ENABLE_HIGH_CONCURRENCY)
 from .properties import setGlobalProperty, setGlobalBoolProperty, waitForGPEmpty, waitForConsumption, getGlobalProperty
 # noinspection PyUnresolvedReferences
@@ -51,18 +51,18 @@ PROFILE = translatePath(ADDON.getAddonInfo('profile'))
 
 
 DEF_THEME = "modern-colored"
-THEME_VERSION = 98
+THEME_VERSION = 1
 
 UI_INTERVAL = 1 / float(addonSettings.uiWaitRate)
 
 MONITOR.wait_interval = UI_INTERVAL
 
-xbmc.log('script.plexmod: Kodi {0}.{1} (build {2}, Python: {3}, '
+xbmc.log(ADDON_ID + ': Kodi {0}.{1} (build {2}, Python: {3}, '
          'High concurrency possible: {4})'.format(KODI_VERSION_MAJOR, KODI_VERSION_MINOR, KODI_BUILD_NUMBER,
                                          PYTHON_VERSION, ENABLE_HIGH_CONCURRENCY),
          xbmc.LOGINFO)
 
-xbmc.log('script.plexmod: UI wait rate is {0} ({1} Hz)'.format(UI_INTERVAL, addonSettings.uiWaitRate),
+xbmc.log(ADDON_ID + ': UI wait rate is {0} ({1} Hz)'.format(UI_INTERVAL, addonSettings.uiWaitRate),
          xbmc.LOGINFO)
 
 def getChannelMapping():

@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 import sys
-from lib.kodi_util import ensureHome, xbmc
+from lib.kodi_util import ensureHome, xbmc, ADDON_ID
 
 
 def main():
@@ -13,7 +13,7 @@ def main():
         pass
     # This is a hack since it's both a plugin and a script. My Addons and Shortcuts otherwise can't launch the add-on
     ensureHome()
-    xbmc.executebuiltin('RunScript(script.plexmod,fromplugin)')
+    xbmc.executebuiltin('RunScript({},fromplugin)'.format(ADDON_ID))
 
 
 main()

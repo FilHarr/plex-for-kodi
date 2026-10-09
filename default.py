@@ -6,7 +6,7 @@ import sys
 
 from lib.logging import log, KodiLogProxyHandler
 # noinspection PyUnresolvedReferences
-from lib.kodi_util import translatePath, xbmc, xbmcgui
+from lib.kodi_util import translatePath, xbmc, xbmcgui, UPSTREAM_ADDON_ID
 from lib.properties import getGlobalProperty, setGlobalProperty
 from tendo_singleton import SingleInstance, SingleInstanceException
 
@@ -42,10 +42,14 @@ started = False
 set_waiting_for_start = False
 try:
     # reactivate/maximize
-    if getGlobalProperty('running'):
+    # 'running' is shared by every copy of the add-on (script.plex.* properties) and holds the running copy's
+    # ID, so RESTORE goes to that copy, which may not be us. Versions before this set '1'.
+    running = getGlobalProperty('running')
+    if running:
         try:
-            log('Main: script.plexmod: Trying to reactivate minimized addon')
-            xbmc.executebuiltin('NotifyAll({0},{1},{2})'.format('script.plexmod', 'RESTORE', '{}'))
+            log('Main: {}: Trying to reactivate minimized addon', running)
+            xbmc.executebuiltin('NotifyAll({0},{1},{2})'.format(
+                running if running != '1' else UPSTREAM_ADDON_ID, 'RESTORE', '{}'))
         except:
             log('Main: script.plexmod: Already running or faulty, couldn\'t reactivate other instance, exiting.')
         else:

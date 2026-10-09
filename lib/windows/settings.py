@@ -493,7 +493,9 @@ class Settings(object):
                 .description(T(34074, "Automatically temporarily activate LAV Full or SB mode in CoreELEC on "
                                       "supported builds to alleviate audio dropouts on certain titles, if necessary. "
                                       "Based on \"seamless_branching.json\", can be user-amended by putting a file "
-                                      "with the same name and structure into userdata/addon_data/script.plexmod."))
+                                      "with the same name and structure into userdata/addon_data/script.plexmod.")
+                             # every translation names the path literally
+                             .replace('addon_data/' + util.UPSTREAM_ADDON_ID, 'addon_data/' + util.ADDON_ID))
                 if util.CE_SB_LAV_SWITCH else None,
                 BoolSetting(
                     'assume_resume', T(33711, 'Always resume media'), True

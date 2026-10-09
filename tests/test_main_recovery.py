@@ -77,7 +77,7 @@ class MainRecoveryTest(KodiTestCase):
         patch(main.util, 'Cron', FakeCron(self))
         patch(main.util, 'cleanupCacheFolder', lambda: self.events.append('cleanup'))
         patch(main.util, 'LOG', log)
-        patch(main.kodigui, 'GlobalProperty', lambda name: contextlib.contextmanager(lambda: (yield))())
+        patch(main.kodigui, 'GlobalProperty', lambda name, val='1': contextlib.contextmanager(lambda: (yield))())
         patch(main.background.BackgroundWindow, 'create', staticmethod(create))
         self.addCleanup(lambda: [setattr(obj, name, value) for (obj, name), value in saved.items()])
 
