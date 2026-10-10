@@ -1,3 +1,14 @@
+[-0.1.1-]
+- Home and Recommended: Refresh Hubs is now last on every row item's menu (no longer in the sidebar's), and refreshes the rows in place - your row, item and focus stay
+- Home and Recommended: Remove from Continue Watching, Mark Played and Mark Unplayed update the rows in place instead of reopening the screen
+- Rows: a row brought back lands on the item you were on; on its last item if the row has shrunk, and at its start if that's where it was
+- Episodes: new episodes appear after playback and after the screensaver or sleep, without leaving the screen
+- Episodes: back from playback lands on the next episode, even after autoplay through a long season
+- Episodes: single-season shows (Seasons hidden) now pick up what was watched after playback
+- Seasons: counts, ticks and the Play/Resume episode update after playback and after the screensaver or sleep
+- Fixed: a library's rows going blank when a refresh couldn't reach its server
+- Fixed: an error when paging through a long season
+
 [-0.1.0-]
 Plex Uno (script.plexmod-uno): a reworked fork of PlexMod for Kodi that installs beside the stock add-on. Based on PlexMod 1.14.1 (2707bbe7).
 
