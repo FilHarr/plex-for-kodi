@@ -235,9 +235,40 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
     def onReInit(self):
         PlaybackBtnMixin.onReInit(self)
+        # Shown again - back from playing the show, mostly: its seasons, counts and Play/Resume moved on
+        self._refreshShow('shown again')
         self.wl_auto_remove(self.mediaItem)
         self.checkIsWatchlisted(self.mediaItem)
         self.themeMusicReinit(self.mediaItem)
+
+    def _refreshShow(self, reason):
+        """The show fetched again and the screen redrawn from it: the season row and tabs (new
+        seasons, each one's unwatched count and tick), and the Play/Resume button's episode and time
+        left (its on-deck pick). Back from playback (onReInit()) they stood as they were before it
+        (the user, 2026-10-10); after the screensaver or sleep (refreshAfterIdle()) too. Waits for
+        the stop's timeline report to reach the server first, as Episodes does
+        (EpisodesWindow._settleProgressWithServer()) - it decides what was watched."""
+        if not self.initialized or self.isExternal:
+            return
+        plexapp.util.APP.nowplayingmanager.waitForTimelines(episodes.TIMELINE_WAIT)
+        try:
+            self.mediaItem.reload(includeExtras=1, includeExtrasCount=10, includeOnDeck=1)
+        except Exception as e:
+            util.DEBUG_LOG('Show: not refreshed ({0}): {1}', reason, e)
+            return
+        util.DEBUG_LOG('Show: refreshed ({0})', reason)
+        # the Play label's background pick (resolvePlayButtonEpisode()) asked again: what's left
+        # to watch has moved
+        self.playLabelResolvedFor = None
+        self.updateProperties()
+        self.fill(update=True)
+
+    def refreshAfterIdle(self, reason):
+        """The screensaver, a blanked display or sleep ended (LibraryWindow.refreshAfterIdle(), the
+        host's): seasons and watch state may have moved meanwhile."""
+        if xbmc.Player().isPlayingVideo():
+            return
+        self._refreshShow(reason)
 
     def setup(self, timing=None):
         if self.isExternal:
@@ -1266,6 +1297,11 @@ class ArtistWindow(ShowWindow):
     def onReInit(self):
         ShowWindow.onReInit(self)
         self.updatePopularPlayingHere()
+
+    def _refreshShow(self, reason):
+        # A show's (seasons, Play/Resume): an artist's screen has neither, and its fill() takes no
+        # update - not refreshed, shown again or after idle.
+        pass
 
     def doClose(self, **kw):
         player.PLAYER.off('started.audio', self.updatePopularPlayingHere)

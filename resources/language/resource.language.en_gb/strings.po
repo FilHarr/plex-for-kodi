@@ -3824,3 +3824,7 @@ msgstr ""
 msgctxt "#35174"
 msgid "{0} days ago"
 msgstr ""
+
+msgctxt "#35175"
+msgid "Couldn't refresh the rows from {0}"
+msgstr ""

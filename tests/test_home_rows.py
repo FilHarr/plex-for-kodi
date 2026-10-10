@@ -617,6 +617,65 @@ class RebindInPlaceTest(KodiTestCase):
         self.win.setFocusId.assert_not_called()
         self.assertEqual([self.films, self.tv], self.win.visibleHubs)
 
+    def unanswered_refresh(self, manual):
+        rows = home.HubsList([self.fresh(self.oscarFilms)]).init()
+        rows.unanswered = [ANIMAL]
+        manager = mock.Mock(serversByUuid={ANIMAL: self.animal, OSCAR: self.oscar})
+        with mock.patch.object(library_hubs.plexapp, 'SERVERMANAGER', manager), \
+                mock.patch.object(library_hubs.util, 'showNotification') as notify:
+            self.win._rebindHubsInPlace(home.home_section, rows, 7, 'test', manual=manual)
+        return notify
+
+    def test_refresh_hubs_names_a_server_that_gave_no_rows(self):
+        notify = self.unanswered_refresh(manual=True)
+        self.assertIn('Animal', notify.call_args[0][0])
+        self.win._bindAllHubSlots.assert_not_called()
+
+    def test_a_timed_refresh_says_nothing(self):
+        self.unanswered_refresh(manual=False).assert_not_called()
+
+    def test_a_librarys_failed_fetch_keeps_what_shows(self):
+        """SectionHubsTask hands a failed fetch over as an empty, invalid list: bound, it emptied
+        the library's rows."""
+        rows = home.HubsList([]).init()
+        rows.invalid = True
+        self.win._rebindHubsInPlace(home.home_section, rows, 7, 'every 5 minutes')
+        self.win._bindAllHubSlots.assert_not_called()
+        self.assertEqual([self.films, self.tv], self.win.visibleHubs)
+
+
+class ReselectIndexTest(KodiTestCase):
+    """Where a row lands when it's bound again (_reselectIndex()): its remembered item wherever it
+    is now; that gone, the place it was, kept within the row."""
+
+    def setUp(self):
+        super(ReselectIndexTest, self).setUp()
+        self.win = library.LibraryWindow.__new__(library.LibraryWindow)
+        self.win.section = mock.Mock(key='1')
+        self.hub = Hub('movie.inprogress', [], None)
+        self.win._hubReselectPositions = {'movie.inprogress': ('13', 3)}
+
+    def items(self, *keys):
+        return [mock.Mock(ratingKey=key) for key in keys]
+
+    def test_the_remembered_item_wherever_it_is_now(self):
+        self.assertEqual(1, self.win._reselectIndex(self.hub, self.items('10', '13', '11', '12')))
+
+    def test_that_gone_the_place_it_was(self):
+        self.assertEqual(3, self.win._reselectIndex(self.hub, self.items('10', '11', '12', '14', '15')))
+
+    def test_the_row_shrunk_past_it_its_last_item(self):
+        self.assertEqual(2, self.win._reselectIndex(self.hub, self.items('10', '11', '12')))
+
+    def test_at_the_start_the_start_with_an_item_new_in_front(self):
+        """Left back to the first item remembers it: followed, an item new in front was off-screen."""
+        self.win._hubReselectPositions = {'movie.inprogress': ('10', 0)}
+        self.assertEqual(0, self.win._reselectIndex(self.hub, self.items('9', '10', '11')))
+
+    def test_nothing_remembered_the_first(self):
+        self.win._hubReselectPositions = {}
+        self.assertEqual(0, self.win._reselectIndex(self.hub, self.items('10', '11')))
+
 
 class FailedFetchTest(KodiTestCase):
     """A server that stops answering while giving Home's rows didn't answer: its empty list isn't

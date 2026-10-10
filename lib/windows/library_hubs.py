@@ -1506,8 +1506,8 @@ class HubsMixin(object):
         the no-op-to-items[0] stand-in _prepareHubSlideHero()'s docstring used to describe; mirrors
         _bindHubToControl()'s own reselect resolution (ratingKey first, then position), reading
         the same self._hubReselectPositions entry that method will use moments later. Falls back
-        to the hub's first item when there's no remembered position (never-visited hub) or it
-        can't be resolved (the hub's content shrank).
+        to the hub's first item when there's no remembered position (never-visited hub); the
+        resolving itself is _reselectIndex()'s, shared with that method.
 
         Every remembered position is within hub.items by construction now: a row holds at most
         home.HUB_ROW_MAX_ITEMS, all fetched up front (SectionHubsTask), so the old reach-extension
@@ -1515,16 +1515,9 @@ class HubsMixin(object):
         position reached by in-row pagination last visit) is gone along with that pagination."""
         if not hub.items:
             return None
-        reselect = self._hubReselectPositions.get(self.hubMemoryKey(hub))
-        if reselect:
-            rk, pos = reselect
-            if rk is not None:
-                for item in hub.items:
-                    if item.ratingKey and str(item.ratingKey) == rk:
-                        return item
-            if pos is not None and 0 <= pos < len(hub.items):
-                return hub.items[pos]
-        return hub.items[0]
+        # the row's items, as _bindHubToControl() caps them
+        items = hub.items[:home.HUB_ROW_MAX_ITEMS]
+        return items[self._reselectIndex(hub, items)]
 
     def _resetHubsToTop(self):
         """The Home rule's in-place half (onReInit()'s go_root branch, when Home is already the
@@ -2008,12 +2001,9 @@ class HubsMixin(object):
           `toggleWatched(mli, ...)` (takes a ManagedListItem, not a raw item) and a direct
           `updateUnwatchedAndProgress(mli)` call instead. HomeWindow's `_updateOnDeckHubs()` is a
           background-task machinery (UpdateHubTask/getCurrentHubsPositions) tied to Home's own
-          incremental hub-refresh system, which this window doesn't have (its hubs are fetched once
-          per section swap, see `_recommendedHubsCallback()`'s own docstring) - not ported. Mark
-          watched/unwatched here only updates the tile's own display in place; the hub's item *list*
-          itself (e.g. an item newly eligible for On Deck) stays as it was until the section is next
-          reopened, a known, accepted narrowing matching this window's existing simpler hub-refresh
-          model elsewhere.
+          incremental hub-refresh system - not ported. Marking updates the tile at once, and the
+          rows are then fetched again in place (refreshHubsInPlace()), as after Remove from
+          Continue Watching and for the menu's own Refresh Hubs, last on every item's menu.
         - `add_to_home` (adding a library's hub to Home as a cross-section hub) is not ported at
           all - it depends on `_crossSectionSource`/`getCombinedHubsForSection()`-style cross-section
           hub aggregation, none of which exists on this window (Manage Hubs' own port explicitly
@@ -2083,8 +2073,10 @@ class HubsMixin(object):
             if 'items' in util.getSetting('cache_requests'):
                 options.append({'key': 'cache_reset', 'display': T(33728, "Clear cache for item")})
 
-        if not options:
-            return
+        # Last, for every item: the rows fetched again, in place (refreshHubsInPlace())
+        if options:
+            options.append(dropdown.SEPARATOR)
+        options.append({'key': 'refresh_hubs', 'display': T(34096, "Refresh Hubs")})
 
         choice = dropdown.showDropdown(
             options,
@@ -2120,6 +2112,11 @@ class HubsMixin(object):
                 mli.dataSource.markUnwatched()
                 self.updateUnwatchedAndProgress(mli)
 
+            # The tile's ticks are updated above; the rows themselves are fetched again, in place:
+            # a film marked played leaves Continue Watching, an episode moves On Deck along. (A
+            # show or season's "No" at toggleWatched()'s confirm only refetches the rows unchanged.)
+            self.refreshHubsInPlace(choice["key"].replace('_', ' '), manual=True)
+
         elif choice["key"] == "remove_cw":
             if util.getSetting('home_confirm_actions'):
                 button = optionsdialog.show(
@@ -2133,11 +2130,11 @@ class HubsMixin(object):
                 if button != 0:
                     return
 
+            # The server has dropped it by the time this returns (the PUT is waited for), so the rows
+            # fetched again, in place, are without it: the row lands on the item that was next
+            # (_reselectIndex()). Was a reopen of the section, back on its first row.
             ds.removeFromContinueWatching()
-            # Force a reopen (unlike mark_watched/mark_unwatched's in-place tile update) - the
-            # whole point of removing an item from Continue Watching is for it to disappear from
-            # the hub, which an in-place property update on this one tile can't do.
-            return self.section
+            self.refreshHubsInPlace('removed from continue watching', manual=True)
 
         elif choice["key"] == "to_show":
             try:
@@ -2185,6 +2182,9 @@ class HubsMixin(object):
                 ds.clearCache()
             except Exception as e:
                 util.DEBUG_LOG("Couldn't clear cache: {}", e)
+
+        elif choice["key"] == "refresh_hubs":
+            self.refreshHubsInPlace('refresh hubs', manual=True)
 
     @staticmethod
     def promotedHubSourceKey(hub_identifier):
@@ -2340,8 +2340,8 @@ class HubsMixin(object):
         # Reselect-position memory (plan item 10, Group A) - ported from
         # HomeWindow._hubReselectPositions, restored here since every rebind path (the initial
         # full bind and _startHubSlide()'s wrap-control rebind) funnels through this one method.
-        # ratingKey resolution first, falling back to the stored position; the bounds check is
-        # for a position that no longer exists (the hub's real content shrank). No "select ahead,
+        # ratingKey resolution first, falling back to the stored position, kept within the row
+        # (_reselectIndex()). No "select ahead,
         # then back" any more: the row is a fixedlist now (script-plex-recommended.xml.tpl), which
         # places a selected item deterministically (pinned at the row's start, or spread across
         # the last slots when the tail fits), not "scrolled the minimum to bring it on-screen".
@@ -2356,16 +2356,31 @@ class HubsMixin(object):
         # Item 0 unless there's a remembered position: the native control keeps whatever it had
         # selected across replaceItems()/reset(), which may belong to a different hub (a slide's
         # wrap rebind) or to before an in-place Home reset (_resetHubsToTop()).
-        selected = 0
-        reselect = self._hubReselectPositions.get(self.hubMemoryKey(hub))
-        if reselect and items:
-            rk, pos = reselect
-            resolved = next((i for i, mli in enumerate(items)
-                              if mli.dataSource and str(mli.dataSource.ratingKey) == rk), pos)
-            if resolved is not None and 0 <= resolved < len(items):
-                selected = resolved
+        # (See more, last, has no dataSource: never landed on.)
         if items:
-            control.selectItem(selected)
+            control.selectItem(self._reselectIndex(hub, [mli.dataSource for mli in items if mli.dataSource]))
+
+    def _reselectIndex(self, hub, objs):
+        """Where hub's row lands among objs, its items: on its remembered item
+        (_hubReselectPositions), wherever that is now; that gone, the place it was, or the row's
+        last item when the row no longer reaches that far (the user, 2026-10-10: it went back to
+        the first); item 0 with nothing remembered, or when the row was at its start, however it
+        got there: an item new at the front is landed on, not left off-screen to the left of the
+        old first (the user, 2026-10-10). _bindHubToControl() and the hero's
+        _previewSelectedItem() both ask here, so they agree."""
+        reselect = self._hubReselectPositions.get(self.hubMemoryKey(hub))
+        if not reselect or not objs:
+            return 0
+        rk, pos = reselect
+        if not pos:
+            return 0
+        if rk is not None:
+            for i, obj in enumerate(objs):
+                if obj.ratingKey and str(obj.ratingKey) == rk:
+                    return i
+        if pos < 0:
+            return 0
+        return min(pos, len(objs) - 1)
 
     def _recommendedHubsFetchedFor(self, generation):
         """SectionHubsTask's callback for a fetch on a worker (onFirstInit()'s 'recommended'
@@ -2552,12 +2567,18 @@ class HubsMixin(object):
         return [(self.hubMemoryKey(hub), [getattr(item, 'ratingKey', None) or id(item) for item in hub.items])
                 for hub in hubs]
 
-    def _rebindHubsInPlace(self, section, hubs, generation, reason=''):
+    def _notifyRowsKept(self, names):
+        """The hub items' Refresh Hubs got no rows from names: the rows showing are theirs still."""
+        if names:
+            util.showNotification(T(35175, "Couldn't refresh the rows from {0}").format(names), time_ms=5000)
+
+    def _rebindHubsInPlace(self, section, hubs, generation, reason='', manual=False):
         """The Recommended view's rows fetched again (refreshHubsInPlace(), a late server's), bound
         over the ones showing without rebuilding the view (plan 7.3, agreed 2026-10-02): the row
         that was the anchor stays it (found by hubMemoryKey(), else the nearest place), the ring
         keeps its rotation, each row its item (_bindHubToControl()'s reselect memory), and focus
-        stays where it is. Nothing happens when the rows show what they did."""
+        stays where it is. Nothing happens when the rows show what they did. manual: the hub
+        items' Refresh Hubs, which says when rows were kept for a server that gave none."""
         if generation != self._listGeneration or self.closing or self.contentMode != 'recommended':
             return
         with self.lock:
@@ -2574,6 +2595,19 @@ class HubsMixin(object):
                 # (onServerRecovered()).
                 util.DEBUG_LOG('Library: hub rows kept ({0}): {1} gave none', reason, len(unanswered))
                 self.updateServerUnavailable()
+                if manual:
+                    servers = plexapp.SERVERMANAGER.serversByUuid
+                    names = [servers[uuid].name for uuid in unanswered if uuid in servers]
+                    self._notifyRowsKept(', '.join(names))
+                return
+            if getattr(hubs, 'invalid', False) and self.visibleHubs:
+                # A library's fetch failed (SectionHubsTask): the rows showing stay, as above. A
+                # refusal (a 429 rate limit, say) says nothing on its own, so a manual refresh says
+                # so; any other failure has had its own toast.
+                util.DEBUG_LOG('Library: hub rows kept ({0}): the fetch failed', reason)
+                self.updateServerUnavailable()
+                if manual and getattr(hubs, 'error', None) is not None:
+                    self._notifyRowsKept(getattr(section.server, 'name', ''))
                 return
             new = self._visibleHubsFor(section, hubs)
             if self._hubsSignature(new) == self._hubsSignature(self.visibleHubs or []):

@@ -110,6 +110,9 @@ class EpisodesPaginator(pagination.MCLPaginator):
     episode. Neither edge is ever rewound or re-sliced once fetched - only ever extended further out.
     """
     thumbFallback = 'script.plex/thumb_fallbacks/show.png'
+    # One-shot, for a rebuild (EpisodesWindow._rebuildEpisodeListIfStale()): the episode the
+    # initial page centres on instead of parentWindow.episode; False for none (from the start)
+    centerEpisode = None
     _currentEpisode = None
     _rightOffset = 0
     _seasonCardInserted = False
@@ -180,7 +183,8 @@ class EpisodesPaginator(pagination.MCLPaginator):
 
     @property
     def initialPage(self):
-        episode = self.parentWindow.episode
+        episode = self.parentWindow.episode if self.centerEpisode is None else self.centerEpisode
+        self.centerEpisode = None
         offset = 0
         amount = self.initialPageSize
         if episode:
@@ -928,7 +932,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             vp = None
             if self.show_.ratingKey in VIDEO_PROGRESS:
                 # access progress data for current show only
-                vp = copy.deepcopy(VIDEO_PROGRESS[self.show_.ratingKey]).get(self.season.ratingKey, {})
+                vp = copy.deepcopy(VIDEO_PROGRESS[self.show_.ratingKey]).get(self._progressSeasonKey(), {})
 
             if vp:
                 self.show_.reload(checkFiles=1, **VIDEO_RELOAD_KW)
@@ -1018,7 +1022,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         vp = None
         if self.show_.ratingKey in VIDEO_PROGRESS:
             # access progress data for current show only
-            vp = copy.deepcopy(VIDEO_PROGRESS[self.show_.ratingKey]).get(self.season.ratingKey, {})
+            vp = copy.deepcopy(VIDEO_PROGRESS[self.show_.ratingKey]).get(self._progressSeasonKey(), {})
 
         if (self.manuallySelected and not VIDEO_PROGRESS) or self.cameFrom in ("info", "show", "library"):
             if self.cameFrom in ("info", "show", "library"):
@@ -1030,6 +1034,13 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         self.manuallySelected = False
         self._settleProgressWithServer()
+        # The list built again first if the pick below couldn't reach the episode to land on:
+        # episodes added while it played (or deleted), or the one after the last played not loaded
+        # - autoplay through a long season runs past the page loaded around where Play was pressed,
+        # and the pick stayed there (the user, 2026-10-10). Centred on the last played (onNewVideo())
+        # when it's this season's, else on the one selected.
+        played = self.episode if self._isThisSeasons(self.episode) else None
+        self._rebuildEpisodeListIfStale('back from playback', center=played, need_after=played)
         util.DEBUG_LOG("Episodes: {}: Got progress info: {}, came from: {}".format(
             self.episode and self.episode.ratingKey or None, VIDEO_PROGRESS, self.cameFrom))
         try:
@@ -1217,7 +1228,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         if progress_data or not self.season.isFullyWatched:
             if progress_data:
                 # check for progress data in current season
-                progress_data_left = progress_data.pop(self.season.ratingKey, None)
+                progress_data_left = progress_data.pop(self._progressSeasonKey(), None)
                 had_progress_data = bool(progress_data_left)
 
             for mli in self.episodeListControl:
@@ -1502,7 +1513,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         the server's call (the user, 2026-10-05); this screen used to decide, by its own threshold,
         and mark episodes watched itself. If the server doesn't answer, the player's positions
         stand."""
-        season = VIDEO_PROGRESS.get(self.show_.ratingKey, {}).get(self.season.ratingKey)
+        season = VIDEO_PROGRESS.get(self.show_.ratingKey, {}).get(self._progressSeasonKey())
         if not season:
             return
         played = [mli.dataSource for mli in self.episodeListControl
@@ -1527,6 +1538,92 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             watched = ep.get('viewCount', 0).asInt() > before[ep.ratingKey]
             season[ep.ratingKey] = True if watched else ep.get('viewOffset', 0).asInt()
         util.DEBUG_LOG('Episodes: the server says, of the episodes played: {0}', season)
+
+    def _progressSeasonKey(self):
+        """This list's key in VIDEO_PROGRESS[show]: the player files progress under each episode's
+        season (onVideoProgress()), which is self.season's ratingKey - except for a skipChildren
+        show, whose self.season is the show (reset()): there it's the season its episodes are in.
+        Looked up by the show's key, every return from playback found nothing for one (the user,
+        2026-10-10): the server was never asked what was watched, and the episode just finished
+        stayed selected."""
+        if self.season is not self.show_:
+            return self.season.ratingKey
+        for mli in getattr(self, 'episodeListControl', None) or ():
+            if mli.dataSource is not None:
+                return mli.dataSource.parentRatingKey
+        # no list (onBlindClose()): a single-season show's progress is all under its one season
+        seasons = list(VIDEO_PROGRESS.get(self.show_.ratingKey, {}).keys())
+        return seasons[0] if len(seasons) == 1 else self.season.ratingKey
+
+    def _isThisSeasons(self, episode):
+        """Whether episode is in this screen's list: this season's, or for a skipChildren show (where
+        self.season is the show, reset()) the show's."""
+        if episode is None or not self.season:
+            return False
+        if self.season is self.show_:
+            return str(episode.grandparentRatingKey) == str(self.show_.ratingKey)
+        return str(episode.parentRatingKey) == str(self.season.ratingKey)
+
+    def _rebuildEpisodeListIfStale(self, reason, center=None, keep_selection=False, need_after=None):
+        """The season reloaded - its watched counts too, which selectEpisode() reads - and the list
+        built again if its episode count has moved since it was built (episodes added while away, or
+        deleted: the paginator only ever reaches as far as the count it was given, so new ones at
+        the end couldn't be scrolled to), or if the episode after need_after isn't loaded
+        (_nextIsLoaded()). Centred on center, else on the episode selected (from the start on the
+        season card); keep_selection selects that episode again (or the card) once rebuilt.
+        Returns whether it rebuilt."""
+        paginator = self.episodesPaginator
+        if not paginator or not self.season or self.closing:
+            return False
+        try:
+            self.season.reload(**VIDEO_RELOAD_KW)
+        except Exception as e:
+            util.DEBUG_LOG('Episodes: the season did not reload ({0}): {1}', reason, e)
+            return False
+        count = int(self.season.leafCount)
+        if count != paginator.leafCount:
+            util.DEBUG_LOG('Episodes: {0} episodes, not {1} ({2}): the list built again', count,
+                           paginator.leafCount, reason)
+        elif need_after is not None and not self._nextIsLoaded(need_after):
+            util.DEBUG_LOG('Episodes: the episode after {0} isn\'t loaded ({1}): the list built again',
+                           need_after.ratingKey, reason)
+        else:
+            return False
+
+        selected = self.episodeListControl.getSelectedItem()
+        selectedEpisode = selected.dataSource if selected is not None else None
+        onCard = bool(selected is not None and selected.getProperty('is.season.card'))
+        # the reloads still to come are for the list going
+        self.tasks.cancel()
+        paginator.reset()
+        paginator.leafCount = count
+        paginator.centerEpisode = center or selectedEpisode or False
+        self.fillEpisodes(update=True)
+
+        if keep_selection and (onCard or selectedEpisode is not None):
+            for pos, mli in enumerate(self.episodeListControl):
+                if (mli.getProperty('is.season.card') if onCard
+                        else mli.dataSource is not None and mli.dataSource.ratingKey == selectedEpisode.ratingKey):
+                    self.episodeListControl.selectItem(pos)
+                    self.lastItem = mli
+                    break
+        return True
+
+    def _nextIsLoaded(self, episode):
+        """Whether the list holds the episode after episode, or episode is the season's last: not
+        when episode isn't loaded at all, or a right boundary marker (more to page in) follows it."""
+        items = list(self.episodeListControl)
+        for pos, mli in enumerate(items):
+            if mli.dataSource is not None and str(mli.dataSource.ratingKey) == str(episode.ratingKey):
+                return pos + 1 == len(items) or not items[pos + 1].getProperty('right.boundary')
+        return False
+
+    def refreshAfterIdle(self, reason):
+        """The screensaver, a blanked display or sleep ended (LibraryWindow.refreshAfterIdle(), the
+        host's): episodes may have been added meanwhile. The selection stays."""
+        if not self.initialized or self.closing or xbmc.Player().isPlayingVideo():
+            return
+        self._rebuildEpisodeListIfStale(reason, keep_selection=True)
 
     def onVideoProgress(self, data=None, **kwargs):
         if not data:
@@ -2692,7 +2789,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.lastItem = cur_mli
             self.updateMediaInfoPills(cur_mli)
             self.setBoolProperty('current_item.loaded', True)
-        elif cur_mli and cur_mli.getProperty("is.boundary"):
+        elif cur_mli and cur_mli.getProperty("is.boundary") and not cur_mli.getProperty("is.season.card"):
+            # A paging marker, selected while its page loads (checkForHeaderFocus()): nothing to
+            # load for it. It matched the season card's branch below, is.boundary too, whose
+            # updateExtrasHeader() read its missing dataSource's index (live 2026-10-10).
+            pass
+        elif cur_mli and cur_mli.getProperty("is.season.card"):
             # Season card (createSeasonCardItem() - has no dataSource, deliberately) selected
             # initially - e.g. entering a completely unwatched season from Seasons, where
             # _defaultEpisode() deliberately lands on the season card rather than episode 1. There's
@@ -2788,6 +2890,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         for ep, with_progress in episodes:
             # todo: implement hashmap over datasource:mli?
             mli = self.episodeListControl.getListItemByDataSource(ep)
+            if mli is None:
+                # gone from the list since: deleted, or the list built again
+                # (_rebuildEpisodeListIfStale())
+                continue
             self._reloadItem(mli, with_progress=with_progress, set_item_info=set_item_info)
         try:
             task.episodes = None

@@ -223,6 +223,19 @@ class NowPlayingManager(object):
                 util.ERROR()
 
             container = getattr(response, "container", None)
+            # What the server made of the report, which its status (200 regardless) doesn't say:
+            # the reply's playbackState - "ignore" (thrown away), "progress" (resume point kept) or
+            # "complete" (marked played). A report past the played threshold is ignored when the
+            # session has had no progress accepted yet - start, seek straight to the end, stop:
+            # nothing recorded (live on both servers, 2026-10-10). The request lines' own log is cut
+            # short at the masked token, status and all.
+            path = getattr(context.request, "path", "") or ""
+            query = dict(six.moves.urllib.parse.parse_qsl(path.partition("?")[2]))
+            event = getattr(response, "event", None)
+            util.DEBUG_LOG("NowPlaying: timeline {0} at {1} for {2}: HTTP {3}, playbackState={4}".format(
+                query.get("state"), query.get("time"), query.get("ratingKey"),
+                event.status_code if event is not None else None,
+                container.get("playbackState") if container is not None else None))
             if container is not None:
                 try:
                     terminationCode = container.get("terminationCode", "-1").asInt()

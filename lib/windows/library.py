@@ -1769,11 +1769,12 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # thread (_onWake()) and posts the refresh (refreshLastSection()).
             (util.MONITOR, 'system.sleep', self._onSleep),
             (util.MONITOR, 'system.wakeup', self._onWake),
-            # the screensaver or a blanked display ending: the rows may well have moved on
+            # the screensaver or a blanked display ending: the rows may well have moved on, and a
+            # season's episodes (refreshAfterIdle())
             (util.MONITOR, 'screensaver.deactivated', self._postedHandler(
-                'refresh after screensaver', lambda *a, **k: self.refreshHubsInPlace('screensaver'))),
+                'refresh after screensaver', lambda *a, **k: self.refreshAfterIdle('screensaver'))),
             (util.MONITOR, 'dpms.deactivated', self._postedHandler(
-                'refresh after display sleep', lambda *a, **k: self.refreshHubsInPlace('display'))),
+                'refresh after display sleep', lambda *a, **k: self.refreshAfterIdle('display'))),
             # Settings' update source; passed on to the update checker by tick()
             (plexapp.util.APP, 'change:update_source', self._onUpdateSourceChanged),
         )
@@ -1937,10 +1938,25 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     def refreshLastSection(self, *args, **kwargs):
         """After waking from sleep: the section's rows were fetched before it, and Continue
         Watching or Recently Added may well have moved on since - fetched again and rebound in
-        place (refreshHubsInPlace(), which says when it doesn't)."""
+        place (refreshHubsInPlace(), which says when it doesn't) - or the screen showing, if it
+        refreshes after idle (refreshAfterIdle())."""
         self._ignoreTick = False
         plexapp.SERVERMANAGER.resumeOfflineRetry()
-        self.refreshHubsInPlace('wake')
+        self.refreshAfterIdle('wake')
+
+    def refreshAfterIdle(self, reason):
+        """The screensaver, a blanked display or sleep ended: what's showing may have moved on
+        meanwhile. The Recommended view's rows fetched again in place (refreshHubsInPlace()), or a
+        hosted screen's own refreshAfterIdle(), for the screens that have one (the Episodes
+        screen's: episodes added meanwhile). Looked up on the screen's class, not the instance:
+        a view's __getattr__ can hand a missing name on to this window."""
+        current = self.__dict__.get('_current')
+        if self._isHostedShell and current is not None:
+            refresh = getattr(type(current), 'refreshAfterIdle', None)
+            if refresh is not None:
+                refresh(current, reason)
+            return
+        self.refreshHubsInPlace(reason)
 
     def reloadHomeRows(self, reason):
         """Home's rows depend on the sidebar - which libraries it has, and with no saved Home order
@@ -2375,24 +2391,27 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.tasks.add(task)
         backgroundthread.BGThreader.addTasksToFront([task])
 
-    def _hubsRefetchedFor(self, generation, reason):
+    def _hubsRefetchedFor(self, generation, reason, manual=False):
         """A fetch's callback that rebinds the rows in place (_rebindHubsInPlace()), on the main
         thread."""
         def callback(section, hubs, reselect_pos_dict=None):
-            self.postUI('rebind hubs', self._rebindHubsInPlace, args=(section, hubs, generation, reason))
+            self.postUI('rebind hubs', self._rebindHubsInPlace, args=(section, hubs, generation, reason),
+                        kwargs={'manual': manual})
         return callback
 
-    def refreshHubsInPlace(self, reason):
+    def refreshHubsInPlace(self, reason, manual=False):
         """Fetch the Recommended view's rows again and rebind them over the ones showing
-        (_rebindHubsInPlace()) - Home's every 5 minutes, after the screensaver, a blanked display or
-        sleep, and as its servers come and go (plan 7.3). Not with a screen chain open (its rows
-        aren't on screen; it's refreshed on the way back), the grid showing, or a video playing."""
+        (_rebindHubsInPlace()) - every 5 minutes, after the screensaver, a blanked display or
+        sleep, Home's as its servers come and go (plan 7.3), and the hub items' Refresh Hubs
+        (manual: says when a server's rows couldn't be refreshed). Not with a screen chain open
+        (its rows aren't on screen; it's refreshed on the way back), the grid showing, or a video
+        playing."""
         if (self._shuttingDown or self.closing or self._backStack or self._isHostedShell
                 or self.contentMode != 'recommended' or self.section is None
                 or xbmc.Player().isPlayingVideo()):
             return False
         util.DEBUG_LOG('Library: refreshing {0}\'s rows in place ({1})', self.section.title or 'Home', reason)
-        self._startHubsFetch(self._hubsRefetchedFor(self._listGeneration, reason),
+        self._startHubsFetch(self._hubsRefetchedFor(self._listGeneration, reason, manual=manual),
                              self._hubsRefetchedFor(self._listGeneration, reason + ', a late server'))
         return True
 
@@ -3232,12 +3251,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 options.append({'key': 'cache_reset', 'display': T(33720, "Clear all caches")})
                 use_sep = True
 
-            # Add Manage Hubs and Refresh Hubs options (the sidebar itself - what's in it, its order -
-            # is the Libraries picker's)
+            # Add Manage Hubs (the sidebar itself - what's in it, its order - is the Libraries
+            # picker's; Refresh Hubs is the hub items' menu's, hubMenu())
             if use_sep:
                 options.append(dropdown.SEPARATOR)
             options.append({'key': 'manage_hubs', 'display': T(34080, "Manage Hubs")})
-            options.append({'key': 'refresh_hubs', 'display': T(34096, "Refresh Hubs")})
 
             if options:
                 choice = dropdown.showDropdown(
@@ -3287,11 +3305,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 options.append({'key': 'section_cache_reset', 'display': T(33721, "Clear library cache (not items)")})
                 options.append(dropdown.SEPARATOR)
 
-            # Add Manage Hubs and Refresh Hubs options (not applicable to watchlist)
+            # Add Manage Hubs (not applicable to watchlist)
             if section != home.watchlist_section and not placeholder:
                 options.append(dropdown.SEPARATOR)
                 options.append({'key': 'manage_hubs', 'display': T(34080, "Manage Hubs")})
-                options.append({'key': 'refresh_hubs', 'display': T(34096, "Refresh Hubs")})
 
             choice = dropdown.showDropdown(
                 options,
@@ -3367,9 +3384,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                     return
                 return self.section
             return
-
-        elif choice["key"] == "refresh_hubs":
-            return self.section
 
     def _tabListNeedsRebuild(self, section):
         """True (and updates self._tabListIsPlaylists/self._tabListHasCategories/
