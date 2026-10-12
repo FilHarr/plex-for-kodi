@@ -646,17 +646,23 @@ class RebindInPlaceTest(KodiTestCase):
 
 class ReselectIndexTest(KodiTestCase):
     """Where a row lands when it's bound again (_reselectIndex()): its remembered item wherever it
-    is now; that gone, the place it was, kept within the row."""
+    is now; that gone, an episode of the same show (the one replacing it); else the place it was,
+    kept within the row."""
 
     def setUp(self):
         super(ReselectIndexTest, self).setUp()
         self.win = library.LibraryWindow.__new__(library.LibraryWindow)
         self.win.section = mock.Mock(key='1')
         self.hub = Hub('movie.inprogress', [], None)
-        self.win._hubReselectPositions = {'movie.inprogress': ('13', 3)}
+        self.win._hubReselectPositions = {'movie.inprogress': ('13', 3, None)}
 
     def items(self, *keys):
         return [mock.Mock(ratingKey=key) for key in keys]
+
+    def episode(self, key, show):
+        item = mock.Mock(ratingKey=key)
+        item.get = lambda field: show if field == 'grandparentRatingKey' else ''
+        return item
 
     def test_the_remembered_item_wherever_it_is_now(self):
         self.assertEqual(1, self.win._reselectIndex(self.hub, self.items('10', '13', '11', '12')))
@@ -669,8 +675,19 @@ class ReselectIndexTest(KodiTestCase):
 
     def test_at_the_start_the_start_with_an_item_new_in_front(self):
         """Left back to the first item remembers it: followed, an item new in front was off-screen."""
-        self.win._hubReselectPositions = {'movie.inprogress': ('10', 0)}
+        self.win._hubReselectPositions = {'movie.inprogress': ('10', 0, None)}
         self.assertEqual(0, self.win._reselectIndex(self.hub, self.items('9', '10', '11')))
+
+    def test_an_episode_gone_the_one_replacing_it(self):
+        """Watched to the end, Continue Watching has the show's next episode in front instead."""
+        self.win._hubReselectPositions = {'movie.inprogress': ('13', 3, '7')}
+        objs = [self.episode('14', '7'), self.episode('10', '5'), self.episode('11', '6'), self.episode('12', '8')]
+        self.assertEqual(0, self.win._reselectIndex(self.hub, objs))
+
+    def test_an_episode_gone_with_its_show_the_place_it_was(self):
+        self.win._hubReselectPositions = {'movie.inprogress': ('13', 3, '7')}
+        objs = [self.episode(key, '5') for key in ('10', '11', '12', '14', '15')]
+        self.assertEqual(3, self.win._reselectIndex(self.hub, objs))
 
     def test_nothing_remembered_the_first(self):
         self.win._hubReselectPositions = {}

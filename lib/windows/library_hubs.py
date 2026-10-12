@@ -1504,7 +1504,7 @@ class HubsMixin(object):
         Ported from HomeWindow._previewSelectedItem() (home.py) - now that plan item 10 Group A
         actually ported reselect-position memory (self._hubReselectPositions), this is no longer
         the no-op-to-items[0] stand-in _prepareHubSlideHero()'s docstring used to describe; mirrors
-        _bindHubToControl()'s own reselect resolution (ratingKey first, then position), reading
+        _bindHubToControl()'s own reselect resolution (ratingKey first, then show, then position), reading
         the same self._hubReselectPositions entry that method will use moments later. Falls back
         to the hub's first item when there's no remembered position (never-visited hub); the
         resolving itself is _reselectIndex()'s, shared with that method.
@@ -1808,7 +1808,7 @@ class HubsMixin(object):
             if control.dataSource:
                 if pos is not None and mli.dataSource is not None:
                     self._hubReselectPositions[self.hubMemoryKey(control.dataSource)] = (
-                        str(mli.dataSource.ratingKey), pos)
+                        str(mli.dataSource.ratingKey), pos, self._reselectShowKey(mli.dataSource))
             kodigui.markStep(timing, 'position')
 
     def hubSeeMoreClicked(self, hub, hub_control_id):
@@ -1954,6 +1954,9 @@ class HubsMixin(object):
         # normal info/preplay screen instead of resuming - live-confirmed regression. Bypassing
         # context for this one case doesn't reintroduce a second real window either way: the
         # handleOpen() auto_play path never opens anything itself, it goes straight to playback.
+        if auto_play:
+            # back on the rows when it ends: fetched again then (LibraryWindow.onReInit())
+            self._refreshRowsOnReturn = True
         command = opener.open(use_ds, context=None if auto_play else self, auto_play=auto_play,
                                dialog_props=self.carriedProps if auto_play else None, **extra_kwargs)
 
@@ -2157,6 +2160,7 @@ class HubsMixin(object):
                 return
 
         elif choice["key"] == "start_over":
+            self._refreshRowsOnReturn = True
             try:
                 command = opener.open(ds, auto_play=True, start_over=True, dialog_props=getattr(self, 'carriedProps', None))
                 if navintent.isNoData(command):
@@ -2167,6 +2171,7 @@ class HubsMixin(object):
             return
 
         elif choice["key"] == "resume":
+            self._refreshRowsOnReturn = True
             try:
                 command = opener.open(ds, auto_play=True, dialog_props=getattr(self, 'carriedProps', None))
                 if navintent.isNoData(command):
@@ -2360,23 +2365,39 @@ class HubsMixin(object):
         if items:
             control.selectItem(self._reselectIndex(hub, [mli.dataSource for mli in items if mli.dataSource]))
 
+    @staticmethod
+    def _reselectShowKey(obj):
+        """An episode's show, for _reselectIndex() to follow it to the episode replacing it; None
+        for anything else."""
+        try:
+            key = obj.get('grandparentRatingKey')
+        except Exception:
+            return None
+        return str(key) if key else None
+
     def _reselectIndex(self, hub, objs):
         """Where hub's row lands among objs, its items: on its remembered item
-        (_hubReselectPositions), wherever that is now; that gone, the place it was, or the row's
-        last item when the row no longer reaches that far (the user, 2026-10-10: it went back to
-        the first); item 0 with nothing remembered, or when the row was at its start, however it
-        got there: an item new at the front is landed on, not left off-screen to the left of the
-        old first (the user, 2026-10-10). _bindHubToControl() and the hero's
-        _previewSelectedItem() both ask here, so they agree."""
+        (_hubReselectPositions), wherever that is now; that gone, an episode of the same show -
+        the one replacing it, as Continue Watching's next episode replaces one watched to the end
+        (the user, 2026-10-12); else the place it was, or the row's last item when the row no
+        longer reaches that far (the user, 2026-10-10: it went back to the first); item 0 with
+        nothing remembered, or when the row was at its start, however it got there: an item new
+        at the front is landed on, not left off-screen to the left of the old first (the user,
+        2026-10-10). _bindHubToControl() and the hero's _previewSelectedItem() both ask here, so
+        they agree."""
         reselect = self._hubReselectPositions.get(self.hubMemoryKey(hub))
         if not reselect or not objs:
             return 0
-        rk, pos = reselect
+        rk, pos, showKey = reselect
         if not pos:
             return 0
         if rk is not None:
             for i, obj in enumerate(objs):
                 if obj.ratingKey and str(obj.ratingKey) == rk:
+                    return i
+        if showKey is not None:
+            for i, obj in enumerate(objs):
+                if self._reselectShowKey(obj) == showKey:
                     return i
         if pos < 0:
             return 0
@@ -2561,10 +2582,23 @@ class HubsMixin(object):
         return [hub for hub in self.sortHubsByUserOrder(hubs, section=section)
                 if hub.items and not self.isHubHidden(hub, section)]
 
+    # What a tile shows of an item besides which item it is: its progress, ticks and counts, and its
+    # art. Progress needs its own field: it doesn't move updatedAt.
+    TILE_STATE_FIELDS = ('viewOffset', 'viewCount', 'lastViewedAt', 'updatedAt', 'viewedLeafCount',
+                         'leafCount', 'thumb')
+
+    def _itemSignature(self, item):
+        key = getattr(item, 'ratingKey', None) or id(item)
+        try:
+            return (key,) + tuple(u'{0}'.format(item.get(field) or '') for field in self.TILE_STATE_FIELDS)
+        except Exception:
+            return (key,)
+
     def _hubsSignature(self, hubs):
-        """What a set of rows shows: each row and its items, in order - nothing to rebind when it's
-        the same."""
-        return [(self.hubMemoryKey(hub), [getattr(item, 'ratingKey', None) or id(item) for item in hub.items])
+        """What a set of rows shows: each row and its items, in order, with each item's state
+        (_itemSignature()) - nothing to rebind when it's the same. Items alone, a refresh bringing
+        new progress, ticks or art for the same items in the same order was thrown away."""
+        return [(self.hubMemoryKey(hub), [self._itemSignature(item) for item in hub.items])
                 for hub in hubs]
 
     def _notifyRowsKept(self, names):

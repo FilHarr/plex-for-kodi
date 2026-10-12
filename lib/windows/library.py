@@ -561,13 +561,14 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.hubControls = None
 
         # Plan item 10, Group A (quiet-orbiting-heron.md): reselect-position memory. Ported from
-        # HomeWindow._hubReselectPositions (home.py) - same name/shape (identifier -> (ratingKey,
-        # pos)). Scoped to one visit: cleared on every fresh entry (openSection()/switchTab() with
-        # fresh=True - a sidebar click, tab switch, go-root or server change) and by the Home
-        # rule's in-place reset (_resetHubsToTop()), kept only through popBack() and
-        # swapToSection(). Within a visit it keeps a row's position when the row rotates off the
-        # ring and back, and lets Back from a hosted screen land on the right item
-        # (_captureRootRestoreState() only records which row).
+        # HomeWindow._hubReselectPositions (home.py) - same name (identifier -> (ratingKey, pos,
+        # an episode's show key, HubsMixin._reselectIndex())). Scoped to one visit: cleared on
+        # every fresh entry (openSection()/switchTab() with fresh=True - a sidebar click, tab
+        # switch, go-root or server change) and by the Home rule's in-place reset
+        # (_resetHubsToTop()), kept only through popBack() and swapToSection(). Within a visit it
+        # keeps a row's position when the row rotates off the ring and back, and lets Back from a
+        # hosted screen land on the right item (_captureRootRestoreState() only records which
+        # row).
         self._hubReselectPositions = {}
 
         # Plan item 0 (quiet-orbiting-heron.md): the section-tabs row (Library/Recommended).
@@ -2399,6 +2400,21 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                         kwargs={'manual': manual})
         return callback
 
+    def _refreshRowsAfterPlayback(self):
+        """Back on the rows from playback started on one (auto-resume, its menu's Resume or Play
+        from beginning; onReInit()): they're fetched again in place (refreshHubsInPlace()), once
+        the stop's timeline report has reached the server, as Episodes waits for it - it decides
+        the progress, and what Continue Watching holds. On a thread of its own: the wait can take
+        up to episodes.TIMELINE_WAIT s. Playback from a screen opened from a row comes back
+        through that screen, and Back rebuilds the rows anyway."""
+        from . import episodes
+
+        def refresh():
+            plexapp.util.APP.nowplayingmanager.waitForTimelines(episodes.TIMELINE_WAIT)
+            self.postUI('refresh rows', self.refreshHubsInPlace, args=('back from playback',))
+
+        threading.Thread(target=refresh, name='library.rowsAfterPlayback').start()
+
     def refreshHubsInPlace(self, reason, manual=False):
         """Fetch the Recommended view's rows again and rebind them over the ones showing
         (_rebindHubsInPlace()) - every 5 minutes, after the screensaver, a blanked display or
@@ -2680,6 +2696,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 self._goRootAwaitUntil = time.time() + 1.0
                 kodigui.markStep(self.__dict__.get('_homeResetTiming'), 'reset')
             return
+
+        if self.__dict__.pop('_refreshRowsOnReturn', False):
+            self._refreshRowsAfterPlayback()
 
         if self.refill and self.contentMode != 'recommended':
             self.doRefill()

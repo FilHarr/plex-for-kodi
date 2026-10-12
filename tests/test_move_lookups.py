@@ -222,6 +222,7 @@ class FakeHubControl(object):
 class FakeHubsWindow(object):
     checkHubItem = library.LibraryWindow.checkHubItem
     hubMemoryKey = library.LibraryWindow.hubMemoryKey
+    _reselectShowKey = staticmethod(library.LibraryWindow._reselectShowKey)
     HUB_CONTROL_ID = library.RecommendedWindow.HUB_CONTROL_ID
 
     def __init__(self, control):
@@ -242,7 +243,8 @@ class HubRowLookupTest(KodiTestCase):
         window.checkHubItem(window.HUB_CONTROL_ID, action=None)
         self.assertEqual(1, control.lookups)
         self.assertEqual([mli], window.heroFrom)
-        self.assertEqual({'hub.x': ('7', 4)}, window._hubReselectPositions)
+        # not an episode: no show to follow (_reselectIndex())
+        self.assertEqual({'hub.x': ('7', 4, None)}, window._hubReselectPositions)
 
     def test_see_more_is_neither_shown_nor_remembered(self):
         control = FakeHubControl(FakeItem(is_more=True), 9)
