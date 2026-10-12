@@ -211,7 +211,10 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
     def getPrefs(self):
         return plexobjects.listItems(self, "/:/prefs", bytag=True, cachable=False, not_cachable=True)
 
-    def hubs(self, section=None, count=None, search_query=None, section_ids=None):
+    def hubs(self, section=None, count=None, search_query=None, section_ids=None, continue_watching_count=None):
+        """continue_watching_count: Home's Continue Watching asked for this many instead of count -
+        more than its row holds, so that a film in two libraries, there twice, still leaves the row
+        full once each title is kept once (home.mergeContinueWatching())."""
         hubs = []
 
         params = {"includeMarkers": 1}
@@ -272,6 +275,8 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
         if newCW:
             cq = '/hubs/continueWatching'
             cparams = dict((k, v) for k, v in params.items() if k != 'pinnedContentDirectoryID')
+            if continue_watching_count is not None:
+                cparams['count'] = continue_watching_count
             if section_ids:
                 cq += util.joinArgs(cparams)
 

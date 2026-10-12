@@ -27,6 +27,9 @@ HUB_PAGE_SIZE = 10
 # in-row pagination past it. A row with more than this (hub.more) ends in a "See more" item
 # instead (LibraryWindow._bindHubToControl(), library.py). On request, 2026-09-21.
 HUB_ROW_MAX_ITEMS = 20
+# Home's Continue Watching asked of each server: twice its row, as a film in two libraries comes
+# back twice and mergeContinueWatching() keeps it once - the row still full of 20 titles
+CONTINUE_WATCHING_FETCH = 2 * HUB_ROW_MAX_ITEMS
 
 MOVE_SET = frozenset(
     (
@@ -284,6 +287,7 @@ class SectionHubsTask(backgroundthread.Task):
             hubs = self.section.server.hubs(self.section.key, count=HUB_ROW_MAX_ITEMS)
             # windows and limits, here on the worker: a windowed row may ask how many it holds
             hub_limits.applyAll(hubs, HUB_ROW_MAX_ITEMS)
+            freshenWatchHistoryRows(self.section.server, hubs)
             # episodes' panels in their season's colours (panel_colors.py), before the bind
             panel_colors.warmHubs(hubs)
             hubs = HubsList(hubs).init()
@@ -317,6 +321,68 @@ HOME_FETCH_TIMEOUT = 20.0
 # D8's second variant, to compare live: bind as soon as the first server answers, and add each
 # other server's rows in place as they come.
 HOME_BIND_PROGRESSIVE = False
+
+
+# The rows Plex builds from watch history, whose items it gives out of date: progress made on another
+# library's copy, and the art URLs (season and show poster, background) from before the art changed
+# - their stamps are what Kodi's image cache keys on, so an old one keeps the old picture. Checked
+# live on Animal 2026-10-12: a fresh build of the row is as stale, while the items themselves are
+# current. Base identifiers (hub_limits.baseIdentifier()).
+WATCH_HISTORY_ROWS = frozenset((CONTINUE_WATCHING_ID, 'tv.inprogress', 'tv.ondeck', 'movie.inprogress',
+                                'video.inprogress'))
+# Items asked for in one /library/metadata/k1,k2,... request
+METADATA_BATCH = 40
+# What it doesn't need of them: a sixth the size without (318 kB to 51 kB for 26 items on Animal,
+# 140 ms to 95 ms, 2026-10-13), the fields above all still there
+FRESHEN_EXCLUDED = ('Media,Role,Director,Writer,Producer,Genre,Country,Guid,Rating,Similar,Field,Marker,'
+                    'Chapter,Extras,Collection,Label,Mood,Image,UltraBlurColors,Review,Tag,Style,'
+                    'CommonSenseMedia')
+# What freshenWatchHistoryRows() takes from each item as it is now
+FRESHENED_FIELDS = ('viewOffset', 'viewCount', 'lastViewedAt', 'updatedAt', 'thumb', 'art', 'parentThumb',
+                    'parentArt', 'grandparentThumb', 'grandparentArt')
+
+
+def freshenWatchHistoryRows(server, hubs):
+    """The watch-history rows' items (WATCH_HISTORY_ROWS) brought up to date from the items
+    themselves, asked for in one request per row (/library/metadata/k1,k2,...): progress and art
+    URLs, in place on the objects. The row's own order stays the server's. On the worker that
+    fetched the rows; a failure leaves them as they came."""
+    for hub in hubs or ():
+        if hub_limits.baseIdentifier(hub) not in WATCH_HISTORY_ROWS or not hub.items:
+            continue
+        # every item: Home's Continue Watching has more than its row (CONTINUE_WATCHING_FETCH), and
+        # the merge sorts them all by when they were watched
+        keys = [str(item.ratingKey) for item in hub.items if getattr(item, 'ratingKey', None)]
+        if not keys:
+            continue
+        started = time.time()
+        current = {}
+        try:
+            for i in range(0, len(keys), METADATA_BATCH):
+                data = server.query('/library/metadata/' + ','.join(keys[i:i + METADATA_BATCH]),
+                                    params={'excludeElements': FRESHEN_EXCLUDED})
+                for elem in data if data is not None else ():
+                    current[elem.attrib.get('ratingKey')] = elem.attrib
+        except Exception as e:
+            util.DEBUG_LOG('Rows: {0} not freshened: {1}', hub.hubIdentifier, e)
+            continue
+        changed = 0
+        for item in hub.items:
+            attrib = current.get(str(getattr(item, 'ratingKey', None)))
+            if attrib is None:
+                continue
+            for field in FRESHENED_FIELDS:
+                now = attrib.get(field) or ''
+                if field == 'lastViewedAt' and item.get(field).asInt() >= (int(now) if now.isdigit() else 0):
+                    # The row's own when it's later: a next episode not started has none of its own,
+                    # and the row's is the show's last watched, which Home's Continue Watching sorts
+                    # by (mergeContinueWatching()). Taking the item's put them all last (2026-10-12).
+                    continue
+                if u'{0}'.format(item.get(field) or '') != now:
+                    item.set(field, now)
+                    changed += 1
+        util.DEBUG_LOG('Rows: {0} freshened, {1} field(s) out of date ({2} ms)', hub.hubIdentifier, changed,
+                       int((time.time() - started) * 1000))
 
 
 def keepLibraries(hub, keys):
@@ -439,7 +505,8 @@ class HomeHubsTask(backgroundthread.Task):
         if self.isCanceled() or server.offline or not server.activeConnection:
             return
         try:
-            hubs = server.hubs(None, count=HUB_ROW_MAX_ITEMS, section_ids=list(keys))
+            hubs = server.hubs(None, count=HUB_ROW_MAX_ITEMS, section_ids=list(keys),
+                               continue_watching_count=CONTINUE_WATCHING_FETCH)
             if server.suspect or server.offline:
                 # A request in it got no answer (plexserver.query() marks the server suspect and
                 # answers the rest with None): the empty list it came back with isn't the server's
@@ -449,6 +516,7 @@ class HomeHubsTask(backgroundthread.Task):
                 return
             # windows and limits, on this server's own thread (hub_limits.py)
             hub_limits.applyAll(hubs, HUB_ROW_MAX_ITEMS)
+            freshenWatchHistoryRows(server, hubs)
             # episodes' panels in their season's colours (panel_colors.py), before the bind
             panel_colors.warmHubs(hubs)
             answers[server.uuid] = hubs

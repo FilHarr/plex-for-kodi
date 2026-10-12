@@ -121,7 +121,7 @@ class HomeHubsTaskTest(KodiTestCase):
         release = threading.Event()
 
         def hubs(srv):
-            def answer(section, count=None, section_ids=None):
+            def answer(section, count=None, section_ids=None, **kwargs):
                 if srv.uuid in slow:
                     release.wait(5)
                 return [Hub('home.movies.recent', [Item(srv.name, section_ids[0])], srv)]
@@ -139,7 +139,9 @@ class HomeHubsTaskTest(KodiTestCase):
         animal, oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
         rows = self.run_task([(animal, ['22', 'playlists']), (oscar, ['1'])])
         self.assertEqual(['Animal', 'Oscar'], [h.items[0].title for h in rows])
-        animal.hubs.assert_called_once_with(None, count=home.HUB_ROW_MAX_ITEMS, section_ids=['22', 'playlists'])
+        # Continue Watching asked for more than its row: a film in two libraries comes back twice
+        animal.hubs.assert_called_once_with(None, count=home.HUB_ROW_MAX_ITEMS, section_ids=['22', 'playlists'],
+                                            continue_watching_count=home.CONTINUE_WATCHING_FETCH)
 
     def test_an_offline_server_is_not_asked(self):
         animal, oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar', offline=True)
@@ -523,7 +525,7 @@ class LateServerTest(KodiTestCase):
         bound, late, done = [], [], threading.Event()
 
         def answer(srv, wait):
-            def hubs(section, count=None, section_ids=None):
+            def hubs(section, count=None, section_ids=None, **kwargs):
                 if wait:
                     self.release.wait(5)
                 return [Hub('home.movies.recent', [Item(srv.name, section_ids[0])], srv)]
@@ -702,7 +704,7 @@ class FailedFetchTest(KodiTestCase):
         animal, oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
         animal.hubs = mock.Mock(return_value=[Hub('home.movies.recent', [Item('a', '22')], animal)])
 
-        def failing(section, count=None, section_ids=None):
+        def failing(section, count=None, section_ids=None, **kwargs):
             oscar.suspect = True
             return []
         oscar.hubs = mock.Mock(side_effect=failing)

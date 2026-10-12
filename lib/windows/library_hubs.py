@@ -2583,9 +2583,12 @@ class HubsMixin(object):
                 if hub.items and not self.isHubHidden(hub, section)]
 
     # What a tile shows of an item besides which item it is: its progress, ticks and counts, and its
-    # art. Progress needs its own field: it doesn't move updatedAt.
+    # art - an episode's tile the season or show poster (Episode.defaultThumb), the background its
+    # art. Progress needs its own field: it doesn't move updatedAt; nor does a new season poster the
+    # episode's.
     TILE_STATE_FIELDS = ('viewOffset', 'viewCount', 'lastViewedAt', 'updatedAt', 'viewedLeafCount',
-                         'leafCount', 'thumb')
+                         'leafCount', 'thumb', 'parentThumb', 'grandparentThumb', 'art', 'parentArt',
+                         'grandparentArt')
 
     def _itemSignature(self, item):
         key = getattr(item, 'ratingKey', None) or id(item)
