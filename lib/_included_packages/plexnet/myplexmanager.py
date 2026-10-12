@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+import ast
 from xml.etree import ElementTree
 import six.moves.urllib.request, six.moves.urllib.parse, six.moves.urllib.error
 
@@ -54,9 +55,28 @@ class MyPlexManager(object):
     def cachedResources():
         """The last good resources answer: the v2 one, or else one the older endpoint left. v2
         answers get their own key, so an older build never reads one (it would find no
-        connections in it)."""
-        return (util.INTERFACE.getRegistry(RESOURCES_CACHE, None, "xml_cache") or
-                util.INTERFACE.getRegistry(LEGACY_RESOURCES_CACHE, None, "xml_cache"))
+        connections in it). One saved as bytes, as every build did until 2026-10-12, sits in the
+        settings as their repr - b'<?xml ...' - which no parser reads: decoded back here."""
+        cached = (util.INTERFACE.getRegistry(RESOURCES_CACHE, None, "xml_cache") or
+                  util.INTERFACE.getRegistry(LEGACY_RESOURCES_CACHE, None, "xml_cache"))
+        if cached and cached[:2] in ("b'", 'b"'):
+            try:
+                cached = ast.literal_eval(cached).decode('utf-8')
+            except (ValueError, SyntaxError, UnicodeDecodeError):
+                return None
+        return cached
+
+    def _parsedCachedResources(self):
+        """cachedResources() parsed, or None if there's none or it doesn't parse - it used to
+        raise there, out of onResourcesResponse() (live 2026-10-12, plex.tv timing out)."""
+        cached = self.cachedResources()
+        if not cached:
+            return None
+        try:
+            return ElementTree.fromstring(cached)
+        except ElementTree.ParseError as e:
+            util.WARN_LOG("Cached resources don't parse: {0}", e)
+            return None
 
     def onResourcesResponse(self, request, response, context):
         servers = []
@@ -65,20 +85,22 @@ class MyPlexManager(object):
 
         # Save the last successful response to cache
         if response.isSuccess() and response.event:
-            util.INTERFACE.setRegistry(RESOURCES_CACHE, response.event.text.encode('utf-8'), "xml_cache")
+            # the text, not bytes: a setting holds bytes as their repr (cachedResources())
+            util.INTERFACE.setRegistry(RESOURCES_CACHE, response.event.text, "xml_cache")
             util.DEBUG_LOG("Saved resources response to registry")
         # Load the last successful response from cache
-        elif self.cachedResources():
-            data = ElementTree.fromstring(self.cachedResources())
+        else:
+            data = self._parsedCachedResources()
+            if data is None:
+                # No answer and nothing cached that reads. Passing an empty list on would strip
+                # every plex.tv connection (and its token) from the servers we already know, so
+                # keep them.
+                util.WARN_LOG("No plex.tv resources (status {0}) and none cached, keeping known servers",
+                              response.getStatus())
+                plexapp.SERVERMANAGER.resourcesUnavailable()
+                return
             response.parseFakeXMLResponse(data)
             util.DEBUG_LOG("Using cached resources")
-        else:
-            # No answer and nothing cached. Passing an empty list on would strip every plex.tv
-            # connection (and its token) from the servers we already know, so keep them.
-            util.WARN_LOG("No plex.tv resources (status {0}) and none cached, keeping known servers",
-                          response.getStatus())
-            plexapp.SERVERMANAGER.resourcesUnavailable()
-            return
 
         if response.container:
             for resource in response.container:

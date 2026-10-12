@@ -161,6 +161,17 @@ class ResourcesRequestTest(KodiTestCase):
                                side_effect=self.registry({"mpaResources": "old"})):
             self.assertEqual("old", myplexmanager.MyPlexManager.cachedResources())
 
+    def test_a_cache_saved_as_bytes_reads_as_its_xml(self):
+        # every build until 2026-10-12 saved the answer's bytes, which a setting holds as their repr
+        stored = repr(u'<?xml version="1.0"?><resources size="0"/>'.encode('utf-8'))
+        with mock.patch.object(pnUtil.INTERFACE, "getRegistry", side_effect=self.registry({"mpaResources2": stored})):
+            self.assertEqual('<?xml version="1.0"?><resources size="0"/>',
+                             myplexmanager.MyPlexManager.cachedResources())
+
+    def test_a_cache_that_does_not_parse_counts_as_none(self):
+        with mock.patch.object(pnUtil.INTERFACE, "getRegistry", side_effect=self.registry({"mpaResources2": "not xml"})):
+            self.assertIsNone(myplexmanager.MyPlexManager()._parsedCachedResources())
+
 
 class NoIPv6HereTest(KodiTestCase):
     def test_a_device_without_ipv6_fails_definitely(self):
