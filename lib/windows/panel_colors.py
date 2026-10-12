@@ -27,28 +27,54 @@ from lib import util
 # Keys per batch request: /library/metadata/<keys> answered 40 at once (checked 2026-10-08)
 BATCH = 40
 CACHE_MAX = 500
-# (server uuid, ratingKey) -> its colours (a dict of the four corners), or None for none
+# (server uuid, ratingKey) -> (its poster's stamp, its colours (a dict of the four corners), or None
+# for none). The stamp: another poster, or a metadata refresh, gets new colours (_stale()).
 CACHE = collections.OrderedDict()
 _lock = threading.Lock()
+
+
+def stamp(url):
+    """A Plex art URL's stamp - /library/metadata/100952/thumb/1791848398 -> 1791848398 - which
+    changes when the art does or is refreshed; 0 for none. Not a time to read: it can run hours
+    ahead, and a refresh can make it smaller."""
+    tail = u'{0}'.format(url or '').rstrip('/').rsplit('/', 1)[-1]
+    return int(tail) if tail.isdigit() else 0
 
 
 def _cached(uuid, key):
     """The colours kept for key; None for none, False when not asked yet."""
     with _lock:
-        return CACHE.get((uuid, key), False)
+        kept = CACHE.get((uuid, key))
+    return kept[1] if kept is not None else False
 
 
-def _store(uuid, key, colours):
+def _stale(uuid, key, poster):
+    """Whether key's colours need asking for: never asked, or another poster (poster: its URL as an
+    item shows it) than the one they were made from - a new one, or a metadata refresh, which
+    makes them again. Another, not only a newer: a refresh can give a smaller stamp (House of the
+    Dragon's season 3, 1791873605 to 1791848895, 2026-10-13). An item with no poster URL asks
+    nothing. Every place that warms them has current stamps: Continue Watching's, which Plex gives
+    out of date, are brought up to date first (home.freshenWatchHistoryRows())."""
     with _lock:
-        CACHE[(uuid, key)] = colours
+        kept = CACHE.get((uuid, key))
+    if kept is None:
+        return True
+    current = stamp(poster)
+    return bool(current) and current != kept[0]
+
+
+def _store(uuid, key, colours, poster=None):
+    with _lock:
+        CACHE[(uuid, key)] = (stamp(poster), colours)
         CACHE.move_to_end((uuid, key))
         while len(CACHE) > CACHE_MAX:
             CACHE.popitem(last=False)
 
 
 def _fetch(server, keys):
-    """Colours for each key not cached yet, in batches; stored, None for one that has none."""
-    missing = [key for key in keys if _cached(server.uuid, key) is False]
+    """Colours for each key, in batches; stored with its poster's stamp, None for one that has
+    none. keys: {ratingKey: poster URL as the items show it}, in order; only those _stale()."""
+    missing = [key for key, poster in keys.items() if _stale(server.uuid, key, poster)]
     for start in range(0, len(missing), BATCH):
         batch = missing[start:start + BATCH]
         data = server.query('/library/metadata/{0}'.format(','.join(batch)))
@@ -58,9 +84,11 @@ def _fetch(server, keys):
         found = {}
         for elem in data:
             colours = elem.find('UltraBlurColors')
-            found[elem.attrib.get('ratingKey')] = dict(colours.attrib) if colours is not None else None
+            found[elem.attrib.get('ratingKey')] = (dict(colours.attrib) if colours is not None else None,
+                                                   elem.attrib.get('thumb'))
         for key in batch:
-            _store(server.uuid, key, found.get(key))
+            colours, poster = found.get(key, (None, None))
+            _store(server.uuid, key, colours, poster)
 
 
 def _isEpisode(item):
@@ -76,11 +104,16 @@ def warm(items):
             byServer.setdefault(item.server.uuid, (item.server, []))[1].append(item)
     for server, episodes in byServer.values():
         try:
-            _fetch(server, list(collections.OrderedDict.fromkeys(str(e.parentRatingKey) for e in episodes)))
-            shows = [str(e.grandparentRatingKey) for e in episodes
-                     if not _cached(server.uuid, str(e.parentRatingKey)) and e.get('grandparentRatingKey')]
+            seasons = collections.OrderedDict()
+            for e in episodes:
+                seasons.setdefault(str(e.parentRatingKey), e.get('parentThumb'))
+            _fetch(server, seasons)
+            shows = collections.OrderedDict()
+            for e in episodes:
+                if not _cached(server.uuid, str(e.parentRatingKey)) and e.get('grandparentRatingKey'):
+                    shows.setdefault(str(e.grandparentRatingKey), e.get('grandparentThumb'))
             if shows:
-                _fetch(server, list(collections.OrderedDict.fromkeys(shows)))
+                _fetch(server, shows)
         except plexnet.exceptions.BadRequest as e:
             util.DEBUG_LOG('Panel colours: {0} refused the seasons: {1}', repr(server.name), e)
         except Exception:

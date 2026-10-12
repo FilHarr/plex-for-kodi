@@ -24,10 +24,12 @@ class FakeServer(object):
     uuid = 'server'
     name = 'Server'
 
-    def __init__(self, colours, fail=None):
+    def __init__(self, colours, fail=None, posters=None):
         self.colours = colours
         self.fail = fail
         self.paths = []
+        # ratingKey -> its poster's URL as the server gives it now
+        self.posters = posters or {}
 
     def query(self, path):
         self.paths.append(path)
@@ -35,7 +37,7 @@ class FakeServer(object):
             raise self.fail
         container = ET.Element('MediaContainer')
         for key in path.rsplit('/', 1)[-1].split(','):
-            elem = ET.SubElement(container, 'Directory', {'ratingKey': key})
+            elem = ET.SubElement(container, 'Directory', {'ratingKey': key, 'thumb': self.posters.get(key, '')})
             if self.colours.get(key):
                 ET.SubElement(elem, 'UltraBlurColors', self.colours[key])
         return container
@@ -44,11 +46,12 @@ class FakeServer(object):
 class Episode(object):
     TYPE = 'episode'
 
-    def __init__(self, server, season, show, own=None):
+    def __init__(self, server, season, show, own=None, seasonPoster=None):
         self.server = server
         self.parentRatingKey = season
         self.grandparentRatingKey = show
         self.ultraBlurColors = own
+        self.parentThumb = seasonPoster
 
     def get(self, name, default=None):
         return getattr(self, name, default)
@@ -119,3 +122,40 @@ class PanelColoursTest(KodiTestCase):
         server = FakeServer({})
         panel_colors.warm([Episode(server, str(100 + i), None) for i in range(41)])
         self.assertEqual([40, 1], [path.count(',') + 1 for path in server.paths])
+
+
+class NewPosterTest(KodiTestCase):
+    """A season's colours come mostly from its poster: another poster, or a metadata refresh, has
+    them asked for again (2026-10-13, House of the Dragon's season 3)."""
+
+    def setUp(self):
+        panel_colors.CACHE.clear()
+        self.addCleanup(panel_colors.CACHE.clear)
+        self.server = FakeServer({'10': SEASON}, posters={'10': '/library/metadata/10/thumb/100'})
+        panel_colors.warm([Episode(self.server, '10', '1', OWN, '/library/metadata/10/thumb/100')])
+        self.server.paths = []
+
+    def test_a_newer_poster_asks_again(self):
+        self.server.colours = {'10': SHOW}
+        self.server.posters = {'10': '/library/metadata/10/thumb/200'}
+        episode = Episode(self.server, '10', '1', OWN, '/library/metadata/10/thumb/200')
+        panel_colors.warm([episode])
+        self.assertEqual(1, len(self.server.paths))
+        self.assertEqual(SHOW, panel_colors.coloursFor(episode))
+
+    def test_the_same_poster_asks_nothing(self):
+        panel_colors.warm([Episode(self.server, '10', '1', OWN, '/library/metadata/10/thumb/100')])
+        self.assertEqual([], self.server.paths)
+
+    def test_a_smaller_stamp_asks_again(self):
+        """A metadata refresh can give a smaller stamp than the one before."""
+        panel_colors.warm([Episode(self.server, '10', '1', OWN, '/library/metadata/10/thumb/50')])
+        self.assertEqual(1, len(self.server.paths))
+
+    def test_no_poster_asks_nothing(self):
+        panel_colors.warm([Episode(self.server, '10', '1', OWN, None)])
+        self.assertEqual([], self.server.paths)
+
+    def test_the_stamp(self):
+        self.assertEqual(1791848398, panel_colors.stamp('/library/metadata/100952/thumb/1791848398'))
+        self.assertEqual(0, panel_colors.stamp(None))
