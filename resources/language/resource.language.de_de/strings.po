@@ -1712,8 +1712,8 @@ msgstr "Intro-/Abspann-Markierungen können zeitversetzt sein. Um passend automa
 
 #: 
 msgctxt "#32631"
-msgid "Playback (user-specific)"
-msgstr "Wiedergabe (benutzerspezifisch)"
+msgid "Playback"
+msgstr "Wiedergabe"
 
 #: 
 msgctxt "#33632"

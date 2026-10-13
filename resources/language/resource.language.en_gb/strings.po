@@ -1422,7 +1422,7 @@ msgstr ""
 # Unused: 33631
 
 msgctxt "#32631"
-msgid "Playback (user-specific)"
+msgid "Playback"
 msgstr ""
 
 # Unused: 32632-32699 (68 IDs)
@@ -3835,4 +3835,12 @@ msgstr ""
 
 msgctxt "#35177"
 msgid "The focused item's art at the top right and the colour panel behind it. Off, every screen has a plain background in the colour set below. Needs an addon restart."
+msgstr ""
+
+msgctxt "#35178"
+msgid "Playback (advanced)"
+msgstr ""
+
+msgctxt "#35179"
+msgid "Saved for this user ({0}) only."
 msgstr ""

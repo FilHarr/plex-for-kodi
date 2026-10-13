@@ -11,11 +11,12 @@ The findings below describe the code at 60ed0301. These have since been fixed:
 - §1.6: plex.direct mapping is restored (`lib/windows/plexdirect.py`), with all three triggers: the root window's first init, `loaded:server_connections`, and closing Settings after `handle_plexdirect` or `force_pd_mapping` changed. A dismissed question isn't asked again that session for the same hosts.
 - §1.7: the sidebar's path-mapping dots and the share check are restored (`lib/windows/mapping_probe.py`, moved out of home.py): checked when the sidebar's libraries change and every minute from the root window's tick while no video plays, one notification per run, and the red dot shown whatever `path_mapping_indicators` says. Adding a mapping from the library menu now clears the library's cached `isMapped` (`LibrarySection.addMapping()`).
 - §2.4: `background_art_blur_amount2` is removed; the hero art is always sharp (`util.backgroundFromArt()` defaults to blur 0, opacity 100).
+- §3/§4, inside Plex's Settings: per-user settings are marked where they are, not gathered into one section: a person icon on the row and "Saved for this user (<name>) only." in its description, shown only when the account has more than one Plex Home user. "Playback (user-specific)" is "Playback", so its global settings (post-play timeout, short videos, specials order, catch-up shuffle) belong there. A new "Playback (advanced)" section holds `assume_resume`, `resume_offset`, the four `resume_seek_behind*`, `seek_back_on_start`, `initial_seek_blackout`, `use_alternate_seek2` and `lav_mode_auto_switch`, from Main and Player UI.
 - §3.8: the `exit_default_is_quit` fallback label. §2.6: the `recheck_server_connections` help now mentions the 1-minute check.
 
 Deliberately unchanged: "PM4K"/"PlexMod" in help text (Uno may merge into PM4K) and the `osd_hide_delay` Plextuary caveat (Plextuary is recommended, not required).
 
-Deferred: the per-user marker, until the misplaced settings (§4) are looked at; `use_cert_bundle`'s help path (33052), for now.
+Deferred: `use_cert_bundle`'s help path (33052), for now. Still to do from §4: the moves out of Kodi's add-on settings (with live reads), and tidying its categories.
 
 ## How settings work in this add-on
 

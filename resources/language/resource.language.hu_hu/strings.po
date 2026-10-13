@@ -1574,8 +1574,8 @@ msgstr "A főcím/stáblista jelölések talán egy kicsit koraiak a Plexben. Au
 
 #: 
 msgctxt "#32631"
-msgid "Playback (user-specific)"
-msgstr "Lejátszás (felhasználó specifikus)"
+msgid "Playback"
+msgstr "Lejátszás"
 
 #: 
 msgctxt "#33632"

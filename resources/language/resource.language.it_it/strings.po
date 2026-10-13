@@ -1572,8 +1572,8 @@ msgstr "I marker dell'intro/crediti potrebbero essere un po' anticipati in Plex.
 
 #: 
 msgctxt "#32631"
-msgid "Playback (user-specific)"
-msgstr "Riproduzione (specifica dell'utente)"
+msgid "Playback"
+msgstr "Riproduzione"
 
 #: 
 msgctxt "#33632"

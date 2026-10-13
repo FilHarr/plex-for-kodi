@@ -18,9 +18,9 @@
             <animation effect="slide" end="-297,0" time="200" tween="quadratic" easing="out" condition="Control.HasFocus(125)">Conditional</animation>
             <control type="image">
                 <posx>843</posx>
-                <posy>125</posy>
+                <posy>65</posy>
                 <width>1077</width>
-                <height>955</height>
+                <height>1015</height>
                 <texture>script.plex/white-square.png</texture>
                 <colordiffuse>32111111</colordiffuse>
             </control>
@@ -45,9 +45,9 @@
         <control type="image">
             <animation effect="slide" end="-297,0" time="200" tween="quadratic" easing="out" condition="Control.HasFocus(125)">Conditional</animation>
             <posx>1920</posx>
-            <posy>125</posy>
+            <posy>65</posy>
             <width>879</width>
-            <height>955</height>
+            <height>1015</height>
             <texture>script.plex/white-square.png</texture>
             <colordiffuse>66111111</colordiffuse>
         </control>
@@ -70,13 +70,16 @@
 
     <control type="group" id="50">
         <posx>248</posx>
-        <posy>131.5</posy>
+        <posy>56.5</posy>
         <defaultcontrol always="true">75</defaultcontrol>
         <control type="list" id="75">
             <posx>0</posx>
             <posy>0</posy>
             <width>590</width>
-            <height>741</height>
+            <!-- ten rows: each row's content sits 40 below its slot, so 790 ends where the tenth's
+                 does. The header is 65 tall and this group starts 75 higher than it did under the old
+                 125 one, to fit every section (About is the tenth) above the footer band. -->
+            <height>790</height>
             <onleft>noop</onleft>
             <onright>noop</onright>
             <scrolltime>200</scrolltime>
@@ -176,7 +179,7 @@
             <posx>604</posx>
             <posy>0</posy>
             <width>776</width>
-            <height>715</height>
+            <height>790</height>
             <onleft>75</onleft>
             <onright>noop</onright>
             <scrolltime>200</scrolltime>
@@ -220,6 +223,16 @@
                         <texture>script.plex/white-square.png</texture>
                         <colordiffuse>661F1F1F</colordiffuse>
                     </control>
+                </control>
+                <control type="image">
+                    <!-- kept per Plex Home user, marked only with more than one user
+                         (SettingsWindow.showSettings()) -->
+                    <visible>!String.IsEmpty(ListItem.Property(useraware))</visible>
+                    <posx>52</posx>
+                    <posy>{{ vscale(66) }}</posy>
+                    <width>24</width>
+                    <height>{{ vscale(24) }}</height>
+                    <texture colordiffuse="AAFFFFFF">script.plex/home/type/person.png</texture>
                 </control>
                 <control type="group">
                     <posx>643</posx>
@@ -343,6 +356,22 @@
                         <colordiffuse>661F1F1F</colordiffuse>
                     </control>
                 </control>
+                <control type="image">
+                    <visible>!String.IsEmpty(ListItem.Property(useraware)) + [Control.HasFocus(100) | Control.HasFocus(125)]</visible>
+                    <posx>52</posx>
+                    <posy>{{ vscale(66) }}</posy>
+                    <width>24</width>
+                    <height>{{ vscale(24) }}</height>
+                    <texture colordiffuse="FF000000">script.plex/home/type/person.png</texture>
+                </control>
+                <control type="image">
+                    <visible>!String.IsEmpty(ListItem.Property(useraware)) + !Control.HasFocus(100) + !Control.HasFocus(125)</visible>
+                    <posx>52</posx>
+                    <posy>{{ vscale(66) }}</posy>
+                    <width>24</width>
+                    <height>{{ vscale(24) }}</height>
+                    <texture colordiffuse="AAFFFFFF">script.plex/home/type/person.png</texture>
+                </control>
                 <control type="group">
                     <posx>643</posx>
                     <posy>{{ vscale(55) }}</posy>
@@ -371,7 +400,7 @@
             <left>1388</left>
             <top>40</top>
             <width>9</width>
-            <height>675</height>
+            <height>750</height>
             <visible>true</visible>
             <texturesliderbackground colordiffuse="66000000" border="4">script.plex/white-square-rounded-4r.png</texturesliderbackground>
             <texturesliderbar colordiffuse="66FFFFFF" border="4">script.plex/white-square-rounded-4r.png</texturesliderbar>
@@ -391,7 +420,7 @@
             <posx>1383</posx>
             <posy>0</posy>
             <width>845</width>
-            <height>715</height>
+            <height>790</height>
             <onleft>100</onleft>
             <scrolltime>200</scrolltime>
             <orientation>vertical</orientation>
@@ -484,7 +513,7 @@
             <left>2161</left>
             <top>40</top>
             <width>9</width>
-            <height>675</height>
+            <height>750</height>
             <visible>true</visible>
             <texturesliderbackground colordiffuse="66000000" border="4">script.plex/white-square-rounded-4r.png</texturesliderbackground>
             <texturesliderbar colordiffuse="66FFFFFF" border="4">script.plex/white-square-rounded-4r.png</texturesliderbar>
@@ -505,18 +534,18 @@
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
-    <height>125</height>
+    <height>65</height>
     <control type="image">
         <posx>0</posx>
         <posy>0</posy>
         <width>1920</width>
-        <height>125</height>
+        <height>65</height>
         <texture>script.plex/white-square.png</texture>
         <colordiffuse>C0000000</colordiffuse>
     </control>
     <control type="grouplist">
         <posx>60</posx>
-        <posy>{{ vscale(42.5) }}</posy>
+        <posy>{{ vscale(12.5) }}</posy>
         <width>1000</width>
         <height>{{ vscale(40) }}</height>
         <align>left</align>
@@ -535,7 +564,7 @@
     </control>
     <control type="label">
         <right>60</right>
-        <posy>{{ vscale(30) }}</posy>
+        <posy>{{ vscale(0) }}</posy>
         <width>200</width>
         <height>{{ vscale(65) }}</height>
         <font>font12</font>

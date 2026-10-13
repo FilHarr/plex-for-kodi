@@ -1574,8 +1574,8 @@ msgstr "Los marcadores de introducción/créditos pueden ser un poco tempranos e
 
 #: 
 msgctxt "#32631"
-msgid "Playback (user-specific)"
-msgstr "Reproducción (específica del usuario)"
+msgid "Playback"
+msgstr "Reproducción"
 
 #: 
 msgctxt "#33632"

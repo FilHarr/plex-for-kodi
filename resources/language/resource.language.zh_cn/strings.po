@@ -1572,8 +1572,8 @@ msgstr "Plex 中的片头/片尾标记可能会有些提前。在自动跳过时
 
 #: 
 msgctxt "#32631"
-msgid "Playback (user-specific)"
-msgstr "播放（用户自定义）"
+msgid "Playback"
+msgstr "播放"
 
 #: 
 msgctxt "#33632"

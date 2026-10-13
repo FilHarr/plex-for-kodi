@@ -1568,7 +1568,7 @@ msgstr ""
 
 #: 
 msgctxt "#32631"
-msgid "Playback (user-specific)"
+msgid "Playback"
 msgstr ""
 
 #: 

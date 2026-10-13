@@ -492,25 +492,6 @@ class Settings(object):
                 .description(T(35086, "Stop whatever is playing, and clear Kodi's playlists, whenever the addon "
                                       "exits - including signing out or switching users. Off: playback carries on "
                                       "under Kodi's own player after Plex has closed.")),
-                BoolSetting('use_alternate_seek2', T(33667, 'Use alternate seek'), util.altSeekRecommended).description(
-                    T(33668, 'ATTENTION: Only enable this if you have reproducible audio issues after '
-                             'seeking/resuming.\n\nUse an alternative seek method in videos, which can help in '
-                             'problematic scenarios; brings its own issues/quirks. Disabled by default (enabled by '
-                             'default for CoreELEC and LG WebOS)'
-                )),
-                BoolSetting('lav_mode_auto_switch', T(34073, 'Seamless branching fix'), True)
-                .description(withAddonID(T(34074, "Automatically temporarily activate LAV Full or SB mode in "
-                                                  "CoreELEC on supported builds to alleviate audio dropouts on "
-                                                  "certain titles, if necessary. Based on \"seamless_branching.json\", "
-                                                  "can be user-amended by putting a file with the same name and "
-                                                  "structure into userdata/addon_data/script.plexmod.")))
-                if util.CE_SB_LAV_SWITCH else None,
-                BoolSetting(
-                    'assume_resume', T(33711, 'Always resume media'), True
-                ).description(
-                    T(33712, 'When playback of an in-progress media is requested, resume it by default instead'
-                             ' of asking whether to resume or start from the beginning.')
-                ),
             )
         ),
         'video': (
@@ -863,43 +844,6 @@ class Settings(object):
                     )
                 ).description(T(33088, 'Only applies to video player UI')),
                 OptionsSetting(
-                    'resume_offset', T(34075, "Resume offset adjustment"), -3500,
-                    [(0, T(32481))] + [
-                        (a, T(33091).format(sec_or_ms=a if a > -1000 else "{:.1f}".format(a / 1000),
-                                            unit_s_or_ms="ms" if a > -1000 else "s")) for a in
-                        [-100] + list(range(-250, -1000, -250)) + list(range(-1000, -30000, -500))]
-                ).description(T(34076, 'When resuming media with a resume point, negatively adjust it by this '
-                                       'amount of milliseconds to avoid lost content due to keyframes/seek behaviour. '
-                                       'Default: -3.5s')),
-                OptionsSetting(
-                    'resume_seek_behind', T(33089, ''), 0,
-                    [(0, T(32481))] + [
-                        (a, T(33091).format(sec_or_ms=a if a < 1000 else int(a / 1000),
-                                            unit_s_or_ms="ms" if a < 1000 else "s")) for a in
-                        [100] + list(range(250, 1000, 250)) + list(range(1000, 61000, 1000))]
-                ).description(T(33090, '')),
-                BoolSetting('resume_seek_behind_pause', T(33092, ''), False).description(
-                    T(33095, '')),
-                OptionsSetting(
-                    'resume_seek_behind_after', T(33093, ''), 0,
-                    [(0, T(32481))] + [
-                        (a, T(33091).format(sec_or_ms=a if a < 1000 else int(a / 1000),
-                                            unit_s_or_ms="ms" if a < 1000 else "s")) for a in
-                        list(range(250, 1000, 250)) + list(range(1000, 61000, 1000))]
-                ).description(T(33094, '')),
-                BoolSetting('resume_seek_behind_onlydp', T(33096, ''), True).description(
-                    T(33097, '')),
-                BoolSetting('seek_back_on_start', T(34049, 'Seek back on start'), util.altSeekRecommended).description(
-                    T(34050, "Issue a quick seek forward then back to the start of the video, when we start "
-                             "fresh (no resume point, no marker to immediately skip). Can fix A/V desync issues (e.g. "
-                             "CoreELEC on Ugoos with passthrough) and embedded subtitles showing late, with certain "
-                             "setups. Only for DirectPlay. This still requires a sensible value for \"Delay after "
-                             "change of refresh rate\" in Kodi (default: Off, CE/LG: On)")),
-                BoolSetting('initial_seek_blackout', T(34060, 'Blackout screen during initial seek'), True)
-                .description(T(35176, "While a video that starts part-way in (a resume, a skipped intro or Seek "
-                                      "back on start) makes its first seek, keep the screen black so its "
-                                      "opening frames don't flash up first.")),
-                OptionsSetting(
                     'player_stop_on_idle',
                     T(32946, 'Stop video playback on idle after'),
                     0,
@@ -912,7 +856,7 @@ class Settings(object):
             )
         ),
         'player_user': (
-            T(32631, 'Playback (user-specific)'), (
+            T(32631, 'Playback'), (
                 BoolUserSetting(
                     'show_chapters', T(33601, 'Show video chapters'), True
                 ).description(
@@ -1017,6 +961,66 @@ class Settings(object):
                     T(35017, 'Only include a series in Catchup mode when it has this many or fewer '
                              'unwatched episodes left.')
                 ),
+            )
+        ),
+        'playback_advanced': (
+            T(35178, 'Playback (advanced)'), (
+                BoolSetting(
+                    'assume_resume', T(33711, 'Always resume media'), True
+                ).description(
+                    T(33712, 'When playback of an in-progress media is requested, resume it by default instead'
+                             ' of asking whether to resume or start from the beginning.')
+                ),
+                OptionsSetting(
+                    'resume_offset', T(34075, "Resume offset adjustment"), -3500,
+                    [(0, T(32481))] + [
+                        (a, T(33091).format(sec_or_ms=a if a > -1000 else "{:.1f}".format(a / 1000),
+                                            unit_s_or_ms="ms" if a > -1000 else "s")) for a in
+                        [-100] + list(range(-250, -1000, -250)) + list(range(-1000, -30000, -500))]
+                ).description(T(34076, 'When resuming media with a resume point, negatively adjust it by this '
+                                       'amount of milliseconds to avoid lost content due to keyframes/seek behaviour. '
+                                       'Default: -3.5s')),
+                OptionsSetting(
+                    'resume_seek_behind', T(33089, ''), 0,
+                    [(0, T(32481))] + [
+                        (a, T(33091).format(sec_or_ms=a if a < 1000 else int(a / 1000),
+                                            unit_s_or_ms="ms" if a < 1000 else "s")) for a in
+                        [100] + list(range(250, 1000, 250)) + list(range(1000, 61000, 1000))]
+                ).description(T(33090, '')),
+                BoolSetting('resume_seek_behind_pause', T(33092, ''), False).description(
+                    T(33095, '')),
+                OptionsSetting(
+                    'resume_seek_behind_after', T(33093, ''), 0,
+                    [(0, T(32481))] + [
+                        (a, T(33091).format(sec_or_ms=a if a < 1000 else int(a / 1000),
+                                            unit_s_or_ms="ms" if a < 1000 else "s")) for a in
+                        list(range(250, 1000, 250)) + list(range(1000, 61000, 1000))]
+                ).description(T(33094, '')),
+                BoolSetting('resume_seek_behind_onlydp', T(33096, ''), True).description(
+                    T(33097, '')),
+                BoolSetting('seek_back_on_start', T(34049, 'Seek back on start'), util.altSeekRecommended).description(
+                    T(34050, "Issue a quick seek forward then back to the start of the video, when we start "
+                             "fresh (no resume point, no marker to immediately skip). Can fix A/V desync issues (e.g. "
+                             "CoreELEC on Ugoos with passthrough) and embedded subtitles showing late, with certain "
+                             "setups. Only for DirectPlay. This still requires a sensible value for \"Delay after "
+                             "change of refresh rate\" in Kodi (default: Off, CE/LG: On)")),
+                BoolSetting('initial_seek_blackout', T(34060, 'Blackout screen during initial seek'), True)
+                .description(T(35176, "While a video that starts part-way in (a resume, a skipped intro or Seek "
+                                      "back on start) makes its first seek, keep the screen black so its "
+                                      "opening frames don't flash up first.")),
+                BoolSetting('use_alternate_seek2', T(33667, 'Use alternate seek'), util.altSeekRecommended).description(
+                    T(33668, 'ATTENTION: Only enable this if you have reproducible audio issues after '
+                             'seeking/resuming.\n\nUse an alternative seek method in videos, which can help in '
+                             'problematic scenarios; brings its own issues/quirks. Disabled by default (enabled by '
+                             'default for CoreELEC and LG WebOS)'
+                )),
+                BoolSetting('lav_mode_auto_switch', T(34073, 'Seamless branching fix'), True)
+                .description(withAddonID(T(34074, "Automatically temporarily activate LAV Full or SB mode in "
+                                                  "CoreELEC on supported builds to alleviate audio dropouts on "
+                                                  "certain titles, if necessary. Based on \"seamless_branching.json\", "
+                                                  "can be user-amended by putting a file with the same name and "
+                                                  "structure into userdata/addon_data/script.plexmod.")))
+                if util.CE_SB_LAV_SWITCH else None,
             )
         ),
         'network': (
@@ -1192,7 +1196,7 @@ class Settings(object):
         ),
     }
 
-    SECTION_IDS = ('main', 'video', 'audio', 'ui', 'player', 'player_user', 'network', 'system', 'about')
+    SECTION_IDS = ('main', 'video', 'audio', 'ui', 'player', 'player_user', 'playback_advanced', 'network', 'system', 'about')
 
     def __getitem__(self, key):
         return self.SETTINGS[key]
@@ -1298,6 +1302,12 @@ class SettingsWindow(kodigui.BaseWindow, windowutils.UtilMixin):
         if not settings:
             return self.settingsList.reset()
 
+        # Settings kept per Plex Home user are marked (a person icon, and a line in the description)
+        # only when there's more than one user to keep them for.
+        account = plexnet.plexapp.ACCOUNT
+        multiUser = bool(account and len(account.homeUsers or ()) > 1)
+        userNote = multiUser and T(35179, 'Saved for this user ({0}) only.').format(account.title or account.username) or ''
+
         items = []
         for setting in settings:
             if setting is None or not setting.should_show():
@@ -1305,15 +1315,16 @@ class SettingsWindow(kodigui.BaseWindow, windowutils.UtilMixin):
 
             item = kodigui.ManagedListItem(setting.label, setting.type != 'BOOL' and setting.valueLabel() or '',
                                            data_source=setting)
-            item.setProperty('description', setting.desc)
+            desc = setting.desc
+            if setting.userAware and multiUser:
+                item.setProperty('useraware', '1')
+                desc = u'{0}\n{1}'.format(userNote, desc) if desc else userNote
+            item.setProperty('description', desc)
             if setting.type == 'BOOL':
                 item.setProperty('checkbox', '1')
                 item.setProperty('checkbox.checked', setting.get() and '1' or '')
             elif setting.type == 'BUTTON':
                 item.setProperty('button', '1')
-
-            if setting.userAware:
-                item.setProperty('useraware', '1')
 
             items.append(item)
 
