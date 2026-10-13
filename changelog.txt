@@ -1,3 +1,30 @@
+[-0.2.0-]
+- Settings: sections by topic. "Playback (user-specific)" is now "Playback", and a new "Playback (advanced)" holds the resume, seek and device-fix settings from Main and Player UI
+- Settings: with more than one Plex Home user, a per-user setting shows a person icon and "Saved for this user (name) only."
+- Settings: all ten sections fit on screen, under a shorter header
+- Settings: Watched indicators, Debug logging, the Home key, Episodes season thumbnails and Use Watchlist apply as soon as they're changed or Settings closes
+- Settings: the update options are hidden; Plex Uno updates through its repository
+- Settings: removed, as they did nothing: Linear Hubs, Use episode thumbnails in continue hub, the background art blur and opacity, Use legacy background fallback image
+- Settings: "Show item art and colour backgrounds" (was "Show dynamic background art") says what turning it off does
+- Settings: help texts corrected - no "Home:" prefixes, this add-on's own folder names, the read timeout's default; number editors are titled with the setting's name
+- Network: plex.direct handling works again - names that a router's DNS-rebind protection blocks are written to advancedsettings.xml (Ask or Always)
+- Path mapping: the sidebar shows a library whose mapped share is down (red dot) and says so, checked every minute; the grey "mapped" dot is back
+- Home and Recommended: rows refresh after playback started from a row and notice new progress and art; the next episode takes a finished one's place
+- Continue Watching: current progress and art, and 20 titles on Home with no film twice
+- Home: a server that fails or answers late keeps its last rows on a refresh
+- Grids: the tiles played update in place after the grid's Play or Shuffle
+- Shuffle modes: films and shows only, never a collection
+- Playback: skipping the final credits goes to post-play, as if the video played out
+- Tiles: slimmer progress bars
+- Panel colours follow a season's new poster
+- Discover: a show with one hidden season opens; no dead buttons with the Watchlist off
+- Video play queues are half the size
+- Fixed: the saved server list wasn't used when plex.tv didn't answer
+- Fixed: with "Cache Plex data for" on, a request wanting a fresh answer could get a cached one
+- Fixed: back from the last episode of a show with its one season hidden
+- Fixed: "Treat DTS like AC3" behaved as off until changed, though shown as on
+- Fixed: the Map Home key dialog's second line
+
 [-0.1.1-]
 - Home and Recommended: Refresh Hubs is now last on every row item's menu (no longer in the sidebar's), and refreshes the rows in place - your row, item and focus stay
 - Home and Recommended: Remove from Continue Watching, Mark Played and Mark Unplayed update the rows in place instead of reopening the screen
