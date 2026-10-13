@@ -30,6 +30,7 @@ from . import dropdown
 from . import home
 from . import kodigui
 from . import optionsdialog
+from . import plexdirect
 from . import search
 from . import section_ids
 from . import sidebar_model
@@ -1710,20 +1711,33 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # Theme-relevant settings (watched_indicators, hide_aw_bg) are baked into the compiled
             # XML by render_templates(), so a change only shows once the templates are recompiled:
             # main.py does that for the 'recompile' close option and restarts Home.
+            # The plex.direct settings: checked again with the new ones (upstream HomeWindow did on
+            # return to Home).
             themeChanged = []
+            plexDirectChanged = []
 
             def onThemeSetting(*args, **kwargs):
                 themeChanged.append(kwargs.get('id'))
 
-            plexapp.util.APP.on('theme_relevant_setting', onThemeSetting)
+            def onPlexDirectSetting(*args, **kwargs):
+                plexDirectChanged.append(True)
+
+            watched = (('theme_relevant_setting', onThemeSetting),
+                       ('change:force_pd_mapping', onPlexDirectSetting),
+                       ('change:handle_plexdirect', onPlexDirectSetting))
+            for signal, handler in watched:
+                plexapp.util.APP.on(signal, handler)
             try:
                 settings.openWindow()
             finally:
-                plexapp.util.APP.off('theme_relevant_setting', onThemeSetting)
+                for signal, handler in watched:
+                    plexapp.util.APP.off(signal, handler)
             if themeChanged:
                 util.LOG('Library: theme-relevant settings changed ({0}), recompiling templates',
                          ', '.join(themeChanged))
                 self._closeSessionWithOption('recompile')
+            elif plexDirectChanged:
+                windowutils.HOME.checkPlexDirectHosts()
         elif option == 'update':
             self.setBoolProperty('show.options', False)
             self.setProperty('busy', '1')
@@ -1797,6 +1811,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 'refresh after display sleep', lambda *a, **k: self.refreshAfterIdle('display'))),
             # Settings' update source; passed on to the update checker by tick()
             (plexapp.util.APP, 'change:update_source', self._onUpdateSourceChanged),
+            # the servers from plex.tv, on plexnet's thread: their plex.direct names (plexdirect.check())
+            (plexapp.util.APP, 'loaded:server_connections', self._onServerConnectionsLoaded),
         )
         for emitter, signal, handler in self._serverSignalHandlers:
             emitter.on(signal, handler)
@@ -1862,6 +1878,22 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
     def _onUpdateSourceChanged(self, value=None, **kwargs):
         self._updateSourceChanged = value
+
+    def checkPlexDirectHosts(self, servers=None, source="stored"):
+        """Map the servers' plex.direct names that Kodi can't resolve (plexdirect.py). Any thread; the
+        "ask" question is posted to the main thread. Root only."""
+        if self._shuttingDown:
+            return
+        try:
+            if servers is None:
+                servers = list(plexapp.SERVERMANAGER.serversByUuid.values())
+            plexdirect.check(servers, source=source,
+                             post=lambda fn: self.postUI('plex.direct mapping', fn))
+        except Exception:
+            util.ERROR()
+
+    def _onServerConnectionsLoaded(self, servers=None, source="stored", **kwargs):
+        self.checkPlexDirectHosts(servers or (), source=source)
 
     def _answerUpdateChecker(self):
         """The update checker (update_checker.py, a service) talks to the UI through global
@@ -2285,6 +2317,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # Only the true root reacts to the server signals (hookSignals())
             self._signalsHooked = True
             self.hookSignals()
+            # The stored servers' loaded:server_connections fired at startup, before any window
+            # (PlexServerManager.__init__()), and plex.tv's may have too: upstream HomeWindow checked
+            # them here as well as on the signal.
+            plexdirect.reset()
+            self.checkPlexDirectHosts()
         if self is windowutils.HOME and self.section is home.home_section:
             self.offerOnboarding()
         timing.mark('controls')

@@ -305,7 +305,7 @@ class ServerSignalsTest(KodiTestCase):
             for name in ('displayServerAndUser', 'onServerReachable',
                          'onServerSuspect', 'onServerRecovered', 'onServerOffline',
                          'onServerOnline', 'onServerGone', '_onSleep', '_onWake',
-                         '_onUpdateSourceChanged'):
+                         '_onUpdateSourceChanged', '_onServerConnectionsLoaded'):
                 setattr(host, name, (lambda n: lambda **kw: calls.append((n, kw)))(name))
             host._postedHandler = library.LibraryWindow._postedHandler.__get__(host)
             library.LibraryWindow.hookSignals(host)
@@ -340,6 +340,12 @@ class ServerSignalsTest(KodiTestCase):
             self.assertEqual(['dpms.deactivated', 'screensaver.deactivated', 'system.sleep', 'system.wakeup'],
                              sorted(monitor.handlers))
             cron.registerReceiver.assert_called_once_with(host)
+
+            # plex.tv's servers: the plex.direct check runs where it's signalled (plexdirect.check()
+            # posts only its question)
+            app.trigger('loaded:server_connections', servers=['oscar'], source='myplex')
+            self.assertEqual(('_onServerConnectionsLoaded', {'servers': ['oscar'], 'source': 'myplex'}),
+                             calls[-1])
 
             library.LibraryWindow.unhookSignals(host)
             self.assertEqual([], [h for hs in manager.handlers.values() for h in hs])

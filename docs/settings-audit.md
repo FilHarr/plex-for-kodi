@@ -7,6 +7,7 @@ The findings below describe the code at 60ed0301. These have since been fixed:
 - §1.3: the update settings and "Last update check" are hidden unless the add-on's own updater runs (`kodi_util.UPDATER_ENABLED`); "Service running" shows a version.
 - §1.4: the "Home:" prefixes are gone; the add-on ID in help text is swapped at runtime for the strings the Settings screen shows (`withAddonID()`); the integer editor is titled with the setting's label. Still open: `use_cert_bundle` (33052), which Kodi shows itself; the per-user marker; the `dynamic_backgrounds` label.
 - §1.5: the `auto_seek` dependency, the default mismatches, the `requests_timeout_read` default, the `worker_count` cap note and the `initial_seek_blackout` description.
+- §1.6: plex.direct mapping is restored (`lib/windows/plexdirect.py`), with all three triggers: the root window's first init, `loaded:server_connections`, and closing Settings after `handle_plexdirect` or `force_pd_mapping` changed. A dismissed question isn't asked again that session for the same hosts.
 - §3.8: the `exit_default_is_quit` fallback label. §2.6: the `recheck_server_connections` help now mentions the 1-minute check.
 
 Deliberately unchanged: "PM4K"/"PlexMod" in help text (Uno may merge into PM4K) and the `osd_hide_delay` Plextuary caveat (Plextuary is recommended, not required).
