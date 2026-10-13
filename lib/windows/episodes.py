@@ -1358,8 +1358,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                     util.LOG("Progress data left for TV show, going to season of "
                              "remaining episode with progress data: {}", ep)
                     raise RedirectToEpisode(ep)
-            elif progress_for_last_mli and last_mli_seen.dataSource.isFullyWatched and self.getSeasons():
-                # check if we need to go to the next season
+            elif (progress_for_last_mli and last_mli_seen.dataSource.isFullyWatched
+                  and self.season is not self.show_ and self.getSeasons()):
+                # check if we need to go to the next season - none for a skipChildren show, whose
+                # season here is the show itself, in no season list: its last episode watched to
+                # the end raised a ValueError and broke the return (AM6B, Lanterns, 2026-10-11)
                 remaining_seasons = self.seasons[self.seasons.index(self.season)+1:]
                 if remaining_seasons:
                     season = remaining_seasons[0]
