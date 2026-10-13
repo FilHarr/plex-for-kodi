@@ -93,8 +93,19 @@ class CombineTest(KodiTestCase):
 
     def test_one_servers_continue_watching_stays_as_it_came(self):
         a = Hub('continueWatching', [Item('a1', '22', 300)], self.animal)
-        self.assertIs(a, home.mergeContinueWatching([a]))
+        merged = home.mergeContinueWatching([a])
+        self.assertEqual(['a1'], [i.title for i in merged.items])
+        self.assertTrue(merged.more.asBool())
+
+    def test_each_servers_row_is_left_as_it_came(self):
+        """Merged into the first server's own row, a refresh showing that server's rows again
+        (HomeHubsTask's previous) had every server's, cut to a row's maximum."""
+        a = Hub('continueWatching', [Item('a%d' % i, '22', 1000 - i) for i in range(25)], self.animal)
+        o = Hub('continueWatching', [Item('o1', '1', 2000)], self.oscar)
+        first = [i.title for i in home.mergeContinueWatching([a, o]).items]
+        self.assertEqual(25, len(a.items))
         self.assertTrue(a.more.asBool())
+        self.assertEqual(first, [i.title for i in home.mergeContinueWatching([a, o]).items])
 
     def test_rows_continue_watching_first_then_each_server_in_sidebar_order(self):
         answers = {
@@ -556,6 +567,66 @@ class LateServerTest(KodiTestCase):
         self.assertEqual([['Animal', 'Oscar']], [[h.items[0].title for h in rows] for rows in late])
 
 
+class PreviousAnswersTest(KodiTestCase):
+    """An in-place refresh shows a server's last rows again while it fails or is late (4 and 5 of
+    the stale-rows review, 2026-10-13): one failing kept every server's old rows, one late had its
+    rows go and come back."""
+
+    def setUp(self):
+        super(PreviousAnswersTest, self).setUp()
+        self.animal, self.oscar = server(ANIMAL, 'Animal'), server(OSCAR, 'Oscar')
+        self.animal.hubs = mock.Mock(return_value=[Hub('home.movies.recent', [Item('new a', '22')], self.animal)])
+        self.oldOscar = [Hub('home.television.recent', [Item('old o', '1')], self.oscar)]
+        self.release = threading.Event()
+        self.addCleanup(self.release.set)
+
+    def run_task(self, previous, keys=('1',), lateCallback=None):
+        bound = []
+        task = home.HomeHubsTask().setup(home.home_section, lambda section, rows: bound.append(rows),
+                                         [(self.animal, ['22']), (self.oscar, list(keys))],
+                                         lateCallback=lateCallback, previous=previous)
+        with mock.patch.object(home, 'HOME_LATE_SERVER_BUDGET', 0.2):
+            task.run()
+        return bound[0]
+
+    def failing(self):
+        def hubs(section, count=None, section_ids=None, **kwargs):
+            self.oscar.suspect = True
+            return []
+        self.oscar.hubs = mock.Mock(side_effect=hubs)
+
+    def test_a_failing_servers_last_rows_with_the_others_new(self):
+        self.failing()
+        rows = self.run_task({OSCAR: (('1',), self.oldOscar)})
+        self.assertEqual(['new a', 'old o'], [h.items[0].title for h in rows])
+        self.assertEqual([OSCAR], rows.unanswered)
+        self.assertEqual([OSCAR], rows.reused)
+        self.assertEqual({ANIMAL, OSCAR}, set(rows.answers))
+
+    def test_not_when_its_sidebar_libraries_have_changed(self):
+        self.failing()
+        rows = self.run_task({OSCAR: (('1',), self.oldOscar)}, keys=('1', '2'))
+        self.assertEqual(['new a'], [h.items[0].title for h in rows])
+        self.assertEqual([], rows.reused)
+
+    def test_a_late_servers_last_rows_until_its_new_come(self):
+        def slow(section, count=None, section_ids=None, **kwargs):
+            self.release.wait(5)
+            return [Hub('home.television.recent', [Item('new o', '1')], self.oscar)]
+        self.oscar.hubs = mock.Mock(side_effect=slow)
+        late, done = [], threading.Event()
+
+        def lateCallback(section, rows):
+            late.append(rows)
+            done.set()
+        rows = self.run_task({OSCAR: (('1',), self.oldOscar)}, lateCallback=lateCallback)
+        self.assertEqual(['new a', 'old o'], [h.items[0].title for h in rows])
+        self.release.set()
+        self.assertTrue(done.wait(5), 'the late rows were handed over')
+        self.assertEqual(['new a', 'new o'], [h.items[0].title for h in late[0]])
+        self.assertEqual([], late[0].reused)
+
+
 class RebindInPlaceTest(KodiTestCase):
     """The Recommended view's rows refreshed over the ones showing (plan 7.3): the anchor row stays
     the anchor, found by its id; nothing is rebound when nothing changed; a refresh for a view
@@ -635,6 +706,26 @@ class RebindInPlaceTest(KodiTestCase):
 
     def test_a_timed_refresh_says_nothing(self):
         self.unanswered_refresh(manual=False).assert_not_called()
+
+    def test_a_server_whose_last_rows_came_again_the_others_rebound(self):
+        rows = home.HubsList([Hub(self.films.hubIdentifier, [Item('f2')], self.animal),
+                              self.fresh(self.tv)]).init()
+        rows.unanswered = [ANIMAL]
+        rows.reused = [ANIMAL]
+        rows.answers = {ANIMAL: (('22',), list(rows))}
+        manager = mock.Mock(serversByUuid={ANIMAL: self.animal})
+        with mock.patch.object(library_hubs.plexapp, 'SERVERMANAGER', manager),                 mock.patch.object(library_hubs.util, 'showNotification') as notify:
+            self.win._rebindHubsInPlace(home.home_section, rows, 7, 'test', manual=True)
+        self.win._bindAllHubSlots.assert_called_once_with()
+        self.assertIn('Animal', notify.call_args[0][0])
+        self.assertIs(rows.answers, self.win._homeAnswers)
+
+    def test_a_server_with_no_rows_showing_holds_up_no_others(self):
+        rows = home.HubsList([Hub(self.films.hubIdentifier, [Item('f2')], self.animal),
+                              self.fresh(self.tv)]).init()
+        rows.unanswered = [OSCAR]
+        self.win._rebindHubsInPlace(home.home_section, rows, 7, 'test')
+        self.win._bindAllHubSlots.assert_called_once_with()
 
     def test_a_librarys_failed_fetch_keeps_what_shows(self):
         """SectionHubsTask hands a failed fetch over as an empty, invalid list: bound, it emptied

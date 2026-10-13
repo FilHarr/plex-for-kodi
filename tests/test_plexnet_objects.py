@@ -299,3 +299,30 @@ class SectionAllCollectionsTest(KodiTestCase):
 
     def test_every_item_and_no_collection(self):
         self.assertNotIn('includeCollections', self.asked(collections=False))
+
+
+class HubCopyTest(KodiTestCase):
+    """A hub's copy (BaseHub.__copy__): Home's merged Continue Watching row is one, leaving each
+    server's own as it came to be merged again (home.mergeContinueWatching())."""
+
+    def setUp(self):
+        ensure_plex_interface()
+        from plexnet import plexlibrary
+        self.hub = plexlibrary.Hub(ET.fromstring('<Hub hubIdentifier="continueWatching" key="/hubs/cw" '
+                                                 'type="mixed" more="1"/>'))
+        self.hub.items = ['a', 'b']
+
+    def test_the_same_row(self):
+        import copy
+        other = copy.copy(self.hub)
+        self.assertEqual('continueWatching', other.hubIdentifier)
+        self.assertEqual('/hubs/cw', other.key)
+        self.assertEqual(['a', 'b'], other.items)
+
+    def test_its_items_and_more_its_own_once_given(self):
+        import copy
+        other = copy.copy(self.hub)
+        other.items = ['c']
+        other.more = plexobjects.PlexValue('0', other)
+        self.assertEqual(['a', 'b'], self.hub.items)
+        self.assertTrue(self.hub.more.asBool())

@@ -811,6 +811,20 @@ class BaseHub(plexobjects.PlexObject):
         super(BaseHub, self).__init__(*args, **kwargs)
         self._identifier = None
 
+    def __copy__(self):
+        """A shallow copy, the items list shared until one is given its own. copy.copy()'s own way
+        asks the copy for __setstate__, which PlexObject.__getattr__ answers with an empty
+        PlexValue on Python 3.8."""
+        other = self.__class__.__new__(self.__class__)
+        for cls in self.__class__.__mro__:
+            for name in getattr(cls, '__slots__', ()):
+                try:
+                    object.__setattr__(other, name, object.__getattribute__(self, name))
+                except AttributeError:
+                    pass
+        other.__dict__.update(self.__dict__)
+        return other
+
     def reset(self):
         self.set('offset', 0)
         self.set('size', len(self.items))

@@ -523,6 +523,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # were ported from (quiet-orbiting-heron.md, Recommended-tab sharing).
         self.hubSettings = None
         self.sectionHubs = {}
+        # each server's Home rows last bound (_keepHomeAnswers())
+        self._homeAnswers = {}
 
         # Stage 3 (section-item context menu + Manage Hubs dialog): navSettings holds the same
         # per-section show/hide/pin/order preferences buildSectionList() already read as a local,
@@ -2380,13 +2382,15 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 self._gridTiming = None
             timing.log()
 
-    def _startHubsFetch(self, callback, lateCallback=None):
+    def _startHubsFetch(self, callback, lateCallback=None, inPlace=False):
         """Fetch the section's rows on a worker for callback(section, hubs): Home's from every
         sidebar server together (home.HomeHubsTask, which hands rows from a server that answers too
-        late for the first bind to lateCallback), a library's from its server."""
+        late for the first bind to lateCallback; inPlace, one failing or late has its rows showing
+        until it answers), a library's from its server."""
         if self.section.key is None:
             task = home.HomeHubsTask().setup(self.section, callback, self._homeServers(),
-                                             self._homeRowPositions(), lateCallback=lateCallback)
+                                             self._homeRowPositions(), lateCallback=lateCallback,
+                                             previous=inPlace and self._homeAnswers or None)
         else:
             task = home.SectionHubsTask().setup(self.section, callback)
         self.tasks.add(task)
@@ -2446,7 +2450,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             return False
         util.DEBUG_LOG('Library: refreshing {0}\'s rows in place ({1})', self.section.title or 'Home', reason)
         self._startHubsFetch(self._hubsRefetchedFor(self._listGeneration, reason, manual=manual),
-                             self._hubsRefetchedFor(self._listGeneration, reason + ', a late server'))
+                             self._hubsRefetchedFor(self._listGeneration, reason + ', a late server'),
+                             inPlace=True)
         return True
 
     def _consumeRestoreItemPos(self, count):

@@ -783,7 +783,7 @@ class TickTest(KodiTestCase):
         self.win._isHostedShell = False
         self.win._listGeneration = 3
         self.win.started = []
-        self.win._startHubsFetch = lambda callback, late=None: self.win.started.append((callback, late))
+        self.win._startHubsFetch = lambda callback, late=None, inPlace=False: self.win.started.append((callback, late))
         self.win._captureRootRestoreState = lambda: {'_restoreHubId': 'movie.recentlyadded'}
         self.win.postUI = lambda name, fn, args=(), kwargs=None: self.posted.append((name, fn, args))
         ENV.settings["recheck_server_connections"] = "true"
@@ -995,6 +995,7 @@ class EmptyLibraryTest(KodiTestCase):
 
     class Host(object):
         _recommendedHubsCallback = library.HubsMixin._recommendedHubsCallback
+        _keepHomeAnswers = library.HubsMixin._keepHomeAnswers
         HUB_CONTROL_ID = 400
         HUB_ROTATION_RING = [401, 400, 402, 403]
 

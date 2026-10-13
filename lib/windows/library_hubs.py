@@ -2528,6 +2528,7 @@ class HubsMixin(object):
             sorted_hubs = self._visibleHubsFor(section, hubs)
             self.sectionHubs[section_ids.hubSettingsId(section)] = sorted_hubs
             self.visibleHubs = sorted_hubs
+            self._keepHomeAnswers(hubs)
             # One-shot: popBack() asked to land back on a specific hub row (_pendingRestoreHubId,
             # set via _captureRootRestoreState()/popBack()) - find it by its stable identifier,
             # not position (sortHubsByUserOrder()/hub visibility can shift index between visits).
@@ -2609,13 +2610,23 @@ class HubsMixin(object):
         if names:
             util.showNotification(T(35175, "Couldn't refresh the rows from {0}").format(names), time_ms=5000)
 
+    def _keepHomeAnswers(self, hubs):
+        """Each server's rows just bound on Home (HomeHubsTask's answers), for an in-place refresh
+        to show again for one that fails or is late (refreshHubsInPlace()). Gone with the window,
+        as on a profile switch; a server's libraries changed in the sidebar, its own aren't used."""
+        answers = getattr(hubs, 'answers', None)
+        if answers is not None:
+            self._homeAnswers = answers
+
     def _rebindHubsInPlace(self, section, hubs, generation, reason='', manual=False):
         """The Recommended view's rows fetched again (refreshHubsInPlace(), a late server's), bound
         over the ones showing without rebuilding the view (plan 7.3, agreed 2026-10-02): the row
         that was the anchor stays it (found by hubMemoryKey(), else the nearest place), the ring
         keeps its rotation, each row its item (_bindHubToControl()'s reselect memory), and focus
         stays where it is. Nothing happens when the rows show what they did. manual: the hub
-        items' Refresh Hubs, which says when rows were kept for a server that gave none."""
+        items' Refresh Hubs, which says when rows were kept for a server that gave none. Home's
+        rows from a server that gave none this time are its last ones (HomeHubsTask's previous),
+        the others' new."""
         if generation != self._listGeneration or self.closing or self.contentMode != 'recommended':
             return
         with self.lock:
@@ -2623,19 +2634,20 @@ class HubsMixin(object):
                 return
             if section_ids.hubSettingsId(section) != section_ids.hubSettingsId(self.section):
                 return
-            unanswered = getattr(hubs, 'unanswered', None)
-            if unanswered and self.visibleHubs:
-                # A server asked gave no rows this time - most likely a blip, as on waking from
-                # sleep, when it came back as none at all and Home went blank (AM6B, 2026-10-09).
-                # The rows showing stay; one that's really gone goes offline, and that refresh
-                # (onServerOffline()) skips it, while one that answers again refreshes them
-                # (onServerRecovered()).
+            unanswered = getattr(hubs, 'unanswered', None) or []
+            reused = set(getattr(hubs, 'reused', ()))
+            if manual and unanswered:
+                servers = plexapp.SERVERMANAGER.serversByUuid
+                self._notifyRowsKept(', '.join(servers[uuid].name for uuid in unanswered if uuid in servers))
+            showing = set(getattr(hub.server, 'uuid', None) for hub in self.visibleHubs or ())
+            if any(uuid not in reused and uuid in showing for uuid in unanswered):
+                # A server asked gave no rows this time, with rows showing and none of its own to
+                # show again - most likely a blip, as on waking from sleep, when it came back as
+                # none at all and Home went blank (AM6B, 2026-10-09). The rows showing stay; one
+                # that's really gone goes offline, and that refresh (onServerOffline()) skips it,
+                # while one that answers again refreshes them (onServerRecovered()).
                 util.DEBUG_LOG('Library: hub rows kept ({0}): {1} gave none', reason, len(unanswered))
                 self.updateServerUnavailable()
-                if manual:
-                    servers = plexapp.SERVERMANAGER.serversByUuid
-                    names = [servers[uuid].name for uuid in unanswered if uuid in servers]
-                    self._notifyRowsKept(', '.join(names))
                 return
             if getattr(hubs, 'invalid', False) and self.visibleHubs:
                 # A library's fetch failed (SectionHubsTask): the rows showing stay, as above. A
@@ -2647,6 +2659,7 @@ class HubsMixin(object):
                     self._notifyRowsKept(getattr(section.server, 'name', ''))
                 return
             new = self._visibleHubsFor(section, hubs)
+            self._keepHomeAnswers(hubs)
             if self._hubsSignature(new) == self._hubsSignature(self.visibleHubs or []):
                 util.DEBUG_LOG('Library: hub rows unchanged ({0})', reason)
                 self.updateServerUnavailable()

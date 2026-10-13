@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import copy
 import threading
 import time
 
@@ -401,7 +402,8 @@ def mergeContinueWatching(hubs, positions=None):
     the sidebar stays (positions: {(server uuid, library key): place}), so the user picks which by
     their sidebar order; on two servers, which don't share progress, the one watched last stays.
     At most HUB_ROW_MAX_ITEMS. One server's row keeps its "See more"; a merged one has none - its
-    later pages would be per server."""
+    later pages would be per server. The row is a copy: each server's own stays as it came, to be
+    merged again (HomeHubsTask's previous answers)."""
     if not hubs:
         return None
     positions = positions or {}
@@ -425,7 +427,7 @@ def mergeContinueWatching(hubs, positions=None):
             continue
         seen.add(key)
         items.append(item)
-    merged = hubs[0]
+    merged = copy.copy(hubs[0])
     merged.items = items[:HUB_ROW_MAX_ITEMS]
     if len(hubs) > 1:
         merged.more = plexobjects.PlexValue('0', merged)
@@ -477,19 +479,33 @@ class HomeHubsTask(backgroundthread.Task):
     has). A server that answers after that has every row so far handed to lateCallback, to rebind
     in place. servers: [(server, keys)] in sidebar order, keys being its sidebar entries
     (libraries, 'playlists'). A server known to be offline isn't asked; one still on its first
-    connection test is, once that finds a connection."""
+    connection test is, once that finds a connection.
 
-    def setup(self, section, callback, servers, positions=None, lateCallback=None):
+    previous: an in-place refresh's {uuid: (keys, hubs)}, each server's rows last bound (the
+    combined rows' answers). A server asked that fails, or is late, has those again until it
+    answers, if its sidebar libraries are the same: without them, one failing kept every server's
+    old rows, and one late had its rows go and come back."""
+
+    def setup(self, section, callback, servers, positions=None, lateCallback=None, previous=None):
         self.section = section
         self.callback = callback
         self.servers = servers
         self.positions = positions
         self.lateCallback = lateCallback
+        self.previous = previous or {}
+        self.reusable = set()
         return self
 
     def _combined(self, answers):
-        hubs = combineHomeHubs(dict(answers), self.servers, self.positions)
+        fresh = dict(answers)
+        used = dict(fresh)
+        for uuid in self.reusable:
+            used.setdefault(uuid, self.previous[uuid][1])
+        hubs = combineHomeHubs(used, self.servers, self.positions)
         hubs.identifier = None
+        hubs.answers = dict((server.uuid, (tuple(keys), used[server.uuid]))
+                            for server, keys in self.servers if server.uuid in used)
+        hubs.reused = [uuid for uuid in self.reusable if uuid not in fresh]
         return hubs
 
     def _fetch(self, server, keys, answers):
@@ -559,6 +575,14 @@ class HomeHubsTask(backgroundthread.Task):
         util.DEBUG_LOG('Home: rows from {0} of {1} servers in {2} ms{3}', len(answers), len(threads),
                        int((time.time() - started) * 1000), late and ' (not waited for: {0})'.format(', '.join(late)) or '')
         bound = set(answers)
+        keys = dict((server.uuid, tuple(keys)) for server, keys in self.servers)
+        for server, thread in threads:
+            entry = self.previous.get(server.uuid)
+            if server.uuid not in bound and entry is not None and entry[0] == keys.get(server.uuid):
+                self.reusable.add(server.uuid)
+        if self.reusable:
+            util.DEBUG_LOG('Home: rows from {0} as they were', ', '.join(
+                server.name for server, _ in threads if server.uuid in self.reusable))
         combined = self._combined(answers)
         # Asked but gave no rows (failed, refused, stopped answering): an in-place refresh keeps
         # what it shows rather than lose their rows (LibraryWindow._rebindHubsInPlace())
