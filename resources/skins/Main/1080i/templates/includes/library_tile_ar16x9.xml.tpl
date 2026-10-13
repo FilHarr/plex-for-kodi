@@ -38,21 +38,21 @@
             <control type="group">
                 <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
                 <posx>8</posx>
-                <posy>{{ vscale(272) }}</posy>
+                <posy>{{ vscale(280) }}</posy>
                 <control type="image">
                     <posx>0</posx>
                     <posy>0</posy>
                     <width>496</width>
-                    <height>{{ vscale(8) }}</height>
-                    <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                    <height>{{ vscale(5) }}</height>
+                    <texture diffuse="script.plex/masks/progress-bar-mask-496.png">script.plex/white-square.png</texture>
                     <colordiffuse>E60A0F1A</colordiffuse>
                 </control>
                 <control type="image">
                     <posx>0</posx>
                     <posy>0</posy>
                     <width>496</width>
-                    <height>{{ vscale(8) }}</height>
-                    <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                    <height>{{ vscale(5) }}</height>
+                    <texture diffuse="script.plex/masks/progress-bar-mask-496.png">$INFO[ListItem.Property(progress)]</texture>
                     <colordiffuse>FFE5A00D</colordiffuse>
                 </control>
             </control>

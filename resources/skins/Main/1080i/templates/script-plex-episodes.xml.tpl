@@ -634,9 +634,9 @@
                             <!-- Inset pill, not the old flush-bottom bar: matches Recommended's/Seasons' own
                                  poster progress bar exactly (includes/hub_itemlayout_poster.xml.tpl, itself
                                  matching official Plex's own measured inset) - 8px in from the art's left/
-                                 right/bottom edges, pill-shaped via progress-bar-mask.png (radius = half the
-                                 bar's own 8px height). Track and fill share one identical 496x8 box (512 art
-                                 width minus the 8px inset on each side) - the progress asset itself
+                                 right edges and 3px above its bottom, pill-shaped via progress-bar-mask-496.png
+                                 (radius = half the bar's own 5px height). Track and fill share one identical
+                                 496x5 box (512 art width minus the 8px inset on each side) - the progress asset itself
                                  (util.getProgressImage(), $INFO[ListItem.Property(progress)]) is already a
                                  fixed-width strip with only its own left portion opaque, so masking it at
                                  full box size gives a clean rounded left cap and a plain straight-cut right
@@ -644,21 +644,21 @@
                             <control type="group">
                                 <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
                                 <posx>8</posx>
-                                <posy>{{ vscale(272) }}</posy>
+                                <posy>{{ vscale(280) }}</posy>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
                                     <width>496</width>
-                                    <height>{{ vscale(8) }}</height>
-                                    <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                                    <height>{{ vscale(5) }}</height>
+                                    <texture diffuse="script.plex/masks/progress-bar-mask-496.png">script.plex/white-square.png</texture>
                                     <colordiffuse>E60A0F1A</colordiffuse>
                                 </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
                                     <width>496</width>
-                                    <height>{{ vscale(8) }}</height>
-                                    <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                                    <height>{{ vscale(5) }}</height>
+                                    <texture diffuse="script.plex/masks/progress-bar-mask-496.png">$INFO[ListItem.Property(progress)]</texture>
                                     <colordiffuse>FFE5A00D</colordiffuse>
                                 </control>
                             </control>
@@ -864,21 +864,21 @@
                                 <control type="group">
                                     <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
                                     <posx>8</posx>
-                                    <posy>{{ vscale(272) }}</posy>
+                                    <posy>{{ vscale(280) }}</posy>
                                     <control type="image">
                                         <posx>0</posx>
                                         <posy>0</posy>
                                         <width>496</width>
-                                        <height>{{ vscale(8) }}</height>
-                                        <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                                        <height>{{ vscale(5) }}</height>
+                                        <texture diffuse="script.plex/masks/progress-bar-mask-496.png">script.plex/white-square.png</texture>
                                         <colordiffuse>E60A0F1A</colordiffuse>
                                     </control>
                                     <control type="image">
                                         <posx>0</posx>
                                         <posy>0</posy>
                                         <width>496</width>
-                                        <height>{{ vscale(8) }}</height>
-                                        <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                                        <height>{{ vscale(5) }}</height>
+                                        <texture diffuse="script.plex/masks/progress-bar-mask-496.png">$INFO[ListItem.Property(progress)]</texture>
                                         <colordiffuse>FFE5A00D</colordiffuse>
                                     </control>
                                 </control>
@@ -1600,21 +1600,21 @@
                             <control type="group">
                                 <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
                                 <posx>8</posx>
-                                <posy>{{ vscale(344) }}</posy>
+                                <posy>{{ vscale(352) }}</posy>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
                                     <width>224</width>
-                                    <height>{{ vscale(8) }}</height>
-                                    <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                                    <height>{{ vscale(5) }}</height>
+                                    <texture diffuse="script.plex/masks/progress-bar-mask-224.png">script.plex/white-square.png</texture>
                                     <colordiffuse>E60A0F1A</colordiffuse>
                                 </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
                                     <width>224</width>
-                                    <height>{{ vscale(8) }}</height>
-                                    <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                                    <height>{{ vscale(5) }}</height>
+                                    <texture diffuse="script.plex/masks/progress-bar-mask-224.png">$INFO[ListItem.Property(progress)]</texture>
                                     <colordiffuse>FFE5A00D</colordiffuse>
                                 </control>
                             </control>
@@ -1710,21 +1710,21 @@
                                 <control type="group">
                                     <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
                                     <posx>8</posx>
-                                    <posy>{{ vscale(344) }}</posy>
+                                    <posy>{{ vscale(352) }}</posy>
                                     <control type="image">
                                         <posx>0</posx>
                                         <posy>0</posy>
                                         <width>224</width>
-                                        <height>{{ vscale(8) }}</height>
-                                        <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                                        <height>{{ vscale(5) }}</height>
+                                        <texture diffuse="script.plex/masks/progress-bar-mask-224.png">script.plex/white-square.png</texture>
                                         <colordiffuse>E60A0F1A</colordiffuse>
                                     </control>
                                     <control type="image">
                                         <posx>0</posx>
                                         <posy>0</posy>
                                         <width>224</width>
-                                        <height>{{ vscale(8) }}</height>
-                                        <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                                        <height>{{ vscale(5) }}</height>
+                                        <texture diffuse="script.plex/masks/progress-bar-mask-224.png">$INFO[ListItem.Property(progress)]</texture>
                                         <colordiffuse>FFE5A00D</colordiffuse>
                                     </control>
                                 </control>

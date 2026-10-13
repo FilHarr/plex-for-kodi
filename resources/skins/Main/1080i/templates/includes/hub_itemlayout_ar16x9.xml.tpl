@@ -1,7 +1,7 @@
 <!-- 16x9 item layout (512x288) - uses hub_id variable.
      Card recipe matches the episode screen's row (script-plex-episodes.xml.tpl's fixedlist 400)
      exactly, on request (2026-09-20): 512x288 art under ar16x9-mask.png, 536x312
-     drop-shadow-directional.png plate with the art inset (3,3), the inset 496x8 progress bar,
+     drop-shadow-directional.png plate with the art inset (3,3), the inset 496x5 progress bar,
      the top-right episode-number badge and the paired watched indicator to its left. Grew from
      352x198 (was a 395-wide item). Deliberately NOT the episode screen's off-focus colordiffuse
      dimming - every tile here renders at full brightness. No caption lines under the art any
@@ -68,27 +68,27 @@
                 <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                 <aspectratio scalediffuse="false">keep</aspectratio>
             </control>
-            <!-- Progress bar: the episode screen's inset pill (8px in from each side, 8px above
-                 the art's bottom edge, progress-bar-mask.png rounded ends), not the old
+            <!-- Progress bar: the poster tile's inset pill (8px in from each side, 3px above
+                 the art's bottom edge, progress-bar-mask-496.png rounded ends), not the old
                  full-width strip. -->
             <control type="group">
                 <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
                 <posx>8</posx>
-                <posy>{{ vscale(272) }}</posy>
+                <posy>{{ vscale(280) }}</posy>
                 <control type="image">
                     <posx>0</posx>
                     <posy>0</posy>
                     <width>496</width>
-                    <height>{{ vscale(8) }}</height>
-                    <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                    <height>{{ vscale(5) }}</height>
+                    <texture diffuse="script.plex/masks/progress-bar-mask-496.png">script.plex/white-square.png</texture>
                     <colordiffuse>E60A0F1A</colordiffuse>
                 </control>
                 <control type="image">
                     <posx>0</posx>
                     <posy>0</posy>
                     <width>496</width>
-                    <height>{{ vscale(8) }}</height>
-                    <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                    <height>{{ vscale(5) }}</height>
+                    <texture diffuse="script.plex/masks/progress-bar-mask-496.png">$INFO[ListItem.Property(progress)]</texture>
                     <colordiffuse>FFE5A00D</colordiffuse>
                 </control>
             </control>

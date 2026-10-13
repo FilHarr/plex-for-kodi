@@ -40,7 +40,8 @@
                 <!-- Matches official Plex's own poster progress bar: inset from the art's edges
                      (not full-bleed) and lifted clear of the bottom corner (not flush with it),
                      pill-shaped via the same diffuse-mask technique as the poster corners
-                     themselves (masks/progress-bar-mask.png, radius = half the bar's own height).
+                     themselves (masks/progress-bar-mask-224.png, 448x10 - this 224x5 bar at 4K - with
+                     radius = half its height, so the ends stay round once fitted to the box).
                      Track and fill share one identical box - the progress percentage asset
                      (util.getProgressImage(), $INFO[ListItem.Property(progress)]) is always a
                      fixed-width strip with only its own left portion opaque, so masking it at full
@@ -51,21 +52,21 @@
                      remainingTime pill). -->
                 <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
                 <posx>8</posx>
-                <posy>{{ vscale(344) }}</posy>
+                <posy>{{ vscale(352) }}</posy>
                 <control type="image">
                     <posx>0</posx>
                     <posy>0</posy>
                     <width>224</width>
-                    <height>{{ vscale(8) }}</height>
-                    <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                    <height>{{ vscale(5) }}</height>
+                    <texture diffuse="script.plex/masks/progress-bar-mask-224.png">script.plex/white-square.png</texture>
                     <colordiffuse>E60A0F1A</colordiffuse>
                 </control>
                 <control type="image">
                     <posx>0</posx>
                     <posy>0</posy>
                     <width>224</width>
-                    <height>{{ vscale(8) }}</height>
-                    <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                    <height>{{ vscale(5) }}</height>
+                    <texture diffuse="script.plex/masks/progress-bar-mask-224.png">$INFO[ListItem.Property(progress)]</texture>
                     <colordiffuse>FFE5A00D</colordiffuse>
                 </control>
             </control>

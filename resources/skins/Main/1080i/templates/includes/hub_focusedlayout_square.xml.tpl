@@ -70,24 +70,24 @@
                 </control>
                 <control type="group">
                     <!-- The poster tile's progress bar (hub_itemlayout_poster.xml.tpl), on request (2026-09-29):
-                         inset 8px, 16px above the art's bottom edge, pill-masked, the same colours. -->
+                         inset 8px, 3px above the art's bottom edge, pill-masked, the same colours. -->
                     <visible>!String.IsEmpty(ListItem.Property(progress))</visible>
                     <posx>8</posx>
-                    <posy>{{ vscale(224) }}</posy>
+                    <posy>{{ vscale(232) }}</posy>
                     <control type="image">
                         <posx>0</posx>
                         <posy>0</posy>
                         <width>224</width>
-                        <height>{{ vscale(8) }}</height>
-                        <texture diffuse="script.plex/masks/progress-bar-mask.png">script.plex/white-square.png</texture>
+                        <height>{{ vscale(5) }}</height>
+                        <texture diffuse="script.plex/masks/progress-bar-mask-224.png">script.plex/white-square.png</texture>
                         <colordiffuse>E60A0F1A</colordiffuse>
                     </control>
                     <control type="image">
                         <posx>0</posx>
                         <posy>0</posy>
                         <width>224</width>
-                        <height>{{ vscale(8) }}</height>
-                        <texture diffuse="script.plex/masks/progress-bar-mask.png">$INFO[ListItem.Property(progress)]</texture>
+                        <height>{{ vscale(5) }}</height>
+                        <texture diffuse="script.plex/masks/progress-bar-mask-224.png">$INFO[ListItem.Property(progress)]</texture>
                         <colordiffuse>FFE5A00D</colordiffuse>
                     </control>
                 </control>
