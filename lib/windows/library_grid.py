@@ -673,6 +673,8 @@ class GridMixin(object):
             args['unwatched'] = '1'
 
         pq = playqueue.createPlayQueueForItem(self.section, options={'shuffle': shuffle}, args=args)
+        # back on the grid when it ends: filled again then (LibraryWindow.onReInit())
+        self._refillGridOnReturn = True
         opener.open(pq, auto_play=True, auto_play_open=True)
 
     def shuffleButtonClicked(self):
@@ -718,6 +720,7 @@ class GridMixin(object):
             ordered = shuffle.pick(pool, len(pool))
 
         pl = playlist.LocalPlaylist(ordered, self.section.getServer())
+        self._refillGridOnReturn = True
         self.processCommand(videoplayer.play(play_queue=pl, context=self))
 
     def shuffleModeSelected(self):
@@ -785,6 +788,7 @@ class GridMixin(object):
 
         pl = playlist.LocalPlaylist(items, section.getServer())
         pl.setCurrent(items[start_index])
+        self._refillGridOnReturn = True
         self.processCommand(videoplayer.play(play_queue=pl, context=self))
 
     def optionsButtonClicked(self):

@@ -2415,6 +2415,24 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         threading.Thread(target=refresh, name='library.rowsAfterPlayback').start()
 
+    def _refillGridAfterPlayback(self):
+        """Back on the grid from playback started by its Play or Shuffle (library_grid.py): the
+        tiles played had their progress and ticks as before it (live, 2026-10-13), so the grid is
+        filled again (doRefill(), just below in onReInit()) at the place it was at - the grid's own
+        selection, kept while focus is on the button - once the stop's timeline report has reached
+        the server, as Episodes waits for it. Returns the control focused, for onReInit() to put
+        focus back on: the button, as Kodi would. A tile opened and played from its own screen
+        comes back through that screen, and Back fills the grid anyway."""
+        from . import episodes
+        focused = self.getFocusId()
+        plexapp.util.APP.nowplayingmanager.waitForTimelines(episodes.TIMELINE_WAIT)
+        if self.showPanelControl:
+            mli = self.showPanelControl.getSelectedItem()
+            if mli:
+                self._pendingRestoreItemPos = mli.pos()
+        self.refill = True
+        return focused if focused and focused != self.POSTERS_PANEL_ID else None
+
     def refreshHubsInPlace(self, reason, manual=False):
         """Fetch the Recommended view's rows again and rebind them over the ones showing
         (_rebindHubsInPlace()) - every 5 minutes, after the screensaver, a blanked display or
@@ -2699,9 +2717,16 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         if self.__dict__.pop('_refreshRowsOnReturn', False):
             self._refreshRowsAfterPlayback()
+        refocus = None
+        if self.__dict__.pop('_refillGridOnReturn', False) and self.contentMode != 'recommended':
+            refocus = self._refillGridAfterPlayback()
 
         if self.refill and self.contentMode != 'recommended':
             self.doRefill()
+            if refocus:
+                # doRefill() focuses the grid; back from playback focus stays on the Play or
+                # Shuffle button it was started from
+                self.setFocusId(refocus)
         if player.PLAYER.bgmPlaying:
             player.PLAYER.stopAndWait(fade=util.addonSettings.themeMusicFade, deferred=True)
 
