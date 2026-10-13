@@ -307,6 +307,8 @@ class SeekPlayerHandler(BasePlayerHandler):
         self.chapters = None
         self.stoppedManually = False
         self.endedManually = False
+        # the final credits marker skipped (SeekDialog.handleFinalMarker()): the video's end
+        self.creditsSkipped = False
         self.terminated = False
         self.inBingeMode = False
         self.skipPostPlay = False
@@ -357,6 +359,7 @@ class SeekPlayerHandler(BasePlayerHandler):
         self.mode = self.MODE_RELATIVE
         self.ended = False
         self.endedManually = False
+        self.creditsSkipped = False
         self.stoppedManually = False
         self.terminated = False
         self.prePlayWitnessed = False
@@ -1000,10 +1003,17 @@ class SeekPlayerHandler(BasePlayerHandler):
                 # however far in (the user, 2026-10-05: stopping is the same every time; post-play
                 # is for a video that plays to its end, and whether it counts as watched is the
                 # server's call). An external player is the exception: it can't tell a stop from
-                # the end, so its stop gets post-play as an end would, without auto-advance.
+                # the end, so its stop gets post-play as an end would, without auto-advance. So is
+                # a skip of the final credits marker, which is the video's end, not a stop (the
+                # user, 2026-10-13).
                 if self.seeking != self.SEEK_PLAYLIST and self.duration:
                     util.DEBUG_LOG("Player - stopped at {}%", int(self.videoPlayedFac * 100))
-                    if self.player.isExternal:
+                    if self.creditsSkipped:
+                        self.creditsSkipped = False
+                        util.DEBUG_LOG("Player - the credits skipped: the video's end")
+                        if self.next(on_end=True):
+                            return
+                    elif self.player.isExternal:
                         self.stoppedManually = True
                         if self.next(on_end=True):
                             return

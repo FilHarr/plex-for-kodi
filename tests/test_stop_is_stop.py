@@ -30,7 +30,8 @@ class StopTest(KodiTestCase):
         handler = player.SeekPlayerHandler.__new__(player.SeekPlayerHandler)
         handler.__dict__.update(
             dialog=None, seeking=player.SeekPlayerHandler.NO_SEEK, queuingNext=False, queuingSpecific=False,
-            inBingeMode=False, stoppedManually=True, endedManually=False, skipPostPlay=False, duration=60 * 60000,
+            inBingeMode=False, stoppedManually=True, endedManually=False, creditsSkipped=False, skipPostPlay=False,
+            duration=60 * 60000,
             playlist=None, player=mock.Mock(isExternal=external))
         for name in ('updateNowPlaying', 'triggerProgressEvent', 'hideOSD', 'sessionEnded'):
             setattr(handler, name, mock.Mock())
@@ -52,6 +53,54 @@ class StopTest(KodiTestCase):
         handler.next.assert_called_once_with(on_end=True)
         self.assertTrue(handler.stoppedManually)  # no auto-advance
         handler.sessionEnded.assert_not_called()
+
+
+class CreditsSkipTest(KodiTestCase):
+    """Skipping the final credits marker is the video's end, not a stop: post-play, as for one
+    played out (the user, 2026-10-13). Since a stop stopped meaning post-play, a credits skip went
+    back to where playback started, the last item's and, outside binge mode, any episode's."""
+
+    def handler(self, has_next, stopped=False):
+        handler = player.SeekPlayerHandler.__new__(player.SeekPlayerHandler)
+        handler.__dict__.update(
+            dialog=None, seeking=player.SeekPlayerHandler.NO_SEEK, queuingNext=False, queuingSpecific=False,
+            inBingeMode=False, stoppedManually=stopped, endedManually=False, creditsSkipped=False,
+            skipPostPlay=False, duration=60 * 60000, player=mock.Mock(isExternal=False),
+            playlist=mock.Mock(hasNext=mock.Mock(return_value=has_next)))
+        for name in ('updateNowPlaying', 'triggerProgressEvent', 'hideOSD', 'sessionEnded'):
+            setattr(handler, name, mock.Mock())
+        handler.next = mock.Mock(return_value=True)
+        return handler
+
+    def stopped(self, handler):
+        with mock.patch.object(player.SeekPlayerHandler, 'videoPlayedFac', new_callable=mock.PropertyMock,
+                               return_value=0.98):
+            handler.onPlayBackStopped()
+        return handler
+
+    def skip_credits(self, has_next):
+        from lib.windows import seekdialog
+        handler = self.handler(has_next)
+        dialog = seekdialog.SeekDialog.__new__(seekdialog.SeekDialog)
+        dialog.__dict__.update(handler=handler, player=handler.player, bingeMode=False, skipPostPlay=False)
+        dialog.doClose = mock.Mock()
+        dialog.sendTimeline = mock.Mock()
+        with mock.patch.object(seekdialog.SeekDialog, 'duration', new_callable=mock.PropertyMock,
+                               return_value=handler.duration),                 mock.patch.object(seekdialog.util.MONITOR, 'tv_standby', False, create=True):
+            dialog.handleFinalMarker({'marker': mock.Mock(endTimeOffset=handler.duration)})
+        handler.player.stop.assert_called_once_with()
+        return self.stopped(handler)
+
+    def test_the_last_items_credits_skipped_post_play(self):
+        handler = self.skip_credits(has_next=False)
+        handler.next.assert_called_once_with(on_end=True)
+        self.assertFalse(handler.stoppedManually, 'an end: post-play keeps its auto-play timer')
+
+    def test_an_episodes_with_a_next_one_post_play(self):
+        self.skip_credits(has_next=True).next.assert_called_once_with(on_end=True)
+
+    def test_a_stop_is_still_a_stop(self):
+        self.stopped(self.handler(has_next=True, stopped=True)).next.assert_not_called()
 
 
 class ProgressEventTest(KodiTestCase):

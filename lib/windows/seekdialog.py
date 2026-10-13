@@ -2515,11 +2515,20 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             else:
                 util.DEBUG_LOG("{}: Skipping final marker in episode, stopping", context)
                 self.handler.endedManually = True
+                self.handler.creditsSkipped = True
                 self.player.stop()
                 return True
         else:
+            # the last item: the video's end all the same - post-play, as for one played out. A
+            # plain stop here, since a stop stopped meaning post-play (bb4fbdfc), went back to
+            # where playback started (the user, 2026-10-13: a credits skip isn't a stop).
             util.DEBUG_LOG("{}: Skipping final marker, stopping", context)
-            self.stop()
+            # stop() but for its stoppedManually
+            self._ignoreTick = True
+            self.doClose()
+            self.handler.endedManually = True
+            self.handler.creditsSkipped = True
+            self.handler.player.stop()
         return False
 
     def sendTimeline(self, state=None, t=None, ensureFinalTimelineEvent=True):
