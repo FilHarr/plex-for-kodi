@@ -21,7 +21,6 @@ from six.moves import range
 from lib import backgroundthread
 from lib import player
 from lib import util
-from lib.path_mapping import pmm
 from lib.util import T
 from . import background
 from . import busy
@@ -29,6 +28,7 @@ from . import collection
 from . import dropdown
 from . import home
 from . import kodigui
+from . import mapping_probe
 from . import optionsdialog
 from . import plexdirect
 from . import search
@@ -1712,9 +1712,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # XML by render_templates(), so a change only shows once the templates are recompiled:
             # main.py does that for the 'recompile' close option and restarts Home.
             # The plex.direct settings: checked again with the new ones (upstream HomeWindow did on
-            # return to Home).
+            # return to Home). Path mapping's: the sidebar's dots redrawn.
             themeChanged = []
             plexDirectChanged = []
+            mappingChanged = []
 
             def onThemeSetting(*args, **kwargs):
                 themeChanged.append(kwargs.get('id'))
@@ -1722,9 +1723,14 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             def onPlexDirectSetting(*args, **kwargs):
                 plexDirectChanged.append(True)
 
+            def onMappingSetting(*args, **kwargs):
+                mappingChanged.append(True)
+
             watched = (('theme_relevant_setting', onThemeSetting),
                        ('change:force_pd_mapping', onPlexDirectSetting),
-                       ('change:handle_plexdirect', onPlexDirectSetting))
+                       ('change:handle_plexdirect', onPlexDirectSetting),
+                       ('change:path_mapping', onMappingSetting),
+                       ('change:path_mapping_indicators', onMappingSetting))
             for signal, handler in watched:
                 plexapp.util.APP.on(signal, handler)
             try:
@@ -1736,8 +1742,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 util.LOG('Library: theme-relevant settings changed ({0}), recompiling templates',
                          ', '.join(themeChanged))
                 self._closeSessionWithOption('recompile')
-            elif plexDirectChanged:
-                windowutils.HOME.checkPlexDirectHosts()
+            else:
+                if plexDirectChanged:
+                    windowutils.HOME.checkPlexDirectHosts()
+                if mappingChanged:
+                    windowutils.HOME._rebuildSidebar()
         elif option == 'update':
             self.setBoolProperty('show.options', False)
             self.setProperty('busy', '1')
@@ -1816,6 +1825,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         )
         for emitter, signal, handler in self._serverSignalHandlers:
             emitter.on(signal, handler)
+        # a path-mapped library's share went down or came back (mapping_probe.py, on its worker):
+        # the sidebar's dots are read afresh as it's rebuilt
+        mapping_probe.setOnChange(lambda: self.postUI('path mapping', self._rebuildSidebar))
 
         # tick() - the update checker's hand-offs and the periodic reachability check
         self._ignoreTick = False
@@ -1835,6 +1847,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         for emitter, signal, handler in getattr(self, '_serverSignalHandlers', ()):
             emitter.off(signal, handler)
         self._serverSignalHandlers = ()
+        mapping_probe.setOnChange(None)
         if util.CRON:
             util.CRON.cancelReceiver(self)
 
@@ -1852,8 +1865,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     def tick(self):
         """util.CRON, about once a second, on its own thread - root only (hookSignals()). Ported
         from HomeWindow.tick(), which went with it in 12675d11, leaving the periodic reachability
-        check a setting that did nothing: that, and the rows refreshed in place every 5 minutes
-        (refreshHubsInPlace())."""
+        check a setting that did nothing: that, the rows refreshed in place every 5 minutes
+        (refreshHubsInPlace()), and path-mapped shares checked every minute (mapping_probe.py)."""
         if self._shuttingDown or self.__dict__.get('_ignoreTick'):
             return
 
@@ -1863,6 +1876,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             return
 
         now = time.time()
+        # path-mapped shares, so one that comes back loses its red dot (mapping_probe.py)
+        mapping_probe.tick(now)
         if now - self.__dict__.get('_lastHubsRefresh', now) > self.HUBS_REFRESH_INTERVAL:
             self._lastHubsRefresh = now
             self.postUI('refresh rows', self.refreshHubsInPlace, args=('every 5 minutes',))
@@ -3488,7 +3503,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 d = xbmcgui.Dialog().browse(0, T(33031, "Select Kodi source for {}").format(choice["path"]), "files")
                 if not d:
                     return
-                pmm.addPathMapping(d, choice["path"], server=section.server)
+                section.addMapping(d, choice["path"])
                 return self.section
         elif choice["key"] == "refresh":
             with busy.BusyContext(delay=True, delay_time=0.2):

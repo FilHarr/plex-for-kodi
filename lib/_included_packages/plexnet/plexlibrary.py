@@ -180,6 +180,11 @@ class LibrarySection(plexobjects.PlexObject):
         pmm.deletePathMapping(target, server=self.getServer())
         self._isMapped = None
 
+    def addMapping(self, source, target):
+        # isMapped is cached on the section, which the sidebar keeps between builds
+        pmm.addPathMapping(source, target, server=self.server)
+        self._isMapped = None
+
     @property
     def isMapped(self):
         if self._isMapped is not None:

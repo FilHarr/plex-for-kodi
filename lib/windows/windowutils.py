@@ -3,10 +3,12 @@ from __future__ import absolute_import
 import weakref
 
 from lib import util
+from lib.path_mapping import pmm
 from lib.util import T
 from . import dropdown
 from . import home
 from . import kodigui
+from . import mapping_probe
 from . import navintent
 from . import opener
 from . import sidebar_model
@@ -220,6 +222,10 @@ class SidebarMixin():
             searchmli.setProperty('is.active', '1')
             active_pos = 0
         items = [searchmli]
+        # path-mapped libraries: a dot while their share is down (mapping_probe.py checks), and one
+        # for being mapped at all when path_mapping_indicators is on
+        mapping = pmm.mapping
+        showMapped = mapping and util.getSetting('path_mapping_indicators', True)
 
         for section in [home.home_section] + entries:
             if section is home.home_section:
@@ -240,6 +246,11 @@ class SidebarMixin():
                     mli.setIconImage('script.plex/home/type/playlists.png')
                 elif section == home.watchlist_section:
                     mli.setIconImage('script.plex/home/type/watchlist.png')
+                if mapping:
+                    # a share that's down is an error rather than decoration: shown regardless
+                    mli.setBoolProperty('is.mapped.broken', getattr(section, 'mappingBroken', False))
+                    if showMapped:
+                        mli.setBoolProperty('is.mapped', getattr(section, 'isMapped', False))
             mli.setProperty('item', '1')
             if active is not None and active is not SEARCH_ENTRY and section == active:
                 mli.setProperty('is.active', '1')
@@ -250,6 +261,7 @@ class SidebarMixin():
         self.sectionList.addItems(items)
         if active_pos is not None:
             self.sectionList.selectItem(active_pos)
+        mapping_probe.setTargets(entries)
 
     def sidebarNavSettings(self):
         """The sidebar's stored list (sidebar_model.loadNavSettings()). LibraryWindow keeps it as

@@ -10,7 +10,6 @@ from plexnet import plexapp, plexlibrary, plexobjects
 
 from lib import backgroundthread
 from lib import util
-from lib.path_mapping import pmm
 from lib.util import T
 from . import hub_config
 from . import hub_limits
@@ -22,7 +21,6 @@ from .section_ids import CONTINUE_WATCHING_ID
 
 HUBS_REFRESH_INTERVAL = 300  # 5 Minutes
 REACHABILITY_CHECK_INTERVAL = 600  # 10 Minutes
-PATH_MAPPING_PROBE_INTERVAL = 60  # 1 Minute
 HUB_PAGE_SIZE = 10
 # Hard cap on what a Recommended hub row shows, fetched in one go (SectionHubsTask below) - no
 # in-row pagination past it. A row with more than this (hub.more) ends in a "See more" item
@@ -609,45 +607,6 @@ class HomeHubsTask(backgroundthread.Task):
             if not alive or time.time() > deadline:
                 return
             util.MONITOR.waitForAbort(0.1)
-
-
-class PathMappingProbeTask(backgroundthread.Task):
-    """Checks the Kodi-side roots of mapped libraries. Runs in the background because a
-    dead SMB/NFS share blocks for the full mount timeout, which would stall the section
-    list every time Home is drawn.
-    """
-    def setup(self, targets, callback):
-        self.targets = targets
-        self.callback = callback
-        return self
-
-    def run(self):
-        changed = False
-        announce = []
-        util.DEBUG_LOG("Path mapping probe: checking {} root(s)", len(self.targets))
-        for server_name, map_path, title in self.targets:
-            if self.isCanceled():
-                return
-
-            if pmm.verifyMapping(server_name, map_path):
-                changed = True
-            util.DEBUG_LOG("Path mapping probe: {} -> {}", map_path,
-                           pmm.isMappingBroken(server_name, map_path) and "unreachable" or "ok")
-
-            if (pmm.isMappingBroken(server_name, map_path)
-                    and pmm.claimNotification(server_name, map_path, "root")):
-                announce.append(title or map_path)
-
-        if self.isCanceled():
-            return
-
-        if announce:
-            # one popup for the whole run: Kodi queues notifications, so one per library
-            # would keep the screen covered for 5s * number of mapped libraries
-            pmm.notify(T(35037, "Path mapping unavailable for: {}").format(" / ".join(announce)))
-
-        if changed:
-            self.callback()
 
 
 class UpdateHubTask(backgroundthread.Task):
