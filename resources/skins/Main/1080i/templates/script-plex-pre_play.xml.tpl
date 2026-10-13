@@ -139,7 +139,7 @@
                  usecontrolcoords geometric nav would already resolve to, since none of the real
                  buttons below pass explicit onleft/onright of their own to literally copy. -->
             {% with attr = theme.pre_play.buttons & hitrect = theme.pre_play.buttons_hitrect & template = "includes/themed_button.xml.tpl" & ol = "includes/episode_button_label.xml.tpl" %}
-                {% include template with name="info" & id=304 & overlay=True %}
+                {% include template with name="info" & id=304 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback))" %}
                 {% include ol with id=390 & visible="Control.HasFocus(304)" & name="info" &
                     label="$ADDON[script.plexmod 35059]" & label_suffix_info="" &
                     label_width=92 & pill_width=154 & group_width=110 &
@@ -380,6 +380,8 @@
                     <width>813</width>
                     <height>{{ vscale(90) }}</height>
                     <onup>200</onup>
+                    <!-- A Discover film with the Watchlist off and no trailer has no button in the row: past it -->
+                    <ondown condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled)) + String.IsEmpty(Window.Property(trailer.button))">400</ondown>
                     <ondown>300</ondown>
                     <onleft>9000</onleft>
                     <label> </label>
@@ -461,6 +463,9 @@
         <width>1920</width>
         <height>{{ vscale(3400) }}</height>
 
+        <!-- the button row empty (a Discover film, the Watchlist off, no trailer): the summary, or the header -->
+        <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled)) + String.IsEmpty(Window.Property(trailer.button)) + !String.IsEmpty(Window.Property(summary))">350</onup>
+        <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled)) + String.IsEmpty(Window.Property(trailer.button))">200</onup>
         <onup>300</onup>
         <itemgap>5</itemgap>
 
@@ -504,6 +509,8 @@
                      keeps Reviews (stacked right after via grouplist 60's auto-stacking) from
                      inheriting a too-tight gap now that Roles' own content is taller. -->
                 <height>{{ vscale(380) }}</height>
+                <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled)) + String.IsEmpty(Window.Property(trailer.button)) + !String.IsEmpty(Window.Property(summary))">350</onup>
+                <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled)) + String.IsEmpty(Window.Property(trailer.button))">200</onup>
                 <onup>300</onup>
                 <ondown>401</ondown>
                 <onleft>9000</onleft>

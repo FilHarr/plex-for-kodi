@@ -222,6 +222,14 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             pass
         elif not self.fromWatchlist and self.getFocusId() in (0, self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
             self.focusPlayButton(wait_visible=True)
+        elif self.fromWatchlist and not self.wl_enabled:
+            # A Discover show with the Watchlist off: no button in the row (its availability one
+            # comes from the Watchlist's check). Left on Play, the default control, hidden, its
+            # label showed on its own, cut off by the sidebar (2026-10-13). The summary, which
+            # leaves the screen where it is - the season row slides it up - or the seasons.
+            target = self.SUMMARY_BUTTON_ID if self.getProperty('summary') else self.SUB_ITEM_LIST_ID
+            kodigui.waitForVisibility(target, amount=1)
+            self.setFocusId(target)
         timing.mark('focus')
         self.themeMusicInit(self.mediaItem)
         timing.mark('theme music')

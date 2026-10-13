@@ -224,6 +224,8 @@
             <height>{{ vscale(90) }}</height>
             <onup condition="Control.IsVisible(205)">205</onup>
             <onup>200</onup>
+            <!-- A Discover show with the Watchlist off has no button in the row: past it -->
+            <ondown condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled))">400</ondown>
             <ondown>300</ondown>
             <onleft>9000</onleft>
             <label> </label>
@@ -436,6 +438,10 @@
                      indicator (366) both zoom the same way but stay well under this - the label is the
                      real tallest element, not either of those. -->
                 <height>{{ vscale(465) }}</height>
+                <!-- the button row empty (a Discover show, the Watchlist off): the summary, or above -->
+                <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled)) + !String.IsEmpty(Window.Property(summary))">305</onup>
+                <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled)) + Control.IsVisible(205)">205</onup>
+                <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled))">200</onup>
                 <onup>300</onup>
                 <ondown>401</ondown>
                 <onleft>9000</onleft>
@@ -1253,6 +1259,7 @@
          the way down, matching 305's own onup back up to here. -->
     <ondown condition="!String.IsEmpty(Window.Property(summary))">305</ondown>
     <!-- Fallback is 305's own ondown, skipping the stop when there's no summary. -->
+    <ondown condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled))">400</ondown>
     <ondown>300</ondown>
     <orientation>horizontal</orientation>
     <!-- ITEM LAYOUT ########################################## -->

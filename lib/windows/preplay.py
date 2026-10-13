@@ -881,6 +881,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         # control that's never going to show up.
         if not self.fromWatchlist:
             self.focusPlayButton()
+        elif not self.wl_enabled and self.getProperty('summary'):
+            # the Watchlist off, there's no availability check to focus its button, and Discover's
+            # item has no file for Info: the summary (a trailer's button comes with the extras)
+            kodigui.waitForVisibility(self.SUMMARY_BUTTON_ID, amount=1)
+            self.setFocusId(self.SUMMARY_BUTTON_ID)
         kodigui.markStep(timing, 'focus')
         # The row fills that can hold a Back restore are followed by it (RowRestoreMixin).
         self.batch_simple([(self._fillThenRestore(self.fillRoles, self.ROLES_LIST_ID), None, None),
