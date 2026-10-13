@@ -275,3 +275,27 @@ class ShowEpisodesArtTest(KodiTestCase):
         self.assertEqual('/library/metadata/1/thumb/100', episode.thumb)
         self.assertEqual('/library/metadata/9/thumb/100', episode.parentThumb)
         self.assertEqual('/library/metadata/9/art/100', episode.art)
+
+
+class SectionAllCollectionsTest(KodiTestCase):
+    """A library's listing has its collections in it as the grid shows them - and, in a library set to
+    hide what's in a collection, not those items. collections=False lists every item and no
+    collection: what the shuffle modes pick from (a collection picked sat in the queue unplayable,
+    2026-10-13)."""
+
+    def setUp(self):
+        ensure_plex_interface()
+        from plexnet import plexlibrary
+        self.section = plexlibrary.MovieSection(ET.fromstring('<Directory key="22" type="movie"/>'))
+
+    def asked(self, **kwargs):
+        from unittest import mock
+        with mock.patch.object(plexobjects, 'listItems', return_value=[]) as listItems:
+            self.section.all(type_=1, **kwargs)
+        return listItems.call_args[0][1]
+
+    def test_with_its_collections_by_default(self):
+        self.assertIn('includeCollections=1', self.asked())
+
+    def test_every_item_and_no_collection(self):
+        self.assertNotIn('includeCollections', self.asked(collections=False))

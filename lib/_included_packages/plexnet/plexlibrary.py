@@ -242,13 +242,17 @@ class LibrarySection(plexobjects.PlexObject):
             else:
                 args[key] = 1
 
-    def all(self, start=None, size=None, filter_=None, sort=None, type_=None, bool_filters=None):
+    def all(self, start=None, size=None, filter_=None, sort=None, type_=None, bool_filters=None, collections=True):
+        """collections: the library's collections listed too, as its grid shows them - and with a
+        library set to hide what's in a collection, those items not. False: every item, and no
+        collection (582 films on Animal's Films, against 250 films and 81 collections)."""
         if self.key.startswith('/'):
             path = '{0}/all'.format(self.key)
         else:
             path = '/library/sections/{0}/all'.format(self.key)
 
-        return self.items(path, start, size, filter_, sort, type_, False, bool_filters=bool_filters)
+        return self.items(path, start, size, filter_, sort, type_, False, bool_filters=bool_filters,
+                          collections=collections)
 
     @property
     def settings(self):
@@ -278,7 +282,7 @@ class LibrarySection(plexobjects.PlexObject):
 
         return self.items(path, start, size, None, None, None, True)
 
-    def items(self, path, start, size, filter_, sort, type_, tag_fallback, bool_filters=None):
+    def items(self, path, start, size, filter_, sort, type_, tag_fallback, bool_filters=None, collections=True):
 
         args = {}
         if self.DEFAULT_URL_ARGS:
@@ -294,7 +298,7 @@ class LibrarySection(plexobjects.PlexObject):
                 path = filter_[1]
             else:
                 args[filter_[0]] = filter_[1]
-        else:
+        elif collections:
             args['includeCollections'] = 1
 
         if sort:

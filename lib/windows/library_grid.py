@@ -711,7 +711,10 @@ class GridMixin(object):
 
     def startMovieShuffle(self, mode):
         with busy.BusyContext(delay=True, delay_time=0.2):
-            movies = self.section.all(type_=1)
+            # every film, no collection: listed with them (the grid's way), a library hiding what's
+            # in a collection left those films out, and a collection picked sat in the queue
+            # unplayable - the OSD playlist's choice of it failed (live, 2026-10-13)
+            movies = self.section.all(type_=1, collections=False)
             pool = shuffle.eligible_movies(movies, mode)
             if not pool:
                 util.messageDialog(T(35009, "Shuffle Mode"),
@@ -754,7 +757,8 @@ class GridMixin(object):
 
         items = []
         with busy.BusyContext(delay=True, delay_time=0.2):
-            shows = section.all(type_=2)
+            # every show, no collection, as startMovieShuffle() asks for films
+            shows = section.all(type_=2, collections=False)
             pool = shuffle.eligible_shows(shows, mode, threshold=threshold)
             if not pool:
                 util.messageDialog(T(35009, "Shuffle Mode"),
