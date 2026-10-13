@@ -17,6 +17,7 @@ except ImportError:
     # urllib3 >= 2.1.0
     from requests.packages.urllib3.connection import HTTPSConnection as VerifiedHTTPSConnection
 
+import threading
 import weakref
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -486,6 +487,7 @@ def vacuumIfWorthIt(session):
 
 class Session(AsyncSessionMixin, CachedSession):
     def __init__(self, *args, **kwargs):
+        self._cacheState = threading.local()
         kwargs['cache_name'] = os.path.join(TEMP_PATH, "pm4k_requests_cache")
         kwargs['backend'] = "sqlite"
         kwargs['fast_save'] = True
@@ -493,6 +495,19 @@ class Session(AsyncSessionMixin, CachedSession):
             kwargs['expire_after'] = datetime.timedelta(hours=REQUESTS_CACHE_EXPIRY)
         CachedSession.__init__(self, *args, **kwargs)
         self.mountAsyncAdapters()
+
+    # Whether the cache is off for the request being made: request() sets it and CachedSession's
+    # send() and request() read it, all on the requesting thread. Each thread its own, as a
+    # server's session is every thread's asking it: shared, a request wanting the server's answer
+    # could have another's setting by the time it was sent, and be answered from the cache. Off
+    # until a request on the thread says otherwise.
+    @property
+    def _is_cache_disabled(self):
+        return getattr(self._cacheState, 'disabled', True)
+
+    @_is_cache_disabled.setter
+    def _is_cache_disabled(self, value):
+        self._cacheState.disabled = value
 
     def request(self, method, url, *args, **kwargs):
         self._is_cache_disabled = not kwargs.pop('with_cache', False)

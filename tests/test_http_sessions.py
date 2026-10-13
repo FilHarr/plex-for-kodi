@@ -3,13 +3,16 @@
 HttpRequest's session has no request cache (E8 in the navigation review: a cached session opened
 the SQLite cache per request, and HttpRequest never caches). The adapter lists each pool once and
 pools hold their connections weakly (L5). A cache invalidation vacuums only once enough of the
-database is free (L4).
+database is free (L4). A server's cached session keeps each thread's cache setting its own.
 """
 
 from __future__ import absolute_import
 
 import contextlib
 import gc
+import shutil
+import tempfile
+import threading
 
 from kodienv import ENV
 
@@ -41,6 +44,56 @@ class PlainSessionTest(KodiTestCase):
         with mock.patch('requests.Session.request') as request:
             session.request('GET', 'http://example.com/', with_cache=True)
         self.assertNotIn('with_cache', request.call_args[1])
+
+
+class CacheSettingPerThreadTest(KodiTestCase):
+    """One session is every thread's asking a server. Its cache setting was the session's: a
+    request wanting the server's answer could have another thread's by the time it was sent, and be
+    answered from the cache (with the cache_requests setting on)."""
+
+    def setUp(self):
+        super(CacheSettingPerThreadTest, self).setUp()
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        with mock.patch.object(asyncadapter, 'TEMP_PATH', folder):
+            self.session = asyncadapter.Session()
+
+    def test_a_request_is_sent_with_its_own_setting(self):
+        import requests
+        held, other_done, seen = threading.Event(), threading.Event(), {}
+
+        def request(session, method, url, *args, **kwargs):
+            if threading.current_thread().name == 'fresh':
+                held.set()
+                other_done.wait(5)
+            seen[threading.current_thread().name] = session._is_cache_disabled
+            response = mock.Mock(history=[], from_cache=False)
+            response.request = requests.Request('GET', url).prepare()
+            return response
+
+        def fresh():
+            self.session.request('GET', 'http://example.com/a')
+
+        def cached():
+            held.wait(5)
+            self.session.request('GET', 'http://example.com/b', with_cache=True)
+            other_done.set()
+
+        with mock.patch('requests.Session.request', autospec=True, side_effect=request):
+            threads = [threading.Thread(target=fresh, name='fresh'), threading.Thread(target=cached, name='cached')]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(5)
+        self.assertEqual({'fresh': True, 'cached': False}, seen)
+
+    def test_off_on_a_thread_that_has_made_no_request(self):
+        self.session._is_cache_disabled = False
+        seen = []
+        thread = threading.Thread(target=lambda: seen.append(self.session._is_cache_disabled))
+        thread.start()
+        thread.join(5)
+        self.assertEqual([True], seen)
 
 
 class ConnectionListTest(KodiTestCase):
