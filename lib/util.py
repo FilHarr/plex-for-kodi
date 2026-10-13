@@ -1010,17 +1010,14 @@ def getProgressImage(obj, perc=None, view_offset=None):
     return 'script.plex/progress/{0}.png'.format(pct)
 
 
-def backgroundFromArt(art, width=1920, height=1080, background=colors.noAlpha.Background, opacity=None, blur=None):
+def backgroundFromArt(art, width=1920, height=1080, background=colors.noAlpha.Background, opacity=100, blur=0):
+    # Sharp and opaque: the hero-art box is a focal image beside its colour panel, not a backdrop.
+    # (The blur and opacity settings that tuned the old full-screen backdrop are gone.)
     if not art:
         return
 
     w, h = scaleResolution(width, height, by=addonSettings.backgroundResolutionScalePerc)
-    return art.asTranscodedImageURL(
-        w, h,
-        blur=addonSettings.backgroundArtBlurAmount2 if blur is None else blur,
-        opacity=addonSettings.backgroundArtOpacityAmount2 if opacity is None else opacity,
-        background=background
-    )
+    return art.asTranscodedImageURL(w, h, blur=blur, opacity=opacity, background=background)
 
 
 # Hue offset per corner, applied to _fakeBackgroundPanelCorners()'s single hashed base hue - a

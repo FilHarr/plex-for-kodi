@@ -1022,7 +1022,7 @@ msgid "User Interface"
 msgstr ""
 
 msgctxt "#32468"
-msgid "Show dynamic background art"
+msgid "Show item art and colour backgrounds"
 msgstr ""
 
 msgctxt "#32469"
@@ -3831,4 +3831,8 @@ msgstr ""
 
 msgctxt "#35176"
 msgid "While a video that starts part-way in (a resume, a skipped intro or Seek back on start) makes its first seek, keep the screen black so its opening frames don't flash up first."
+msgstr ""
+
+msgctxt "#35177"
+msgid "The focused item's art at the top right and the colour panel behind it. Off, every screen has a plain background in the colour set below. Needs an addon restart."
 msgstr ""

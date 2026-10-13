@@ -3,15 +3,19 @@
 ## Status
 
 The findings below describe the code at 60ed0301. These have since been fixed:
+- §1.1: removed, as they did nothing: `hubs_linear`, `continue_use_thumb`, `background_art_opacity_amount2`, `use_bg_fallback` (its amber image showed only on user select), the proxies `hubs_rr_max`, `low_drift_timer` and `intro_skip_early`, the `playback_directplay_force` read, the empty `privacy` section and `ExtendHubTask`. Their strings stay in the language files.
 - §1.2: `watched_indicators` and `hide_aw_bg` now recompile the templates when Settings closes; `debug` and `map_button_home` now apply when changed. Still open: the four settings in its last row, which only show once a row is rebuilt.
 - §1.3: the update settings and "Last update check" are hidden unless the add-on's own updater runs (`kodi_util.UPDATER_ENABLED`); "Service running" shows a version.
-- §1.4: the "Home:" prefixes are gone; the add-on ID in help text is swapped at runtime for the strings the Settings screen shows (`withAddonID()`); the integer editor is titled with the setting's label. Still open: `use_cert_bundle` (33052), which Kodi shows itself; the per-user marker; the `dynamic_backgrounds` label.
+- §1.4: the "Home:" prefixes are gone; the add-on ID in help text is swapped at runtime for the strings the Settings screen shows (`withAddonID()`); the integer editor is titled with the setting's label. `dynamic_backgrounds` is now "Show item art and colour backgrounds", with a description of what turning it off does (35177).
 - §1.5: the `auto_seek` dependency, the default mismatches, the `requests_timeout_read` default, the `worker_count` cap note and the `initial_seek_blackout` description.
 - §1.6: plex.direct mapping is restored (`lib/windows/plexdirect.py`), with all three triggers: the root window's first init, `loaded:server_connections`, and closing Settings after `handle_plexdirect` or `force_pd_mapping` changed. A dismissed question isn't asked again that session for the same hosts.
 - §1.7: the sidebar's path-mapping dots and the share check are restored (`lib/windows/mapping_probe.py`, moved out of home.py): checked when the sidebar's libraries change and every minute from the root window's tick while no video plays, one notification per run, and the red dot shown whatever `path_mapping_indicators` says. Adding a mapping from the library menu now clears the library's cached `isMapped` (`LibrarySection.addMapping()`).
+- §2.4: `background_art_blur_amount2` is removed; the hero art is always sharp (`util.backgroundFromArt()` defaults to blur 0, opacity 100).
 - §3.8: the `exit_default_is_quit` fallback label. §2.6: the `recheck_server_connections` help now mentions the 1-minute check.
 
 Deliberately unchanged: "PM4K"/"PlexMod" in help text (Uno may merge into PM4K) and the `osd_hide_delay` Plextuary caveat (Plextuary is recommended, not required).
+
+Deferred: the per-user marker, until the misplaced settings (§4) are looked at; `use_cert_bundle`'s help path (33052), for now.
 
 ## How settings work in this add-on
 

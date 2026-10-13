@@ -1,21 +1,11 @@
 <control type="group">
     <visible>String.IsEmpty(Window.Property(use_solid_background))</visible>
     <control type="image">
-        <visible>String.IsEmpty(Window.Property(use_bg_fallback))</visible>
         <posx>0</posx>
         <posy>0</posy>
         <width>1920</width>
         <height>1080</height>
         <texture background="true">script.plex/home/background-fallback_black.png</texture>
-    </control>
-    <control type="image">
-        <visible>!String.IsEmpty(Window.Property(use_bg_fallback))</visible>
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>1920</width>
-        <height>1080</height>
-        <texture background="true">script.plex/home/background-fallback.png</texture>
-        {% include "includes/scale_background.xml.tpl" %}
     </control>
     <!-- flat base fill under the 4 corner tints below - colors.Background (lib/colors.py) hardcoded
          here to match this file's existing convention of literal hex colordiffuse values (see the

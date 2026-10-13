@@ -1202,7 +1202,7 @@ msgstr "Benutzeroberfläche"
 
 #: 
 msgctxt "#32468"
-msgid "Show dynamic background art"
+msgid "Show item art and colour backgrounds"
 msgstr "Dynamische Hintergrundbilder aktivieren"
 
 #: 

@@ -1119,7 +1119,7 @@ msgstr "用户界面"
 
 #: 
 msgctxt "#32468"
-msgid "Show dynamic background art"
+msgid "Show item art and colour backgrounds"
 msgstr "显示动态背景图片"
 
 #: 

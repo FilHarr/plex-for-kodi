@@ -475,7 +475,6 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
                 self.setProperty('background_colour', "0xff111111")
             self.setProperty('background_colour_opaque', "0xff111111")
 
-        self.setBoolProperty('use_bg_fallback', util.addonSettings.useBgFallback)
         self.setBoolProperty('dynamic_backgrounds', util.addonSettings.dynamicBackgrounds)
 
         try:
@@ -617,15 +616,14 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
                 break
         if art and self._borrowsVariousArtistsArt(ds, art):
             art = None
-        # opacity=100: this art is now a focal, vivid box next to its own color panel, not a
-        # full-bleed wash with text floating on top anywhere - backgroundArtOpacityAmount2's
-        # server-side dimming was designed for that older look and just reads as muddy here.
-        # Always a plain 16:9 transcode. The zoom inside the hero-art box is done entirely in
+        # Sharp and at full opacity (backgroundFromArt()'s defaults): this art is a focal, vivid
+        # box next to its own color panel, not a full-bleed wash with text floating on top
+        # anywhere. Always a plain 16:9 transcode. The zoom inside the hero-art box is done entirely in
         # the skin (default_background.xml.tpl, hero_zoom_pad): PMS's minSize=1 does NOT crop to
         # the requested aspect, it returns the whole image scaled until both dimensions are
         # >= what was asked (verified live: 1920x1440 requested -> 2560x1440 returned), so asking
         # for a non-16:9 size here only wastes bandwidth and texture memory.
-        return util.backgroundFromArt(art, width=HERO_ART_SIZE[0], height=HERO_ART_SIZE[1], opacity=100)
+        return util.backgroundFromArt(art, width=HERO_ART_SIZE[0], height=HERO_ART_SIZE[1])
 
     # Plex's own Various Artists entry - the same guid on every server, unlike its ratingKey.
     VARIOUS_ARTISTS_GUID = 'plex://artist/5d07bbfc403c6402904a5ec9'

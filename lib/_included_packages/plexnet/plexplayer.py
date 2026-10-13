@@ -85,7 +85,8 @@ class PlexPlayer(BasePlayer):
     def build(self, forceTranscode=False):
         features = self.item.settings.getPlaybackFeatures()
         if "playback_directplay" in features:
-            directPlayPref = self.item.settings.getPreference("playback_directplay_force", False) and 'forced' or 'allow'
+            # 'forced' was playback_directplay_force, a setting long commented out of settings.xml
+            directPlayPref = 'allow'
         else:
             directPlayPref = 'disabled'
 

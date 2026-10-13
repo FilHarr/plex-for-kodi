@@ -800,13 +800,6 @@ class Settings(object):
                     T(33714, 'Resume in-progress items directly instead of visiting the media.')
                 ),
                 BoolSetting(
-                    'hubs_linear', T(34091, 'Linear Hubs'), False
-                ).description(
-                    T(34092, "Certain hubs, such as Top Unwatched Movies, are randomized by Plex by default, "
-                             "making sequentially consuming content practically impossible. Prevent this and "
-                             "use linearly sorted variants.")
-                ),
-                BoolSetting(
                     'path_mapping_indicators', T(33032, 'Show path mapping indicators'), True
                 ).description(
                     T(33033, "When path mapping is active for a library, display an indicator.")
@@ -1176,10 +1169,6 @@ class Settings(object):
                 BoolSetting('debug', T(32024, 'Debug Logging'), False),
                 BoolSetting('dump_config', T(33642, 'Debug Logging'), False).description(T(33643)),
             )
-        ),
-        'privacy': (
-            T(32051, 'Privacy'),
-            ()
         ),
         'about': (
             T(32052, 'About'), (

@@ -637,59 +637,6 @@ class UpdateHubTask(backgroundthread.Task):
             util.DEBUG_LOG('Something went wrong when updating hub: {0}', repr(self.hub.hubIdentifier))
 
 
-class ExtendHubTask(backgroundthread.Task):
-    def setup(self, hub, callback, canceledCallback=None, size=HUB_PAGE_SIZE, reselect_pos=None):
-        self.hub = hub
-        self.callback = callback
-        self.canceledCallback = canceledCallback
-        self.size = size
-        self.reselect_pos = reselect_pos
-        return self
-
-    def run(self):
-        if self.isCanceled():
-            if self.canceledCallback:
-                self.canceledCallback(self.hub)
-            return
-
-        if not plexapp.SERVERMANAGER.serversByUuid:
-            # signed out: no servers
-            return
-
-        try:
-            size = self.size
-            if self.reselect_pos is not None:
-                rk, pos = self.reselect_pos
-                if pos == -1:
-                    # we need the full hub if we want to round-robin
-                    size = util.addonSettings.hubsRrMax
-            start = self.hub.offset.asInt() + self.hub.size.asInt()
-            items = self.hub.extend(start=start, size=size)
-            if self.isCanceled():
-                if self.canceledCallback:
-                    self.canceledCallback(self.hub)
-                return
-            # Hub.extend() (plexlibrary.py) only returns the newly-fetched page - it doesn't append
-            # to self.hub.items, so without this, hub.items stays frozen at its original first-page
-            # size for the object's whole lifetime. That's invisible as long as the same physical
-            # control stays bound to a hub forever (pagination then lives only in that control's own
-            # ManagedControlList), but any full rebuild from hub.items - _bindAllHubSlots() re-binding
-            # a previously-paginated hub after navigating away and back, or a peek row bind - would
-            # silently drop everything past the first page, stranding any remembered position beyond
-            # it. Keeping hub.items itself authoritative fixes every rebuild path at once.
-            self.hub.items.extend(items)
-            self.callback(self.hub, items, reselect_pos=self.reselect_pos)
-        except plexnet.exceptions.BadRequest:
-            util.DEBUG_LOG('404 on hub: {0}', repr(self.hub.hubIdentifier))
-            if self.canceledCallback:
-                self.canceledCallback(self.hub)
-        except util.NoDataException:
-            util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
-        except:
-            util.DEBUG_LOG('Something went wrong when extending hub: {0}', repr(self.hub.hubIdentifier))
-            util.ERROR()
-
-
 class VirtualSection(object):
     locations = []
     isMapped = False
