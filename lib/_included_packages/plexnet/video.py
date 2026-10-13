@@ -1078,9 +1078,26 @@ class Show(CachableItemsMixin, Video, media.RelatedMixin, SectionOnDeckMixin):
 
     def episodes(self, watched=None, offset=None, limit=None):
         leavesKey = '/library/metadata/%s/allLeaves' % self.ratingKey
-        return plexobjects.listItems(self.server, leavesKey, watched=watched, offset=offset, limit=limit,
-                                     cachable=self.cachable, cache_ref=self.cacheRef, not_cachable=self._not_cachable,
-                                     excludeAllLeaves=1)
+        episodes = plexobjects.listItems(self.server, leavesKey, watched=watched, offset=offset, limit=limit,
+                                         cachable=self.cachable, cache_ref=self.cacheRef,
+                                         not_cachable=self._not_cachable, excludeAllLeaves=1)
+        self._currentShowArt(episodes)
+        return episodes
+
+    def _currentShowArt(self, episodes):
+        """allLeaves gives every episode the show's poster and background with a stamp frozen years
+        back (House of the Dragon's from 2022, every show on Animal, 2026-10-13), where the show
+        and each episode asked for alone have the current one. The stamp is what Kodi's image cache
+        keys on, so the old picture would stay: replaced with the show's own. An episode's art that
+        is its season's is left alone (allLeaves gives the show's for it all the same)."""
+        prefix = '/library/metadata/%s/' % self.ratingKey
+        current = {'thumb': self.get('thumb'), 'art': self.get('art')}
+        for episode in episodes or ():
+            for field, kind in (('grandparentThumb', 'thumb'), ('grandparentArt', 'art'), ('art', 'art')):
+                value = u'{0}'.format(episode.get(field) or '')
+                now = current[kind]
+                if now and value.startswith(prefix + kind + '/') and value != now:
+                    episode.set(field, now)
 
     def episode(self, title):
         path = '/library/metadata/%s/allLeaves' % self.ratingKey

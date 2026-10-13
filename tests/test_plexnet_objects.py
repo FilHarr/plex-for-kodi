@@ -243,3 +243,35 @@ class ImagesTest(KodiTestCase):
         self.assertIsNone(item.clearLogo)
         item._setData(ET.fromstring(fixture("plexnet", "episode_images.xml")).find("Video"))
         self.assertEqual("/library/metadata/2101/clearLogo/1600000000", item.clearLogo)
+
+
+class ShowEpisodesArtTest(KodiTestCase):
+    """allLeaves gives every episode the show's poster and background with a stamp frozen years back
+    (every show on Animal, 2026-10-13): Show.episodes() puts the show's own, current one in."""
+
+    def setUp(self):
+        ensure_plex_interface()
+        self.show = video.Show(ET.fromstring(
+            '<Directory ratingKey="82025" type="show" thumb="/library/metadata/82025/thumb/200" '
+            'art="/library/metadata/82025/art/200"/>'))
+
+    def episode(self, **attrs):
+        attrs.setdefault('ratingKey', '1')
+        return video.Episode(ET.Element('Video', dict(attrs, type='episode')))
+
+    def test_the_shows_art_as_it_is_now(self):
+        episode = self.episode(grandparentThumb='/library/metadata/82025/thumb/100',
+                               grandparentArt='/library/metadata/82025/art/100',
+                               art='/library/metadata/82025/art/100')
+        self.show._currentShowArt([episode])
+        self.assertEqual('/library/metadata/82025/thumb/200', episode.grandparentThumb)
+        self.assertEqual('/library/metadata/82025/art/200', episode.grandparentArt)
+        self.assertEqual('/library/metadata/82025/art/200', episode.art)
+
+    def test_the_episodes_own_and_its_seasons_left_alone(self):
+        episode = self.episode(thumb='/library/metadata/1/thumb/100', parentThumb='/library/metadata/9/thumb/100',
+                               art='/library/metadata/9/art/100')
+        self.show._currentShowArt([episode])
+        self.assertEqual('/library/metadata/1/thumb/100', episode.thumb)
+        self.assertEqual('/library/metadata/9/thumb/100', episode.parentThumb)
+        self.assertEqual('/library/metadata/9/art/100', episode.art)
