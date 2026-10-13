@@ -11,6 +11,12 @@ from . import util
 from . import signalsmixin
 from six.moves import range
 
+# What a video play queue's items are sent without: the cast and crew lists and the like, which
+# nothing reads from a queue's items - the player takes their Media, chapters, markers, Guids
+# (Trakt), images and colours, all still sent, and an item reloaded as it plays is reloaded whole.
+# Half the size: 497 kB to 230 kB for 21 films on Animal, the cast alone most of it (2026-10-13).
+VIDEO_QUEUE_EXCLUDED = 'Role,Director,Writer,Producer,Collection,Similar,Review,Country,Label,Field,CommonSenseMedia'
+
 
 class AudioUsage(object):
     def __init__(self, skipsPerHour, playQueueId):
@@ -819,6 +825,9 @@ class PlayQueue(signalsmixin.SignalsMixin):
 
         includeChapters = self.options.get('includeChapters') is not None and self.options.includeChapters or 1
         request.addParam("includeChapters", str(includeChapters))
+
+        if self.type == "video":
+            request.addParam("excludeElements", VIDEO_QUEUE_EXCLUDED)
 
     def __repr__(self):
         return (

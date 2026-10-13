@@ -189,3 +189,33 @@ class ModuleShapeTest(KodiTestCase):
                      "normRes"):
             with self.subTest(name=name):
                 self.assertTrue(hasattr(videosession, name), name)
+
+
+class QueueRequestOptionsTest(KodiTestCase):
+    """A video queue's items are sent without the cast and crew lists and the like, which nothing
+    reads from them (half the size, 2026-10-13); everything playback reads is still asked for."""
+
+    def setUp(self):
+        ensure_plex_interface()
+
+    def params(self, queueType):
+        queue = playqueue.PlayQueue.__new__(playqueue.PlayQueue)
+        queue.type = queueType
+        queue.options = PlayOptions()
+        queue.requestedWindow = None
+        asked = {}
+
+        class Request(object):
+            def addParam(self, key, value):
+                asked[key] = value
+        queue.addRequestOptions(Request())
+        return asked
+
+    def test_a_video_queue_leaves_out_the_cast_and_crew(self):
+        excluded = self.params('video')['excludeElements'].split(',')
+        self.assertIn('Role', excluded)
+        for kept in ('Media', 'Chapter', 'Marker', 'Guid', 'Image', 'UltraBlurColors'):
+            self.assertNotIn(kept, excluded)
+
+    def test_a_music_queue_is_asked_for_whole(self):
+        self.assertNotIn('excludeElements', self.params('audio'))
