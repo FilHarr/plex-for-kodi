@@ -277,6 +277,41 @@ class ShowEpisodesArtTest(KodiTestCase):
         self.assertEqual('/library/metadata/9/art/100', episode.art)
 
 
+class DiscoverShowEpisodesTest(KodiTestCase):
+    """Discover has no allLeaves (a 404): a Discover show's episodes are its seasons', and a show
+    hiding its one season, opened as the show, couldn't be (Cambridge Spies, 2026-10-13)."""
+
+    def setUp(self):
+        ensure_plex_interface()
+        from unittest import mock
+        self.mock = mock
+        self.server = mock.Mock(uuid='plexdiscover')
+        self.show = video.Show(ET.fromstring('<Directory ratingKey="5d9c" type="show"/>'), server=self.server)
+
+    def seasons(self, *counts):
+        seasons = []
+        for number, count in enumerate(counts, 1):
+            season = self.mock.Mock()
+            season.episodes.return_value = ['s%de%d' % (number, n) for n in range(1, count + 1)]
+            seasons.append(season)
+        return seasons
+
+    def test_each_seasons_episodes_and_no_allleaves(self):
+        with self.mock.patch.object(video.Show, 'seasons', return_value=self.seasons(2, 1)),                 self.mock.patch.object(plexobjects, 'listItems') as listItems:
+            self.assertEqual(['s1e1', 's1e2', 's2e1'], self.show.episodes())
+        listItems.assert_not_called()
+
+    def test_a_page_of_them(self):
+        with self.mock.patch.object(video.Show, 'seasons', return_value=self.seasons(3, 3)):
+            self.assertEqual(['s1e3', 's2e1'], self.show.episodes(offset=2, limit=2))
+
+    def test_a_servers_show_asks_for_allleaves(self):
+        self.server.uuid = 'animal'
+        with self.mock.patch.object(plexobjects, 'listItems', return_value=[]) as listItems:
+            self.show.episodes()
+        self.assertIn('/allLeaves', listItems.call_args[0][1])
+
+
 class SectionAllCollectionsTest(KodiTestCase):
     """A library's listing has its collections in it as the grid shows them - and, in a library set to
     hide what's in a collection, not those items. collections=False lists every item and no

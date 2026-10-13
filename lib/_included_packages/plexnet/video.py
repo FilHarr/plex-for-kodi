@@ -1077,12 +1077,25 @@ class Show(CachableItemsMixin, Video, media.RelatedMixin, SectionOnDeckMixin):
         return plexobjects.findItem(self.server, path, title)
 
     def episodes(self, watched=None, offset=None, limit=None):
+        if getattr(self.server, 'uuid', None) == 'plexdiscover':
+            return self._episodesBySeason(watched, offset, limit)
         leavesKey = '/library/metadata/%s/allLeaves' % self.ratingKey
         episodes = plexobjects.listItems(self.server, leavesKey, watched=watched, offset=offset, limit=limit,
                                          cachable=self.cachable, cache_ref=self.cacheRef,
                                          not_cachable=self._not_cachable, excludeAllLeaves=1)
         self._currentShowArt(episodes)
         return episodes
+
+    def _episodesBySeason(self, watched=None, offset=None, limit=None):
+        """A Discover show's episodes, season by season: Discover has no allLeaves (a 404), and a
+        show hiding its one season (skipChildren) opens as the show, so its episodes couldn't be
+        listed and the show couldn't be opened (Cambridge Spies from a person's credits,
+        2026-10-13)."""
+        episodes = []
+        for season in self.seasons():
+            episodes.extend(season.episodes(watched=watched))
+        start = offset or 0
+        return episodes[start:start + limit] if limit is not None else episodes[start:]
 
     def _currentShowArt(self, episodes):
         """allLeaves gives every episode the show's poster and background with a stamp frozen years
