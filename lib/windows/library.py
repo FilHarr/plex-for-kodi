@@ -1712,10 +1712,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # XML by render_templates(), so a change only shows once the templates are recompiled:
             # main.py does that for the 'recompile' close option and restarts Home.
             # The plex.direct settings: checked again with the new ones (upstream HomeWindow did on
-            # return to Home). Path mapping's: the sidebar's dots redrawn.
+            # return to Home). Path mapping's and Watchlist's: the sidebar redrawn. Season
+            # thumbnails: Home's rows bound again, so their episode tiles change poster.
             themeChanged = []
             plexDirectChanged = []
             mappingChanged = []
+            watchlistChanged = []
+            thumbsChanged = []
 
             def onThemeSetting(*args, **kwargs):
                 themeChanged.append(kwargs.get('id'))
@@ -1726,11 +1729,19 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             def onMappingSetting(*args, **kwargs):
                 mappingChanged.append(True)
 
+            def onWatchlistSetting(*args, **kwargs):
+                watchlistChanged.append(True)
+
+            def onThumbsSetting(*args, **kwargs):
+                thumbsChanged.append(True)
+
             watched = (('theme_relevant_setting', onThemeSetting),
                        ('change:force_pd_mapping', onPlexDirectSetting),
                        ('change:handle_plexdirect', onPlexDirectSetting),
                        ('change:path_mapping', onMappingSetting),
-                       ('change:path_mapping_indicators', onMappingSetting))
+                       ('change:path_mapping_indicators', onMappingSetting),
+                       ('change:use_watchlist', onWatchlistSetting),
+                       ('change:hub_season_thumbnails', onThumbsSetting))
             for signal, handler in watched:
                 plexapp.util.APP.on(signal, handler)
             try:
@@ -1745,8 +1756,13 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             else:
                 if plexDirectChanged:
                     windowutils.HOME.checkPlexDirectHosts()
-                if mappingChanged:
+                if watchlistChanged:
+                    # the entry is only added when its section exists (sidebar_model.sections())
+                    sidebar_model.refreshWatchlistSection()
+                if mappingChanged or watchlistChanged:
                     windowutils.HOME._rebuildSidebar()
+                if thumbsChanged:
+                    windowutils.HOME.rebindHubsShowing('season thumbnails setting')
         elif option == 'update':
             self.setBoolProperty('show.options', False)
             self.setProperty('busy', '1')
@@ -2569,6 +2585,18 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._startHubsFetch(self._hubsRefetchedFor(self._listGeneration, reason, manual=manual),
                              self._hubsRefetchedFor(self._listGeneration, reason + ', a late server'),
                              inPlace=True)
+        return True
+
+    def rebindHubsShowing(self, reason):
+        """Bind the Recommended view's rows again from the items they already hold, for a setting
+        that changes how a tile looks (hub_season_thumbnails): refreshHubsInPlace() rebinds only
+        when the server's rows differ from the ones showing. Main thread; same conditions as it."""
+        if (self._shuttingDown or self.closing or self._backStack or self._isHostedShell
+                or self.contentMode != 'recommended' or not self.visibleHubs):
+            return False
+        with self.lock:
+            self._bindAllHubSlots()
+        util.DEBUG_LOG('Library: hub rows rebound ({0})', reason)
         return True
 
     def _consumeRestoreItemPos(self, count):
