@@ -26,6 +26,15 @@ from . import windowutils
 
 UNDEF = "__UNDEF__"
 
+
+def withAddonID(text):
+    """Help text naming the add-on's own folders: every translation names them with the stock add-on's ID,
+    so a renamed copy (script.plexmod-uno) swaps in its own."""
+    if util.ADDON_ID == util.UPSTREAM_ADDON_ID:
+        return text
+    return text.replace(util.UPSTREAM_ADDON_ID, util.ADDON_ID)
+
+
 #MAIN_LANGUAGES = [l for l in languages if l.part1]
 #SEP_LANGUAGES= [l for l in languages if l.part2t and l not in MAIN_LANGUAGES]
 
@@ -490,12 +499,11 @@ class Settings(object):
                              'default for CoreELEC and LG WebOS)'
                 )),
                 BoolSetting('lav_mode_auto_switch', T(34073, 'Seamless branching fix'), True)
-                .description(T(34074, "Automatically temporarily activate LAV Full or SB mode in CoreELEC on "
-                                      "supported builds to alleviate audio dropouts on certain titles, if necessary. "
-                                      "Based on \"seamless_branching.json\", can be user-amended by putting a file "
-                                      "with the same name and structure into userdata/addon_data/script.plexmod.")
-                             # every translation names the path literally
-                             .replace('addon_data/' + util.UPSTREAM_ADDON_ID, 'addon_data/' + util.ADDON_ID))
+                .description(withAddonID(T(34074, "Automatically temporarily activate LAV Full or SB mode in "
+                                                  "CoreELEC on supported builds to alleviate audio dropouts on "
+                                                  "certain titles, if necessary. Based on \"seamless_branching.json\", "
+                                                  "can be user-amended by putting a file with the same name and "
+                                                  "structure into userdata/addon_data/script.plexmod.")))
                 if util.CE_SB_LAV_SWITCH else None,
                 BoolSetting(
                     'assume_resume', T(33711, 'Always resume media'), True
@@ -768,10 +776,10 @@ class Settings(object):
                     [(g, g) for g in genres.GENRES_TV]
                 ).description(T(33017, "")),
                 BoolSetting(
-                    'home_confirm_actions', T(33663, 'Home: Confirm item actions'), True
+                    'home_confirm_actions', T(33663, 'Confirm item actions'), True
                 ).description(
-                    T(33664, "When acting on items in the Home view, such as mark played, hide from continue "
-                             "watching etc., show a confirmation dialog.")
+                    T(33664, "When acting on items, such as mark played, hide from continue watching etc., "
+                             "show a confirmation dialog.")
                 ),
                 BoolSetting(
                     'disable_exit_on_back', T(35007, 'Home: Disable exit on Back'), False
@@ -781,13 +789,13 @@ class Settings(object):
                              "option in your username menu.")
                 ),
                 BoolSetting(
-                    'hub_season_thumbnails', T(33740, 'Home: Episodes season thumbnails'), True
+                    'hub_season_thumbnails', T(33740, 'Episodes season thumbnails'), True
                 ).description(
                     T(33741, "Use season thumbnails/posters when displaying episodes in hubs instead of "
                              "the TV show's.")
                 ),
                 BoolSetting(
-                    'home_inprogress_resume', T(33713, 'Home: Resume in-progress items'), False
+                    'home_inprogress_resume', T(33713, 'Resume in-progress items'), False
                 ).description(
                     T(33714, 'Resume in-progress items directly instead of visiting the media.')
                 ),
@@ -894,7 +902,10 @@ class Settings(object):
                              "CoreELEC on Ugoos with passthrough) and embedded subtitles showing late, with certain "
                              "setups. Only for DirectPlay. This still requires a sensible value for \"Delay after "
                              "change of refresh rate\" in Kodi (default: Off, CE/LG: On)")),
-                BoolSetting('initial_seek_blackout', T(34060, 'Blackout screen during initial seek'), True),
+                BoolSetting('initial_seek_blackout', T(34060, 'Blackout screen during initial seek'), True)
+                .description(T(35176, "While a video that starts part-way in (a resume, a skipped intro or Seek "
+                                      "back on start) makes its first seek, keep the screen black so its "
+                                      "opening frames don't flash up first.")),
                 OptionsSetting(
                     'player_stop_on_idle',
                     T(32946, 'Stop video playback on idle after'),
@@ -1067,11 +1078,11 @@ class Settings(object):
                 .description(T(33673, "Automatically check for updates periodically. If installed from a "
                                       "Kodi repository and the Update Source setting is set to Repository, Kodi "
                                       "itself will handle the updating of this addon. "
-                                      "Needs a Kodi restart when changed.")) if not util.FROM_KODI_REPOSITORY else None,
+                                      "Needs a Kodi restart when changed.")) if util.UPDATER_ENABLED else None,
                 BoolSetting('update_check_startup', T(33674, 'Check for updates on start'), True)
                 .description(T(33675, "Automatically check for updates on startup. "
                                       "Doesn't do much when Update source is Repository."
-                                      "Needs a Kodi restart when changed.")) if not util.FROM_KODI_REPOSITORY else None,
+                                      "Needs a Kodi restart when changed.")) if util.UPDATER_ENABLED else None,
                 OptionsSetting(
                     'update_source',
                     T(33676, 'Update source'),
@@ -1082,7 +1093,7 @@ class Settings(object):
                                        'when changed and closing settings.\nDefault: Repository\n\nBeta: Bleeding '
                                        'edge (possibly unstable)\nStable: Stable branch (faster than Repository)\n'
                                        'Repository: Kodi repository (official (slow) or Don\'t Panic)')
-                              ) if not util.FROM_KODI_REPOSITORY else None,
+                              ) if util.UPDATER_ENABLED else None,
                 MultiOptionsSetting(
                     'cache_requests', T(33724, 'Cache Plex data for'),
                     [],
@@ -1101,9 +1112,9 @@ class Settings(object):
                                       "instead. Warning: You'll most likely encounter missing items in libraries "
                                       "or outdated data. Use the corresponding menu functionalities to clear the "
                                       "cache for specific items or libraries.")),
-                BoolSetting('exit_default_is_quit', T(32965, 'Start Plex On Kodi Startup'), False)
+                BoolSetting('exit_default_is_quit', T(32965, 'Quit Kodi on exit by default'), False)
                 .description(T(32966, "stub")),
-                BoolSetting('path_mapping', T(33000, ''), True).description(T(33001, '')),
+                BoolSetting('path_mapping', T(33000, ''), True).description(withAddonID(T(33001, ''))),
                 BufferSetting('cache_size',
                               T(33613, 'Kodi Buffer Size (MB)'),
                               20,
@@ -1111,7 +1122,7 @@ class Settings(object):
                 .description(
                     '{}{}'.format(T(33614, 'stub1').format(
                         lib.cache.kcm.free, lib.cache.kcm.recMax),
-                        '' if lib.cache.kcm.useModernAPI else ' ' + T(32954, 'stub2'))
+                        '' if lib.cache.kcm.useModernAPI else ' ' + withAddonID(T(32954, 'stub2')))
                 ) if not util.FROM_KODI_REPOSITORY or lib.cache.kcm.useModernAPI else None,
                 ReadFactorSetting('readfactor',
                                   T(32922, 'Kodi Cache Readfactor'),
@@ -1186,7 +1197,8 @@ class Settings(object):
                                 util.getGlobalProperty("service.started") and T(32328, "Yes") or T(32329, "No"),
                                 util.getGlobalProperty("service.version"))),
                 InfoSetting('i_last_update_check', T(33690, "Last update check"),
-                            lambda: util.getGlobalProperty('last_update_check', datetime.datetime.fromtimestamp(0).strftime('%Y-%m-%dT%H:%M:%S.%f'))),
+                            lambda: util.getGlobalProperty('last_update_check', datetime.datetime.fromtimestamp(0).strftime('%Y-%m-%dT%H:%M:%S.%f')))
+                if util.UPDATER_ENABLED else None,
             )
         ),
     }
@@ -1424,7 +1436,7 @@ class SettingsWindow(kodigui.BaseWindow, windowutils.UtilMixin):
         mli.setLabel2(result)
 
     def editInteger(self, mli, setting):
-        result = xbmcgui.Dialog().input(T(32417, 'Enter Port Number'), str(setting.get()), xbmcgui.INPUT_NUMERIC)
+        result = xbmcgui.Dialog().input(setting.label, str(setting.get()), xbmcgui.INPUT_NUMERIC)
         if not result:
             return
         setting.set(int(result))
@@ -1474,12 +1486,13 @@ class SchnorchelDialog(xbmcgui.WindowXMLDialog):
         ctrl1, ctrl2 = 401, 402
         if util.SKIN_PLEXTUARY:
             ctrl1, ctrl2 = 1401, 1402
-        try:
-            self.getControl(ctrl1).addLabel(T(33085))
-            self.getControl(ctrl2).addLabel(T(33086).format(self.timeout))
-        except AttributeError:
-            self.getControl(ctrl1).setLabel(T(33085))
-            self.getControl(ctrl2).setLabel(T(33086).format(self.timeout))
+        # each skin decides which of the two is a fadelabel (Plextuary: 1401 is, 1402 is a plain label)
+        for controlID, text in ((ctrl1, T(33085)), (ctrl2, T(33086).format(self.timeout))):
+            control = self.getControl(controlID)
+            if isinstance(control, xbmcgui.ControlFadeLabel):
+                control.addLabel(text)
+            else:
+                control.setLabel(text)
 
     def setProperty(self, key, value):
         if not self._winID:

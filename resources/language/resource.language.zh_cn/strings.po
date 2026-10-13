@@ -1988,7 +1988,7 @@ msgstr "后台工作线程数"
 
 #: 
 msgctxt "#32982"
-msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Needs an addon restart."
+msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Values above 3 only apply when Kodi's Python runs without the GIL (free-threaded). Needs an addon restart."
 msgstr "根据您的 CPU 核心数及其处理能力，增加此值可能会改善某些使用场景的体验。如果您遇到崩溃或其他异常情况，请使用默认值（3）。重启插件后生效。"
 
 #: 
@@ -2644,8 +2644,8 @@ msgstr "Plex 服务器读取超时"
 
 #: 
 msgctxt "#33637"
-msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 10"
-msgstr "设置尝试从 Plex 服务器读取的最长时间（以秒为单位）。默认：10"
+msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 5"
+msgstr "设置尝试从 Plex 服务器读取的最长时间（以秒为单位）。默认：5"
 
 #: 
 msgctxt "#33638"
@@ -2792,13 +2792,13 @@ msgstr "Remove from Continue Watching"
 
 #: 
 msgctxt "#33663"
-msgid "Home: Confirm item actions"
-msgstr "主页：确认项目操作"
+msgid "Confirm item actions"
+msgstr "确认项目操作"
 
 #: 
 msgctxt "#33664"
-msgid "When acting on items in the Home view, such as mark played, hide from continue watching etc., show a confirmation dialog."
-msgstr "对主页视图中的项目执行操作时，如标记为已播放、隐藏继续播放等，会显示一个确认对话框。"
+msgid "When acting on items, such as mark played, hide from continue watching etc., show a confirmation dialog."
+msgstr "对项目执行操作时，如标记为已播放、隐藏继续播放等，会显示一个确认对话框。"
 
 #: 
 msgctxt "#33665"
@@ -3139,8 +3139,8 @@ msgstr "请求播放正在进行的媒体时，默认情况下会恢复它，而
 
 #: 
 msgctxt "#33713"
-msgid "Home: Resume in-progress items"
-msgstr "主页： 继续进行中的项目"
+msgid "Resume in-progress items"
+msgstr "继续进行中的项目"
 
 #: 
 msgctxt "#33714"
@@ -3310,7 +3310,7 @@ msgstr ""
 
 #: 
 msgctxt "#33740"
-msgid "Home: Episodes season thumbnails"
+msgid "Episodes season thumbnails"
 msgstr ""
 
 #: 

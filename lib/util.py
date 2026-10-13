@@ -35,7 +35,8 @@ from .i18n import T, TRANSLATED_ROLES
 from . import aspectratio
 # noinspection PyUnresolvedReferences
 from .kodi_util import (ADDON, ADDON_ID, UPSTREAM_ADDON_ID, xbmc, xbmcvfs, xbmcaddon, xbmcgui, translatePath, KODI_VERSION_MAJOR, KODI_VERSION_MINOR,
-                        KODI_BUILD_NUMBER, FROM_KODI_REPOSITORY, PYTHON_VERSION, ENABLE_HIGH_CONCURRENCY)
+                        KODI_BUILD_NUMBER, FROM_KODI_REPOSITORY, UPDATER_ENABLED, PYTHON_VERSION,
+                        ENABLE_HIGH_CONCURRENCY)
 from .properties import setGlobalProperty, setGlobalBoolProperty, waitForGPEmpty, waitForConsumption, getGlobalProperty
 # noinspection PyUnresolvedReferences
 from .addonsettings import addonSettings, AddonSettings

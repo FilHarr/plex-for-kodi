@@ -1707,7 +1707,23 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         if option == 'settings':
             from . import settings
-            settings.openWindow()
+            # Theme-relevant settings (watched_indicators, hide_aw_bg) are baked into the compiled
+            # XML by render_templates(), so a change only shows once the templates are recompiled:
+            # main.py does that for the 'recompile' close option and restarts Home.
+            themeChanged = []
+
+            def onThemeSetting(*args, **kwargs):
+                themeChanged.append(kwargs.get('id'))
+
+            plexapp.util.APP.on('theme_relevant_setting', onThemeSetting)
+            try:
+                settings.openWindow()
+            finally:
+                plexapp.util.APP.off('theme_relevant_setting', onThemeSetting)
+            if themeChanged:
+                util.LOG('Library: theme-relevant settings changed ({0}), recompiling templates',
+                         ', '.join(themeChanged))
+                self._closeSessionWithOption('recompile')
         elif option == 'update':
             self.setBoolProperty('show.options', False)
             self.setProperty('busy', '1')

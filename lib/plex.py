@@ -378,6 +378,11 @@ def onDisableMouseInputChange(value=None, **kwargs):
         MOUSE_SETTING_CONTROL.restore()
 
 
+def onDebugChange(*args, **kwargs):
+    # logging.DEBUG_LOG reads the cached addonSettings.debug, and util.DEBUG was copied from it at import
+    util.DEBUG = util.addonSettings.debug = util.getSetting('debug', False)
+
+
 PLEX_INTERFACE = PlexInterface()
 plexapp.util.setInterface(PLEX_INTERFACE)
 plexapp.util.INTERFACE.playbackManager = PlaybackManager()
@@ -390,6 +395,8 @@ plexapp.util.APP.on('change:manual_port_0', onManualIPChange)
 plexapp.util.APP.on('change:manual_port_1', onManualIPChange)
 plexapp.util.APP.on('change:local_mode', onLocalModeChange)
 plexapp.util.APP.on('change:disable_mouse_input', onDisableMouseInputChange)
+plexapp.util.APP.on('change:debug', onDebugChange)
+plexapp.util.APP.on('change:map_button_home', util.homeButtonMapped)
 onDisableMouseInputChange(value=util.getSetting('disable_mouse_input'))
 
 plexapp.util.CHECK_LOCAL = util.getSetting('smart_discover_local')

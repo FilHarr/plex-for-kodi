@@ -49,6 +49,11 @@ KODI_BUILD_NUMBER = int("{0}{1:02d}{2:03d}".format(_bmajor, int(_bminor), int(_b
 
 FROM_KODI_REPOSITORY = ADDON.getAddonInfo('name') == "PM4K for Plex"
 
+# The add-on's own updater (update_checker.py, run by the service) installs upstream's script.plexmod zips into
+# addons/script.plexmod, so only the stock add-on installed from outside a Kodi repository runs it. A renamed copy
+# (script.plexmod-uno) is updated by its own repository. Gates the update settings and About rows too.
+UPDATER_ENABLED = not FROM_KODI_REPOSITORY and ADDON_ID == UPSTREAM_ADDON_ID
+
 try:
     PYTHON_VERSION = platform.python_version()
     PYTHON_VERSION_TUPLE = tuple(map(int, platform.python_version_tuple()))

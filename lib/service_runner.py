@@ -28,6 +28,8 @@ def main(restarting_service=False):
 
     lo.service_log('Started', realm="Service")
     setGlobalProperty('service.started', '1', wait=True)
+    # About's "Service running" shows it; the update loop below re-sets it after each reload
+    setGlobalProperty('service.version', ku.ADDON.getAddonInfo('version'))
 
     if ku.ADDON.getSetting('kiosk.mode') == 'true' and not service_started:
         ku.xbmc.log(ku.ADDON_ID + ': Starting from service (Kiosk Mode)', ku.xbmc.LOGINFO)
@@ -35,10 +37,7 @@ def main(restarting_service=False):
         delay = ku.ADDON.getSetting('kiosk.delay') or "0"
         ku.xbmc.executebuiltin('RunScript({},{}{})'.format(ku.ADDON_ID, kiosk, ",{}".format(delay) if delay != "0" else ""))
 
-    # The updater installs upstream's script.plexmod zips into addons/script.plexmod, so a renamed copy
-    # (script.plexmod-uno) mustn't run it until it has an update source of its own.
-    if not ku.FROM_KODI_REPOSITORY and ku.ADDON_ID == ku.UPSTREAM_ADDON_ID and \
-            ku.ADDON.getSetting('auto_update_check') != "false":
+    if ku.UPDATER_ENABLED and ku.ADDON.getSetting('auto_update_check') != "false":
         while not MONITOR.abortRequested():
             # enter the update loop. if it exits positively, it wants to be reloaded
             setGlobalProperty('service.version', ku.ADDON.getAddonInfo('version'))

@@ -1990,7 +1990,7 @@ msgstr "Háttérfolyamatok száma"
 
 #: 
 msgctxt "#32982"
-msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Needs an addon restart."
+msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Values above 3 only apply when Kodi's Python runs without the GIL (free-threaded). Needs an addon restart."
 msgstr "Attól függően, hogy hány processzormaggal rendelkezik és mennyit tud kezelni, ennek növelése bizonyos helyzetekben javíthat. Ha összeomlásokat vagy egyéb rendellenességeket tapasztal, hagyja az alapértelmezett értéket (3). Szükség van a kiegészítő újraindítására."
 
 #: 
@@ -2646,8 +2646,8 @@ msgstr "Plex szerver olvasási időkorlát"
 
 #: 
 msgctxt "#33637"
-msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 10"
-msgstr "Beállítja a Plex szerverről történő olvasás maximális időtartamát másodpercben. Alapértelmezett: 10"
+msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 5"
+msgstr "Beállítja a Plex szerverről történő olvasás maximális időtartamát másodpercben. Alapértelmezett: 5"
 
 #: 
 msgctxt "#33638"
@@ -2794,13 +2794,13 @@ msgstr "Lejátszás folytatásából való törlés"
 
 #: 
 msgctxt "#33663"
-msgid "Home: Confirm item actions"
-msgstr "Kezdőképernyő: Megerősítem a műveleteket"
+msgid "Confirm item actions"
+msgstr "Megerősítem a műveleteket"
 
 #: 
 msgctxt "#33664"
-msgid "When acting on items in the Home view, such as mark played, hide from continue watching etc., show a confirmation dialog."
-msgstr "Kezdőképernyőn lévő elemekkel kapcsolatos műveletek, például lejátszott elem jelölése, lejátszás folytatása elrejtése stb. esetén megjelenik egy megerősítő párbeszédpanel."
+msgid "When acting on items, such as mark played, hide from continue watching etc., show a confirmation dialog."
+msgstr "Elemekkel kapcsolatos műveletek, például lejátszott elem jelölése, lejátszás folytatása elrejtése stb. esetén megjelenik egy megerősítő párbeszédpanel."
 
 #: 
 msgctxt "#33665"
@@ -3140,8 +3140,8 @@ msgstr "Ha kérés érkezik a folyamatban lévő média lejátszása iránt, ala
 
 #: 
 msgctxt "#33713"
-msgid "Home: Resume in-progress items"
-msgstr "Kezdőképernyő: Folyamatban lévő elemek folytatása"
+msgid "Resume in-progress items"
+msgstr "Folyamatban lévő elemek folytatása"
 
 #: 
 msgctxt "#33714"
@@ -3317,8 +3317,8 @@ msgstr "Hány elemet töltsön be a Kodi lejátszási listájába, mielőtt a Pl
 
 #: 
 msgctxt "#33740"
-msgid "Home: Episodes season thumbnails"
-msgstr "Kezdőképernyő: Évadok epizódjainak miniatűrjei"
+msgid "Episodes season thumbnails"
+msgstr "Évadok epizódjainak miniatűrjei"
 
 #: 
 msgctxt "#33741"

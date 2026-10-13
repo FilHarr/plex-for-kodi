@@ -1998,7 +1998,7 @@ msgstr "Nombre de tâches en arrière-plan"
 
 #: 
 msgctxt "#32982"
-msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Needs an addon restart."
+msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Values above 3 only apply when Kodi's Python runs without the GIL (free-threaded). Needs an addon restart."
 msgstr "Selon le nombre de coeurs du CPU et sa capacité de calcul, augmenter cette valeur peut améliorer certaines situations. Si vous expérimentez des crashs ou d'autres anomalies, laissez-le à sa valeur par défaut (3). Nécessite un redémarrage de l'add-on."
 
 #: 
@@ -2651,8 +2651,8 @@ msgstr "Délai maximum de lecture sur serveur Plex"
 
 #: 
 msgctxt "#33637"
-msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 10"
-msgstr "Définit l'attente maximum pour lire depuis un serveur Plex, en secondes. Défaut : 10"
+msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 5"
+msgstr "Définit l'attente maximum pour lire depuis un serveur Plex, en secondes. Défaut : 5"
 
 #: 
 msgctxt "#33638"
@@ -2799,13 +2799,13 @@ msgstr "Retirer des lectures en cours"
 
 #: 
 msgctxt "#33663"
-msgid "Home: Confirm item actions"
-msgstr "Accueil : Confirmer les actions"
+msgid "Confirm item actions"
+msgstr "Confirmer les actions"
 
 #: 
 msgctxt "#33664"
-msgid "When acting on items in the Home view, such as mark played, hide from continue watching etc., show a confirmation dialog."
-msgstr "En cas d'action sur des médias dans la page d'accueil, comme pour les marquer lus, retirer des lectures en cours etc., affiche un dialogue de confirmation."
+msgid "When acting on items, such as mark played, hide from continue watching etc., show a confirmation dialog."
+msgstr "En cas d'action sur des médias, comme pour les marquer lus, retirer des lectures en cours etc., affiche un dialogue de confirmation."
 
 #: 
 msgctxt "#33665"
@@ -3145,8 +3145,8 @@ msgstr "Au lancement d'un média partiellement lu, reprendre par défaut la lect
 
 #: 
 msgctxt "#33713"
-msgid "Home: Resume in-progress items"
-msgstr "Accueil : Reprendre les médias en cours"
+msgid "Resume in-progress items"
+msgstr "Reprendre les médias en cours"
 
 #: 
 msgctxt "#33714"
@@ -3316,7 +3316,7 @@ msgstr ""
 
 #: 
 msgctxt "#33740"
-msgid "Home: Episodes season thumbnails"
+msgid "Episodes season thumbnails"
 msgstr ""
 
 #: 

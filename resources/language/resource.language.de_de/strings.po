@@ -2165,8 +2165,8 @@ msgstr "Anzahl Hintergrund-Worker"
 
 #: 
 msgctxt "#32982"
-msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Needs an addon restart."
-msgstr "Je nachdem, wie viele Kerne Deine CPU hat und wie viel sie verarbeiten kann, kann eine höhere Zahl bestimmte Situationen verbessern. Solltest Du Abstürze oder andere Anomalien bemerken, stelle dies auf den Standardwert zurück (3). Benötigt einen Addon-Neustart."
+msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Values above 3 only apply when Kodi's Python runs without the GIL (free-threaded). Needs an addon restart."
+msgstr "Je nachdem, wie viele Kerne Deine CPU hat und wie viel sie verarbeiten kann, kann eine höhere Zahl bestimmte Situationen verbessern. Solltest Du Abstürze oder andere Anomalien bemerken, stelle dies auf den Standardwert zurück (3). Werte über 3 gelten nur, wenn Kodis Python ohne GIL läuft (free-threaded). Benötigt einen Addon-Neustart."
 
 #: 
 msgctxt "#32983"
@@ -2795,8 +2795,8 @@ msgstr "Plex-Server-Lesezeitlimit"
 
 #: 
 msgctxt "#33637"
-msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 10"
-msgstr "Setzt das Zeitlimit beim Lesen von einem Plex-Server, in Sekunden. Voreinstellung: 10"
+msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 5"
+msgstr "Setzt das Zeitlimit beim Lesen von einem Plex-Server, in Sekunden. Voreinstellung: 5"
 
 #: 
 msgctxt "#33638"
@@ -2914,12 +2914,12 @@ msgid "Remove from Continue Watching"
 msgstr "Von Fortsetzen entfernen"
 
 msgctxt "#33663"
-msgid "Home: Confirm item actions"
-msgstr "Start: Aktionen bestätigen"
+msgid "Confirm item actions"
+msgstr "Aktionen bestätigen"
 
 msgctxt "#33664"
-msgid "When acting on items in the Home view, such as mark played, hide from continue watching etc., show a confirmation dialog."
-msgstr "Werden in der Start-Ansicht gewisse Aktionen auf Elementen ausgeführt, wie z. B. als gesehen markieren, von Fortsetzen entfernen, einen Bestätigungsdialog anzeigen."
+msgid "When acting on items, such as mark played, hide from continue watching etc., show a confirmation dialog."
+msgstr "Werden gewisse Aktionen auf Elementen ausgeführt, wie z. B. als gesehen markieren, von Fortsetzen entfernen, einen Bestätigungsdialog anzeigen."
 
 msgctxt "#33665"
 msgid "Disable audio codecs"
@@ -3118,8 +3118,8 @@ msgid "When playback of an in-progress media is requested, resume it by default 
 msgstr "Bei einem bereits begonnenen Medium nicht fragen, ob es fortgesetzt oder vom Start abgespielt werden soll."
 
 msgctxt "#33713"
-msgid "Home: Resume in-progress items"
-msgstr "Start: Angef. Items fortsetzen"
+msgid "Resume in-progress items"
+msgstr "Angef. Items fortsetzen"
 
 msgctxt "#33714"
 msgid "Resume in-progress items directly instead of visiting the media."
@@ -3222,8 +3222,8 @@ msgid "How many items to load into a Kodi playlist before chunking them remotely
 msgstr "Wie groß soll eine Playlist maximal sein, bevor diese durch eine gestückelte Plex-seitige PlayQueue ersetzt wird? (Standard: 500); Bei Speicherproblemen/Abstürzen reduzieren."
 
 msgctxt "#33740"
-msgid "Home: Episodes season thumbnails"
-msgstr "Start: Staffelposter verwenden"
+msgid "Episodes season thumbnails"
+msgstr "Staffelposter verwenden"
 
 msgctxt "#33741"
 msgid "Use season thumbnails/posters when displaying episodes in hubs instead of the TV show's."
@@ -3569,8 +3569,8 @@ msgid "Periodically check server connections"
 msgstr "Server-Verbindungen regelmäßig prüfen"
 
 msgctxt "#34101"
-msgid "Re-test server connection reachability every 10 minutes to detect network changes (e.g. WiFi to mobile). Default: On"
-msgstr "Erreichbarkeit der Server-Verbindungen alle 10 Minuten erneut prüfen, um Netzwerkänderungen zu erkennen (z.B. WLAN zu Mobilfunk). Standard: An"
+msgid "Every minute, check that the servers in use still answer, and every 10 minutes re-test all their connections to detect network changes (e.g. WiFi to mobile). Default: On"
+msgstr "Jede Minute prüfen, ob die verwendeten Server noch antworten, und alle 10 Minuten alle ihre Verbindungen erneut testen, um Netzwerkänderungen zu erkennen (z.B. WLAN zu Mobilfunk). Standard: An"
 
 msgctxt "#35019"
 msgid "Go local"

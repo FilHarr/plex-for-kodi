@@ -1990,7 +1990,7 @@ msgstr "Recuento de Workers en segundo plano"
 
 #: 
 msgctxt "#32982"
-msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Needs an addon restart."
+msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Values above 3 only apply when Kodi's Python runs without the GIL (free-threaded). Needs an addon restart."
 msgstr "Según cuántos núcleos tenga tu procesador y cuánto pueda manejar, incrementar esto podría mejorar ciertas situaciones. Si experimentas cierres repentinos u otros errores, déjalo con su configuración por defecto (3). Necesita un reinicio del Addon."
 
 #: 
@@ -2646,8 +2646,8 @@ msgstr "Tiempo de espera de lectura del servidor Plex"
 
 #: 
 msgctxt "#33637"
-msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 10"
-msgstr "Establece la cantidad máxima de tiempo para leer desde un servidor Plex en segundos. Predeterminado: 10"
+msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 5"
+msgstr "Establece la cantidad máxima de tiempo para leer desde un servidor Plex en segundos. Predeterminado: 5"
 
 #: 
 msgctxt "#33638"
@@ -2793,13 +2793,13 @@ msgstr "Quitar de Seguir viendo"
 
 #: 
 msgctxt "#33663"
-msgid "Home: Confirm item actions"
-msgstr "Inicio: Confirmar acciones"
+msgid "Confirm item actions"
+msgstr "Confirmar acciones"
 
 #: 
 msgctxt "#33664"
-msgid "When acting on items in the Home view, such as mark played, hide from continue watching etc., show a confirmation dialog."
-msgstr "Al actuar sobre elementos de la vista de inicio, como marcar como reproducido, ocultar para que no se siga viendo, etc., mostrar un cuadro de diálogo de confirmación."
+msgid "When acting on items, such as mark played, hide from continue watching etc., show a confirmation dialog."
+msgstr "Al actuar sobre elementos, como marcar como reproducido, ocultar para que no se siga viendo, etc., mostrar un cuadro de diálogo de confirmación."
 
 #: 
 msgctxt "#33665"
@@ -3139,8 +3139,8 @@ msgstr "Cuando se solicita la reproducción de un medio en curso, reanudarla por
 
 #: 
 msgctxt "#33713"
-msgid "Home: Resume in-progress items"
-msgstr "Inicio: Reanudar elementos en curso"
+msgid "Resume in-progress items"
+msgstr "Reanudar elementos en curso"
 
 #: 
 msgctxt "#33714"
@@ -3316,8 +3316,8 @@ msgstr "Cuántos elementos se cargan en una lista de reproducción de Kodi antes
 
 #: 
 msgctxt "#33740"
-msgid "Home: Episodes season thumbnails"
-msgstr "Inicio: Miniaturas de Episodios en temporada"
+msgid "Episodes season thumbnails"
+msgstr "Miniaturas de Episodios en temporada"
 
 #: 
 msgctxt "#33741"

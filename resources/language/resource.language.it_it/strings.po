@@ -1988,7 +1988,7 @@ msgstr "Numero di Background worker"
 
 #: 
 msgctxt "#32982"
-msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Needs an addon restart."
+msgid "Depending on how many cores your CPU has and how much it can handle, increasing this might improve certain situations. If you experience crashes or other annormalities, leave this at its default (3). Values above 3 only apply when Kodi's Python runs without the GIL (free-threaded). Needs an addon restart."
 msgstr "A seconda di quanti core ha la tua CPU e di quanto può gestire, aumentare questo valore potrebbe migliorare certe situazioni. Se riscontri crash o altre anomalie, lascia questo valore a default(3). Richiede un riavvio dell'addon."
 
 #: 
@@ -2641,7 +2641,7 @@ msgstr ""
 
 #: 
 msgctxt "#33637"
-msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 10"
+msgid "Sets the maximum amount of time to read from a Plex Server in seconds. Default: 5"
 msgstr ""
 
 #: 
@@ -2789,12 +2789,12 @@ msgstr ""
 
 #: 
 msgctxt "#33663"
-msgid "Home: Confirm item actions"
+msgid "Confirm item actions"
 msgstr ""
 
 #: 
 msgctxt "#33664"
-msgid "When acting on items in the Home view, such as mark played, hide from continue watching etc., show a confirmation dialog."
+msgid "When acting on items, such as mark played, hide from continue watching etc., show a confirmation dialog."
 msgstr ""
 
 #: 
@@ -3127,7 +3127,7 @@ msgstr ""
 
 #: 
 msgctxt "#33713"
-msgid "Home: Resume in-progress items"
+msgid "Resume in-progress items"
 msgstr ""
 
 #: 
@@ -3298,7 +3298,7 @@ msgstr ""
 
 #: 
 msgctxt "#33740"
-msgid "Home: Episodes season thumbnails"
+msgid "Episodes season thumbnails"
 msgstr ""
 
 #: 

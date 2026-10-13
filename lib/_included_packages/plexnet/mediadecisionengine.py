@@ -227,7 +227,7 @@ class MediaDecisionEngine(object):
 
         if AC3Cond != 'never':
             allowed = ["ac3"]
-            if item.settings.getPreference("audio_ac3dts", False):
+            if item.settings.getPreference("audio_ac3dts", True):
                 allowed.append("dca")
 
             if AC3Cond == 'always' and choice.audioStream.codec not in allowed:
