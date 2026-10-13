@@ -1457,6 +1457,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
     def doClose(self, **kw):
         self.closing = True
         pnUtil.APP.off("watchlist:modified", self.setWatchlistDirty)
+        player.PLAYER.off('new.video', self._onGridPlaybackVideo)
         util.MONITOR.off("library.back_home", self.goHomeRoot)
         self.tasks.kill()
         kodigui.MultiWindow.doClose(self)
@@ -2419,6 +2420,54 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         threading.Thread(target=refresh, name='library.rowsAfterPlayback').start()
 
+    # A grid sorted or filtered by these follows watching: playback from it can move tiles or drop
+    # them, so back from it, it's filled again rather than its tiles updated
+    WATCH_STATE_SORTS = frozenset(('lastViewedAt', 'viewOffset', 'viewCount', 'unwatched'))
+
+    def _updateGridAfterPlayback(self):
+        """Back on the grid from playback started by its Play or Shuffle (library_grid.py): the
+        tiles it played - each video's film, or its episode's show (_watchGridPlayback()) - are
+        read again and updated in place, once the stop's timeline report has reached the server.
+        Filled again (doRefill()), every tile went to its placeholder and back (AM6B, 2026-10-13).
+        A grid whose order or contents follow watching is still filled again
+        (_refillGridAfterPlayback()). Returns the control to focus for onReInit(), only then."""
+        player.PLAYER.off('new.video', self._onGridPlaybackVideo)
+        keys = self.__dict__.pop('_playedTileKeys', None) or set()
+        if self.sort in self.WATCH_STATE_SORTS or self.boolFilters.get('unwatched'):
+            return self._refillGridAfterPlayback()
+        if not keys or not self.showPanelControl:
+            return None
+        tiles = [mli for mli in self.showPanelControl
+                 if mli.dataSource is not None and str(mli.dataSource.ratingKey) in keys]
+        if not tiles:
+            return None
+        generation = self._listGeneration
+
+        def update():
+            from . import episodes
+            plexapp.util.APP.nowplayingmanager.waitForTimelines(episodes.TIMELINE_WAIT)
+            read = []
+            for mli in tiles:
+                try:
+                    mli.dataSource.reload()
+                    read.append(mli)
+                except Exception:
+                    util.ERROR()
+            if read:
+                self.postUI('played tiles', self._showPlayedTiles, args=(read, generation))
+
+        threading.Thread(target=update, name='library.playedTiles').start()
+        return None
+
+    def _showPlayedTiles(self, tiles, generation):
+        """_updateGridAfterPlayback()'s tiles, read again, shown - unless the grid has been
+        rebuilt since, which freed them."""
+        if generation != self._listGeneration or self.closing:
+            return
+        for mli in tiles:
+            self.showWatchState(mli)
+        util.DEBUG_LOG('Library: {0} played tile(s) updated in place', len(tiles))
+
     def _refillGridAfterPlayback(self):
         """Back on the grid from playback started by its Play or Shuffle (library_grid.py): the
         tiles played had their progress and ticks as before it (live, 2026-10-13), so the grid is
@@ -2724,7 +2773,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self._refreshRowsAfterPlayback()
         refocus = None
         if self.__dict__.pop('_refillGridOnReturn', False) and self.contentMode != 'recommended':
-            refocus = self._refillGridAfterPlayback()
+            refocus = self._updateGridAfterPlayback()
 
         if self.refill and self.contentMode != 'recommended':
             self.doRefill()

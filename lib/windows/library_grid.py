@@ -18,6 +18,7 @@ from plexnet import util as pnUtil
 from six.moves import range
 
 from lib import backgroundthread
+from lib import player
 from lib import util
 from lib import shuffle
 from lib.util import T
@@ -673,8 +674,8 @@ class GridMixin(object):
             args['unwatched'] = '1'
 
         pq = playqueue.createPlayQueueForItem(self.section, options={'shuffle': shuffle}, args=args)
-        # back on the grid when it ends: filled again then (LibraryWindow.onReInit())
-        self._refillGridOnReturn = True
+        # back on the grid when it ends: the tiles played updated then (LibraryWindow.onReInit())
+        self._watchGridPlayback()
         opener.open(pq, auto_play=True, auto_play_open=True)
 
     def shuffleButtonClicked(self):
@@ -723,7 +724,7 @@ class GridMixin(object):
             ordered = shuffle.pick(pool, len(pool))
 
         pl = playlist.LocalPlaylist(ordered, self.section.getServer())
-        self._refillGridOnReturn = True
+        self._watchGridPlayback()
         self.processCommand(videoplayer.play(play_queue=pl, context=self))
 
     def shuffleModeSelected(self):
@@ -792,7 +793,7 @@ class GridMixin(object):
 
         pl = playlist.LocalPlaylist(items, section.getServer())
         pl.setCurrent(items[start_index])
-        self._refillGridOnReturn = True
+        self._watchGridPlayback()
         self.processCommand(videoplayer.play(play_queue=pl, context=self))
 
     def optionsButtonClicked(self):
@@ -1407,8 +1408,28 @@ class GridMixin(object):
         else:
             self.processCommand(opener.sectionClicked(photo, context=self))
 
+    def _watchGridPlayback(self):
+        """Playback from the grid's own Play or Shuffle: each video it starts names its tile - a
+        film's own, an episode's show's - for the return to update (LibraryWindow.
+        _updateGridAfterPlayback())."""
+        self._playedTileKeys = set()
+        self._refillGridOnReturn = True
+        player.PLAYER.off('new.video', self._onGridPlaybackVideo)
+        player.PLAYER.on('new.video', self._onGridPlaybackVideo)
+
+    def _onGridPlaybackVideo(self, video=None, **kwargs):
+        if video is None:
+            return
+        key = video.get('grandparentRatingKey') if video.type == 'episode' else video.ratingKey
+        if key:
+            self.__dict__.setdefault('_playedTileKeys', set()).add(str(key))
+
     def updateUnwatchedAndProgress(self, mli):
         mli.dataSource.reload()
+        self.showWatchState(mli)
+
+    def showWatchState(self, mli):
+        """A tile's tick, unwatched count and progress, from its item as it is."""
         if mli.dataSource.isPlayed:
             mli.setProperty('unwatched.count', '')
         elif self.section.TYPE == 'show' or mli.dataSource.TYPE == 'show' or mli.dataSource.TYPE == 'season':
