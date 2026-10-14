@@ -442,7 +442,7 @@
     <posy>{{ vscale(125) }}</posy>
     <height>{{ vscale(388) }}</height>
     <control type="label">
-        <visible>String.IsEmpty(Window.Property(clear.logo)) + !String.IsEqual(Window.Property(hero.type),playlist) + !String.IsEqual(Window.Property(hero.type),album) + !String.IsEqual(Window.Property(hero.type),artist)</visible>
+        <visible>String.IsEmpty(Window.Property(clear.logo)) + String.IsEmpty(Window.Property(hero.small_logo)) + !String.IsEqual(Window.Property(hero.type),playlist) + !String.IsEqual(Window.Property(hero.type),album) + !String.IsEqual(Window.Property(hero.type),artist)</visible>
         <posx>61</posx>
         <posy>0</posy>
         <width>722</width>
@@ -499,6 +499,23 @@
         <label>$INFO[Window.Property(title)]</label>
     </control>
     {% endfor %}
+    <!-- No-clearlogo episode/season heading: the show's name in the playlist heading's slot, with
+         hero.subtitle (episode title / season name) on the line below - the Episodes screen's own
+         no-logo fallback (script-plex-episodes.xml.tpl), which shows both. -->
+    <control type="label">
+        <visible>String.IsEmpty(Window.Property(clear.logo)) + !String.IsEmpty(Window.Property(hero.small_logo))</visible>
+        <posx>61</posx>
+        <posy>{{ vscale(48) }}</posy>
+        <width>660</width>
+        <height>{{ vscale(61) }}</height>
+        <font>font45_title</font>
+        <align>left</align>
+        <aligny>bottom</aligny>
+        <scroll>true</scroll>
+        <scrollspeed>35</scrollspeed>
+        <textcolor>FFFFFFFF</textcolor>
+        <label>$INFO[Window.Property(title)]</label>
+    </control>
     <control type="image">
         <visible>!String.IsEmpty(Window.Property(clear.logo)) + String.IsEmpty(Window.Property(hero.small_logo))</visible>
         <posx>61</posx>
@@ -527,7 +544,8 @@
          math for the box budget - ~1.3x box-to-font ratio matching font10/height=vscale(30)
          elsewhere in this row) sized to that box. -->
     <control type="label">
-        <visible>!String.IsEmpty(Window.Property(clear.logo)) + !String.IsEmpty(Window.Property(hero.small_logo))</visible>
+        <!-- With or without the logo: the no-logo heading above sits over this same line. -->
+        <visible>!String.IsEmpty(Window.Property(hero.small_logo))</visible>
         <posx>61</posx>
         <posy>{{ vscale(117) }}</posy>
         <width>660</width>

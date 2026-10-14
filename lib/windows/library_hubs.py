@@ -1383,13 +1383,15 @@ class HubsMixin(object):
 
         ds_type = getattr(ds, 'type', '') or ''
         title = getattr(ds, 'title', '') or ''
-        # Two-line treatment (small clearlogo with a second text line under it, or the big
-        # fallback heading alone): episodes, and the rolled-up season items Plex puts in mixed
+        # Two-line treatment (small clearlogo, or a text heading where there's no logo, with a
+        # second text line under it): episodes, and the rolled-up season items Plex puts in mixed
         # recently-added hubs when several episodes of one season land together (on request,
         # 2026-09-20). For a season the heading/fallback is the *show's* name (ds.title is just
         # "Season 11") and the second line is the season name, mirroring episode-title-under-
         # show-logo. hero.subtitle carries that second line for both; hero.small_logo gates the
-        # template's small-logo/second-line variant.
+        # template's small-logo/second-line variant. With no clearlogo, the show's name is the
+        # heading above that same second line (as on the Episodes screen), so title is the show's
+        # for episodes too.
         small_logo = ds_type in ('episode', 'season')
         subtitle = ''
         if ds_type == 'season':
@@ -1397,6 +1399,7 @@ class HubsMixin(object):
             title = getattr(ds, 'parentTitle', '') or title
         elif ds_type == 'episode':
             subtitle = title
+            title = getattr(ds, 'grandparentTitle', '') or title
         elif ds_type == 'playlist':
             # Playlists (on request, 2026-09-20): the template renders the heading in the episode
             # screen's no-logo title style and this line where the episode title would go -
