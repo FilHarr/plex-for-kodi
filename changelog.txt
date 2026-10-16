@@ -1,3 +1,8 @@
+[-0.2.1-]
+- Kodi 22: the add-on starts again (it stopped at "cannot modify read-only attribute ... BaseWindow.onAction")
+- Post-play: Replay after a movie played on its own plays it again
+- Home and Recommended: an episode's hero shows the show's name, with the episode title below, when the show has no clearlogo
+
 [-0.2.0-]
 - Settings: sections by topic. "Playback (user-specific)" is now "Playback", and a new "Playback (advanced)" holds the resume, seek and device-fix settings from Main and Player UI
 - Settings: with more than one Plex Home user, a per-user setting shows a person icon and "Saved for this user (name) only."
