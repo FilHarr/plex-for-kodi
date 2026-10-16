@@ -3,7 +3,7 @@
 
 from __future__ import absolute_import
 
-from kodienv import ENV
+from kodienv import ENV, SwigType
 
 
 class Settings(object):
@@ -40,7 +40,7 @@ class Settings(object):
         ENV.settings[id] = str(value)
 
 
-class Addon(object):
+class Addon(object, metaclass=SwigType):
     """
     Every instance reads and writes the same ENV.settings dict, which is how
     Kodi behaves: the settings store is global, not per-Addon-object. (The

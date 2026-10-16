@@ -12,7 +12,7 @@ from __future__ import absolute_import
 import os
 import shutil
 
-from kodienv import ENV
+from kodienv import ENV, SwigType
 
 
 def translatePath(path):
@@ -101,7 +101,7 @@ def listdir(path):
     return dirs, files
 
 
-class File(object):
+class File(object, metaclass=SwigType):
     def __init__(self, filepath, mode="r"):
         self.path = ENV.translate_path(filepath)
         self.mode = mode
@@ -139,7 +139,7 @@ class File(object):
             self._fp.close()
 
 
-class Stat(object):
+class Stat(object, metaclass=SwigType):
     def __init__(self, path):
         self._stat = os.stat(ENV.translate_path(path))
 

@@ -4,7 +4,7 @@
 from __future__ import absolute_import
 
 from kodienv import (ENV, LOGDEBUG, LOGINFO, LOGWARNING, LOGERROR, LOGFATAL,  # noqa: F401
-                      LOGNONE)
+                      LOGNONE, SwigType)
 
 PLAYLIST_MUSIC = 0
 PLAYLIST_VIDEO = 1
@@ -85,7 +85,7 @@ def restart():
     ENV.power_calls.append("restart")
 
 
-class Monitor(object):
+class Monitor(object, metaclass=SwigType):
     def __init__(self, *args, **kwargs):
         pass
 
@@ -127,7 +127,7 @@ class Monitor(object):
         pass
 
 
-class Player(object):
+class Player(object, metaclass=SwigType):
     """
     Minimal player stand-in. Playback state lives on the class so that code
     which constructs a throwaway `xbmc.Player()` still observes it.
@@ -196,7 +196,7 @@ class Player(object):
         Player.calls.append(("showSubtitles", bVisible))
 
 
-class InfoTagVideo(object):
+class InfoTagVideo(object, metaclass=SwigType):
     def getDuration(self):
         return 0
 
@@ -204,7 +204,7 @@ class InfoTagVideo(object):
         return ""
 
 
-class PlayList(object):
+class PlayList(object, metaclass=SwigType):
     lists = {}
 
     def __init__(self, playList):
@@ -237,7 +237,7 @@ class PlayList(object):
         return 0
 
 
-class Keyboard(object):
+class Keyboard(object, metaclass=SwigType):
     def __init__(self, line="", heading="", hidden=False):
         self._text = line
         self._confirmed = True

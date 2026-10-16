@@ -95,6 +95,7 @@ class SkipsBuiltinsTest(KodiTestCase):
         class ViewMixin(object):
             def onAction(self, action):
                 seen.append(('view', action.getId()))
+            onAction = kodigui._skippingBuiltins(onAction)
 
         class View(ViewMixin, kodigui.ControlledWindow):
             def __init__(self):
@@ -115,3 +116,20 @@ class SkipsBuiltinsTest(KodiTestCase):
         self.view.onAction(FakeAction(kodigui.ACTION_BUILT_IN_FUNCTION))
         self.view.onAction(FakeAction(kodigui.xbmcgui.ACTION_NAV_BACK))
         self.assertEqual([('view', kodigui.xbmcgui.ACTION_NAV_BACK)], self.seen)
+
+    def test_its_wrapped_as_the_class_is_built(self):
+        # Kodi 22's SWIG-built xbmcgui refuses a class attribute set afterwards, and setting one
+        # stopped the add-on from starting (kodigui._WindowType). The stubs refuse the add-on's too.
+        self.assertTrue(getattr(vars(type(self.screen))['onAction'], '_skipsBuiltins', False))
+        addonCode = {'__name__': 'lib.windows.somewindow', 'cls': type(self.screen)}
+        with self.assertRaisesRegex(AttributeError, 'cannot modify read-only attribute'):
+            exec('cls.onAction = cls.onAction', addonCode)
+
+    def test_an_unwrapped_inherited_onaction_fails_at_import(self):
+        class ViewMixin(object):
+            def onAction(self, action):
+                pass
+
+        with self.assertRaisesRegex(TypeError, 'View.onAction comes from a class that is not a window'):
+            class View(ViewMixin, kodigui.ControlledWindow):
+                pass

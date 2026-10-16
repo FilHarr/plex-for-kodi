@@ -24,6 +24,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 
 
@@ -89,6 +90,40 @@ def parse_strings_po(path):
         msgstr, i = collect(i, 'msgstr "')
         strings[ident] = msgstr or msgid or ""
     return strings
+
+
+class SwigType(type):
+    """The metatype of Kodi's classes (Window, Player, ListItem, ...), and so of every add-on class
+    built on one. Kodi 22 builds its Python modules with stock SWIG, whose SwigPyObjectType
+    refuses to set or delete a class attribute once the class exists - unless it's a data
+    descriptor - so `SomeWindow.onAction = ...` raises there, and the add-on didn't start at all
+    (2026-10-16). This does the same to the add-on's own writes. The tests' are let through - a
+    test patching a window class (directly or with mock.patch) never runs in Kodi - and so are the
+    stubs' own classes, where tests keep fake playback state on xbmc.Player."""
+
+    def __setattr__(cls, name, value):
+        cls._checkWritable(name, sys._getframe(1))
+        type.__setattr__(cls, name, value)
+
+    def __delattr__(cls, name):
+        cls._checkWritable(name, sys._getframe(1))
+        type.__delattr__(cls, name)
+
+    def _checkWritable(cls, name, caller):
+        if cls.__module__ in ('xbmc', 'xbmcgui', 'xbmcaddon', 'xbmcvfs'):
+            return
+        writer = caller.f_globals.get('__name__', '')
+        if writer == 'unittest.mock' or writer.startswith('tests.'):
+            return
+        # SWIG's SwigPyObjectType_setattro(), its messages included
+        fullName = '{0}.{1}'.format(cls.__module__, cls.__qualname__)
+        for klass in cls.__mro__:
+            if name in vars(klass):
+                if not hasattr(type(vars(klass)[name]), '__set__'):
+                    raise AttributeError("cannot modify read-only attribute '{0}.{1}'".format(
+                        fullName, name))
+                return
+        raise AttributeError("type '{0}' has no attribute '{1}'".format(fullName, name))
 
 
 class JSONRPCError(Exception):

@@ -172,7 +172,7 @@ ACTION_BUILT_IN_FUNCTION = getattr(xbmcgui, 'ACTION_BUILT_IN_FUNCTION', 122)
 
 
 def _skippingBuiltins(onAction):
-    """onAction, minus builtin actions (XMLBase.__init_subclass__()). Live-caught 2026-10-03 on
+    """onAction, minus builtin actions (_WindowType.__new__(), MultiWindowView). Live-caught 2026-10-03 on
     the AM6B: the power key on an Episodes screen froze Kodi. Its onAction() asked the episode list
     for its selection while Kodi was running the suspend, and the two waited on each other - the
     list call holds the GIL while it waits for Kodi's main thread (a control from getControl() has
@@ -190,17 +190,35 @@ def _skippingBuiltins(onAction):
     return onActionSkippingBuiltins
 
 
-class XMLBase(object):
+def _needsBuiltinSkip(onAction):
+    return onAction is not None and not getattr(onAction, '_skipsBuiltins', False)
+
+
+class _WindowType(type(xbmcgui.WindowXML)):
+    """XMLBase's metaclass: every window's own onAction skips builtin actions - see
+    _skippingBuiltins(). One inherited from a class that isn't a window (a mixin listed first, like
+    MultiWindowView) has to be wrapped where it's defined; an unwrapped one fails at import.
+
+    It's wrapped while the class is built, never set on it afterwards. Kodi 22's xbmcgui is built
+    by stock SWIG, and the window types' metatype (SWIG's SwigPyObjectType, which this subclasses
+    there; plain type on Kodi 21) refuses any class attribute set after the class exists: "cannot
+    modify read-only attribute 'lib.windows.kodigui.BaseWindow.onAction'", and the add-on didn't
+    start at all (reported 2026-10-16 on CoreELEC, Kodi 22.0 RC1)."""
+
+    def __new__(mcs, name, bases, namespace, **kwargs):
+        onAction = namespace.get('onAction')
+        if _needsBuiltinSkip(onAction):
+            namespace['onAction'] = _skippingBuiltins(onAction)
+        cls = super(_WindowType, mcs).__new__(mcs, name, bases, namespace, **kwargs)
+        if _needsBuiltinSkip(getattr(cls, 'onAction', None)):
+            raise TypeError('{0}.onAction comes from a class that is not a window; wrap it with '
+                            '_skippingBuiltins() where it is defined'.format(name))
+        return cls
+
+
+class XMLBase(object, metaclass=_WindowType):
     defer_init = False
     defer_init_time = 0.25
-
-    def __init_subclass__(cls, **kwargs):
-        # Every window's onAction, its own or inherited (a view's comes from MultiWindowView, which
-        # isn't one of these), skips builtin actions - see _skippingBuiltins().
-        super(XMLBase, cls).__init_subclass__(**kwargs)
-        onAction = getattr(cls, 'onAction', None)
-        if onAction is not None and not getattr(onAction, '_skipsBuiltins', False):
-            cls.onAction = _skippingBuiltins(onAction)
 
     # A hidden list in base.xml.tpl, given one item at a window's first init. On stock Kodi 21 a skin
     # reload (a skin add-on update, or a manual reload) rebuilds our open windows' controls from the
@@ -1674,6 +1692,8 @@ class MultiWindowView(object):
         if self.routeActionToHost(action):
             return
         super(MultiWindowView, self).onAction(action)
+    # Not a window, so _WindowType can't wrap it, and the views inherit it ahead of their own
+    onAction = _skippingBuiltins(onAction)
 
     def viewAction(self, action):
         """This view's own handling of an action, called by the host's routeAction() after the

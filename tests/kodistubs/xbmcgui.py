@@ -10,7 +10,7 @@ GUI windows are out of scope for this suite.
 
 from __future__ import absolute_import
 
-from kodienv import ENV
+from kodienv import ENV, SwigType
 
 INPUT_ALPHANUM = 0
 INPUT_NUMERIC = 1
@@ -84,7 +84,7 @@ def getScreenHeight():
     return ENV.screen[1]
 
 
-class Window(object):
+class Window(object, metaclass=SwigType):
     def __init__(self, existingWindowId=-1):
         self.windowId = existingWindowId
 
@@ -129,7 +129,7 @@ class WindowDialog(Window):
     pass
 
 
-class ListItem(object):
+class ListItem(object, metaclass=SwigType):
     def __init__(self, label="", label2="", path="", offscreen=False):
         self.label = label
         self.label2 = label2
@@ -177,7 +177,7 @@ class ListItem(object):
         pass
 
 
-class Dialog(object):
+class Dialog(object, metaclass=SwigType):
     """
     Answers come from ENV.dialog_answers (a deque). Each call pops the next
     answer; an empty deque falls back to a neutral default (cancel/no/-1) so a
@@ -226,7 +226,7 @@ class Dialog(object):
         return self._answer("textviewer", (heading, text), {}, None)
 
 
-class DialogProgress(object):
+class DialogProgress(object, metaclass=SwigType):
     def __init__(self):
         self.percent = 0
         self.closed = False
@@ -249,7 +249,7 @@ class DialogProgressBG(DialogProgress):
     pass
 
 
-class DialogBusy(object):
+class DialogBusy(object, metaclass=SwigType):
     def create(self):
         pass
 
@@ -263,7 +263,7 @@ class DialogBusy(object):
         return False
 
 
-class _Control(object):
+class _Control(object, metaclass=SwigType):
     def __init__(self, *args, **kwargs):
         pass
 
