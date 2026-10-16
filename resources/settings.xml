@@ -137,11 +137,6 @@
                     <default>false</default>
                     <control type="toggle"/>
                 </setting>
-                <setting id="dynamic_timeline_seek" type="boolean" label="32471" help="32903">
-                    <level>0</level>
-                    <default>false</default>
-                    <control type="toggle"/>
-                </setting>
                 <setting id="coreelec_resume_seek_wait2" type="integer" label="33649" help="33650">
                     <level>0</level>
                     <default>100</default>

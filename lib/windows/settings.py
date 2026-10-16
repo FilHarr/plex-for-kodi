@@ -610,14 +610,13 @@ class Settings(object):
                         ('plex', 'Plex'),
                         ('kodi', 'Kodi'),
                     )
-                ).description(T(33695, "Where do you want to download subtitles from? Note: Currently this "
-                                       "only applies to the subtitle quick actions in the player. The subtitle download"
-                                       " in stream settings always uses Plex as a source.")),
+                ).description(T(33695, "Where do you want to download subtitles from? Applies to Download "
+                                       "subtitles in the player, from the Subtitles button or the player's Settings. "
+                                       "Before playback it always uses Plex.")),
                 BoolSetting('subtitle_download_fallback', T(33701, 'Fallback to Kodi'),
                             True).description(
                     T(33702, "When no subtitles are found via the Plex subtitle search, fall back to Kodi "
-                             "subtitle search. Note: Currently this only applies to the subtitle quick actions in the "
-                             "player. The subtitle download in stream settings always uses Plex as a source.")
+                             "subtitle search. Only in the player: before playback, subtitles always come from Plex.")
                 ),
                 OptionsSetting(
                     'burn_subtitles',
@@ -810,9 +809,6 @@ class Settings(object):
                     ['subtitle_downloads', 'skip_intro', 'skip_credits'] + (['video_show_vs10'] if util.CE_VS10 else []),
                     (
                         ('subtitle_downloads', T(32932, 'Show subtitle quick-actions button')),
-                        ('video_show_ffwdrwd', T(32933, 'Show FFWD/RWD buttons')),
-                        ('video_show_repeat', T(32934, 'Show repeat button')),
-                        ('video_show_shuffle', T(32935, 'Show shuffle button')),
                         ('skip_intro', T(32495, 'Skip Intro')),
                         ('skip_credits', T(32496, 'Skip Credits')),
                     ) + (
@@ -830,20 +826,6 @@ class Settings(object):
                                        ' (which can then only be accessed using DOWN), or resume when paused. '
                                        'Only works with \'Behave like official Plex clients\' enabled.')),
                 OptionsSetting(
-                    'video_show_playlist', T(32936, 'Show playlist button'), 'eponly',
-                    (
-                        ('always', T(32035, 'Always')), ('eponly', T(32938, 'Only for Episodes/Playlists')),
-                        ('never', T(32033, 'Never'))
-                    )
-                ).description(T(33088, 'Only applies to video player UI')),
-                OptionsSetting(
-                    'video_show_prevnext', T(32937, 'Show prev/next button'), 'eponly',
-                    (
-                        ('always', T(32035, 'Always')), ('eponly', T(32938, 'Only for Episodes/Playlists')),
-                        ('never', T(32033, 'Never'))
-                    )
-                ).description(T(33088, 'Only applies to video player UI')),
-                OptionsSetting(
                     'player_stop_on_idle',
                     T(32946, 'Stop video playback on idle after'),
                     0,
@@ -860,8 +842,8 @@ class Settings(object):
                 BoolUserSetting(
                     'show_chapters', T(33601, 'Show video chapters'), True
                 ).description(
-                    T(33602, 'If available, show video chapters from the video-file instead of the '
-                             'timeline-big-seek-steps.')
+                    T(33602, "If available, show the video file's chapters in a row below the player's buttons "
+                             "(press down to reach it).")
                 ),
                 BoolUserSetting(
                     'virtual_chapters', T(33603, 'Use virtual chapters'), True

@@ -1292,7 +1292,7 @@ msgid "Show video chapters"
 msgstr ""
 
 msgctxt "#33602"
-msgid "If available, show video chapters from the video-file instead of the timeline-big-seek-steps."
+msgid "If available, show the video file's chapters in a row below the player's buttons (press down to reach it)."
 msgstr ""
 
 msgctxt "#33603"
@@ -2048,7 +2048,7 @@ msgid "Behave like official Plex clients"
 msgstr ""
 
 msgctxt "#33046"
-msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters. Additionally, when pressing down while the OSD is shown, open the chapters (if available)."
+msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters."
 msgstr ""
 
 msgctxt "#33047"
@@ -2505,7 +2505,7 @@ msgid "Ask"
 msgstr ""
 
 msgctxt "#33695"
-msgid "Where do you want to download subtitles from? Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
+msgid "Where do you want to download subtitles from? Applies to Download subtitles in the player, from the Subtitles button or the player's Settings. Before playback it always uses Plex."
 msgstr ""
 
 msgctxt "#33696"
@@ -2536,7 +2536,7 @@ msgid "Fallback to Kodi"
 msgstr ""
 
 msgctxt "#33702"
-msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
+msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Only in the player: before playback, subtitles always come from Plex."
 msgstr ""
 
 msgctxt "#33703"
@@ -3843,4 +3843,36 @@ msgstr ""
 
 msgctxt "#35179"
 msgid "Saved for this user ({0}) only."
+msgstr ""
+
+msgctxt "#35180"
+msgid "One"
+msgstr ""
+
+msgctxt "#35181"
+msgid "On"
+msgstr ""
+
+msgctxt "#35182"
+msgid "Kodi settings"
+msgstr ""
+
+msgctxt "#35183"
+msgid "Video settings"
+msgstr ""
+
+msgctxt "#35184"
+msgid "Audio settings"
+msgstr ""
+
+msgctxt "#35185"
+msgid "Subtitle settings"
+msgstr ""
+
+msgctxt "#35186"
+msgid "Resolution settings"
+msgstr ""
+
+msgctxt "#35187"
+msgid "Colour settings"
 msgstr ""

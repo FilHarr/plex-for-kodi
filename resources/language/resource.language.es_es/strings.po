@@ -1440,8 +1440,8 @@ msgstr "Mostrar capítulos de vídeo"
 
 #: 
 msgctxt "#33602"
-msgid "If available, show video chapters from the video-file instead of the timeline-big-seek-steps."
-msgstr "Si está disponible, mostrar capítulos de vídeo del archivo de vídeo en lugar de la línea de tiempo-grandes-pasos-de-búsqueda."
+msgid "If available, show the video file's chapters in a row below the player's buttons (press down to reach it)."
+msgstr "Si están disponibles, mostrar los capítulos del archivo de vídeo en una fila debajo de los botones del reproductor (presionar abajo para acceder a ella)."
 
 #: 
 msgctxt "#33603"
@@ -2364,8 +2364,8 @@ msgstr "Permitir round-robin en hubs. Atención: Carga muchos elementos. Dependi
 
 #: 
 msgctxt "#33046"
-msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters. Additionally, when pressing down while the OSD is shown, open the chapters (if available)."
-msgstr "Al presionar arriba/abajo mientras el OSD no está mostrado, mostrar el OSD en lugar de saltar capítulos. Además, al presionar abajo mientras el OSD está mostrado, abrir los capítulos (si están disponibles)."
+msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters."
+msgstr "Al presionar arriba/abajo mientras el OSD no está mostrado, mostrar el OSD en lugar de saltar capítulos."
 
 #: 
 msgctxt "#33047"
@@ -3049,8 +3049,8 @@ msgstr "Consulte"
 
 #: 
 msgctxt "#33695"
-msgid "Where do you want to download subtitles from? Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
-msgstr "¿De dónde quieres descargar los subtítulos? Nota: Actualmente esto sólo se aplica a las acciones rápidas de subtítulos en el reproductor. La descarga de subtítulos en la configuración del stream siempre utiliza Plex como fuente."
+msgid "Where do you want to download subtitles from? Applies to Download subtitles in the player, from the Subtitles button or the player's Settings. Before playback it always uses Plex."
+msgstr "¿De dónde quieres descargar los subtítulos? Se aplica a Descargar subtítulos en el reproductor, desde el botón de subtítulos o los ajustes del reproductor. Antes de la reproducción siempre se usa Plex."
 
 #: 
 msgctxt "#33696"
@@ -3084,8 +3084,8 @@ msgstr "Volver a Kodi"
 
 #: 
 msgctxt "#33702"
-msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
-msgstr "Cuando no se encuentran subtítulos a través de la búsqueda de subtítulos de Plex, vuelve a la búsqueda de subtítulos de Kodi. Nota: Actualmente esto sólo se aplica a las acciones rápidas de subtítulos en el reproductor. La descarga de subtítulos en la configuración del stream siempre utiliza Plex como fuente."
+msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Only in the player: before playback, subtitles always come from Plex."
+msgstr "Cuando no se encuentran subtítulos a través de la búsqueda de subtítulos de Plex, vuelve a la búsqueda de subtítulos de Kodi. Solo en el reproductor: antes de la reproducción, los subtítulos siempre vienen de Plex."
 
 #: 
 msgctxt "#33703"

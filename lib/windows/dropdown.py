@@ -543,6 +543,33 @@ class DropdownHeaderDialog(DropdownDialog):
     dropWidth = 660
 
 
+class CardDropdownDialog(DropdownHeaderDialog):
+    """A plain dropdown in the Libraries picker's card style (script-plex-card_dropdown.xml.tpl): the video
+    player's Subtitles and VS10 menus. With pos_is_bottom, pos's y is the foot of the list - the backdrop runs
+    17 past it, 20 under the last card (its row's 3 and these), as at the sides."""
+    xmlFile = 'script-plex-card_dropdown.xml'
+    optionHeight = util.vscalei(64)  # the template's row pitch (58 cards, 6 apart)
+    maxRows = 10
+
+    def onFirstInit(self):
+        DropdownHeaderDialog.onFirstInit(self)
+        # the backdrop and shadow 17 past the list, not the header dropdown's 26
+        rows = len([o for o in self.options if o is not SEPARATOR])
+        separators = len(self.options) - rows
+        listHeight = min(self.optionHeight * self.maxRows,
+                         rows * self.optionHeight + separators * self.separatorHeight)
+        header = util.vscalei(66)
+        self.getControl(111).setHeight(listHeight + header + util.vscalei(17))
+        self.getControl(110).setHeight(listHeight + header + util.vscalei(97))
+
+    @property
+    def y(self):
+        if not self.posIsBottom:
+            return self.pos[1]
+        rows = min(self.maxRows, len([o for o in self.options if o is not SEPARATOR]))
+        return self.pos[1] - rows * self.optionHeight
+
+
 class CardListDialog(DropdownHeaderDialog):
     """A list of rows as cards, each row up to three controls: the row itself (open), and two tiles
     on the right - a toggle (pin: the Libraries picker's pin, Manage Hubs' shown/hidden) and Move.
@@ -625,6 +652,8 @@ def showDropdown(
     if dialog_class is not None:
         w = dialog_class.open(
             columns=columns, options=options, pos=pos or (660, 400),
+            pos_is_bottom=pos_is_bottom,
+            close_on_playback_ended=close_on_playback_ended,
             close_direction=close_direction,
             set_dropdown_prop=set_dropdown_prop,
             with_indicator=with_indicator,

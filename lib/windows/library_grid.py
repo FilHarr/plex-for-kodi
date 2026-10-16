@@ -1136,7 +1136,7 @@ class GridMixin(object):
                            randomize=not util.addonSettings.dynamicBackgrounds)
 
     def subOptionCallback(self, option):
-        check = 'script.plex/home/device/check.png'
+        check = 'script.plex/indicators/tick.png'
         options = None
         subKey = None
         if self.filter and self.filter.get('sub'):
@@ -1170,7 +1170,7 @@ class GridMixin(object):
         return server_title or fkey
 
     def filter1ButtonClicked(self):
-        check = 'script.plex/home/device/check.png'
+        check = 'script.plex/indicators/tick.png'
 
         libtype = self.librarySettings.getItemType()
         try:

@@ -1,5 +1,8 @@
 {% extends "base.xml.tpl" %}
 {% block backgroundcolor %}{% endblock %}
+{% block headers %}<!-- over the option pickers (101), which a choice can leave open beneath this, and the video player's
+     OSD (100) -->
+<zorder>102</zorder>{% endblock %}
 {% block controls %}
 <control type="group">
     <posx>0</posx>

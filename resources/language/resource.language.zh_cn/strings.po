@@ -1438,8 +1438,8 @@ msgstr "显示视频章节"
 
 #: 
 msgctxt "#33602"
-msgid "If available, show video chapters from the video-file instead of the timeline-big-seek-steps."
-msgstr "如果可用，从视频文件中获取视频章节，而不是从时间线生成。"
+msgid "If available, show the video file's chapters in a row below the player's buttons (press down to reach it)."
+msgstr "如果可用，在播放器按钮下方的一行中显示视频文件的章节（按下键进入）。"
 
 #: 
 msgctxt "#33603"
@@ -2362,8 +2362,8 @@ msgstr "允许内容版块循环显示项目。注意：会加载大量项目。
 
 #: 
 msgctxt "#33046"
-msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters. Additionally, when pressing down while the OSD is shown, open the chapters (if available)."
-msgstr "在未显示屏幕菜单时，按上下键显示屏幕菜单而不是章节。同时，在显示屏幕菜单时，按下键打开章节（如果有）。"
+msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters."
+msgstr "在未显示屏幕菜单时，按上下键显示屏幕菜单而不是章节。"
 
 #: 
 msgctxt "#33047"
@@ -3048,8 +3048,8 @@ msgstr "问"
 
 #: 
 msgctxt "#33695"
-msgid "Where do you want to download subtitles from? Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
-msgstr "您想从哪里下载字幕？注意：目前，这仅适用于播放器中的字幕快速操作。流设置中的字幕下载始终使用 Plex 作为源。"
+msgid "Where do you want to download subtitles from? Applies to Download subtitles in the player, from the Subtitles button or the player's Settings. Before playback it always uses Plex."
+msgstr "您想从哪里下载字幕？适用于播放器中的“下载字幕”，无论是从字幕按钮还是播放器设置进入。播放前始终使用 Plex。"
 
 #: 
 msgctxt "#33696"
@@ -3084,8 +3084,8 @@ msgstr "回退到 Kodi\n"
 
 #: 
 msgctxt "#33702"
-msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
-msgstr "如果通过 Plex 字幕搜索未找到字幕，请回退到 Kodi 字幕搜索。注意：目前，这仅适用于播放器中的字幕快速操作。流设置中的字幕下载始终使用 Plex 作为源。"
+msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Only in the player: before playback, subtitles always come from Plex."
+msgstr "如果通过 Plex 字幕搜索未找到字幕，请回退到 Kodi 字幕搜索。仅在播放器中有效：播放前，字幕始终来自 Plex。"
 
 #: 
 msgctxt "#33703"

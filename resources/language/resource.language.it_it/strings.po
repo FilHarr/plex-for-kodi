@@ -1438,8 +1438,8 @@ msgstr "Mostra capitoli video"
 
 #: 
 msgctxt "#33602"
-msgid "If available, show video chapters from the video-file instead of the timeline-big-seek-steps."
-msgstr "Se disponibili, mostra i capitoli video dal file video invece degli intervalli della timeline."
+msgid "If available, show the video file's chapters in a row below the player's buttons (press down to reach it)."
+msgstr "Se disponibili, mostra i capitoli del file video in una riga sotto i pulsanti del lettore (premi giù per raggiungerla)."
 
 #: 
 msgctxt "#33603"
@@ -2360,7 +2360,7 @@ msgstr ""
 
 #: 
 msgctxt "#33046"
-msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters. Additionally, when pressing down while the OSD is shown, open the chapters (if available)."
+msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters."
 msgstr ""
 
 #: 
@@ -3037,7 +3037,7 @@ msgstr ""
 
 #: 
 msgctxt "#33695"
-msgid "Where do you want to download subtitles from? Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
+msgid "Where do you want to download subtitles from? Applies to Download subtitles in the player, from the Subtitles button or the player's Settings. Before playback it always uses Plex."
 msgstr ""
 
 #: 
@@ -3072,7 +3072,7 @@ msgstr ""
 
 #: 
 msgctxt "#33702"
-msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
+msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Only in the player: before playback, subtitles always come from Plex."
 msgstr ""
 
 #: 

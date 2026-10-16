@@ -90,9 +90,9 @@ def versionEntries(copies):
 
 
 def chooseVersion(copy, media):
-    """copy opened with media its chosen version, as pre-play's Choose Version does
-    (preplayutils.chooseVersion()): pre-play keeps it through its first load, and the episode
-    screen gives it to its own copy of the episode (EpisodesPaginator._carryVersion())."""
+    """copy opened with media its chosen version, as Settings > Video does (playersettings.showVideoDialog()):
+    pre-play keeps it through its first load, and the episode screen gives it to its own copy of the episode
+    (EpisodesPaginator._carryVersion())."""
     for version in _versions(copy):
         version.set('selected', '')
     media.set('selected', 1)

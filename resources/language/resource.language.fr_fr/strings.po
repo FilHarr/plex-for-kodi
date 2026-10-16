@@ -1447,7 +1447,7 @@ msgstr "Afficher les chapitres de la vidéo"
 
 #: 
 msgctxt "#33602"
-msgid "If available, show video chapters from the video-file instead of the timeline-big-seek-steps."
+msgid "If available, show the video file's chapters in a row below the player's buttons (press down to reach it)."
 msgstr ""
 
 #: 
@@ -2370,7 +2370,7 @@ msgstr ""
 
 #: 
 msgctxt "#33046"
-msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters. Additionally, when pressing down while the OSD is shown, open the chapters (if available)."
+msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters."
 msgstr ""
 
 #: 
@@ -3055,8 +3055,8 @@ msgstr "Demander"
 
 #: 
 msgctxt "#33695"
-msgid "Where do you want to download subtitles from? Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
-msgstr "Quelle doit être la source des sous-titres ? NB : Valable seulement pour les actions rapides de sous-titres du lecteur. Le téléchargement de sous-titres dans les options d'un média utilise toujours Plex comme source."
+msgid "Where do you want to download subtitles from? Applies to Download subtitles in the player, from the Subtitles button or the player's Settings. Before playback it always uses Plex."
+msgstr "Quelle doit être la source des sous-titres ? S'applique à Télécharger des sous-titres dans le lecteur, depuis le bouton Sous-titres ou les réglages du lecteur. Avant la lecture, Plex est toujours utilisé."
 
 #: 
 msgctxt "#33696"
@@ -3090,8 +3090,8 @@ msgstr "Tenter avec Kodi"
 
 #: 
 msgctxt "#33702"
-msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
-msgstr "Quand la recherche Plex ne trouve pas de sous-titres, utiliser la recherche Kodi. NB : Valable seulement pour les actions rapides de sous-titres du lecteur. Le téléchargement de sous-titres dans les options d'un média utilise toujours Plex comme source."
+msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Only in the player: before playback, subtitles always come from Plex."
+msgstr "Quand la recherche Plex ne trouve pas de sous-titres, utiliser la recherche Kodi. Seulement dans le lecteur : avant la lecture, les sous-titres viennent toujours de Plex."
 
 #: 
 msgctxt "#33703"

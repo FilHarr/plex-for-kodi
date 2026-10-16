@@ -3,6 +3,7 @@ from __future__ import absolute_import
 import re
 import threading
 import time
+import weakref
 from collections import OrderedDict
 
 from kodi_six import xbmc
@@ -92,7 +93,7 @@ MARKER_CHAPTER_OVERLAP_THRES = 30000  # 30 seconds
 MARKER_END_JUMP_OFF = 1000
 
 
-class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownloadMixin):
+class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownloadMixin, SpoilersMixin):
     """
     fixme: This is a convoluted mess.
     """
@@ -107,49 +108,63 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
     MAIN_BUTTON_ID = 100
     SEEK_IMAGE_ID = 200
     POSITION_IMAGE_ID = 201
-    SELECTION_INDICATOR = 202
-    SELECTION_INDICATOR_GROUP = 203
-    SELECTION_INDICATOR_IMAGE = 204
-    SELECTION_INDICATOR_TEXT = 205
+    SELECTION_INDICATOR = 202  # the seek marker
     CACHE_IMAGE_ID = 206
     BIF_IMAGE_ID = 300
-    SEEK_IMAGE_WIDTH = 1920
+    # The seekbar is the music player's: 80% of the screen, centred - see the SEEKBAR comment in
+    # script-plex-seek_dialog.xml.tpl, whose 232/1496 these and BAR_X/BAR_RIGHT must match.
+    SEEK_IMAGE_WIDTH = 1496
+    # the played and buffer fills' rounded end caps, 4 wide (the template's SEEKBAR)
+    POSITION_CAP_ID = 208
+    CACHE_CAP_ID = 210
+    BAR_CAP = 4
+    # the chapter row's thumbnails (300x168 in the template's CHAPTERS row)
+    CHAPTER_THUMB_DIM = util.scaleResolution(300, 168)
+    # the card rows' 200ms fade (includes/osd_card_row.xml.tpl), plus a margin
+    ROW_FADE_OUT = 0.3
+    # the blurred no-spoilers seek thumbnail's size
+    LI_AR16X9_THUMB_DIM = (178, 100)
 
-    REPEAT_BUTTON_ID = 401
-    SHUFFLE_BUTTON_ID = 402
     SETTINGS_BUTTON_ID = 403
-    PREV_BUTTON_ID = 404
-    SKIP_BACK_BUTTON_ID = 405
-    PLAY_PAUSE_BUTTON_ID = 406
-    STOP_BUTTON_ID = 407
-    SKIP_FORWARD_BUTTON_ID = 408
-    NEXT_BUTTON_ID = 409
-    PLAYLIST_BUTTON_ID = 410
     OPTIONS_BUTTON_ID = 411
     SUBTITLE_BUTTON_ID = 412
     VS10_BUTTON_ID = 413
 
     BIG_SEEK_GROUP_ID = 500
     BIG_SEEK_LIST_ID = 501
+    # the play queue's card row, below the chapters' (includes/osd_card_row.xml.tpl)
+    QUEUE_GROUP_ID = 510
+    QUEUE_LIST_ID = 511
+    ROW_LIST_IDS = (BIG_SEEK_LIST_ID, QUEUE_LIST_ID)
 
     SKIP_MARKER_BUTTON_ID = 791
+    # the top of the OSD: up from these closes it (onAction())
+    OSD_TOP_IDS = (SETTINGS_BUTTON_ID, SUBTITLE_BUTTON_ID, VS10_BUTTON_ID, SKIP_MARKER_BUTTON_ID)
     NO_OSD_BUTTON_ID = 800
 
-    BAR_X = 0
-    BAR_Y = 921
-    BAR_RIGHT = 1920
-    BAR_BOTTOM = 969
+    BAR_X = 232
+    # the bar's mouse area, the template's timeline hitrect: 980-1024 round the 995-1003 bar, short of the buttons
+    BAR_Y = 980
+    BAR_RIGHT = 1728
+    BAR_BOTTOM = 1024
 
     NAVBAR_BTN_SIZE = 60
+    # The buttons' dropdowns (dropdown.CardDropdownDialog, its list 600 wide with the backdrop 20 past it each
+    # side): right-aligned with the button row's last pill (1840), so the list starts at 1840 - 20 - 600; the
+    # list's foot at 892, its backdrop's 17 lower at 909, 10 above the button pills (919).
+    DROPDOWN_X = 1220
+    DROPDOWN_BOTTOM = 892
 
     HIDE_DELAY = 4  # This uses the Cron tick so is +/- 1 second accurate
     OSD_HIDE_ANIMATION_DURATION = 0.2
     OSD_HIDE_ACTION_THRESHOLD = 0.5
+    FIRST_SEEK_STEP_DELAY = 1.0  # the least a seek's first step waits to be applied, auto-seek on (delayedSeek())
     SKIP_STEPS = {"negative": [-10000], "positive": [30000]}
 
     def __init__(self, *args, **kwargs):
         super(SeekDialog, self).__init__(*args, **kwargs)
         PlexSubtitleDownloadMixin.__init__(self, *args, **kwargs)
+        SpoilersMixin.__init__(self, *args, **kwargs)
 
         # fixme: heyo, there's a lot of disorder in here.
         self.handler = kwargs.get('handler')
@@ -164,20 +179,28 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self.offset = 0
         self.playbackTime = 0
         self.selectedOffset = 0
-        self.bigSeekOffset = 0
         self.bigSeekChanged = False  # attention, with chapters this can become an integer for the True state
+        self._rowPos = {}  # card row list id -> the position syncRows() last selected
+        self._rowLeftAt = {}  # card row list id -> when focus last left it (syncRows() waits out its fade)
+        self._queueRowStale = True  # the play queue row needs (re)building - refreshQueueRow()
+        self._queuePlayingPos = 0  # the play queue row's position of the playing item
+        self._rowHint = None  # the rows.hint text last set (updateRowHint())
+        self._barCaps = {}  # SEEKBAR fill -> its rounded end cap (setBarPercent())
+        self._playPauseInputAt = None  # when play/pause was last pressed (onPlayBackResumed() closes the OSD on it)
+        self._focusArrived = None  # the control onFocus() last moved to, until the next action (onAction())
+        # Playback paused for seeking (seekByOffset()): None, or 'seeking' (in seek mode), 'applying' (the seek's
+        # been made; the handler resumes once it lands) or 'resuming' (abandoned, play sent) - with when it got there
+        self._seekPaused = None
+        self._seekPausedAt = 0
         self.title = ''
         self.title2 = ''
         self.fromSeek = 0
         self.initialized = False
-        self.playlistDialog = None
         self.timeout = None
         self.autoSeekTimeout = None
         self.hasDialog = False
         self.lastFocusID = None
         self.previousFocusID = None
-        self.playlistDialogVisible = False
-        self.forceNextTimeAsChapter = False
         self.showChapters = False
         self._seeking = False
         self._applyingSeek = False
@@ -191,7 +214,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._lastSkipDirection = None
         self._forcedLastSkipAmount = None
         self._navigatedViaMarkerOrChapter = False
-        self._lastAction = None
         self.lastTimelineResponse = None
         self._terminated = False
         self._ignoreInput = False
@@ -199,17 +221,14 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._abortBufferWait = False
         self._playerDebugActive = False
         self._playerNativePPIActive = False
-        self._item_states = {}
         self.no_spoilers = util.getSetting('no_episode_spoilers4')
         self.no_time_no_osd_spoilers = util.getSetting('no_osd_time_spoilers')
         self.clientLikePlex = util.getSetting('player_official')
         self.fastPauseResume = self.clientLikePlex and util.getUserSetting('fast_pause_resume', []) or []
 
-        self._videoBelowOneHour = False
-        self.timeFmtKodi = util.timeFormatKN
         self.waitingForBuffer = False
         self.lastSubtitleNavAction = "forward"
-        self.subtitleButtonLeft = 0
+        self._vs10Shown = False  # the VS10 button's in the row, right of Subtitles (onFirstInit())
         self.ldTimer = True #util.advancedSettings.lowDriftTimer
         self.timeKeeper = None
         self.timeKeeperTime = None
@@ -233,7 +252,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._currentMarker = None
         self.skipSteps = self.SKIP_STEPS
         self.useAutoSeek = util.addonSettings.autoSeek
-        self.useDynamicStepsForTimeline = util.addonSettings.dynamicTimelineSeek
 
         # this is duplicated in onFirstInit; we need to do this to get the early player skip right, as we might be
         # an initialized instance already, but not yet a window, but the player needs to access these values
@@ -345,16 +363,25 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
     def resetAutoSeekTimer(self, value="not_set"):
         self.autoSeekTimeout = value if value != "not_set" else time.time() + self._autoSeekDelay
 
+    def setSeekPaused(self, state):
+        self._seekPaused = state
+        self._seekPausedAt = time.time()
+
     def resetSeeking(self):
+        if self._seekPaused == 'seeking':
+            # the seek was abandoned (doSeek() moves it on first): play on from where it was - now, or once the
+            # pause has happened if it hasn't yet (onPlayBackPaused())
+            self.setSeekPaused('resuming')
+            if self.player.playState == self.player.STATE_PAUSED:
+                self.player.control('play')
+
         self._seeking = False
         self._seekingWithoutOSD = False
         self._delayedSeekTimeout = None
         self._applyingSeek = False
         self.bigSeekChanged = False
         self.selectedOffset = None
-        self.forceNextTimeAsChapter = False
         self._navigatedViaMarkerOrChapter = False
-        self.setProperty('show.chapters', '')
         self.setProperty('button.seek', '')
         self.setProperty('marker.countdown', '')
         self.resetAutoSeekTimer(None)
@@ -488,7 +515,19 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         util.DEBUG_LOG("SeekDialog: onFirstInit")
         self.resetTimeout()
         self.setProperty('skipMarkerName', T(32495, 'Skip intro'))
-        self.bigSeekHideTimer = kodigui.PropertyTimer(self._winID, 0.5, 'hide.bigseek')
+
+        # Re-syncs a card row once it has faded out after focus leaves it (onFocus()), rather than leaving that to
+        # the next once-a-second tick. Weakly held, so a pending timer can't keep a closed dialog alive.
+        selfRef = weakref.ref(self)
+
+        def syncRowsLater():
+            dialog = selfRef()
+            if dialog:
+                dialog.syncRows()
+
+        self._rowSyncTimer = kodigui.PropertyTimer(self._winID, self.ROW_FADE_OUT, 'rows.syncing', '',
+                                                   init_value=False, callback=syncRowsLater)
+        self.setProperty('queue.label', T(35079, 'Play queue'))
 
         if self.handler.playlist:
             self.handler.playlist.on('change', self.updateProperties)
@@ -497,48 +536,31 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self.seekbarControl = self.getControl(self.SEEK_IMAGE_ID)
         self.positionControl = self.getControl(self.POSITION_IMAGE_ID)
         self.cacheControl = self.getControl(self.CACHE_IMAGE_ID)
+        # last width (px along the bar) set on the played fills / scrubber / buffer, so unchanged
+        # values cost no GUI call (setBarPercent())
+        self._barWidths = {}
+        self._barCaps = {self.positionControl: self.getControl(self.POSITION_CAP_ID),
+                         self.cacheControl: self.getControl(self.CACHE_CAP_ID)}
         self.bifImageControl = self.getControl(self.BIF_IMAGE_ID)
         self.selectionIndicator = self.getControl(self.SELECTION_INDICATOR)
-        self.selectionIndicatorImage = self.getControl(self.SELECTION_INDICATOR_IMAGE)
-        self.selectionIndicatorText = self.getControl(self.SELECTION_INDICATOR_TEXT)
-        self.selectionIndicatorGroup = self.getControl(self.SELECTION_INDICATOR_GROUP)
-        self.selectionBox = self.getControl(203)
+        # updateProgress() moves the seek marker and the thumbnail along the bar, keeping the template's y
+        self._markerY = self.selectionIndicator.getY()
+        self._bifY = self.bifImageControl.getY()
         self.bigSeekControl = kodigui.ManagedControlList(self, self.BIG_SEEK_LIST_ID, 12)
-        self.bigSeekGroupControl = self.getControl(self.BIG_SEEK_GROUP_ID)
+        self.queueControl = kodigui.ManagedControlList(self, self.QUEUE_LIST_ID, 12)
         self.initialized = True
 
         button_defaults = ['subtitle_downloads', 'skip_intro', 'skip_credits'] + \
             (['video_show_vs10'] if util.CE_VS10 else [])
         button_settings = util.getUserSetting('player_show_buttons', button_defaults)
         showQuickSubs = 'subtitle_downloads' in button_settings
-        showRepeat = 'video_show_repeat' in button_settings
-        showFfwdRwd = 'video_show_ffwdrwd' in button_settings
-        showShuffle = 'video_show_shuffle' in button_settings
         self.showSkipIntro = 'skip_intro' in button_settings
         self.showSkipCredits = 'skip_credits' in button_settings
         self.setBoolProperty('nav.quick_subtitles', showQuickSubs)
-        self.setBoolProperty('nav.repeat', showRepeat)
-        self.setBoolProperty('nav.ffwdrwd', showFfwdRwd)
-        self.setBoolProperty('nav.shuffle', showShuffle)
         # VS10 mode switcher: show on CoreELEC Amlogic builds (U3k, avdvplus, p3i, CPM) if not hidden by user
         showVS10 = 'video_show_vs10' in button_settings
-        self.setBoolProperty('nav.vs10', util.CE_VS10 and showVS10)
-        navPlaylist = util.getSetting('video_show_playlist')
-        self.setBoolProperty('nav.playlist', (navPlaylist == "eponly" and
-                                              ((self.player.video and self.player.video.type == 'episode') or (self.handler and self.handler.playlist))) or
-                             navPlaylist == "always")
-
-        if not self.getProperty('nav.playlist'):
-            self.subtitleButtonLeft += self.NAVBAR_BTN_SIZE
-
-        navPrevNext = util.getSetting('video_show_prevnext')
-        self.setBoolProperty('nav.prevnext', (navPrevNext == "eponly" and
-                                              ((self.player.video and self.player.video.type == 'episode') or (self.handler and self.handler.playlist))) or
-                             navPrevNext == "always")
-
-        if showQuickSubs:
-            self.subtitleButtonLeft += self.NAVBAR_BTN_SIZE * len(
-                list(x for x in (showRepeat, showFfwdRwd, showShuffle) if not x))
+        self._vs10Shown = bool(util.CE_VS10 and showVS10)
+        self.setBoolProperty('nav.vs10', self._vs10Shown)
 
         self.updateProperties()
         self.updateChapters()
@@ -551,7 +573,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         util.DEBUG_LOG("SeekDialog: onReInit")
         self.lastTimelineResponse = None
         self._terminated = False
-        self._lastAction = None
         self._ignoreTick = False
         self.waitingForBuffer = False
         self._abortBufferWait = False
@@ -590,6 +611,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                              and 'no_unwatched_episode_titles' in (self.no_spoilers or ()))
         self.setBoolProperty('no.osd.hide_info', self.no_time_no_osd_spoilers)
         self.setProperty('ep.year', (self.player.video.type == 'episode') and self.player.video.year or '')
+        self.setTitleLines()
         self.setProperty('has.playlist', self.handler.playlist and '1' or '')
         self.setProperty('shuffled', (self.handler.playlist and self.handler.playlist.isShuffled) and '1' or '')
         self.setProperty('show.buffer', (util.addonSettings.playerShowBuffer and self.isDirectPlay) and '1' or '')
@@ -599,12 +621,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self.killTimeKeeper()
 
         self.playbackTime = 0
-
-        if not self.getProperty('nav.playlist'):
-            self.subtitleButtonLeft += self.NAVBAR_BTN_SIZE
-
-        if not self.getProperty('nav.prevnext'):
-            self.subtitleButtonLeft += self.NAVBAR_BTN_SIZE
+        # a new video: its playing item moved, so the play queue row is rebuilt on the next button focus
+        self._queueRowStale = True
 
         try:
             if self.player.video.type == 'episode':
@@ -638,10 +656,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self.baseOffset = offset
         self.offset = 0
         self.idleTime = None
+        self.setSeekPaused(None)
         self.lastSubtitleNavAction = "forward"
-        self._videoBelowOneHour = duration / 3600000 < 1
-        if self._videoBelowOneHour:
-            self.timeFmtKodi = self.timeFmtKodi.replace("hh:", "")
         self._ignoreTick = False
         self._ignoreInput = False
         self.bifURL = bif_url
@@ -680,13 +696,12 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             self.resetTimeout()
 
             controlID = self.getFocusId()
+            # Kodi's moved focus for this action before it gets here: whether it just did, onto this control
+            justArrived = self._focusArrived == controlID
+            self._focusArrived = None
             self.idleTime = None
             # user input means someone's actually watching
             util.MONITOR.tv_standby = False
-
-            lastAction = self._lastAction
-            lastActionID = self._lastAction[0] if self._lastAction else None
-            self._lastAction = currentAction = (action.getId(), controlID)
 
             cancelActions = (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_STOP)
 
@@ -695,8 +710,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 if action.getId() in KEY_MOVE_SET:
                     self.setProperty('mouse.mode', '')
                     if not controlID:
-                        self.setBigSeekShift()
-                        self.setFocusId(400)
+                        self.beginSeeking()
+                        self.setFocusId(self.SETTINGS_BUTTON_ID)  # the button row's first, never its last-focused
                         return
                 elif action == xbmcgui.ACTION_MOUSE_MOVE:
                     self.setProperty('mouse.mode', '1')
@@ -712,9 +727,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                         self.seekMouse(action, without_osd=controlID == self.NO_OSD_BUTTON_ID, preview=True)
                         return
 
-                if action in (xbmcgui.ACTION_PAUSE, xbmcgui.ACTION_PLAYER_PLAY, xbmcgui.ACTION_PLAYER_PLAYPAUSE) and \
-                        self.player.playState == self.player.STATE_PLAYING:
-                    self.hideOSD()
+                if action in (xbmcgui.ACTION_PAUSE, xbmcgui.ACTION_PLAYER_PLAY, xbmcgui.ACTION_PLAYER_PLAYPAUSE):
+                    self._playPauseInputAt = time.time()
 
                 if action == xbmcgui.ACTION_CONTEXT_MENU or (self.getProperty('show.PPI') and action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT)):
                     if self.getProperty('show.PPI') and not self._playerDebugActive and not self._playerNativePPIActive:
@@ -725,6 +739,12 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                         return
                 if self._playerNativePPIActive and action in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
                     self._playerNativePPIActive = False
+
+                # Up off the top of the OSD closes it: from the buttons when there's no skip button above them
+                # (focus stays put), or from the skip button. Not the up that's just brought focus here.
+                if action == xbmcgui.ACTION_MOVE_UP and not justArrived and controlID in self.OSD_TOP_IDS                         and self.osdVisible():
+                    self.hideOSD()
+                    return
 
                 passThroughMain = False
                 if controlID == self.SKIP_MARKER_BUTTON_ID:
@@ -756,16 +776,14 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
                         return
                     elif action == xbmcgui.ACTION_MOVE_DOWN:
-                        self.setProperty('show.markerSkip_OSDOnly', '1')
+                        # Only reached with the OSD hidden: with it shown, the template's ondown has already moved
+                        # focus to the buttons. Opens the OSD and leaves the button as it was - it comes back on
+                        # its own when the OSD closes (hideOSD() refocuses it); Back is what dismisses it.
                         self.showOSD()
                     elif action in (xbmcgui.ACTION_MOVE_RIGHT, xbmcgui.ACTION_STEP_FORWARD, xbmcgui.ACTION_MOVE_LEFT,
                                     xbmcgui.ACTION_STEP_BACK):
                         # allow no-OSD-seeking with intro skip button shown
                         passThroughMain = True
-                    elif action == xbmcgui.ACTION_MOVE_UP and self.osdVisible() and self.showChapters:
-                        self.setProperty('show.chapters', '1')
-                        self.setFocusId(self.BIG_SEEK_LIST_ID)
-                        return
                     elif action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK):
                         if self.getProperty('show.markerSkip') and not self.getProperty('show.markerSkip_OSDOnly'):
                             self.setProperty('show.markerSkip', '')
@@ -783,55 +801,27 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                             self._osdHideAnimationTimeout + self.OSD_HIDE_ACTION_THRESHOLD >= time.time()):
                         return
 
-                    if action in (xbmcgui.ACTION_MOVE_RIGHT, xbmcgui.ACTION_STEP_FORWARD):
+                    if action in (xbmcgui.ACTION_MOVE_RIGHT, xbmcgui.ACTION_STEP_FORWARD,
+                                  xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_STEP_BACK):
                         if self.handler.waitingForSOS:
                             util.DEBUG_LOG("SeekDialog: Ignoring seek action as we're waiting for SOS")
                             return
-                        self.setProperty('show.chapters', '')
-                        if self.useDynamicStepsForTimeline:
+                        # seek mode starts here, from where playback is now - focusing the timeline doesn't start it
+                        if not self._seeking:
+                            self.selectedOffset = self.trueOffset()
+                        # The OSD-hidden seek's steps (skipSteps: +30/-10, or Kodi's own with kodi_skip_stepping),
+                        # through skipByOffset() - auto-seek on, the seek's made the delay after the last press
+                        if action in (xbmcgui.ACTION_MOVE_RIGHT, xbmcgui.ACTION_STEP_FORWARD):
                             return self.skipForward()
-                        return self.seekByOffset(10000, auto_seek=self.useAutoSeek)
+                        return self.skipBack()
 
-                    elif action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_STEP_BACK):
-                        if self.handler.waitingForSOS:
-                            util.DEBUG_LOG("SeekDialog: Ignoring seek action as we're waiting for SOS")
-                            return
-                        self.setProperty('show.chapters', '')
-                        if self.useDynamicStepsForTimeline:
-                            return self.skipBack()
-                        return self.seekByOffset(-10000, auto_seek=self.useAutoSeek)
+                    # Up/down are plain template navigation: up to the buttons (and on to the skip button), down
+                    # to the chapter row.
 
-                    elif action == xbmcgui.ACTION_MOVE_UP:
-                        if self.getProperty('show.markerSkip') or self.getProperty('show.markerSkip_OSDOnly'):
-                            # pressed up on player controls, then up on MAIN BUTTON; focus marker button
-                            if currentAction == lastAction:
-                                self.setFocusId(self.SKIP_MARKER_BUTTON_ID)
-                                return
-                        elif self.showChapters:
-                            self.setProperty('show.chapters', '1')
-
-                    elif action == xbmcgui.ACTION_MOVE_DOWN:
-                        # pressing down with the OSD open and chapters available
-                        if (self.showChapters and self.clientLikePlex and
-                                (self.previousFocusID not in (controlID, self.MAIN_BUTTON_ID, self.BIG_SEEK_LIST_ID))):
-                            self.setProperty('show.chapters', '1')
-                            self.setFocusId(self.BIG_SEEK_LIST_ID)
-
-                        elif self.previousFocusID == self.BIG_SEEK_LIST_ID and (
-                                self.getProperty('show.markerSkip') or self.getProperty('show.markerSkip_OSDOnly')):
-                            self.setFocusId(self.SKIP_MARKER_BUTTON_ID)
-                            self.setProperty('show.chapters', '')
-
-                        self.updateBigSeek()
-
-                    # elif action == xbmcgui.ACTION_MOVE_UP:
-                    #     self.seekForward(60000)
-                    # elif action == xbmcgui.ACTION_MOVE_DOWN:
-                    #     self.seekBack(60000)
-
-                # don't auto-apply the currently selected seek when pressing down
-                elif controlID == self.PLAY_PAUSE_BUTTON_ID and self.previousFocusID == self.MAIN_BUTTON_ID \
-                        and action == xbmcgui.ACTION_MOVE_DOWN:
+                # don't auto-apply the currently selected seek when moving off the timeline (up to the buttons,
+                # down to a card row): it's abandoned
+                elif action in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN) \
+                        and self.previousFocusID == self.MAIN_BUTTON_ID and self._seeking:
                     self.resetSeeking()
 
                 elif controlID == self.NO_OSD_BUTTON_ID or passThroughMain:
@@ -876,7 +866,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                             xbmcgui.ACTION_BIG_STEP_BACK
                     ) and not self._seekingWithoutOSD:
                         self.selectedOffset = self.trueOffset()
-                        self.setBigSeekShift()
+                        self.beginSeeking()
                         self.updateProgress()
                         self.showOSD()
 
@@ -886,22 +876,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                         else:
                             self.showPPIDialog()
                         return
-                elif controlID == self.BIG_SEEK_LIST_ID:
-                    # pressed UP on the non-chpter big seek list
-                    if action == xbmcgui.ACTION_MOVE_UP and (
-                            lastAction == currentAction or lastActionID != xbmcgui.ACTION_MOVE_UP) and not self.showChapters and (
-                            self.getProperty('show.markerSkip') or self.getProperty('show.markerSkip_OSDOnly')):
-                        self.setFocusId(self.SKIP_MARKER_BUTTON_ID)
-                        return
-                    if action in (xbmcgui.ACTION_MOVE_RIGHT, xbmcgui.ACTION_BIG_STEP_FORWARD):
-                        return self.updateBigSeek(changed=True)
-                    elif action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_BIG_STEP_BACK):
-                        return self.updateBigSeek(changed=True)
-
-                    elif action == xbmcgui.ACTION_MOVE_DOWN:
-                        if self.getProperty('show.markerSkip'):
-                            self.setProperty('show.chapters', '')
-                            self.setFocusId(self.SKIP_MARKER_BUTTON_ID)
 
                 if action.getButtonCode() == 61516:
                     self.cycleSubtitles()
@@ -976,18 +950,13 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                                     self._osdHideAnimationTimeout = None
 
                             if action != xbmcgui.ACTION_STOP and self.osdVisible():
-                                if not self.playlistDialogVisible:
-                                    self.hideOSD()
+                                self.hideOSD()
                             else:
-                                # were we in a credits marker that has been canceled? use its endTime for our timeline
-                                # event
-                                t = None
-                                if (self._currentMarker and self._currentMarker["marker_type"] == "credits" and
-                                        self._currentMarker["hidden"]):
-                                    util.DEBUG_LOG("Using credits marker's endtime for timeline event as it's been "
-                                                   "skipped and we're stopping playback")
-                                    t = self._currentMarker["marker"].endTimeOffset
-                                self.sendTimeline(state=self.player.STATE_STOPPED, t=t, ensureFinalTimelineEvent=True)
+                                # The real position, even inside credits: whether that counts as watched is the
+                                # server's call (its played threshold and completion behaviour - by default the
+                                # earlier of 90% and the first credits marker). This used to report a dismissed
+                                # credits marker's end instead (b4be6be9), overriding servers set otherwise.
+                                self.sendTimeline(state=self.player.STATE_STOPPED, ensureFinalTimelineEvent=True)
                                 self.stop()
                             return
         except:
@@ -1013,20 +982,18 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         return False
 
     def onFocus(self, controlID):
+        self._focusArrived = controlID
         lastFocusID = self.lastFocusID
         self.previousFocusID = self.lastFocusID
         self.lastFocusID = controlID
+        if lastFocusID in self.ROW_LIST_IDS and controlID != lastFocusID:
+            self._rowLeftAt[lastFocusID] = time.time()
+            self._rowSyncTimer.reset(init=False)
+
         if controlID == self.MAIN_BUTTON_ID:
-            # when seeking via ENTER/CLICK on chapters, coming directly from bigSeekSelected, don't assume we've
-            # already seeked.  bigSeekSelected sets self.selectedOffset
-            if not self.showChapters:
-                self.selectedOffset = self.trueOffset()
-
             if lastFocusID == self.BIG_SEEK_LIST_ID and self.bigSeekChanged:
-                self.updateBigSeek(changed=True)
-
-                # in case of chapter mode, bigSeekChanged holds our chapter's offset
-                offset = self.bigSeekChanged if self.showChapters else self.selectedOffset
+                # OK on a chapter (bigSeekSelected()) sent focus here; bigSeekChanged holds the chapter's offset
+                offset = self.bigSeekChanged
                 self.updateProgress(set_to_current=False, offset=offset)
 
                 # immediately seek bigSeek after click
@@ -1034,16 +1001,25 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 self.hideOSD(skipMarkerFocus=True)
 
             else:
-                self.setBigSeekShift()
+                # Not seek mode: left/right start that (onAction). Until then the time bubble follows playback
+                # (updateCurrent()) and OK plays/pauses (onClick).
+                if self._seeking:
+                    self.resetSeeking()
+                self.selectedOffset = None
                 self.updateProgress()
+                # the only way into the card rows is down from here: have them built and on the playing chapter/item
+                self.refreshQueueRow()
+                self.syncRows()
 
-        elif controlID == self.BIG_SEEK_LIST_ID:
-            self.setBigSeekShift()
-            self.updateBigSeek(changed=False)
+        elif controlID in self.ROW_LIST_IDS:
+            # whatever the user browses to from here, the next syncRows() puts back
+            self._rowPos.pop(controlID, None)
 
         elif xbmc.getCondVisibility('ControlGroup(400).HasFocus(0)'):
             self.selectedOffset = self.trueOffset()
             self.updateProgress()
+
+        self.updateRowHint(controlID)
 
     def onClick(self, controlID):
         if self._ignoreInput:
@@ -1054,9 +1030,14 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             # handled by onAction
             if self.getProperty('mouse.mode') != '1':
                 if controlID == self.MAIN_BUTTON_ID:
-                    self.resetAutoSeekTimer(None)
-                    self.doSeek()
-                    self.hideOSD()
+                    if self._seeking:
+                        self.resetAutoSeekTimer(None)
+                        self.doSeek()
+                        self.hideOSD()
+                    else:
+                        # not seeking (only left/right start that): play/pause
+                        self._playPauseInputAt = time.time()
+                        xbmc.executebuiltin('PlayerControl(Play)')
                 elif controlID == self.NO_OSD_BUTTON_ID:
                     if not self._seeking:
                         # we might be reacting to an immediate marker skip while showing a marker with timeout;
@@ -1075,29 +1056,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                     else:
                         # currently seeking without the OSD, apply the seek
                         self.doSeek()
-        elif controlID == self.PLAY_PAUSE_BUTTON_ID \
-                and self.player.playState == self.player.STATE_PLAYING \
-                and self.osdVisible():
-            self.hideOSD()
-        elif controlID == self.STOP_BUTTON_ID:
-            self.stop()
         elif controlID == self.SETTINGS_BUTTON_ID:
             self.handleDialog(self.showSettings)
-        elif controlID == self.REPEAT_BUTTON_ID:
-            self.repeatButtonClicked()
-        elif controlID == self.SHUFFLE_BUTTON_ID:
-            self.shuffleButtonClicked()
-        elif controlID == self.PREV_BUTTON_ID:
-            self.prepareNewPlayback(ignore_tick=True)
-            self.player.trigger("action", action="prev")
-        elif controlID == self.NEXT_BUTTON_ID:
-            if not self.handler.queuingNext:
-                self.sendTimeline(state=self.player.STATE_STOPPED, ensureFinalTimelineEvent=True)
-                self.prepareNewPlayback(queuing_next=True, ignore_tick=True, ignore_input=True)
-                self.player.trigger("action", action="next")
-            return
-        elif controlID == self.PLAYLIST_BUTTON_ID:
-            self.showPlaylistDialog()
         elif controlID == self.OPTIONS_BUTTON_ID:
             self.handleDialog(self.optionsButtonClicked)
         elif controlID == self.SUBTITLE_BUTTON_ID:
@@ -1106,10 +1066,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             self.handleDialog(self.vs10ButtonClicked)
         elif controlID == self.BIG_SEEK_LIST_ID:
             self.bigSeekSelected()
-        elif controlID == self.SKIP_BACK_BUTTON_ID:
-            self.skipBack(immediate=not self.useAutoSeek)
-        elif controlID == self.SKIP_FORWARD_BUTTON_ID:
-            self.skipForward(immediate=not self.useAutoSeek)
+        elif controlID == self.QUEUE_LIST_ID:
+            self.queueItemSelected()
 
     def stop(self):
         self._ignoreTick = True
@@ -1139,16 +1097,11 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             self.handler.playlist.off('current.changed', self.updateProperties)
 
         try:
-            if self.playlistDialog:
-                self.playlistDialog.doClose()
-                if delete:
-                    ref = util.windowRef(self.playlistDialog)
-                    del self.playlistDialog
-                    self.playlistDialog = None
-                    self.playlistDialogVisible = False
-                    util.collectIfAlive(ref)
-
             self.killTimeKeeper()
+            # stop(), not close(): the dialog can be shown again (onReInit())
+            timer = getattr(self, '_rowSyncTimer', None)
+            if timer:
+                timer.stop()
         finally:
             kodigui.BaseDialog.doClose(self)
 
@@ -1334,7 +1287,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
         if chapter.tag:
             util.DEBUG_LOG('Skipping to chapter: {}', chapter.tag)
-            self.forceNextTimeAsChapter = chapter.tag
 
         util.DEBUG_LOG('New start time is {0}', lambda: chapter.startTime())
         self.skipByOffset(chapter.startTime() - lastSelectedOffset, without_osd=without_osd)
@@ -1371,7 +1323,15 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         delay = self._autoSeekDelay
 
         if delay > 0:
-            self._delayedSeekTimeout = time.time() + delay
+            timeout = time.time() + delay
+            if not self._delayedSeekTimeout:
+                # A seek's first step waits at least FIRST_SEEK_STEP_DELAY: a held key only starts repeating some time
+                # after it goes down (half a second on a default Windows keyboard, about the same on most remotes),
+                # and a shorter auto-seek delay applied the step first - on a transcode, restarting the stream and
+                # losing the rest of the hold.
+                timeout = time.time() + max(delay, self.FIRST_SEEK_STEP_DELAY)
+            # never brought forward by a later press: a quick tap and then a hold keeps the first step's wait
+            self._delayedSeekTimeout = max(timeout, self._delayedSeekTimeout or 0)
 
             if not self._delayedSeekThread or not self._delayedSeekThread.is_alive():
                 self._delayedSeekThread = threading.Thread(target=self._delayedSeek)
@@ -1420,7 +1380,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             self.initialVideoSettings = dict(self.player.video.settings.prefOverrides)
             self.initialAudioStream = self.player.video.selectedAudioStream()
 
-        sss = self.player.video.selectedSubtitleStream(deselect_subtitles=getNativeLanguages(util.getSetting("disable_subtitle_languages") or []))
+        sss = self.currentSubtitleStream()
         if sss != self.initialSubtitleStream:
             util.DEBUG_LOG("Subtitle changed from {} to {} (deselect: {})", self.initialSubtitleStream, sss,
                            util.getSetting("disable_subtitle_languages"))
@@ -1431,25 +1391,44 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
         return changed
 
-    def repeatButtonClicked(self):
-        pl = self.handler.playlist
+    # Repeat and shuffle, for the Settings dialog's rows (playersettings.py) - once the OSD's own buttons.
 
+    def repeatMode(self):
+        """'off', 'all' or 'one': the play queue's, or Kodi's own without one."""
+        pl = self.handler.playlist
         if pl:
-            if pl.isRepeatOne:
-                pl.setRepeat(False, one=False)
+            return pl.isRepeatOne and 'one' or pl.isRepeat and 'all' or 'off'
+        if xbmc.getCondVisibility('Playlist.IsRepeatOne'):
+            return 'one'
+        if xbmc.getCondVisibility('Playlist.IsRepeat'):
+            return 'all'
+        return 'off'
+
+    def setRepeatMode(self, mode):
+        pl = self.handler.playlist
+        if pl:
+            # repeat one is isRepeatOne alone, not with isRepeat
+            pl.setRepeat(mode == 'all', one=mode == 'one')
+            if mode == 'off':
                 self.updateProperties()
-            elif pl.isRepeat:
-                pl.setRepeat(False, one=True)
-                pl.refresh(force=True)
             else:
-                pl.setRepeat(True)
                 pl.refresh(force=True)
         else:
-            xbmc.executebuiltin('PlayerControl(Repeat)')
+            xbmc.executebuiltin('PlayerControl({0})'.format(
+                {'off': 'RepeatOff', 'all': 'RepeatAll', 'one': 'RepeatOne'}[mode]))
 
-    def shuffleButtonClicked(self):
-        if self.handler.playlist:
-            self.handler.playlist.setShuffle()
+    def canShuffle(self):
+        return bool(self.handler.playlist)
+
+    def isShuffled(self):
+        return bool(self.handler.playlist and self.handler.playlist.isShuffled)
+
+    def toggleShuffle(self):
+        """Shuffles or unshuffles the play queue; returns the state asked for (a server play queue only takes it
+        on the server's answer)."""
+        shuffle = not self.isShuffled()
+        self.handler.playlist.setShuffle(shuffle)
+        return shuffle
 
     def optionsButtonClicked(self):  # Button currently commented out.
         pass
@@ -1469,194 +1448,141 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         #     xbmc.executebuiltin('ActivateWindow(OSDAudioSettings)')
 
     def subtitleButtonClicked(self):
-        options = []
+        """
+        The Subtitles button: the Settings dialog's Subtitles picker (playersettings.showSubtitlesDialog), tall at
+        the right - Off, the streams, Download subtitles, and Subtitle Delay and auto-sync where they apply. A stream
+        is applied as the Settings dialog's are (applyVideoSettingsChanges()); Download runs downloadSubtitles(),
+        which asks Plex or Kodi as the setting says, over the picker and back to it.
+        It was a menu of its own: Download, Subtitle Delay, Previous/Next, auto-sync and Enable/Disable.
+        """
+        choice = playersettings.showSubtitlesDialog(self.player.video, session_id=self.handler.sessionID, side=True,
+                                                    download=self.downloadSubtitles, player=self)
+        if choice is playersettings.SUBTITLE_DELAY:
+            self.subtitleDelay()
+            return
+        if choice is playersettings.SUBTITLE_AUTO_SYNC:
+            self.toggleSubtitleAutoSync()
+            return
+        return self.applyVideoSettingsChanges()
 
+    def subtitleDelay(self):
+        """Kodi's subtitle delay slider, the OSD out of its way."""
+        self.hideOSD()
+        self.lastSubtitleNavAction = "delay"
+        builtin.Action('SubtitleDelay')
+
+    def toggleSubtitleAutoSync(self, hide_osd=True):
+        """The playing subtitle's auto-sync on or off, for this session."""
         sss = self.player.video.selectedSubtitleStream()
+        if not sss:
+            return
+        should_auto_sync = not sss.should_auto_sync_unforced
 
+        # force auto sync for session
+        if sss.force_auto_sync is not None:
+            sss.force_auto_sync = not sss.force_auto_sync
+        else:
+            sss.force_auto_sync = should_auto_sync
+        sss.should_auto_sync = should_auto_sync
+        util.DEBUG_LOG("Setting subtitle auto-sync for session to: {}".format(sss.should_auto_sync))
+
+        # self.player.video isn't the same as the mediachoice representation
+        if self.player.playerObject.choice.subtitleStream:
+            self.player.playerObject.choice.subtitleStream.should_auto_sync = sss.should_auto_sync
+            self.player.playerObject.choice.subtitleStream.force_auto_sync = sss.force_auto_sync
+        if hide_osd and self.player.playState == self.player.STATE_PLAYING:
+            self.hideOSD()
         if self.isDirectPlay:
-            options.append({'key': 'download', 'display': T(32405, 'Download Subtitles')})
+            self.setSubtitles(honor_forced_subtitles_override=False, honor_deselect_subtitles=False)
+        else:
+            self.doSeek(self.trueOffset(), settings_changed=True)
+        self.lastSubtitleNavAction = "auto_sync"
 
-        # select "enable" by default
-        selectIndex = 1
-        if self.lastSubtitleNavAction == "download":
-            selectIndex = 0
-
-        if self.player.video.hasSubtitles:
-            subsEnabled = xbmc.getCondVisibility('VideoPlayer.SubtitlesEnabled') and self.player.video.hasSubtitle
-            if self.player.video.hasSubtitle:
-                options.append({'key': 'delay', 'display': T(32406, 'Subtitle Delay')})
-
-                # select "disable" if we only have one subtitle
-                selectIndex = 2
-                if self.lastSubtitleNavAction == "delay":
-                    selectIndex = 1
-                elif self.lastSubtitleNavAction == "download":
-                    selectIndex = 0
-
-                if len(self.player.video.subtitleStreams) > 1:
-                    options.append({'key': 'prev', 'display': T(32930, 'Previous Subtitle')})
-                    options.append({'key': 'next', 'display': T(32407, 'Next Subtitle')})
-
-                    # select "next subtitle" if we already have subs active
-                    selectIndex = 3
-
-                    # select "prev subtitle" if we've last cycled backwards
-                    if self.lastSubtitleNavAction == "backward":
-                        selectIndex = 2
-                    elif self.lastSubtitleNavAction == "delay":
-                        selectIndex = 1
-                    elif self.lastSubtitleNavAction == "download":
-                        selectIndex = 0
-
-            if subsEnabled:
-                if sss and sss.canAutoSync.asBool():
-                    if sss.force_auto_sync is None:
-                        auto_sync = self.player.video.playbackSettings.auto_sync
-                        sss.should_auto_sync = auto_sync
-                    options.append(
-                        {
-                            'key': 'auto_sync',
-                            'display':
-                                sss.should_auto_sync and
-                                T(33658, 'Disable Auto-Sync') or T(33657, 'Enable Auto-Sync')
-                        }
-                    )
-
-            options.append(
-                {
-                    'key': 'enable',
-                    'display': subsEnabled and
-                               T(32408, 'Disable Subtitles') or T(32409, 'Enable Subtitles')
-                }
+    def downloadSubtitles(self):
+        """
+        Subtitles from Plex or Kodi's own search, as the subtitle_download_from setting says (or asking). Run from
+        the Subtitles picker, left open beneath: the OSD stays as it is (Kodi's search window hides it).
+        """
+        subs_dl_source = util.getSetting('subtitle_download_from')
+        if subs_dl_source == 'ask':
+            button = optionsdialog.show(
+                T(33693, 'Download subtitles using'),
+                T(33704, 'Using which service?'),
+                'Plex',
+                'Kodi'
             )
 
-        # cheap and inaccurate approach to move the dropdown to the left based on how many buttons the user has hidden
-        choice = dropdown.showDropdown(options, (1360 - self.subtitleButtonLeft, 1060), pos_is_bottom=True,
-                                       close_on_playback_ended=True, select_index=selectIndex)
-
-        if not choice:
-            return
-
-        if choice['key'] == 'download':
-            self.hideOSD()
-            subs_dl_source = util.getSetting('subtitle_download_from')
-            if subs_dl_source == 'ask':
-                button = optionsdialog.show(
-                    T(33693, 'Download subtitles using'),
-                    T(33704, 'Using which service?'),
-                    'Plex',
-                    'Kodi'
-                )
-
-                subs_dl_source = button == 0 and 'plex' or 'kodi'
+            subs_dl_source = button == 0 and 'plex' or 'kodi'
 
 
-            if subs_dl_source == 'plex':
-                was_playing = False
-                if self.player.playState == self.player.STATE_PLAYING:
-                    was_playing = True
-                    self.player.pause()
-                downloaded = self.downloadPlexSubtitles(self.player.video)
-                if downloaded:
-                    self.setSubtitles(honor_forced_subtitles_override=False,
-                                      honor_deselect_subtitles=False, ref=None)
-                elif downloaded is None:
-                    if util.getSetting('subtitle_download_fallback'):
-                        subs_dl_source = 'kodi'
-                if was_playing and self.player.playState == self.player.STATE_PAUSED:
-                    self.player.pause()
+        if subs_dl_source == 'plex':
+            was_playing = False
+            if self.player.playState == self.player.STATE_PLAYING:
+                was_playing = True
+                self.player.pause()
+            downloaded = self.downloadPlexSubtitles(self.player.video, side=True)
+            if downloaded:
+                self.setSubtitles(honor_forced_subtitles_override=False,
+                                  honor_deselect_subtitles=False, ref=None)
+            elif downloaded is None:
+                if util.getSetting('subtitle_download_fallback'):
+                    subs_dl_source = 'kodi'
+            if was_playing and self.player.playState == self.player.STATE_PAUSED:
+                self.player.pause()
 
-            if subs_dl_source == 'kodi':
-                if self.handler and self.handler.player and self.handler.player.playerObject \
-                        and util.getSetting('calculate_oshash'):
-                    meta = self.handler.player.playerObject.metadata
-                    if not meta.size:
-                        util.LOG("Can't calculate OpenSubtitles hash because we're transcoding")
+        if subs_dl_source == 'kodi':
+            if self.handler and self.handler.player and self.handler.player.playerObject \
+                    and util.getSetting('calculate_oshash'):
+                meta = self.handler.player.playerObject.metadata
+                if not meta.size:
+                    util.LOG("Can't calculate OpenSubtitles hash because we're transcoding")
 
-                    else:
-                        oss_hash = util.getOpenSubtitlesHash(meta.size, meta.streamUrls[0])
-                        if oss_hash:
-                            util.DEBUG_LOG("OpenSubtitles hash: {}", oss_hash)
-                            util.setGlobalProperty("current_oshash", oss_hash, base='videoinfo.{0}')
                 else:
-                    util.setGlobalProperty("current_oshash", '', base='videoinfo.{0}')
-                self.lastSubtitleNavAction = "download"
+                    oss_hash = util.getOpenSubtitlesHash(meta.size, meta.streamUrls[0])
+                    if oss_hash:
+                        util.DEBUG_LOG("OpenSubtitles hash: {}", oss_hash)
+                        util.setGlobalProperty("current_oshash", oss_hash, base='videoinfo.{0}')
+            else:
+                util.setGlobalProperty("current_oshash", '', base='videoinfo.{0}')
+            self.lastSubtitleNavAction = "download"
 
-                # remove the Year info from the current video info tag for better OSS search results
-                t = self.player.getVideoInfoTag()
-                changed_info_tag = False
-                item = xbmcgui.ListItem()
-                item.setPath(self.player.getPlayingFile())
-                if t:
-                    year = t.getYear()
-                    if year:
-                        if util.KODI_VERSION_MAJOR >= 20:
-                            vi = item.getVideoInfoTag()
-                            vi.setYear(0)
-                        else:
-                            item.setInfo("video", {"year": 0})
-                        util.DEBUG_LOG("Removing videoInfo year for subtitle search")
-                        self.player.updateInfoTag(item)
-                        changed_info_tag = year
-
-                builtin.ActivateWindow('SubtitleSearch')
-                # wait for the window to activate
-                while not xbmc.getCondVisibility('Window.IsActive(SubtitleSearch)'):
-                    util.MONITOR.waitForAbort(0.1)
-                # wait for the window to close
-                while xbmc.getCondVisibility('Window.IsActive(SubtitleSearch)'):
-                    util.MONITOR.waitForAbort(0.1)
-
-                if changed_info_tag:
+            # remove the Year info from the current video info tag for better OSS search results
+            t = self.player.getVideoInfoTag()
+            changed_info_tag = False
+            item = xbmcgui.ListItem()
+            item.setPath(self.player.getPlayingFile())
+            if t:
+                year = t.getYear()
+                if year:
                     if util.KODI_VERSION_MAJOR >= 20:
                         vi = item.getVideoInfoTag()
-                        vi.setYear(changed_info_tag)
+                        vi.setYear(0)
                     else:
-                        item.setInfo("video", {"year": changed_info_tag})
+                        item.setInfo("video", {"year": 0})
+                    util.DEBUG_LOG("Removing videoInfo year for subtitle search")
                     self.player.updateInfoTag(item)
+                    changed_info_tag = year
 
-        elif choice['key'] == 'delay':
-            self.hideOSD()
-            self.lastSubtitleNavAction = "delay"
-            builtin.Action('SubtitleDelay')
-        elif choice['key'] == 'next':
-            self.cycleSubtitles()
-            self.lastSubtitleNavAction = "forward"
-        elif choice['key'] == 'prev':
-            self.cycleSubtitles(forward=False)
-            self.lastSubtitleNavAction = "backward"
-        elif choice['key'] == 'enable':
-            if self.player.playState == self.player.STATE_PLAYING:
-                self.hideOSD()
-            enabled = self.toggleSubtitles()
-            self.lastSubtitleNavAction = "forward"
-        elif choice['key'] == 'auto_sync':
-            should_auto_sync = not sss.should_auto_sync_unforced
+            builtin.ActivateWindow('SubtitleSearch')
+            # wait for the window to activate
+            while not xbmc.getCondVisibility('Window.IsActive(SubtitleSearch)'):
+                util.MONITOR.waitForAbort(0.1)
+            # wait for the window to close
+            while xbmc.getCondVisibility('Window.IsActive(SubtitleSearch)'):
+                util.MONITOR.waitForAbort(0.1)
 
-            # force auto sync for session
-            if sss.force_auto_sync is not None:
-                sss.force_auto_sync = not sss.force_auto_sync
-            else:
-                sss.force_auto_sync = should_auto_sync
-            sss.should_auto_sync = should_auto_sync
-            util.DEBUG_LOG("Setting subtitle auto-sync for session to: {}".format(sss.should_auto_sync))
-
-            # self.player.video isn't the same as the mediachoice representation
-            if self.player.playerObject.choice.subtitleStream:
-                self.player.playerObject.choice.subtitleStream.should_auto_sync = sss.should_auto_sync
-                self.player.playerObject.choice.subtitleStream.force_auto_sync = sss.force_auto_sync
-            if self.player.playState == self.player.STATE_PLAYING:
-                self.hideOSD()
-            if self.isDirectPlay:
-                self.setSubtitles(honor_forced_subtitles_override=False, honor_deselect_subtitles=False)
-            else:
-                self.doSeek(self.trueOffset(), settings_changed=True)
-            self.lastSubtitleNavAction = "auto_sync"
+            if changed_info_tag:
+                if util.KODI_VERSION_MAJOR >= 20:
+                    vi = item.getVideoInfoTag()
+                    vi.setYear(changed_info_tag)
+                else:
+                    item.setInfo("video", {"year": changed_info_tag})
+                self.player.updateInfoTag(item)
 
     def vs10ButtonClicked(self):
         # amlogic.vs10.mode.raw values: 0/1 = Dolby Vision, 2 = HDR10, 3 = SDR, 5 = Original
         current_mode = xbmc.getInfoLabel('Player.Process(amlogic.vs10.mode.raw)')
-        check = 'script.plex/home/device/check.png'
+        check = 'script.plex/indicators/tick.png'  # the option pickers' tick
 
         options = [
             {'key': 'dv',           'display': 'Dolby Vision',  'indicator': current_mode in ('0', '1') and check or ''},
@@ -1668,11 +1594,12 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
         choice = dropdown.showDropdown(
             options,
-            # Position above the VS10 button (one slot right of the subtitle button)
-            (1360 - self.subtitleButtonLeft + self.NAVBAR_BTN_SIZE, 1060),
+            (self.DROPDOWN_X, self.DROPDOWN_BOTTOM),
             pos_is_bottom=True,
             close_on_playback_ended=True,
-            with_indicator=True
+            with_indicator=True,
+            header=T(34090, 'VS10 Mode'),
+            dialog_class=dropdown.CardDropdownDialog
         )
 
         if not choice:
@@ -1717,10 +1644,19 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         if self.isTranscoded:
             self.doSeek(self.trueOffset(), settings_changed=True)
 
+    def currentSubtitleStream(self):
+        """The selected subtitle stream as videoSettingsHaveChanged() compares it."""
+        return self.player.video.selectedSubtitleStream(
+            deselect_subtitles=getNativeLanguages(util.getSetting("disable_subtitle_languages") or []))
+
     def setSubtitles(self, do_sleep=False, honor_forced_subtitles_override=False, honor_deselect_subtitles=False,
                      ref="_current_subtitle_idx"):
         self.handler.setSubtitles(do_sleep=do_sleep, honor_forced_subtitles_override=honor_forced_subtitles_override,
                                   honor_deselect_subtitles=honor_deselect_subtitles, ref=ref)
+        # What's on screen now is the baseline videoSettingsHaveChanged() compares with: set from anywhere but a
+        # settings change (a download, the subtitle keys, auto-sync), it was left behind - then choosing what it had
+        # been (Off, after a download into a video that had none) looked like no change, and nothing turned it off.
+        self.initialSubtitleStream = self.currentSubtitleStream()
         if self.player.video.current_subtitle_is_embedded and util.CE_NEEDS_EMBEDDED_SEEKBACK:
             # this is an embedded stream, seek back a second after setting the subtitle due to long standing kodi
             # issue: https://github.com/xbmc/xbmc/issues/21086
@@ -1746,6 +1682,13 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         with self.propertyContext('settings.visible'):
             playersettings.showDialog(self.player.video, via_osd=True, parent=self)
 
+        return self.applyVideoSettingsChanges()
+
+    def applyVideoSettingsChanges(self):
+        """
+        Whatever the Settings dialog or a picker changed - video, audio, subtitles - applied to playback,
+        restarting it when that's the only way. Returns whether the OSD should hide fast (handleDialog()).
+        """
         changed = self.videoSettingsHaveChanged()
         any_changes = any(changed.values())
 
@@ -1782,39 +1725,143 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             return False
         return True
 
-    def setBigSeekShift(self):
-        closest = None
+    def beginSeeking(self):
+        # Enters seek mode at selectedOffset. This used to be setBigSeekShift(), which also slid the 12-dot big-seek
+        # row along the bar and only set _seeking when a dot matched - always, as the first dot sat at 0.
         if self.selectedOffset is None:
             return
+        self._seeking = True
 
-        for mli in self.bigSeekControl:
-            if mli.dataSource > self.selectedOffset:
-                break
-            closest = mli
-        if not closest:
+    def syncRows(self):
+        """
+        Keeps the card rows on what's playing - the chapters on the last chapter starting at or before the current
+        position, the play queue on its playing item - while they're out of sight. A row is drawn but faded to nothing
+        while it doesn't have focus (includes/osd_card_row.xml.tpl), so a selection made now scrolls into place unseen;
+        made as the row took focus, the scroll played out during its fade-in. Kodi only runs a list's scroll while it's
+        drawn, which is why a row can't simply be hidden. Leaves alone the row that has focus, and one still fading out
+        after focus left it (_rowSyncTimer calls this again as that fade ends). Calls Kodi only when a position changes.
+        """
+        # (a button's first onFocus can arrive before onFirstInit has made the rows)
+        if not self.initialized:
             return
 
-        self.bigSeekOffset = self.selectedOffset - closest.dataSource
-        pxOffset = int(self.bigSeekOffset / float(self.duration) * 1920)
+        now = time.time()
+        for listID, control in ((self.BIG_SEEK_LIST_ID, self.bigSeekControl),
+                                (self.QUEUE_LIST_ID, self.queueControl)):
+            if self.lastFocusID == listID or not control.items:
+                continue
+            if now - self._rowLeftAt.get(listID, 0) < self.ROW_FADE_OUT:
+                continue
 
-        if not self.showChapters:
-            self.bigSeekGroupControl.setPosition(-8 + pxOffset, 917)
-        self.bigSeekControl.selectItem(closest.pos())
+            if listID == self.BIG_SEEK_LIST_ID:
+                offset = self.trueOffset()
+                pos = 0
+                for i, mli in enumerate(control.items):
+                    if mli.dataSource > offset:
+                        break
+                    pos = i
+            else:
+                pos = self._queuePlayingPos
 
-        self._seeking = True
-        # xbmc.sleep(100)
+            if pos != self._rowPos.get(listID):
+                self._rowPos[listID] = pos
+                control.selectItem(pos)
 
-    def updateBigSeek(self, changed=False):
-        if changed and not self.showChapters:
-            self.bigSeekChanged = True
-            self.selectedOffset = self.bigSeekControl.getSelectedItem().dataSource + self.bigSeekOffset
-            self.updateProgress(set_to_current=False, no_osd=True)
-        elif self.showChapters:
-            # when hovering chapters, show its corresponding time on the timeline, but don't act like we're seeking
-            util.DEBUG_LOG("BROLLER: %s" % self.bigSeekControl.getSelectedItem().dataSource)
-            self.updateProgress(set_to_current=False, offset=self.bigSeekControl.getSelectedItem().dataSource,
-                                onlyTimeIndicator=True, no_osd=True)
-        self.resetSkipSteps()
+    def refreshQueueRow(self):
+        """
+        (Re)builds the play queue row, if anything has changed since it was last built: a new video, or the queue
+        itself (updateProperties(), on the queue's change events). Built here - on a button's focus, the only way down
+        into it - rather than with each video: list items cost a GUI call or several apiece, and most playback never
+        opens it. Only for a queue of more than one item; otherwise the row stays empty, and so unfocusable.
+        """
+        if not self.initialized or not self._queueRowStale:
+            return
+        self._queueRowStale = False
+
+        items = []
+        playingPos = 0
+        pq = self.handler.playlist
+        if pq:
+            entries = list(pq.items())
+            if len(entries) > 1:
+                playing = self.player.video.ratingKey
+                for index, pi in enumerate(entries):
+                    mli = self.createQueueItem(index, pi)
+                    if not mli:
+                        continue
+                    if pi.ratingKey == playing:
+                        mli.setProperty('playing', '1')
+                        playingPos = len(items)
+                    items.append(mli)
+
+        self.queueControl.reset()
+        self.queueControl.addItems(items)
+        self._queuePlayingPos = playingPos
+        self._rowPos.pop(self.QUEUE_LIST_ID, None)
+        self.setBoolProperty('has.queue', bool(items))
+
+    def createQueueItem(self, index, pi):
+        """
+        A play queue row item: the art, the title, and under it (the 'sub' property) an episode's S/E, show and length
+        or a film's year and length, bullet-separated, any that's missing left out. Episodes follow the no-spoilers
+        settings, as the play queue popup this row replaced did - unwatched ones can have their title hidden and their
+        art blurred. data_source is the item's position in the queue, which is what queueItemSelected() hands to
+        playAt.
+        """
+        durationMs = pi.duration.asInt()
+        duration = durationMs and util.durationToShortText(durationMs, noSpaces=True) or ''
+        if pi.type == 'episode':
+            title = pi.title
+            sub = (u'{0} \u2022 {1}'.format(T(32310, 'S{}').format(pi.parentIndex), T(32311, 'E{}').format(pi.index)),
+                   u'{0}'.format(pi.grandparentTitle or ''), duration)
+            thumbnailOpts = {}
+            if self.getNoSpoilers(pi) != "off":
+                hideSpoilers = self.hideSpoilers(pi)
+                if hideSpoilers:
+                    if self.noTitles:
+                        title = T(33008, '')
+                    thumbnailOpts = self.getThumbnailOpts(pi, hide_spoilers=hideSpoilers)
+            thumb = pi.thumb.asTranscodedImageURL(*self.CHAPTER_THUMB_DIM, **thumbnailOpts)
+        elif pi.type in ('movie', 'clip'):
+            title = pi.title
+            sub = (pi.year and u'{0}'.format(pi.year) or '', duration)
+            thumb = pi.art.asTranscodedImageURL(*self.CHAPTER_THUMB_DIM)
+        else:
+            return None
+
+        return kodigui.ManagedListItem(title, thumbnailImage=thumb, data_source=index,
+                                       properties={'sub': u' • '.join(part for part in sub if part)})
+
+    def updateRowHint(self, controlID):
+        """
+        The text of the OSD's bottom line naming what's below (the template's ROW HINT): from anywhere above the rows,
+        both rows' names or whichever exists; from the chapters, the play queue's. Focus moving into the queue row, or
+        to 800 as the OSD closes, leaves the text as it was: the hint fades out there, and changing the text would
+        make it vanish while the chevron beside it was still fading.
+        """
+        if not self.initialized or controlID in (self.QUEUE_LIST_ID, self.NO_OSD_BUTTON_ID):
+            return
+
+        hasQueue = bool(self.queueControl.items)
+        if controlID == self.BIG_SEEK_LIST_ID:
+            if not hasQueue:
+                return
+            text = T(35079, 'Play queue')
+        else:
+            text = u'/'.join(name for name, has in ((T(33611, 'Chapters'), bool(self.bigSeekControl.items)),
+                                                     (T(35079, 'Play queue'), hasQueue)) if has)
+
+        if text and text != self._rowHint:
+            self._rowHint = text
+            self.setProperty('rows.hint', text)
+
+    def queueItemSelected(self):
+        # OK on a play queue item plays it from the start, as the popup this row replaced did (resume=False)
+        mli = self.queueControl.getSelectedItem()
+        if not mli:
+            return
+        self.hideOSD()
+        self.player.trigger("action", action="playAt", pos=mli.dataSource)
 
     def bigSeekSelected(self):
         # this gets called when a click action happened on the bigSeek, defer the actual action to onFocus
@@ -1835,6 +1882,28 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             self.bigSeekChanged = self.selectedOffset
 
         self.setFocusId(self.MAIN_BUTTON_ID)
+
+    def setTitleLines(self):
+        """
+        The OSD's title, two lines (the template's osd.title and osd.subtitle): a film's title over its year and
+        runtime; an episode's title over its S/E, show and runtime - the play queue row's second line
+        (createQueueItem()). With the episode title hidden for spoilers (hide.title), the show's name on the first
+        line instead, and not again on the second.
+        """
+        v = self.player.video
+        durationMs = v.duration.asInt() or self._duration
+        runtime = durationMs and util.durationToShortText(durationMs, noSpaces=True) or ''
+        if v.type == 'episode':
+            hideTitle = 'no_unwatched_episode_titles' in (self.no_spoilers or ())
+            show = u'{0}'.format(v.grandparentTitle or '')
+            title = show if hideTitle else u'{0}'.format(v.title or '')
+            sub = (u'{0} \u2022 {1}'.format(T(32310, 'S{}').format(v.parentIndex), T(32311, 'E{}').format(v.index)),
+                   '' if hideTitle else show, runtime)
+        else:
+            title = u'{0}'.format(v.title or '')
+            sub = (v.year and u'{0}'.format(v.year) or '', runtime)
+        self.setProperty('osd.title', title)
+        self.setProperty('osd.subtitle', u' \u2022 '.join(part for part in sub if part))
 
     def updateProperties(self, **kwargs):
         if not self.started:
@@ -1860,9 +1929,9 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             hide_title = True
 
         self.setBoolProperty('hide.title', hide_title)
+        self.setTitleLines()
 
         if self.isDirectPlay:
-            self.setProperty('time.fmt', self.timeFmtKodi)
             self.setProperty('time.fmt.ends', util.timeFormatKN.replace(":ss", ""))
             # in directPlay we use the timeLeft display directly from Kodi, which only knows about the current part
             # add the remaining parts' time
@@ -1882,25 +1951,18 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
         self.setBoolProperty('direct.play', self.isDirectPlay)
 
-        if not self.getProperty('nav.playlist') and self.getProperty('nav.quick_subtitles'):
-            # offset the subtitle button
-            self.getControl(self.SUBTITLE_BUTTON_ID).setPosition(30, 0)
-
-        if not self.getProperty('nav.prevnext'):
-            if self.getProperty('nav.ffwdrwd'):
-                self.getControl(self.SKIP_BACK_BUTTON_ID).setPosition(30, 0)
+        # the play queue (or which of its items plays) may have changed: rebuild its row on the next button focus
+        self._queueRowStale = True
 
         pq = self.handler.playlist
         if pq:
             self.setProperty('has.playlist', '1')
             self.setProperty('pq.isRemote', pq.isRemote and '1' or '')
-            self.setProperty('pq.hasnext', pq.hasNext() and '1' or '')
-            self.setProperty('pq.hasprev', pq.hasPrev() and '1' or '')
             self.setProperty('pq.repeat', pq.isRepeat and '1' or '')
             self.setProperty('pq.repeat.one', pq.isRepeatOne and '1' or '')
             self.setProperty('pq.shuffled', pq.isShuffled and '1' or '')
         else:
-            self.setProperties(('pq.isRemote', 'pq.hasnext', 'pq.hasprev', 'pq.repeat', 'pq.shuffled', 'has.playlist'),
+            self.setProperties(('pq.isRemote', 'pq.repeat', 'pq.shuffled', 'has.playlist'),
                                '')
 
         self.updateCurrent()
@@ -1910,15 +1972,17 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
         # replace bigSeek with chapters or markers if possible
         if self.showChapters:
+            # one header whatever the chapters' source (file, markers or both) - it used to name the source, in
+            # capitals, and claimed "combined" even when every marker was dropped as overlapping a chapter
+            self.setProperty('chapters.label', T(33611, 'Chapters'))
             chaps = []
             chapOffsets = []
             thumb_opts = ("blur_chapters" in self.no_spoilers
                           and {"blur": util.addonSettings.episodeNoSpoilerBlur} or {})
             if self.chapters:
-                self.setProperty('chapters.label', T(33605, 'Video Chapters').upper())
                 for index, chapter in enumerate(self.chapters):
                     thumb = chapter.thumb and chapter.thumb.asTranscodedImageURL(
-                        *PlaylistDialog.LI_AR16X9_THUMB_DIM, **thumb_opts) or None
+                        *self.CHAPTER_THUMB_DIM, **thumb_opts) or None
                     # mli = kodigui.ManagedListItem(data_source=chapter.startTime(),
                     #                               thumbnailImage=thumb,
                     #                               label=chapter.tag or T(33607, 'Chapter {}').format(index + 1))
@@ -1929,10 +1993,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
             # fake chapters by using markers
             if util.getUserSetting('virtual_chapters', True) and self.markers and (not self.chapters or util.getUserSetting('combined_chapters', True)):
-                if not self.chapters:
-                    self.setProperty('chapters.label', T(33606, 'Virtual Chapters').upper())
-                else:
-                    self.setProperty('chapters.label', T(33634, 'Combined Chapters').upper())
                 creditsCounter = 0
                 preparedMarkers = []
                 for markerDef in self.markers:
@@ -1971,7 +2031,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                     bifUrl = self.handler.player.playerObject.getBifUrl(offset)
                     if "blur_chapters" in self.no_spoilers:
                         bifUrl = self.player.video.server.getImageTranscodeURL(bifUrl,
-                                                                               *PlaylistDialog.LI_AR16X9_THUMB_DIM,
+                                                                               *self.CHAPTER_THUMB_DIM,
                                                                                **thumb_opts)
                     chaps.append((offset, bifUrl,
                                   label.format(" #{}".format(credCnt) if credits and creditsCounter > 1 else "")))
@@ -1980,27 +2040,16 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                         credCnt += 1
 
             for offset, thumb, label in sorted(chaps):
-                mli = kodigui.ManagedListItem(data_source=offset, thumbnailImage=thumb, label=label)
+                # time: the chapter's start, under its name - the row's stand-in for the seekbar's time bubble
+                mli = kodigui.ManagedListItem(data_source=offset, thumbnailImage=thumb, label=label,
+                                              properties={'sub': util.simplifiedTimeDisplay(offset)})
                 items.append(mli)
 
-        else:
-            div = int(self.duration / 12)
-            for x in range(12):
-                offset = div * x
-                items.append(kodigui.ManagedListItem(data_source=offset))
-
-            # we might've been reinizialized by the handler and have had markers/chapters before. reset height and
-            # positioning of the bigSeekControl
-            self.bigSeekControl.control.setHeight(16)
-            self.bigSeekControl.control.setPosition(self.bigSeekControl.getX(), 0)
-
+        # Without chapters the row stays empty, which also leaves it unfocusable: down from the buttons goes nowhere.
+        # (It used to hold 12 evenly spaced big-seek dots.)
         self.bigSeekControl.reset()
         self.bigSeekControl.addItems(items)
-
-        if self.showChapters:
-            # adjust height and positioning of bigSeekControl to accomodate chapters
-            self.bigSeekControl.control.setHeight(160)
-            self.bigSeekControl.control.setPosition(self.bigSeekControl.getX(), -126)
+        self._rowPos.pop(self.BIG_SEEK_LIST_ID, None)
 
     def updateCurrent(self, update_position_control=True, atOffset=None):
         ratio = self.trueOffset() / float(self.duration)
@@ -2008,27 +2057,59 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         w = None
         if update_position_control:
             w = int(ratio * self.SEEK_IMAGE_WIDTH)
-            self.positionControl.setWidth(w)
+            self.setPlayed(w)
 
         # update cache/buffer bar
         if util.addonSettings.playerShowBuffer and self.isDirectPlay and util.KODI_VERSION_MAJOR > 18:
             cache_w = int(xbmc.getInfoLabel("Player.ProgressCache")) * self.SEEK_IMAGE_WIDTH // 100
-            w = w or self.positionControl.getWidth()
-            self.cacheControl.setWidth(max(cache_w, w+5))
+            w = w or self._barWidths.get(self.positionControl, 0)
+            self.setBarPercent(self.cacheControl, max(cache_w, w+5))
 
         if self.isTranscoded:
             to = atOffset if atOffset is not None else self.trueOffset()
-            self.setProperty('time.current', util.timeDisplay(to, cutHour=self._videoBelowOneHour))
-            self.setProperty('time.left',
-                             util.timeDisplay(self.duration - to, cutHour=self._videoBelowOneHour))
+            # the direct play times' format (the template's TIMES): no leading zero, the hour only when there is one
+            self.setProperty('time.current', util.simplifiedTimeDisplay(to))
+            self.setProperty('time.left', util.simplifiedTimeDisplay(self.duration - to))
+            self.setProperty('time.end', self.endTimeDisplay(self.duration - to))
 
-            _fmt = util.timeFormat.replace(":%S", "")
+        # the timeline focused but not seeking: the time bubble follows playback
+        if update_position_control and self.lastFocusID == self.MAIN_BUTTON_ID:
+            self.updateProgress(offset=atOffset if atOffset is not None else self.trueOffset(),
+                                onlyTimeIndicator=True)
 
-            val = time.strftime(_fmt, time.localtime(time.time() + ((self.duration - to) / 1000)))
-            if not util.padHour and val[0] == "0" and val[1] != ":":
-                val = val[1:]
+    def endTimeDisplay(self, remaining):
+        # the clock time playback ends at, remaining ms from now ("Ends at")
+        _fmt = util.timeFormat.replace(":%S", "")
 
-            self.setProperty('time.end', val)
+        val = time.strftime(_fmt, time.localtime(time.time() + remaining / 1000))
+        if not util.padHour and val[0] == "0" and val[1] != ":":
+            val = val[1:]
+        return val
+
+    def setBarPercent(self, control, w):
+        """
+        Fills a SEEKBAR progress control to w px along the bar. They're <reveal> progress controls
+        (see the template's SEEKBAR comment) so the rounded mask clips rather than stretches:
+        set a percentage, not a width. Info-less, so the value sticks.
+        """
+        w = max(0, min(w, self.SEEK_IMAGE_WIDTH))
+        if self._barWidths.get(control) == w:
+            return
+        self._barWidths[control] = w
+
+        cap = self._barCaps.get(control)
+        if cap:
+            # a rounded end: the fill stops BAR_CAP short and its cap's half circle ends at w
+            if w >= self.BAR_CAP:
+                w -= self.BAR_CAP
+                cap.setPosition(w, 0)
+            else:
+                # within the bar's own rounded left end: that rounds it, no cap (off the bar, below the screen)
+                cap.setPosition(0, 2000)
+        control.setPercent(w * 100.0 / self.SEEK_IMAGE_WIDTH)
+
+    def setPlayed(self, w):
+        self.setBarPercent(self.positionControl, w)
 
 
     @property
@@ -2045,6 +2126,12 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
         self.resetSkipSteps()
         self.updateProgress(offset=offset)
+
+        if self._seekPaused == 'seeking':
+            # paused for this seek: the handler resumes once it lands (onPlayBackSeek), as after its own alternate
+            # seek's pause - or, restarting a transcode, has it start playing (seek())
+            self.setSeekPaused('applying')
+            self.handler.unPauseAfterSeek = True
 
         try:
             self.handler.seek(offset, settings_changed=settings_changed, skip_alt_seek_fix=skip_alt_seek_fix)
@@ -2066,6 +2153,12 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         if lastSelectedOffset > self.duration - 5000 and offset > 0:
             return False
 
+        # Seeking pauses playback, resumed when the seek lands (doSeek()) or is abandoned (resetSeeking()); already
+        # paused, it stays paused.
+        if not self._seekPaused and self.player.playState == self.player.STATE_PLAYING:
+            self.setSeekPaused('seeking')
+            self.player.control('pause')
+
         self._seeking = True
         self._seekingWithoutOSD = without_osd
         sign = offset > 0 and 1 or -1
@@ -2082,10 +2175,17 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             self.selectedOffset = 1
 
         self.updateProgress(set_to_current=False, no_osd=without_osd)
-        self.setBigSeekShift()
+        # after updateProgress(): the seek look and the seek point's times show with this step's values
+        self.setProperty('button.seek', '1')
+        self.beginSeeking()
+        # the skip button follows the seek point straight away, not on the next tick (about a second)
+        if self.initialized and not (self.handler.seekOnStart or self.handler.waitingForSOS or self.handler.seekBackTo):
+            try:
+                self.displayMarkers(offset=self.selectedOffset)
+            except Exception:
+                util.ERROR()
         if auto_seek:
             self.resetAutoSeekTimer()
-        self.bigSeekHideTimer.reset()
         return True
 
     def seekMouse(self, action, without_osd=False, preview=False):
@@ -2136,25 +2236,10 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
         current_w = int(self.offset / float(self.duration) * self.SEEK_IMAGE_WIDTH)
 
+        # the thumbnail's left edge runs from the bar's left end to 324px short of its right end
         bifx = (w - int(ratio * 324)) + self.BAR_X
-        # bifx = w
-        self.selectionIndicator.setPosition(w, 896)
-        if w < 51:
-            self.selectionBox.setPosition(-50 + (50 - w), 0)
-        elif w > 1869:
-            self.selectionBox.setPosition(-100 + (1920 - w), 0)
-        else:
-            self.selectionBox.setPosition(-50, 0)
-
-        if self.forceNextTimeAsChapter:
-            self.setProperty('time.selection', self.forceNextTimeAsChapter)
-
-            # fixme: might be superfluous
-            self.selectionIndicatorImage.setWidth(self.selectionIndicatorText.getWidth())
-            self.forceNextTimeAsChapter = False
-        else:
-            self.setProperty('time.selection', util.simplifiedTimeDisplay(offset))
-            self.selectionIndicatorImage.setWidth(101)
+        # the seek marker, centred on the bar at the point
+        self.selectionIndicator.setPosition(self.BAR_X + w, self._markerY)
 
         self.setProperty('bif.image', "")
         if onlyTimeIndicator:
@@ -2165,39 +2250,29 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 bifUrl = self.handler.player.playerObject.getBifUrl(offset)
                 if "blur_chapters" in self.no_spoilers:
                     bifUrl = self.player.video.server.getImageTranscodeURL(bifUrl,
-                                                                           *PlaylistDialog.LI_AR16X9_THUMB_DIM,
+                                                                           *self.LI_AR16X9_THUMB_DIM,
                                                                            **{"blur": util.addonSettings.episodeNoSpoilerBlur})
                 self.setProperty('bif.image', bifUrl)
-                self.bifImageControl.setPosition(bifx, 752)
+                self.bifImageControl.setPosition(bifx, self._bifY)
 
-        self.seekbarControl.setPosition(0, self.seekbarControl.getPosition()[1])
         if set_to_current:
-            self.seekbarControl.setWidth(w)
-            self.positionControl.setWidth(w)
+            self.setBarPercent(self.seekbarControl, w)
+            self.setPlayed(w)
         else:
             # we're seeking
             if not self.selectedOffset:
                 return
 
-            # current seek position below current offset? set the position bar's width to the current position of the
-            # seek and the seek bar to the current position of the video, to visually indicate the backwards-seeking
-            if self.selectedOffset < self.offset:
-                self.positionControl.setWidth(current_w)
-                self.seekbarControl.setWidth(w)
+            # the times either side of the bar show the seek point's while seeking (the template's TIMES)
+            remaining = max(0, self.duration - offset)
+            self.setProperty('time.seek.current', util.simplifiedTimeDisplay(offset))
+            self.setProperty('time.seek.left', util.simplifiedTimeDisplay(remaining))
+            self.setProperty('time.seek.end', self.endTimeDisplay(remaining))
 
-            # current seek position ahead of current offset? set the position bar's width to the current position of the
-            # video and the seek bar to the current position of the seek, to visually indicate the forwards-seeking
-            elif self.selectedOffset > self.offset:
-                self.seekbarControl.setPosition(current_w, self.seekbarControl.getPosition()[1])
-                self.seekbarControl.setWidth(w - current_w)
-                # we may have "shortened" the width before, by seeking negatively, reset the position bar's width to
-                # the current video's position if that's the case
-                if self.positionControl.getWidth() < current_w:
-                    self.positionControl.setWidth(current_w)
-
-            else:
-                self.seekbarControl.setWidth(w)
-                self.positionControl.setWidth(w)
+            # the played fill (hidden while seeking, by the template) stays at the video's position for after; the
+            # gold scrubber in its place runs to the seek point
+            self.setPlayed(current_w)
+            self.setBarPercent(self.seekbarControl, w)
 
     def waitForBuffer(self):
         # current filesize in bytes
@@ -2321,6 +2396,20 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         if self._ignoreInput:
             self._ignoreInput = False
 
+        # A resume from OK on the timeline or a play/pause key goes back to the video; a pause leaves the OSD up. Decided here, not where the input arrives: Kodi has usually already paused/resumed by
+        # the time our onAction/onClick runs, so the player state there can't tell which it was.
+        if self._playPauseInputAt and time.time() - self._playPauseInputAt < 3:
+            self._playPauseInputAt = None
+            if self.osdVisible():
+                self.hideOSD()
+
+        if self._seekPaused:
+            # the end of a pause for seeking - no resume seek-behind for it
+            self.setSeekPaused(None)
+            self.idleTime = None
+            self.ldTimer and self.syncTimeKeeper()
+            return
+
         # the alt seek fix will pause during a seek and resume afterwards if necessary; in that case, don't try any
         # normal shenanigans
         if self.handler and self.handler.pausedForSeek:
@@ -2364,6 +2453,15 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
     def onPlayBackPaused(self):
         util.DEBUG_LOG("SeekDialog: OnPlaybackPaused")
+        # that play/pause press was a pause (onPlayBackResumed())
+        self._playPauseInputAt = None
+
+        if self._seekPaused:
+            # paused for seeking: not a pause for the idle stop or the resume seek-behind
+            if self._seekPaused == 'resuming':
+                # the seek was abandoned before this pause came through
+                self.player.control('play')
+            return
 
         if self.handler and self.handler.seekBackTo and not self.handler.seekBackToDone:
             return
@@ -2566,6 +2664,13 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 self._currentMarker["countdown"] = None
                 setattr(self, self._currentMarker["markerAutoSkipShownTimer"], None)
             self._currentMarker = None
+
+            # Out of every marker's window: each starts afresh next time, shown on its own again, whether its
+            # button timed out, was dismissed (Back) or was used. Not markerAutoSkipped: seeking back into a marker
+            # that's been auto-skipped (or was before a resume point) mustn't auto-skip it again.
+            for md in self.markers or ():
+                md["hidden"] = False
+                md["skipped"] = False
             return False
 
         # getCurrentMarkerDef might have overridden the startTimeOffset, use that
@@ -2601,10 +2706,12 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 util.setGlobalProperty('osd_active', '')
             return False
 
+        # never on its own while paused or choosing a seek (displayMarkers() runs then too)
         autoSkippingNow = markerDef \
             and markerAutoSkip \
             and not markerAutoSkipped \
             and not self._navigatedViaMarkerOrChapter \
+            and (immediate or (not self._seeking and self.player.playState == self.player.STATE_PLAYING)) \
             and (markerDef["countdown"] == 0 or startTimeOff == 0 or immediate)
         # and (startTimeOff == 0 or sTOffWThres <= self.offset) \
 
@@ -2633,7 +2740,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         # fixme: "markerAutoSkipShownTimer" should be "markerSkipShownTimer"
         timer = getattr(self, markerDef["markerAutoSkipShownTimer"])
 
-        if timer is None or self.player.playState == self.player.STATE_PAUSED:
+        # restarted while paused or with the OSD open, so the button gets its full time on screen after either
+        if timer is None or self.player.playState == self.player.STATE_PAUSED or self.osdVisible():
             setattr(self, markerDef["markerAutoSkipShownTimer"], time.time())
 
         else:
@@ -2674,7 +2782,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                     )
                     isNew = True
 
-            if self.player.playState == self.player.STATE_PLAYING and not self.osdVisible():
+            # a second of playback per tick - not while seeking, which calls this per step too (seekByOffset())
+            if self.player.playState == self.player.STATE_PLAYING and not self.osdVisible() and not self._seeking:
                 markerDef["countdown"] -= 1
             if isNew:
                 markerDef["countdown_initial"] = markerDef["countdown"]
@@ -2692,8 +2801,9 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         # store current marker
         self._currentMarker = markerDef
 
-        # focus marker if OSD is hidden, last focus wasn't the marker button and we're not auto skipping this marker
-        if not self.osdVisible() and self.lastFocusID != self.SKIP_MARKER_BUTTON_ID and \
+        # focus marker if OSD is hidden, last focus wasn't the marker button and we're not auto skipping this marker -
+        # nor seeking: OK applies the seek then, and would skip instead (it takes focus once the seek's landed)
+        if not self.osdVisible() and not self._seeking and self.lastFocusID != self.SKIP_MARKER_BUTTON_ID and \
                 not self.getProperty('show.markerSkip_OSDOnly') and self.getProperty('show.markerSkip') \
                 and not markerAutoSkip:
             self.setFocusId(self.SKIP_MARKER_BUTTON_ID)
@@ -2725,15 +2835,30 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             if self.player.playState == self.player.STATE_PLAYING:
                 self.idleTime = None
 
+            if self._seekPaused in ('applying', 'resuming') and time.time() - self._seekPausedAt > 5:
+                # a pause for seeking that never ended - a seek too small to make (alternate seek) doesn't report
+                # landing, so the handler never resumed: resume here
+                util.DEBUG_LOG("SeekDialog: Seek pause never ended ({}), resuming", self._seekPaused)
+                self.setSeekPaused(None)
+                if self.handler.unPauseAfterSeek:
+                    self.handler.unPauseAfterSeek = False
+                    if self.player.playState == self.player.STATE_PAUSED:
+                        self.setSeekPaused('resuming')
+                        self.player.control('play')
+
             # invisibly sync low-drift timer to current playback every X seconds, as Player.getTime() can be wildly off
             if self.ldTimer and not self.osdVisible() and self.timeKeeper and self.timeKeeper.ticks >= 60:
                 self.syncTimeKeeper()
 
             cancelTick = False
-            # don't auto skip while we're initializing and waiting for the handler to seek on start
+            # don't auto skip while we're initializing and waiting for the handler to seek on start. Paused too -
+            # which seeking is, choosing where to - and while seeking, the seek point's marker: the skip button
+            # follows where you're going.
             if (offset is None and not self.handler.seekOnStart and not self.handler.waitingForSOS
-                    and not self.handler.seekBackTo and self.player.playState == self.player.STATE_PLAYING):
-                cancelTick = self.displayMarkers()
+                    and not self.handler.seekBackTo
+                    and self.player.playState in (self.player.STATE_PLAYING, self.player.STATE_PAUSED)):
+                cancelTick = self.displayMarkers(
+                    offset=self.selectedOffset if self._seeking and self.selectedOffset else None)
 
             if cancelTick:
                 return
@@ -2742,11 +2867,16 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 util.DEBUG_LOG('SeekDialog: Possible stuck busy dialog - closing')
                 xbmc.executebuiltin('Dialog.Close(busydialog,1)')
 
-            if not self.hasDialog and not self.playlistDialogVisible and self.osdVisible():
+            if not self.hasDialog and self.osdVisible():
+                # follow playback into the next chapter while the rows are out of sight
+                self.syncRows()
+
                 t = time.time()
-                # with a customizable OSD hide timeout, OSD hide timeout might happen before autoSeekTimeout;
-                # in case we're still waiting for a seek, postpone OSD hiding
-                if t > self.timeout and (not self.autoSeekTimeout or self.autoSeekTimeout < self.timeout < t):
+                # with a customizable OSD hide timeout, OSD hide timeout might happen before a pending auto-seek
+                # (delayedSeek()'s, or this tick's own autoSeekTimeout); in case we're still waiting for a seek,
+                # postpone OSD hiding
+                pendingSeek = self._delayedSeekTimeout or self.autoSeekTimeout
+                if t > self.timeout and (not pendingSeek or pendingSeek < self.timeout < t):
                     xbmc.executebuiltin('Dialog.Close(videoosd,true)')
                     xbmc.executebuiltin('Dialog.Close(seekbar,true)')
                     if not xbmc.getCondVisibility('Window.IsActive(videoosd) | Player.Rewinding | Player.Forwarding'):
@@ -2774,26 +2904,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             if self.isDirectPlay or not self.ldTimer:
                 self.updateCurrent(update_position_control=not self._seeking and not self._applyingSeek)
 
-    @property
-    def playlistDialogVisible(self):
-        return self._playlistDialogVisible
-
-    @playlistDialogVisible.setter
-    def playlistDialogVisible(self, value):
-        self._playlistDialogVisible = value
-        self.setProperty('playlist.visible', '1' if value else '')
-
-    def showPlaylistDialog(self):
-        self.playlistDialog = PlaylistDialog.create(show=False, handler=self.handler, item_states=self._item_states)
-        self.playlistDialogVisible = True
-        self.playlistDialog.doModal()
-        self.resetTimeout()
-        if self.playlistDialog:
-            self.playlistDialog.doClose()
-            self.setFocusId(self.PLAYLIST_BUTTON_ID)
-        self.playlistDialog = None
-        self.playlistDialogVisible = False
-
     def osdVisible(self):
         return xbmc.getCondVisibility('Control.IsVisible(801)')
 
@@ -2805,7 +2915,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             xbmc.executebuiltin('Action(Info)')
 
         if focusButton:
-            self.setFocusId(self.PLAY_PAUSE_BUTTON_ID)
+            # the timeline: OK there plays/pauses, left/right seek, down reaches the buttons
+            self.setFocusId(self.MAIN_BUTTON_ID)
 
     def hideOSD(self, skipMarkerFocus=False, closing=False):
         util.DEBUG_LOG("SeekDialog: HideOSD: {}, {}", skipMarkerFocus, closing)
@@ -2821,176 +2932,3 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
         self.resetSeeking()
         self._osdHideAnimationTimeout = time.time() + self.OSD_HIDE_ANIMATION_DURATION
-
-        if self.playlistDialog:
-            self.playlistDialog.doClose()
-            self.playlistDialogVisible = False
-            self.playlistDialog = None
-
-
-class PlaylistDialog(kodigui.BaseDialog, SpoilersMixin):
-    xmlFile = 'script-plex-video_current_playlist.xml'
-    path = util.ADDON.getAddonInfo('path')
-    theme = 'Main'
-    res = '1080i'
-    width = 1920
-    height = 1080
-
-    LI_AR16X9_THUMB_DIM = (178, 100)
-    LI_SQUARE_THUMB_DIM = (100, 100)
-
-    PLAYLIST_LIST_ID = 101
-    PLAYLIST_SCROLLBAR_ID = 152
-
-    def __init__(self, *args, **kwargs):
-        kodigui.BaseDialog.__init__(self, *args, **kwargs)
-        SpoilersMixin.__init__(self, *args, **kwargs)
-        self.handler = kwargs.get('handler')
-        self.item_states = kwargs.get('item_states', {})
-        self.playlist = self.handler.playlist
-
-    def onFirstInit(self):
-        self.handler.player.on('playlist.changed', self.playQueueCallback)
-        self.handler.player.on('session.ended', self.sessionEnded)
-        self.playlistListControl = kodigui.ManagedControlList(self, self.PLAYLIST_LIST_ID, 6)
-        self.fillPlaylist()
-        self.updatePlayingItem()
-        self.setFocusId(self.PLAYLIST_LIST_ID)
-
-    def onReInit(self):
-        self.updatePlayingItem()
-        self.setFocusId(self.PLAYLIST_LIST_ID)
-
-    def doClose(self, **kw):
-        if self.handler:
-            self.handler.player.off('playlist.changed', self.playQueueCallback)
-            self.handler.player.off('session.ended', self.sessionEnded)
-        self.handler = None
-        self.playlist = None
-        super(PlaylistDialog, self).doClose()
-
-    def onClick(self, controlID):
-        if controlID == self.PLAYLIST_LIST_ID:
-            self.playlistListClicked()
-
-    def onAction(self, action):
-        controlID = self.getFocusId()
-        if action == xbmcgui.ACTION_MOVE_LEFT:
-            if controlID == self.PLAYLIST_LIST_ID:
-                self.doClose()
-                return
-            elif controlID == self.PLAYLIST_SCROLLBAR_ID:
-                self.setFocusId(self.PLAYLIST_LIST_ID)
-        super(PlaylistDialog, self).onAction(action)
-
-    def playlistListClicked(self):
-        mli = self.playlistListControl.getSelectedItem()
-        if not mli:
-            return
-        self.handler.player.trigger("action", action="playAt", pos=mli.pos())
-
-    def sessionEnded(self, **kwargs):
-        util.DEBUG_LOG('PlaylistDialog: Session ended - closing')
-        self.doClose()
-
-    def createListItem(self, pi):
-        if pi.type == 'episode':
-            return self.createEpisodeListItem(pi)
-        elif pi.type in ('movie', 'clip'):
-            return self.createMovieListItem(pi)
-
-    def createEpisodeListItem(self, episode):
-        label2 = u'{0} \u2022 {1}'.format(
-            episode.grandparentTitle,
-            u'{0} \u2022 {1}'.format(T(32310, 'S').format(episode.parentIndex), T(32311, 'E').format(episode.index))
-        )
-        title = episode.title
-        thumbnail_opts = {}
-        no_spoilers = self.getNoSpoilers(episode)
-        if no_spoilers != "off":
-            hide_spoilers = self.hideSpoilers(episode)
-            if hide_spoilers:
-                if self.noTitles:
-                    title = T(33008, '')
-                thumbnail_opts = self.getThumbnailOpts(episode, hide_spoilers=hide_spoilers)
-
-        mli = kodigui.ManagedListItem(title, label2,
-                                      thumbnailImage=episode.thumb.asTranscodedImageURL(*self.LI_AR16X9_THUMB_DIM,
-                                                                                        **thumbnail_opts),
-                                      data_source=episode)
-        mli.setProperty('track.duration', util.durationToShortText(episode.duration.asInt()))
-        mli.setProperty('video', '1')
-        mli.setProperty('unwatched', not episode.isWatched and '1' or '')
-        mli.setProperty('watched', episode.isPlayed and '1' or '')
-        return mli
-
-    def createMovieListItem(self, movie):
-        mli = kodigui.ManagedListItem(movie.title, movie.year,
-                                      thumbnailImage=movie.art.asTranscodedImageURL(*self.LI_AR16X9_THUMB_DIM),
-                                      data_source=movie)
-        mli.setProperty('track.duration', util.durationToShortText(movie.duration.asInt()))
-        mli.setProperty('video', '1')
-        mli.setProperty('unwatched', not movie.isWatched and '1' or '')
-        mli.setProperty('watched', movie.isPlayed and '1' or '')
-        return mli
-
-    def playQueueCallback(self, **kwargs):
-        # 'playlist.changed' is triggered from the player and can dispatch off the
-        # GUI thread. If the dialog is closing/closed (doClose sets _closing=True and
-        # handler=None before super().doClose() tears down the controls), the
-        # ControlList's underlying guilib object is gone — calling getSelectedItem()
-        # (-> getSelectedPosition()) on it would use-after-free and crash. Bail.
-        if self._closing or not self.handler:
-            return
-        mli = self.playlistListControl.getSelectedItem()
-        if not mli:
-            return
-        pi = mli.dataSource
-        plexID = pi['comment'].split(':', 1)[0]
-        viewPos = self.playlistListControl.getViewPosition()
-
-        self.fillPlaylist()
-
-        for ni in self.playlistListControl:
-            if ni.dataSource['comment'].split(':', 1)[0] == plexID:
-                self.playlistListControl.selectItem(ni.pos())
-                break
-
-        xbmc.sleep(100)
-
-        newViewPos = self.playlistListControl.getViewPosition()
-        if viewPos != newViewPos:
-            diff = newViewPos - viewPos
-            self.playlistListControl.shiftView(diff, True)
-
-    def updatePlayingItem(self):
-        playing = self.handler.player.video.ratingKey
-        selectIndex = None
-        for (index, mli) in enumerate(self.playlistListControl):
-            isMLI = mli.dataSource.ratingKey == playing
-            mli.setProperty('playing', isMLI and '1' or '')
-            if isMLI:
-                selectIndex = index
-
-        if selectIndex is not None:
-            self.playlistListControl.setSelectedItemByPos(selectIndex)
-
-    def fillPlaylist(self):
-        items = []
-        idx = 1
-        for pi in self.playlist.items():
-            # mark watched items in playlist during current playback session
-            if self.handler.getProgressForItem(str(pi.ratingKey), None) is True:
-                pi.set('viewCount',pi.get('viewCount', 0).asInt() + 1)
-                pi.set('viewOffset', 0)
-
-            mli = self.createListItem(pi)
-            if mli:
-                mli.setProperty('track.number', str(idx))
-                mli.setProperty('progress', util.getProgressImage(mli.dataSource,
-                                                      view_offset=self.handler.getProgressForItem(str(pi.ratingKey), None)))
-                items.append(mli)
-                idx += 1
-
-        self.playlistListControl.reset()
-        self.playlistListControl.addItems(items)

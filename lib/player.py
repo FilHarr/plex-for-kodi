@@ -577,7 +577,11 @@ class SeekPlayerHandler(BasePlayerHandler):
         self.seeking = self.SEEK_IN_PROGRESS
 
         if self.player.playState == self.player.STATE_PAUSED:
-            self.player.pauseAfterPlaybackStarted = True
+            if self.unPauseAfterSeek:
+                # paused only for this seek (SeekDialog.doSeek()): the restarted playback plays
+                self.unPauseAfterSeek = False
+            else:
+                self.player.pauseAfterPlaybackStarted = True
 
         util.DEBUG_LOG('New player offset: {0}, state: {1}', self.offset, self.player.playState)
         self.player._playVideo(offset, seeking=self.seeking, force_update=settings_changed)

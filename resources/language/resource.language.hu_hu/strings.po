@@ -1440,8 +1440,8 @@ msgstr "Videófejezetek megjelenítése"
 
 #: 
 msgctxt "#33602"
-msgid "If available, show video chapters from the video-file instead of the timeline-big-seek-steps."
-msgstr "Ha lehetséges, a videofájlból származó fejezeteket jelenítse meg az idővonal nagykeresési lépései helyett."
+msgid "If available, show the video file's chapters in a row below the player's buttons (press down to reach it)."
+msgstr "Ha elérhető, a videofájl fejezeteit egy sorban jeleníti meg a lejátszó gombjai alatt (a le gombbal érhető el)."
 
 #: 
 msgctxt "#33603"
@@ -2364,8 +2364,8 @@ msgstr "A körkörös-keresztezés engedélyezése a csomópontokban. Figyelem! 
 
 #: 
 msgctxt "#33046"
-msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters. Additionally, when pressing down while the OSD is shown, open the chapters (if available)."
-msgstr "A fel/le gomb megnyomásával, miközben az OSD nincs megjelenítve, a fejezetek átugrása helyett az OSD jelenik meg. Továbbá, ha lenyomja a gombot, miközben az OSD megjelenik, megnyílnak a fejezetek (ha rendelkezésre állnak)."
+msgid "When pressing up/down while the OSD isn't shown, show OSD instead of skipping chapters."
+msgstr "A fel/le gomb megnyomásával, miközben az OSD nincs megjelenítve, a fejezetek átugrása helyett az OSD jelenik meg."
 
 #: 
 msgctxt "#33047"
@@ -3050,8 +3050,8 @@ msgstr "Kérdezz"
 
 #: 
 msgctxt "#33695"
-msgid "Where do you want to download subtitles from? Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
-msgstr "Honnan szeretné letölteni a feliratokat? Megjegyzés: Ez jelenleg csak a lejátszó feliratozási gyorsműveleteire vonatkozik. A felirat letöltése a folyam beállításaiban mindig a Plexet használja forrásként."
+msgid "Where do you want to download subtitles from? Applies to Download subtitles in the player, from the Subtitles button or the player's Settings. Before playback it always uses Plex."
+msgstr "Honnan szeretné letölteni a feliratokat? A lejátszóban a Feliratok letöltése opcióra vonatkozik, a feliratgombról vagy a lejátszó beállításaiból. Lejátszás előtt mindig a Plexet használja."
 
 #: 
 msgctxt "#33696"
@@ -3085,8 +3085,8 @@ msgstr "Visszacsatolás a Kodiba"
 
 #: 
 msgctxt "#33702"
-msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Note: Currently this only applies to the subtitle quick actions in the player. The subtitle download in stream settings always uses Plex as a source."
-msgstr "Ha a Plex feliratkeresője nem talál semmit, akkor térjen vissza a Kodi feliratkeresőjére. Megjegyzés: Ez jelenleg csak a lejátszó feliratozási gyorsbeavatkozásaira vonatkozik. A folyam beállításaiban a felirat letöltése mindig a Plexet használja forrásként."
+msgid "When no subtitles are found via the Plex subtitle search, fall back to Kodi subtitle search. Only in the player: before playback, subtitles always come from Plex."
+msgstr "Ha a Plex feliratkeresője nem talál semmit, akkor térjen vissza a Kodi feliratkeresőjére. Csak a lejátszóban: lejátszás előtt a feliratok mindig a Plexből származnak."
 
 #: 
 msgctxt "#33703"

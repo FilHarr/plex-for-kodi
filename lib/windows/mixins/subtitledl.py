@@ -37,7 +37,7 @@ class PlexSubtitleDownloadMixin(object):
         return language, lang_code_parse, lang_code
 
 
-    def downloadPlexSubtitles(self, video, non_playback=False):
+    def downloadPlexSubtitles(self, video, non_playback=False, side=False):
         """
 
         @param video:
@@ -77,8 +77,9 @@ class PlexSubtitleDownloadMixin(object):
                         provider_title=sub.providerTitle,
                         subtitle_score=sub.score,
                         subtitle_info=info), sub.title)))
+                # side: the video player's tall picker at the right (dialog.SideSelectDialog)
                 choice = showOptionsDialog(T(33700, "Download subtitles: {}").format(ensure_str(language.name)),
-                                                              options, trim=False, non_playback=non_playback)
+                                           options, trim=False, non_playback=non_playback, side=side)
                 if choice is None:
                     return False
 

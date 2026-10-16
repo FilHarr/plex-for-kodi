@@ -12,8 +12,8 @@ class AddonSettings(object):
         ("debug_requests", False),
         ("kodi_skip_stepping", False),
         ("auto_seek", True),
-        ("auto_seek_delay", 1),
-        ("dynamic_timeline_seek", False),
+        # a float: the default's type is what the value's read as, and an int truncated the slider's 0.1 steps
+        ("auto_seek_delay", 1.0),
         ("fast_back", True),
         ("dynamic_backgrounds", True),
         ("screensaver_quiz", False),
