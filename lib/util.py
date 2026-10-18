@@ -803,7 +803,13 @@ def getShortDateFormat():
         if fromAPI == "regional":
             return xbmc.getRegion('dateshort').replace('%-d', '%d')
         else:
-            return fromAPI.replace("DD", "%d").replace("MM", "%m").replace("YYYY", "%Y")
+            # Kodi's choices (LangInfo.cpp) use D/M unpadded, mmm and YY as well as DD/MM/YYYY: "D/M/YYYY"
+            # came out as "D/M/2026" when only the latter were replaced. From pannal/plex-for-kodi.
+            nonPad = "%#" if sys.platform == "win32" else "%-"
+            tokens = {"DD": "%d", "D": nonPad + "d", "MM": "%m", "M": nonPad + "m",
+                      "mmm": "%b", "YYYY": "%Y", "YY": "%y"}
+            # longest tokens first, in one pass, so no strftime directive is replaced again
+            return re.sub(r"YYYY|YY|mmm|DD|D|MM|M", lambda match: tokens[match.group(0)], fromAPI)
     except:
         DEBUG_LOG("Couldn't get locale.shortdateformat setting, falling back to MM/DD/YYYY")
         return "%d/%m/%Y"

@@ -96,6 +96,84 @@ class CooldownTest(KodiTestCase):
         self.assertEqual({}, plexserver._RATE_LIMIT_UNTIL)
 
 
+class QuietRetryTest(KodiTestCase):
+    """A read's one quiet retry for a short limit (from pannal/plex-for-kodi): a 429 asking for at
+    most 5 s - 2 s when it doesn't say - is waited out and asked again before any cooldown."""
+
+    def setUp(self):
+        super(QuietRetryTest, self).setUp()
+        self.now = 1000.0
+        for target, attr, value in ((plexserver, '_RATE_LIMIT_UNTIL', {}),
+                                    (plexserver, '_cooldownTime', lambda: self.now)):
+            patcher = mock.patch.object(target, attr, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(plexserver.MONITOR, 'waitForAbort', side_effect=self.advance)
+        self.wait = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.server = limited()
+        self.get = mock.Mock()
+        self.get.__name__ = 'get'
+        self.put = mock.Mock(return_value=response(429))
+        self.put.__name__ = 'put'
+        self.server.session = mock.Mock(get=self.get, put=self.put)
+
+    def advance(self, seconds):
+        self.now += seconds
+        return False
+
+    def test_a_blip_is_waited_out_without_an_error(self):
+        self.get.side_effect = [response(429), response(200)]
+        self.assertIsNotNone(self.server.query('/watchlist'))
+        self.wait.assert_called_once_with(2)
+        self.assertEqual(2, self.get.call_count)
+        # its short cooldown over, the next request is asked as usual
+        self.get.side_effect = None
+        self.get.return_value = response(200)
+        self.assertIsNotNone(self.server.query('/next'))
+
+    def test_a_short_retry_after_is_the_wait(self):
+        self.get.side_effect = [response(429, '5'), response(200)]
+        self.assertIsNotNone(self.server.query('/watchlist'))
+        self.wait.assert_called_once_with(5)
+
+    def test_refused_again_it_is_the_cooldown(self):
+        self.get.side_effect = [response(429), response(429)]
+        with self.assertRaises(exceptions.RateLimited) as caught:
+            self.server.query('/watchlist')
+        # no Retry-After the second time: the full minute
+        self.assertEqual(60, caught.exception.retry_after)
+        self.assertEqual(2, self.get.call_count)
+
+    def test_the_second_answers_wait_stands(self):
+        self.get.side_effect = [response(429), response(429, '3')]
+        with self.assertRaises(exceptions.RateLimited) as caught:
+            self.server.query('/watchlist')
+        self.assertEqual(3, caught.exception.retry_after)
+
+    def test_a_longer_wait_is_not_waited_out(self):
+        self.get.return_value = response(429, '6')
+        with self.assertRaises(exceptions.RateLimited) as caught:
+            self.server.query('/watchlist')
+        self.assertEqual(6, caught.exception.retry_after)
+        self.wait.assert_not_called()
+        self.assertEqual(1, self.get.call_count)
+
+    def test_shutting_down_ends_the_wait(self):
+        self.get.return_value = response(429)
+        self.wait.side_effect = None
+        self.wait.return_value = True
+        self.assertIsNone(self.server.query('/watchlist'))
+        self.assertEqual(1, self.get.call_count)
+
+    def test_only_reads_are_asked_again(self):
+        with self.assertRaises(exceptions.RateLimited) as caught:
+            self.server.query('/actions/removeFromWatchlist', method='put')
+        self.assertEqual(60, caught.exception.retry_after)
+        self.wait.assert_not_called()
+        self.assertEqual(1, self.put.call_count)
+
+
 class DiscoverRetryTest(KodiTestCase):
     def test_a_429_is_not_retried_by_urllib3(self):
         retry = myplexserver.DiscoverRetry(total=3)

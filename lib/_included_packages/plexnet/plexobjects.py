@@ -340,7 +340,9 @@ class PlexObject(Checks):
         if _soft and self._reloaded:
             return self
 
-        if not data:
+        # "is None", not "not": an element without children tests false (and newer Pythons warn about
+        # testing one at all), so data passed in could be fetched over again. From pannal/plex-for-kodi.
+        if data is None:
             try:
                 if self.get('ratingKey'):
                     data = self.server.query('/library/metadata/{0}'.format(self.ratingKey),
@@ -699,7 +701,7 @@ def listItems(server, path, libtype=None, watched=None, bytag=False, data=None, 
     container = container or PlexContainer(data, path, server, path)
     items = ItemContainer().init(container) if not return_data else []
 
-    if data:
+    if data is not None:
         for elem in data:
             if libtype and elem.attrib.get('type') != libtype:
                 continue

@@ -2832,6 +2832,14 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 self.pausedAt = None
                 return
 
+            # Where playback is, before the markers are chosen from it below: a seek reports where it
+            # was asked to go, and playback can land earlier, on a keyframe. From pannal/plex-for-kodi.
+            try:
+                self.offset = offset or int(self.handler.player.getTime() * 1000)
+            except RuntimeError:  # Playback has stopped
+                self.resetSeeking()
+                return
+
             if self.player.playState == self.player.STATE_PLAYING:
                 self.idleTime = None
 
@@ -2883,11 +2891,9 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                         self.hideOSD()
 
         if offset or self.initialized:
-            try:
-                self.offset = offset or int(self.handler.player.getTime() * 1000)
-            except RuntimeError:  # Playback has stopped
-                self.resetSeeking()
-                return
+            if not self.initialized:
+                # not initialized yet (seekOnStart, onFirstInit()): read above when it is
+                self.offset = offset
 
             if offset or (self.autoSeekTimeout and time.time() >= self.autoSeekTimeout and
                           self.offset != self.selectedOffset):

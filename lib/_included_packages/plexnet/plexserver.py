@@ -7,6 +7,7 @@ import json
 import math
 import threading
 from email.utils import parsedate_tz, mktime_tz
+from lib.monitor import MONITOR
 
 import six
 import urllib3.exceptions
@@ -281,12 +282,12 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                 cq += util.joinArgs(cparams)
 
             cdata = self.query(cq, params=cparams)
-            if cdata and len(cdata) > 0:
+            if cdata is not None and len(cdata) > 0:
                 ccontainer = plexobjects.PlexContainer(cdata, initpath=cq, server=self, address=cq)
                 self.currentHubs[cdata[0].attrib.get('hubIdentifier')] = cdata[0].attrib.get('title')
                 hubs.append(plexlibrary.Hub(cdata[0], server=self, container=ccontainer))
 
-        if data:
+        if data is not None:
             for elem in data:
                 hubIdent = elem.attrib.get('hubIdentifier')
                 self.currentHubs["{}:{}".format(section, hubIdent)] = elem.attrib.get('title')
@@ -400,11 +401,28 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
 
         util.LOG('{0} (cache enabled: {2}) {1}', method.__name__.upper(), re.sub('X-Plex-Token=[^&]+', 'X-Plex-Token=****', url), with_cache)
         try:
-            response = method(url, **kwargs)
-            if response.status_code == 429 and cooldownKey is not None:
-                delay = retryAfterSeconds(response.headers.get('Retry-After'))
+            # A read gets one quiet retry first, for a short limit: a 429 asking for at most 5 s (2 s
+            # when it doesn't say) is waited out here, on the asking thread, and asked again - rather
+            # than the Watchlist going for a minute over a blip. A longer wait, a second 429, or a
+            # cooldown another request started meanwhile raises at once. From pannal/plex-for-kodi.
+            retryRead = cooldownKey is not None and method.__name__.lower() == 'get'
+            for attempt in range(2 if retryRead else 1):
+                response = method(url, **kwargs)
+                if response.status_code != 429 or cooldownKey is None:
+                    break
+                firstAttempt = retryRead and attempt == 0
+                delay = retryAfterSeconds(response.headers.get('Retry-After'), default=2 if firstAttempt else 60)
                 with _RATE_LIMIT_LOCK:
                     _RATE_LIMIT_UNTIL[cooldownKey] = max(_cooldownTime() + delay, _RATE_LIMIT_UNTIL.get(cooldownKey, 0))
+                if firstAttempt and delay <= 5:
+                    util.LOG('{0} is limiting requests: asking once more in {1} s', self.name, delay)
+                    if MONITOR.waitForAbort(delay):
+                        raise asyncadapter.CanceledException()
+                    with _RATE_LIMIT_LOCK:
+                        remaining = _RATE_LIMIT_UNTIL.get(cooldownKey, 0) - _cooldownTime()
+                    if remaining > 0:
+                        raise exceptions.RateLimited(int(math.ceil(remaining)), from_cooldown=True)
+                    continue
                 util.WARN_LOG('{0} is limiting requests: not asked again for {1} s', self.name, delay)
                 raise exceptions.RateLimited(delay)
             if response.status_code not in (200, 201):
