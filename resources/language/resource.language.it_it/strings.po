@@ -1642,8 +1642,8 @@ msgstr "Durante la riproduzione di un elemento e navigando nella timeline, esegu
 
 #: 
 msgctxt "#32901"
-msgid "Seek delay in seconds."
-msgstr "Ritardo Intervallo Salta"
+msgid "How long after your last left/right press the seek is made, in seconds. The lowest is 0.5: a lower value saved earlier counts as 0.5. The first press of a seek always waits at least a second, so a held key has time to repeat."
+msgstr "Quanto tempo dopo l'ultima pressione sinistra/destra viene eseguito il salto, in secondi. Il minimo è 0,5: un valore inferiore salvato in precedenza vale 0,5. La prima pressione di un salto attende sempre almeno un secondo, così un tasto tenuto premuto può ripetersi."
 
 #: 
 msgctxt "#32902"

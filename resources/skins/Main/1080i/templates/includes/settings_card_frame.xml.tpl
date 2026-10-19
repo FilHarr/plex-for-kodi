@@ -7,24 +7,26 @@
      the value's 364 and 20 of padding. list_height is the list's and the scrollbar's height (Kodi can't resize
      a scrollbar from Python), in whole rows; row_height the row pitch and card_height its card (row_height
      less 6: 3 clear above and below). The centred one: 64 rows (58 cards), 10 of them (640); the tall one: 61
-     (55), 13 (793). VideoSettingsDialog.fitFrame() sizes and places it: group 200's place here is only a
-     start. -->
+     (55), 13 (793). frame_x/frame_y place group 200 (the list's top left), backdrop_height and shadow_height size
+     the frame. VideoSettingsDialog.fitFrame() fits the centred one to its rows, so its values here are only a
+     start; the tall one's are its own, so it opens in place - placed only from Python, a slower box (a Shield)
+     showed it centred first, then jumping to the right. -->
 <control type="group" id="200">
     <visible>!Window.IsVisible(sliderdialog) + !Window.IsVisible(osdvideosettings) + !Window.IsVisible(osdaudiosettings) + !Window.IsVisible(osdsubtitlesettings) + !Window.IsVisible(subtitlesearch) + !Window.IsActive(selectdialog) + !Window.IsVisible(osdcmssettings)</visible>
-    <posx>660</posx>
-    <posy>{{ vscale(153) }}</posy>
+    <posx>{{ frame_x }}</posx>
+    <posy>{{ frame_y|vscale }}</posy>
     <control type="image" id="202">
         <posx>-60</posx>
         <posy>{{ vscale(-106) }}</posy>
         <width>720</width>
-        <height>{{ vscale(1012) }}</height>
+        <height>{{ shadow_height|vscale }}</height>
         <texture border="42">script.plex/drop-shadow.png</texture>
     </control>
     <control type="image" id="201">
         <posx>-20</posx>
         <posy>{{ vscale(-66) }}</posy>
         <width>640</width>
-        <height>{{ vscale(932) }}</height>
+        <height>{{ backdrop_height|vscale }}</height>
         <texture colordiffuse="F2111111" border="10">script.plex/white-square-rounded.png</texture>
     </control>
     <control type="label">

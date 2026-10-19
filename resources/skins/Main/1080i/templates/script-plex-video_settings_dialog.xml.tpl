@@ -20,5 +20,5 @@
         <colordiffuse>FF080808</colordiffuse>
     </control>
 </control>
-{% include "includes/settings_card_frame.xml.tpl" with list_height=640 & row_height=64 & card_height=58 %}
+{% include "includes/settings_card_frame.xml.tpl" with list_height=640 & row_height=64 & card_height=58 & frame_x=660 & frame_y=153 & backdrop_height=932 & shadow_height=1012 %}
 {% endblock controls %}

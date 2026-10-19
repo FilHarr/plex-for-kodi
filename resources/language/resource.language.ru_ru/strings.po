@@ -1638,7 +1638,7 @@ msgstr ""
 
 #: 
 msgctxt "#32901"
-msgid "Seek delay in seconds."
+msgid "How long after your last left/right press the seek is made, in seconds. The lowest is 0.5: a lower value saved earlier counts as 0.5. The first press of a seek always waits at least a second, so a held key has time to repeat."
 msgstr ""
 
 #: 

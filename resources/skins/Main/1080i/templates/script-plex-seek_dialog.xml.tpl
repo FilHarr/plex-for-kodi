@@ -123,8 +123,15 @@
          While seeking (button.seek) both show the seek point's instead - time.seek.current and
          time.seek.left, from SeekDialog.updateProgress() - in place of the player's, and "Ends at"
          when playing on from there (time.seek.end).
-         Tempo and "Ends at" sit one line lower in the same margins (Ends at 10 further): tempo dimmed, "Ends at" in the row
-         hint's CCE9E6E7.
+         Tempo and "Ends at" sit one line lower (Ends at 10 further): tempo dimmed in the left margin, "Ends at" in the row
+         hint's CCE9E6E7, right-aligned 20 from the screen's edge (1900) - a 24-hour "Ends at 23:45" (153) starts
+         about where the remaining time does, and a 12-hour "Ends at 11:45 PM" (196, past the 172 margin) grows left
+         under the bar's end, clear of it one line down. A scan's speed takes tempo's place while one runs
+         (SeekDialog.showScanSpeed()): its direction's icon (scan.direction - indicators/osd-scan-forward.png and its
+         mirror osd-scan-back.png, the user's forward, made white; none at 0x) then the speed (scan.label, "4x") in
+         the seek times' FFD2CCCE, right-aligned together by a grouplist so the icon keeps to the text, 6 apart (a
+         font10 space). The icon's glyph is the canvas's full width and 3/4 of its height, so a 22 box draws it 22 wide
+         and 16.5 high, about font10's 17 digits, 4 down as the status icon.
          Like the bar and the buttons, they cross-fade with the card rows (501, 511) while either has focus. -->
     <control type="group">
         <visible>![Control.HasFocus(501) | Control.HasFocus(511)]</visible>
@@ -217,8 +224,43 @@
             <textcolor>FFD2CCCE</textcolor>
             <label>$INFO[Window.Property(time.seek.left),-]$INFO[Window.Property(time.add)]</label>
         </control>
+        <control type="grouplist">
+            <visible>!String.IsEmpty(Window.Property(scan.active))</visible>
+            <posx>40</posx>
+            <posy>{{ vscale(30) }}</posy>
+            <width>172</width>
+            <height>{{ vscale(30) }}</height>
+            <orientation>horizontal</orientation>
+            <align>right</align>
+            <itemgap>6</itemgap>
+            <usecontrolcoords>true</usecontrolcoords>
+            <control type="image">
+                <visible>String.IsEqual(Window.Property(scan.direction),forward)</visible>
+                <posy>{{ vscale(4) }}</posy>
+                <width>22</width>
+                <height>{{ vscale(22) }}</height>
+                <texture>script.plex/indicators/osd-scan-forward.png</texture>
+                <colordiffuse>FFD2CCCE</colordiffuse>
+            </control>
+            <control type="image">
+                <visible>String.IsEqual(Window.Property(scan.direction),back)</visible>
+                <posy>{{ vscale(4) }}</posy>
+                <width>22</width>
+                <height>{{ vscale(22) }}</height>
+                <texture>script.plex/indicators/osd-scan-back.png</texture>
+                <colordiffuse>FFD2CCCE</colordiffuse>
+            </control>
+            <control type="label">
+                <width>auto</width>
+                <height>{{ vscale(30) }}</height>
+                <font>font10</font>
+                <aligny>center</aligny>
+                <textcolor>FFD2CCCE</textcolor>
+                <label>$INFO[Window.Property(scan.label)]</label>
+            </control>
+        </control>
         <control type="label">
-            <visible>Player.IsTempo</visible>
+            <visible>Player.IsTempo + String.IsEmpty(Window.Property(scan.active))</visible>
             <posx>212</posx>
             <posy>{{ vscale(30) }}</posy>
             <width>172</width>
@@ -267,36 +309,36 @@
         </control>
         <control type="label">
             <visible>!String.IsEmpty(Window.Property(media.show_ends)) + !String.IsEmpty(Window.Property(direct.play)) + String.IsEmpty(Window.Property(button.seek)) + [String.IsEmpty(Window.Property(no.osd.hide_info)) | !String.IsEmpty(Window.Property(show.OSD))]</visible>
-            <posx>1748</posx>
+            <posx>1900</posx>
             <posy>{{ vscale(40) }}</posy>
-            <width>172</width>
+            <width>300</width>
             <height>{{ vscale(30) }}</height>
             <font>font10</font>
-            <align>left</align>
+            <align>right</align>
             <aligny>center</aligny>
             <textcolor>CCE9E6E7</textcolor>
             <label>$INFO[Window.Property(time.ends_label)] $INFO[Player.FinishTime($INFO[Window.Property(time.fmt.ends)])]</label>
         </control>
         <control type="label">
             <visible>!String.IsEmpty(Window.Property(media.show_ends)) + String.IsEmpty(Window.Property(direct.play)) + String.IsEmpty(Window.Property(button.seek)) + [String.IsEmpty(Window.Property(no.osd.hide_info)) | !String.IsEmpty(Window.Property(show.OSD))]</visible>
-            <posx>1748</posx>
+            <posx>1900</posx>
             <posy>{{ vscale(40) }}</posy>
-            <width>172</width>
+            <width>300</width>
             <height>{{ vscale(30) }}</height>
             <font>font10</font>
-            <align>left</align>
+            <align>right</align>
             <aligny>center</aligny>
             <textcolor>CCE9E6E7</textcolor>
             <label>$INFO[Window.Property(time.ends_label)] $INFO[Window.Property(time.end)]</label>
         </control>
         <control type="label">
             <visible>!String.IsEmpty(Window.Property(media.show_ends)) + !String.IsEmpty(Window.Property(button.seek)) + [String.IsEmpty(Window.Property(no.osd.hide_info)) | !String.IsEmpty(Window.Property(show.OSD))]</visible>
-            <posx>1748</posx>
+            <posx>1900</posx>
             <posy>{{ vscale(40) }}</posy>
-            <width>172</width>
+            <width>300</width>
             <height>{{ vscale(30) }}</height>
             <font>font10</font>
-            <align>left</align>
+            <align>right</align>
             <aligny>center</aligny>
             <textcolor>CCE9E6E7</textcolor>
             <label>$INFO[Window.Property(time.ends_label)] $INFO[Window.Property(time.seek.end)]</label>

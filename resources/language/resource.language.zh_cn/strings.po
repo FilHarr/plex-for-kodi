@@ -1642,8 +1642,8 @@ msgstr "播放项目并在进度条上移动位置时，在延迟后自动定位
 
 #: 
 msgctxt "#32901"
-msgid "Seek delay in seconds."
-msgstr "进度条定位延迟（秒）。"
+msgid "How long after your last left/right press the seek is made, in seconds. The lowest is 0.5: a lower value saved earlier counts as 0.5. The first press of a seek always waits at least a second, so a held key has time to repeat."
+msgstr "最后一次按左/右键后多久执行跳转（秒）。最小值为 0.5：之前保存的更小值按 0.5 计算。每次跳转的第一次按键总会至少等待一秒，以便按住的按键能够重复。"
 
 #: 
 msgctxt "#32902"

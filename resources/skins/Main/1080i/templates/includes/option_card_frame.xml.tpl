@@ -9,25 +9,26 @@
      wider than the list each side with the heading in its top 66, each option its own 99111111 card (58 high in
      a 64 pitch - the picker's 78/84 less 10 top and bottom, as the Settings dialog's), the focused one lit with 33FFFFFF, font8 text, and a second line (Label2 - an audio track's
      detail, say) under it, dimmer, as the picker's server is. SelectDialog.fitFrame() sizes the list, backdrop
-     and shadow to the options (up to 10, then it scrolls) and centres it all: group 200's y here is only a
-     start. -->
+     and shadow to the options (up to 10, then it scrolls) and centres it all: frame_x/frame_y (group 200's place,
+     the list's top left), backdrop_height and shadow_height here are only a start for the centred pickers. The
+     tall one's are its own, so it opens in place rather than centred then jumping to the right (seen on a Shield). -->
 <control type="group" id="200">
     <!-- out of the way of what its choices open: Kodi's subtitle search and the delay slider -->
     <visible>!Window.IsVisible(subtitlesearch) + !Window.IsVisible(sliderdialog)</visible>
-    <posx>660</posx>
-    <posy>{{ vscale(153) }}</posy>
+    <posx>{{ frame_x }}</posx>
+    <posy>{{ frame_y|vscale }}</posy>
     <control type="image" id="202">
         <posx>-60</posx>
         <posy>{{ vscale(-106) }}</posy>
         <width>720</width>
-        <height>{{ vscale(1012) }}</height>
+        <height>{{ shadow_height|vscale }}</height>
         <texture border="42">script.plex/drop-shadow.png</texture>
     </control>
     <control type="image" id="201">
         <posx>-20</posx>
         <posy>{{ vscale(-66) }}</posy>
         <width>640</width>
-        <height>{{ vscale(932) }}</height>
+        <height>{{ backdrop_height|vscale }}</height>
         <texture colordiffuse="F2111111" border="10">script.plex/white-square-rounded.png</texture>
     </control>
     <control type="label">

@@ -26,6 +26,7 @@ from . import kodigui
 from . import windowutils
 from . import playersettings
 from . import optionsdialog
+from . import seek_scan
 from .mixins.spoilers import SpoilersMixin
 from .mixins.subtitledl import PlexSubtitleDownloadMixin
 
@@ -159,6 +160,25 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
     OSD_HIDE_ANIMATION_DURATION = 0.2
     OSD_HIDE_ACTION_THRESHOLD = 0.5
     FIRST_SEEK_STEP_DELAY = 1.0  # the least a seek's first step waits to be applied, auto-seek on (delayedSeek())
+    # The least auto-seek delay, as the setting's slider has it. 0 made a seek on every press, a jerky mess; it and anything
+    # else under this saved before count as this.
+    MIN_AUTO_SEEK_DELAY = 0.5
+    # Hold left/right to scan (startScan()): how often a scan moves the seek point, and its thumbnails - one per
+    # SCAN_BIF_STEP of video, changed at most every SCAN_BIF_INTERVAL (each new one's a fetch from the server)
+    SCAN_TICK = 0.1
+    SCAN_BIF_STEP = 2000
+    SCAN_BIF_INTERVAL = 0.4
+    SCAN_KEYS = {
+        xbmcgui.ACTION_MOVE_RIGHT: seek_scan.FORWARD,
+        xbmcgui.ACTION_STEP_FORWARD: seek_scan.FORWARD,
+        xbmcgui.ACTION_MOVE_LEFT: seek_scan.BACK,
+        xbmcgui.ACTION_STEP_BACK: seek_scan.BACK,
+    }
+    # a remote's FF/RW start a scan, or step its speed, in place of Kodi's own fast-forward (scanAction())
+    SCAN_MEDIA_KEYS = {
+        xbmcgui.ACTION_PLAYER_FORWARD: seek_scan.FORWARD,
+        xbmcgui.ACTION_PLAYER_REWIND: seek_scan.BACK,
+    }
     SKIP_STEPS = {"negative": [-10000], "positive": [30000]}
 
     def __init__(self, *args, **kwargs):
@@ -188,10 +208,20 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._barCaps = {}  # SEEKBAR fill -> its rounded end cap (setBarPercent())
         self._playPauseInputAt = None  # when play/pause was last pressed (onPlayBackResumed() closes the OSD on it)
         self._focusArrived = None  # the control onFocus() last moved to, until the next action (onAction())
-        # Playback paused for seeking (seekByOffset()): None, or 'seeking' (in seek mode), 'applying' (the seek's
-        # been made; the handler resumes once it lands) or 'resuming' (abandoned, play sent) - with when it got there
+        # Playback paused for seeking (seekByOffset()): None, or 'seeking' (in seek mode), 'trickplay' (as 'seeking',
+        # but Kodi's FF/RW speed being undone first - its resume to 1x isn't one, endTrickPlay()), 'applying' (the
+        # seek's been made; the handler resumes once it lands) or 'resuming' (abandoned, play sent) - with when it got
+        # there
         self._seekPaused = None
         self._seekPausedAt = 0
+        # Hold left/right to scan (video_hold_to_scan, docs/hold-to-fast-forward.md): the hold detector (also telling
+        # a scan's taps from a held key's repeats), and the scan while one runs (startScan()), which its thread moves on
+        # (_scanLoop()) until it's applied or cancelled
+        self._holdDetector = seek_scan.HoldDetector()
+        self._scan = None
+        self._scanLock = threading.Lock()
+        self._scanBifOffset = None
+        self._scanBifAt = 0
         self.title = ''
         self.title2 = ''
         self.fromSeek = 0
@@ -209,7 +239,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._delayedSeekTimeout = 0
         self._osdHideAnimationTimeout = 0
         self._hideDelay = util.addonSettings.osdHideDelay if util.SKIN_PLEXTUARY else 4
-        self._autoSeekDelay = util.addonSettings.autoSeek and util.addonSettings.autoSeekDelay or 0
+        self._autoSeekDelay = util.addonSettings.autoSeek and             max(util.addonSettings.autoSeekDelay, self.MIN_AUTO_SEEK_DELAY) or 0
         self._atSkipStep = -1
         self._lastSkipDirection = None
         self._forcedLastSkipAmount = None
@@ -239,6 +269,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self.resumeSeekBehindAfter = util.getSetting('resume_seek_behind_after') / 1000.0
         self.resumeSeekBehindOnlyDP = util.getSetting('resume_seek_behind_onlydp')
         self.useAlternateSeek = util.getSetting('use_alternate_seek2')
+        self.holdToScan = util.getSetting('video_hold_to_scan')
         self.pausedAt = None
         self.isDirectPlay = True
         self.isTranscoded = False
@@ -368,7 +399,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._seekPausedAt = time.time()
 
     def resetSeeking(self):
-        if self._seekPaused == 'seeking':
+        self._endScan()
+        if self._seekPaused in ('seeking', 'trickplay'):
             # the seek was abandoned (doSeek() moves it on first): play on from where it was - now, or once the
             # pause has happened if it hasn't yet (onPlayBackPaused())
             self.setSeekPaused('resuming')
@@ -553,6 +585,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         button_defaults = ['subtitle_downloads', 'skip_intro', 'skip_credits'] + \
             (['video_show_vs10'] if util.CE_VS10 else [])
         button_settings = util.getUserSetting('player_show_buttons', button_defaults)
+        self.holdToScan = util.getSetting('video_hold_to_scan')
         showQuickSubs = 'subtitle_downloads' in button_settings
         self.showSkipIntro = 'skip_intro' in button_settings
         self.showSkipCredits = 'skip_credits' in button_settings
@@ -707,6 +740,9 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
 
             if not self._ignoreInput:
+                if self.scanAction(action, controlID):
+                    return
+
                 if action.getId() in KEY_MOVE_SET:
                     self.setProperty('mouse.mode', '')
                     if not controlID:
@@ -990,6 +1026,13 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             self._rowLeftAt[lastFocusID] = time.time()
             self._rowSyncTimer.reset(init=False)
 
+        if self._scan:
+            # A scan keeps the timeline: up/down (Kodi's moved focus before onAction() sees them) come straight back,
+            # and arriving there doesn't end seek mode as it otherwise does.
+            if controlID != self.MAIN_BUTTON_ID:
+                self.setFocusId(self.MAIN_BUTTON_ID)
+            return
+
         if controlID == self.MAIN_BUTTON_ID:
             if lastFocusID == self.BIG_SEEK_LIST_ID and self.bigSeekChanged:
                 # OK on a chapter (bigSeekSelected()) sent focus here; bigSeekChanged holds the chapter's offset
@@ -1088,6 +1131,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
     def doClose(self, delete=False, **kw):
         util.DEBUG_LOG("SeekDialog: Closing")
+        self._endScan()
         server = getattr(self, '_npServer', None)
         if server is not None:
             server.off("np:timelineResponse", self.timelineResponseCallback)
@@ -1356,6 +1400,217 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._lastSkipDirection = None
         self._forcedLastSkipAmount = None
         self.doSeek(offset=offset)
+
+    def scanAction(self, action, controlID):
+        """
+        Scanning the timeline (docs/hold-to-fast-forward.md): onAction()'s first look at an action. True when it's
+        dealt with it. A remote's FF/RW start a scan anywhere in the player, always. With video_hold_to_scan on, so
+        does a hold (seek_scan.HoldDetector) where left/right skip - the timeline, the OSD-hidden button, the skip
+        button. While a scan runs, every key's handled here.
+        """
+        actionID = action.getId()
+        now = time.time()
+
+        media = self.SCAN_MEDIA_KEYS.get(actionID)
+        if media:
+            # A tap as left/right's are: starts a scan, or steps its speed. Kodi's own FF/RW have already sped up
+            # a playing video (startScan() puts that right); a paused one, as during a scan, they leave alone.
+            if self._scan:
+                if self.holdAnswer(media, now, 'ff/rw') == 'press':
+                    self.stepScan(media, now)
+                return True
+            if self.canScan():
+                self.holdAnswer(media, now, 'ff/rw')
+                self.startScan(media, trick_play=True)
+                return True
+            return False
+
+        if not self.holdToScan and not self._scan:
+            return False
+
+        direction = self.SCAN_KEYS.get(actionID)
+        if not self._scan:
+            if not direction or not (controlID == self.MAIN_BUTTON_ID or (
+                    controlID in (self.NO_OSD_BUTTON_ID, self.SKIP_MARKER_BUTTON_ID)
+                    and actionID in (xbmcgui.ACTION_MOVE_RIGHT, xbmcgui.ACTION_MOVE_LEFT))):
+                self._holdDetector.reset()
+                return False
+            answer = self.holdAnswer(direction, now)
+            # Taps - a held key's press and first repeat among them - skip as ever. Its fast repeats don't: they're
+            # the hold, seen at the third of them (before the first skip applies). Where there can't be a scan,
+            # everything skips.
+            if answer == 'press' or not self.canScan():
+                return False
+            if answer == 'hold':
+                self.startScan(direction)
+            return True
+
+        if direction:
+            # a tap steps the speed along -16x..0x..16x; a held key's repeats do nothing
+            if self.holdAnswer(direction, now) == 'press':
+                self.stepScan(direction, now)
+            return True
+
+        self._holdDetector.reset()
+        if actionID == xbmcgui.ACTION_SELECT_ITEM:
+            # stopped where it's shown; the timeline's onClick() applies it as it does a skip, anywhere else here
+            self._endScan()
+            if controlID != self.MAIN_BUTTON_ID:
+                self.applyScan()
+        elif actionID in (xbmcgui.ACTION_PAUSE, xbmcgui.ACTION_PLAYER_PLAY, xbmcgui.ACTION_PLAYER_PLAYPAUSE):
+            self.applyScan(play=True)
+        elif actionID in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK):
+            self.cancelScan()
+        elif actionID == xbmcgui.ACTION_STOP:
+            self._endScan()
+            return False
+        elif actionID in (xbmcgui.ACTION_MOVE_UP, xbmcgui.ACTION_MOVE_DOWN):
+            # Kodi's already moved focus off the timeline (onFocus() sends it back too)
+            self.setFocusId(self.MAIN_BUTTON_ID)
+        return True
+
+    def holdAnswer(self, direction, now, key=None):
+        answer = self._holdDetector.press(direction, now)
+        gap = self._holdDetector.gap
+        util.DEBUG_LOG("SeekDialog: Hold detector: {}{} {} -> {}{}", direction > 0 and 'right' or 'left',
+                       key and ' ({})'.format(key) or '', gap is None and 'new' or '{:.3f}s'.format(gap), answer,
+                       self._scan and ' (scanning)' or '')
+        return answer
+
+    def stepScan(self, direction, now):
+        """A tap during a scan: a step along -16x..0x..16x."""
+        with self._scanLock:
+            scan = self._scan
+            if scan:
+                scan.press(direction, now)
+                self.selectedOffset = scan.offset
+        if scan:
+            self.showScanSpeed(scan)
+            self.updateProgress(set_to_current=False)
+
+    def canScan(self):
+        return (self.initialized and not self._applyingSeek and not self.handler.waitingForSOS
+                and not self.handler.player.isExternal and self.duration > seek_scan.END_MARGIN)
+
+    def startScan(self, direction, trick_play=False):
+        """
+        Pauses the video (as a seek does, seekByOffset() - usually the hold's first press already has) and moves the
+        seek point on its own from where the marker is - after the hold's press and first repeat, or earlier taps -
+        with the OSD up on the timeline, until applyScan() or cancelScan(). trick_play: started by FF/RW, which Kodi
+        has already acted on, speeding up a playing video.
+        """
+        # the hold's press and repeats were skips: dropped, and neither auto-seek may apply anything during the scan
+        self._delayedSeekTimeout = None
+        self.resetAutoSeekTimer(None)
+        self.resetSkipSteps()
+
+        now = time.time()
+        scan = seek_scan.Scan(self.duration)
+        start = self.selectedOffset if self._seeking and self.selectedOffset is not None else self.trueOffset()
+        scan.start(start, direction, now)
+        self._holdDetector.held(direction, now)
+        with self._scanLock:
+            self._scan = scan
+        self._scanBifOffset = None
+        self._scanBifAt = 0
+        self.selectedOffset = scan.offset
+        self._seekingWithoutOSD = False
+        self.beginSeeking()
+
+        if trick_play:
+            self.endTrickPlay()
+        elif not self._seekPaused and self.player.playState == self.player.STATE_PLAYING:
+            self.setSeekPaused('seeking')
+            self.player.control('pause')
+
+        self.setProperty('button.seek', '1')
+        self.showScanSpeed(scan)
+        self.setProperty('scan.active', '1')
+        if not self.osdVisible():
+            self.showOSD()
+        elif self.getFocusId() != self.MAIN_BUTTON_ID:
+            self.setFocusId(self.MAIN_BUTTON_ID)
+        self.updateProgress(set_to_current=False)
+
+        util.DEBUG_LOG("SeekDialog: Scan from {} ({} {})", scan.offset, scan.direction > 0 and 'forward' or 'back',
+                       scan.label)
+        threading.Thread(target=self._scanLoop, args=(scan,), name='SeekDialog.scan').start()
+
+    def endTrickPlay(self):
+        """
+        Pauses a video Kodi's own FF/RW have sped up, for a scan. Kodi's Player.Playing is false at any speed but 1x,
+        so playState() reads such a video as stopped; and PlayerControl(Play), which pausing sends, only brings it
+        back to 1x. So that first, then the pause (queued in order). True if it did.
+        """
+        if not xbmc.getCondVisibility('Player.Forwarding | Player.Rewinding'):
+            if not self._seekPaused and self.player.playState == self.player.STATE_PLAYING:
+                self.setSeekPaused('seeking')
+                self.player.control('pause')
+            return False
+        util.DEBUG_LOG("SeekDialog: Scan: ending Kodi's trick-play, then pausing")
+        # Kodi reports the return to 1x as a resume, ahead of the pause (onPlayBackResumed() passes over it)
+        self.setSeekPaused('trickplay')
+        xbmc.executebuiltin('PlayerControl(Play)')
+        xbmc.executebuiltin('PlayerControl(Play)')
+        return True
+
+    def _scanLoop(self, scan):
+        try:
+            while not util.MONITOR.waitForAbort(self.SCAN_TICK):
+                # a scan's video stays paused: should Kodi's FF/RW have sped it up after all (its speed change not
+                # yet in when startScan() looked), put that right
+                if xbmc.getCondVisibility('Player.Forwarding | Player.Rewinding'):
+                    self.endTrickPlay()
+                with self._scanLock:
+                    if self._scan is not scan:
+                        break
+                    self.selectedOffset = scan.advance(time.time())
+                self.updateProgress(set_to_current=False)
+                self.showScanSpeed(scan)
+                self.resetTimeout()
+        except Exception:
+            util.ERROR()
+
+    def _endScan(self):
+        """Stops a scan, if one runs, where it's got to: no seek and no resume (doSeek()/resetSeeking() do those)."""
+        with self._scanLock:
+            if not self._scan:
+                return
+            self._scan = None
+        self._holdDetector.reset()
+        self.setProperty('scan.active', '')
+        self.setProperty('scan.label', '')
+        self.setProperty('scan.direction', '')
+
+    def showScanSpeed(self, scan):
+        """The OSD's scan speed: scan.label ("4x") and scan.direction, for its icon - none at 0x."""
+        self.setProperty('scan.label', scan.label)
+        self.setProperty('scan.direction', {seek_scan.FORWARD: 'forward', seek_scan.BACK: 'back'}.get(scan.direction, ''))
+
+    def applyScan(self, play=False):
+        """
+        Seeks to where the scan's shown. OK plays on from there if the scan paused the video, or leaves it paused;
+        Play/Pause always plays - Kodi's resuming the video itself (onPlayBackResumed()), and the seek plays wherever
+        that's got to.
+        """
+        self._endScan()
+        util.DEBUG_LOG("SeekDialog: Scan applied at {} (play: {})", self.selectedOffset, play)
+        if play:
+            self._playPauseInputAt = time.time()
+            self.handler.unPauseAfterSeek = True
+        self.resetAutoSeekTimer(None)
+        self.doSeek()
+        self.hideOSD()
+
+    def cancelScan(self):
+        """Back: no seek, the bar back on the video and, if the scan paused it, the video playing on."""
+        util.DEBUG_LOG("SeekDialog: Scan cancelled")
+        self.resetSeeking()
+        self.updateProgress()
+        # the OSD stays up on the timeline, where focus arrived during the scan without onFocus() setting it up
+        self.refreshQueueRow()
+        self.syncRows()
+        self.updateRowHint(self.MAIN_BUTTON_ID)
 
     def handleDialog(self, func):
         self.hasDialog = True
@@ -2127,7 +2382,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self.resetSkipSteps()
         self.updateProgress(offset=offset)
 
-        if self._seekPaused == 'seeking':
+        if self._seekPaused in ('seeking', 'trickplay'):
             # paused for this seek: the handler resumes once it lands (onPlayBackSeek), as after its own alternate
             # seek's pause - or, restarting a transcode, has it start playing (seek())
             self.setSeekPaused('applying')
@@ -2241,18 +2496,30 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         # the seek marker, centred on the bar at the point
         self.selectionIndicator.setPosition(self.BAR_X + w, self._markerY)
 
-        self.setProperty('bif.image', "")
+        # a scan keeps its thumbnail until it changes, rather than blanking it ten times a second
+        scanning = self._scan is not None
+        if not scanning:
+            self.setProperty('bif.image', "")
         if onlyTimeIndicator:
             return
 
         if not no_osd or (no_osd and not self.no_time_no_osd_spoilers):
             if self.hasBif:
-                bifUrl = self.handler.player.playerObject.getBifUrl(offset)
-                if "blur_chapters" in self.no_spoilers:
-                    bifUrl = self.player.video.server.getImageTranscodeURL(bifUrl,
-                                                                           *self.LI_AR16X9_THUMB_DIM,
-                                                                           **{"blur": util.addonSettings.episodeNoSpoilerBlur})
-                self.setProperty('bif.image', bifUrl)
+                bifOffset = offset
+                setBif = True
+                if scanning:
+                    bifOffset = offset - offset % self.SCAN_BIF_STEP
+                    now = time.time()
+                    setBif = bifOffset != self._scanBifOffset and now - self._scanBifAt >= self.SCAN_BIF_INTERVAL
+                    if setBif:
+                        self._scanBifOffset, self._scanBifAt = bifOffset, now
+                if setBif:
+                    bifUrl = self.handler.player.playerObject.getBifUrl(bifOffset)
+                    if "blur_chapters" in self.no_spoilers:
+                        bifUrl = self.player.video.server.getImageTranscodeURL(bifUrl,
+                                                                               *self.LI_AR16X9_THUMB_DIM,
+                                                                               **{"blur": util.addonSettings.episodeNoSpoilerBlur})
+                    self.setProperty('bif.image', bifUrl)
                 self.bifImageControl.setPosition(bifx, self._bifY)
 
         if set_to_current:
@@ -2403,6 +2670,12 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             if self.osdVisible():
                 self.hideOSD()
 
+        if self._seekPaused == 'trickplay':
+            # Kodi's speed back to 1x on the way to a scan's pause (endTrickPlay()): not a resume, and the pause
+            # that follows is the scan's
+            self.setSeekPaused('seeking')
+            return
+
         if self._seekPaused:
             # the end of a pause for seeking - no resume seek-behind for it
             self.setSeekPaused(None)
@@ -2486,14 +2759,17 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
     def onPlayBackStopped(self):
         util.DEBUG_LOG("SeekDialog: OnPlayBackStopped")
+        self._endScan()
         self.killTimeKeeper()
 
     def onPlayBackEnded(self):
         util.DEBUG_LOG("SeekDialog: OnPlayBackEnded")
+        self._endScan()
         self.killTimeKeeper()
 
     def onPlayBackFailed(self):
         util.DEBUG_LOG("SeekDialog: OnPlayBackFailed")
+        self._endScan()
         self.killTimeKeeper()
 
     def syncTimeKeeper(self):
@@ -2542,7 +2818,9 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                     self.handler.player.stopAndWait()
                     return
 
-                if not self.idleTime and xbmc.getCondVisibility('Player.Paused'):
+                # not paused for a seek or a scan: a scan can run a while with no key pressed
+                if not self.idleTime and not (self._seekPaused or self._scan) \
+                        and xbmc.getCondVisibility('Player.Paused'):
                     self.idleTime = time.time()
 
         # force_tick is enabled when we're using an external player. In this case we simply count the time spent while
@@ -2884,7 +3162,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 # (delayedSeek()'s, or this tick's own autoSeekTimeout); in case we're still waiting for a seek,
                 # postpone OSD hiding
                 pendingSeek = self._delayedSeekTimeout or self.autoSeekTimeout
-                if t > self.timeout and (not pendingSeek or pendingSeek < self.timeout < t):
+                if t > self.timeout and (not pendingSeek or pendingSeek < self.timeout < t) and not self._scan:
                     xbmc.executebuiltin('Dialog.Close(videoosd,true)')
                     xbmc.executebuiltin('Dialog.Close(seekbar,true)')
                     if not xbmc.getCondVisibility('Window.IsActive(videoosd) | Player.Rewinding | Player.Forwarding'):

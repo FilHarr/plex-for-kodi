@@ -1644,8 +1644,8 @@ msgstr "Egy elem lejátszása és a keresősávon való keresés közben a kivá
 
 #: 
 msgctxt "#32901"
-msgid "Seek delay in seconds."
-msgstr "Keresési késleltetés másodpercben."
+msgid "How long after your last left/right press the seek is made, in seconds. The lowest is 0.5: a lower value saved earlier counts as 0.5. The first press of a seek always waits at least a second, so a held key has time to repeat."
+msgstr "Mennyi idővel az utolsó bal/jobb gombnyomás után történik a keresés, másodpercben. A legkisebb érték 0,5: a korábban mentett kisebb érték 0,5-nek számít. A keresés első gombnyomása mindig legalább egy másodpercet vár, hogy a nyomva tartott gomb ismétlődhessen."
 
 #: 
 msgctxt "#32902"

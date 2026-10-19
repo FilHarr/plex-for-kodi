@@ -23,5 +23,5 @@
 <!-- The video player's Settings dialog (Settings from its OSD, playersettings.SideVideoSettingsDialog):
      the option pickers' tall frame at the right - 876 high, 103-979, its right edge 10 from the screen's,
      13 rows of 61 - so each picker opens exactly over it. -->
-{% include "includes/settings_card_frame.xml.tpl" with list_height=793 & row_height=61 & card_height=55 %}
+{% include "includes/settings_card_frame.xml.tpl" with list_height=793 & row_height=61 & card_height=55 & frame_x=1290 & frame_y=169 & backdrop_height=876 & shadow_height=956 %}
 {% endblock controls %}

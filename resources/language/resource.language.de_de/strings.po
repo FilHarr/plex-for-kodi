@@ -1782,8 +1782,8 @@ msgstr "Wird während des Abspielens die Position auf der Zeitleiste verändert,
 
 #: 
 msgctxt "#32901"
-msgid "Seek delay in seconds."
-msgstr "Sprungverzögerung in Sekunden."
+msgid "How long after your last left/right press the seek is made, in seconds. The lowest is 0.5: a lower value saved earlier counts as 0.5. The first press of a seek always waits at least a second, so a held key has time to repeat."
+msgstr "Wie lange nach dem letzten Links-/Rechts-Druck gesprungen wird, in Sekunden. Der kleinste Wert ist 0,5: ein früher gespeicherter kleinerer Wert gilt als 0,5. Der erste Druck eines Sprungs wartet immer mindestens eine Sekunde, damit eine gehaltene Taste wiederholen kann."
 
 #: 
 msgctxt "#32902"

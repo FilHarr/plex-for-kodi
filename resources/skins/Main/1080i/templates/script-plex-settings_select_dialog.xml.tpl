@@ -6,5 +6,5 @@
 <zorder>101</zorder>
 {% endblock %}
 {% block controls %}
-{% include "includes/option_card_frame.xml.tpl" with list_height=640 & row_height=64 & card_height=58 & line1_y=9 & line2_y=33 & tick_y=19 %}
+{% include "includes/option_card_frame.xml.tpl" with list_height=640 & row_height=64 & card_height=58 & line1_y=9 & line2_y=33 & tick_y=19 & frame_x=660 & frame_y=153 & backdrop_height=932 & shadow_height=1012 %}
 {% endblock controls %}

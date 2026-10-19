@@ -815,6 +815,10 @@ class Settings(object):
                         (('video_show_vs10', T(34090, 'VS10 Mode')),) if util.CE_VS10 else ()
                     )
                 ).description(T(32939, 'Only applies to video player UI')),
+                BoolSetting('video_hold_to_scan', T(35188, 'Hold left/right to scan'), False).description(
+                    T(35189, 'Hold Left or Right during playback to pause and scan the timeline. Press again to '
+                             'change speed, OK or Play to play from there, Back to cancel. Needs a remote that '
+                             'repeats a held key.')),
                 MultiUAOptionsSetting(
                     'fast_pause_resume', T(34012, 'Fast pause/resume'),
                     [],
