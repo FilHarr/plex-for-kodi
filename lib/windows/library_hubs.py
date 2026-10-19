@@ -34,71 +34,64 @@ class _CatalogHub(object):
 
 
 class HubSlide(object):
-    """One hub slide (step 11 stage C in the navigation review): group 51 from one offset to
-    another over duration seconds, eased (smoothstep), timed by the clock - each step goes where
-    the elapsed time says, so a late step shortens the slide instead of stretching it. The host
-    steps it from the view's wait loop, on the main thread (MultiWindow.addTicker()), and lands it
-    early when the next press or a swap needs it settled.
+    """One hub slide: group 52 from one stack offset to another over duration seconds, drawn by
+    Kodi (step 11 stage E in the navigation review) - animate (HubsMixin._slideStack()) sends one
+    held animation at the start and nothing per step, so Kodi's render thread moves the rows every
+    frame whatever Python is doing. Kodi starts the animation a frame after the call, so the slide
+    counts as landed once the clock passes duration plus land_margin. The host ticks it from the
+    view's wait loop, on the main thread (MultiWindow.addTicker()), only to see it land, and lands
+    it early when the next press or a swap needs it settled.
+
+    It used to be stepped from Python with setPosition() on group 51 (stage C): about 8 positions
+    per slide on the AM6B against Kodi's every frame, and stalled by anything holding Python.
 
     view and list_gen are what it belongs to: the host drops it, without touching its control,
     once either has moved on. clock is time.time, or a stand-in in tests."""
 
-    def __init__(self, control, x, start_y, end_y, duration, view, list_gen, timing, clock=time.time):
-        self.control = control
-        self.x = x
+    def __init__(self, animate, start_y, end_y, duration, land_margin, view, list_gen, timing,
+                 clock=time.time):
+        self.animate = animate
         self.start_y = start_y
         self.end_y = end_y
         self.duration = duration
+        self.land_margin = land_margin
         self.view = view
         self.list_gen = list_gen
         self.timing = timing
         self.clock = clock
         self.started = None
+        self.startedAt = None
         self.landed = False
-        # The wrapping row's bind, owed until the slide lands (HubsMixin._payWrapBind()).
-        self.owedBind = None
-        self.drawn = 0
-        self.firstStepAt = None
-        self._y = start_y
 
     def start(self):
         self.started = self.clock()
+        self.animate(self.start_y, self.end_y, self.duration)
+        self.startedAt = self.timing.elapsedMs()
 
     def step(self):
-        """Move to where the clock says; lands at the end. True while still moving."""
+        """True while Kodi is still drawing the slide; lands, with no call, once it's done -
+        Kodi holds the animation's end."""
         if self.landed:
             return False
-        t = (self.clock() - self.started) / self.duration
-        if t >= 1:
-            self.land()
-            return False
-        eased = t * t * (3 - 2 * t)
-        y = int(round(self.start_y + (self.end_y - self.start_y) * eased))
-        if y != self._y:
-            self.control.setPosition(self.x, y)
-            self._y = y
-            self.drawn += 1
-            if self.firstStepAt is None:
-                self.firstStepAt = self.timing.elapsedMs()
-        return True
+        if self.clock() - self.started < self.duration + self.land_margin:
+            return True
+        self.landed = True
+        return False
 
     def land(self):
-        """Snap to the end, once."""
+        """Cut short: replace the animation with its end, held. Once."""
         if self.landed:
             return
         self.landed = True
-        if self._y != self.end_y:
-            self.control.setPosition(self.x, self.end_y)
-            self._y = self.end_y
-            self.drawn += 1
+        self.animate(self.end_y, self.end_y, 0)
 
     def logTiming(self, outcome=None):
-        """The "Slide timing" line (step 11 stage A): what ran before the rows moved, then the
-        animation - moves drawn, and when the first one landed after the press."""
-        util.DEBUG_LOG("Slide timing: {0}: {1} ms ({2}, animation {3}: {4} steps, first at {5}){6}",
+        """The "Slide timing" line (step 11 stage A): what ran after the press, the animation's
+        length, and when it was started after the press."""
+        util.DEBUG_LOG("Slide timing: {0}: {1} ms ({2}, animation {3}, started at {4}){5}",
                        self.timing.name, int(self.timing.elapsedMs()), self.timing.stepsText(),
-                       int((self.clock() - self.started) * 1000) if self.started else 0, self.drawn,
-                       int(self.firstStepAt) if self.firstStepAt is not None else '-',
+                       int((self.clock() - self.started) * 1000) if self.started else 0,
+                       int(self.startedAt) if self.startedAt is not None else '-',
                        ' - ' + outcome if outcome else '')
 
 
@@ -1177,7 +1170,7 @@ class HubsMixin(object):
     #
     # Four, not HomeWindow's five (2026-09-24): with the hero overlay always shown, only the
     # anchor and a partial peek-below are ever on screen at rest - role -1's bottom edge sits at
-    # ANCHOR_ABS_Y - ROW_GAP (461), above grouplist 50's clip line (518), and role +2 starts at
+    # ANCHOR_ABS_Y - ROW_GAP (461), under the cover above y=518, and role +2 starts at
     # y >= 1188 even under the shortest rows, below the screen. A slide shows one more: going
     # down, +2 slides up into peek-below; going up, -1 slides down into the anchor. So -1..+2
     # covers both directions, and the wrapping control always moves between the two roles that
@@ -1219,40 +1212,32 @@ class HubsMixin(object):
     # Fixed gap between any two adjacent rows, either direction - used by _roleLocalY()'s
     # stacking recurrence. Ported verbatim from HomeWindow.ROW_GAP.
     ROW_GAP = 25
-    # The anchor's own absolute resting position (script-plex-recommended.xml.tpl's group 51,
-    # local y-offset GROUP51_BASELINE_OFFSET below, sitting inside grouplist 50 at its fixed
-    # posy=518 - 518 + (-32) = 486). Ported from HomeWindow.ANCHOR_ABS_Y; used by
-    # _setRoleGeometry() to size peek-below's clip height to reach exactly to the screen bottom.
+    # The anchor's own absolute resting position: the first hub's top, where the template puts
+    # the stack (script-plex-recommended.xml.tpl: group 50 at y=518, group 51 at -32 inside it)
+    # when group 52 has no offset. Ported from HomeWindow.ANCHOR_ABS_Y; used by
+    # _setRoleGeometry() to size peek-below's height to reach exactly to the screen bottom.
     # Was 424, then 516 (+92, dropping the focused row on request), now 486 (-30, raising the
-    # whole stack on request, 2026-09-20) - each time in lockstep with grouplist 50's own posy in
-    # the template (the clip line) so GROUP51_BASELINE_OFFSET stays put; every other row's
-    # position is computed relative to the anchor via _roleLocalY(), so those two moving
-    # together is sufficient to shift the whole rotation-ring stack as one unit.
+    # whole stack on request, 2026-09-20) - each time in lockstep with the template's 518 line
+    # (where the rows pass under the cover); every other row's position is computed relative to
+    # the anchor via _roleLocalY(), so those two moving together shift the whole stack as one.
     ANCHOR_ABS_Y = 486
-    # The local y-offset group 51 must always be explicitly set to via setPosition() to sit at
-    # its correct resting position - group 51 has no correct position at all until Python sets
-    # it (see that control's own comment in the template for why grouplist 50's auto-stacking
-    # can't be relied on for this). Set to this for the first row on every fresh 'recommended'
-    # entry, in onFirstInit(); _group51Y() adds the stack offset for any other row.
-    # -32, not the 381 it once was: the hero overlay used to be conditional, with grouplist 50
-    # shifting down 413px (its old Conditional animation) whenever it showed and this offset
-    # counter-shifting by the same amount to keep the anchor at ANCHOR_ABS_Y. The overlay is
-    # unconditional now, so both halves are baked in: 50 sits at 518 permanently and this is the
-    # old 381 - 413. Negative is fine - it was already this value live whenever hero art showed.
-    GROUP51_BASELINE_OFFSET = -32
-    # The group every row wrapper sits in (script-plex-recommended.xml.tpl). Since step 11 stage B
-    # in the navigation review it's what a slide moves: each wrapper has a fixed place in one tall
-    # stack (_stackY()), and this group's offset (_group51Y()) puts the focused row on the anchor
-    # line. One setPosition() per slide step instead of one per row, and the rows can't land on
-    # different frames.
-    GROUP51_ID = 51
-    # How long a hub slide takes (HubSlide, timed by the clock). Ported from HomeWindow, which
-    # took 12 fixed steps of HUB_SLIDE_TIME / 12 and so stretched whenever a step ran late.
+    # The group a slide moves (script-plex-recommended.xml.tpl), inside group 51, holding every
+    # row wrapper. Each wrapper has a fixed place in one tall stack (_stackY()), and this group's
+    # offset (_stackOffset()) puts the focused row on the anchor line: one held Kodi animation
+    # (_slideStack()), so the rows can't land on different frames. Its own group so group 51
+    # keeps the sidebar slide - setAnimations() replaces a control's whole set.
+    HUB_SLIDE_GROUP_ID = 52
+    # How long a hub slide takes. Ported from HomeWindow, which took 12 fixed steps of
+    # HUB_SLIDE_TIME / 12 and so stretched whenever a step ran late.
     HUB_SLIDE_TIME = 0.25
+    # How long after HUB_SLIDE_TIME a slide counts as landed (HubSlide): Kodi starts the
+    # animation on its next frame, so the focus fix waits for its last frames. 20 ms, not 50:
+    # the longer margin had presses just after the slide visibly ended cutting it short.
+    HUB_SLIDE_LAND_MARGIN = 0.02
     # Hero art/info overlay (plan item 11) - ported from HomeWindow's own constants (home.py).
     # The overlay is unconditional - shown for every focused hub item, whatever its type (the old
     # HERO_ART_TYPES / _typeHasHeroArt() movie-and-TV-only gate is gone, and with it the
-    # two-position row layout it drove - see GROUP51_BASELINE_OFFSET above) - so no_hero_art is
+    # two-position row layout it drove) - so no_hero_art is
     # only ever True while nothing is bound at all: a fresh 'recommended' entry before its hubs
     # land (onFirstInit(), hiding the previous section's stale overlay) and a section with no
     # hubs (_bindAllHubSlots()'s empty branch). Pure visibility now, no layout effect.
@@ -1300,19 +1285,33 @@ class HubsMixin(object):
             return sum(step(k) for k in range(hub_index))
         return -sum(step(k) for k in range(hub_index, 0))
 
-    def _group51Y(self, focused_index):
-        """Group 51's y (pixels) that puts focused_index's row on the anchor line. Each part is
-        scaled on its own, so the anchor lands exactly on the baseline whatever the rounding."""
-        return (util.vscale(self.GROUP51_BASELINE_OFFSET, r=0)
-                - util.vscale(self._stackY(focused_index), r=0))
+    def _stackOffset(self, focused_index):
+        """Group 52's offset (pixels) that puts focused_index's row on the anchor line: up by
+        its place in the stack."""
+        return -util.vscale(self._stackY(focused_index), r=0)
 
     def _placeStack(self, focused_index):
-        """Move group 51 so focused_index's row is on the anchor line, at rest."""
-        group = self.getControl(self.GROUP51_ID)
-        group.setPosition(group.getPosition()[0], self._group51Y(focused_index))
+        """Put focused_index's row on the anchor line at once, at rest."""
+        offset = self._stackOffset(focused_index)
+        self._slideStack(offset, offset, 0)
+
+    def _slideStack(self, start_y, end_y, duration):
+        """Slide group 52 from offset start_y to end_y (_stackOffset() values) over duration
+        seconds - 0 places it at once. One Conditional slide that Kodi holds at its end while it's
+        set: one GUI call, so no frame can show the rows half placed, and each call replaces the
+        last one's animation.
+
+        The rows have no clip of their own any more (the template's comment on group 50 says
+        why): Kodi clips a control's children by where they sit before an animation, so a clip
+        around group 52 cut the animated rows wrongly. The cover over the band above y=518 hides
+        them there instead."""
+        self.getControl(self.HUB_SLIDE_GROUP_ID).setAnimations([(
+            'conditional',
+            'effect=slide start=0,{0} end=0,{1} time={2} tween=sine easing=inout condition=true'.format(
+                start_y, end_y, int(round(duration * 1000))))])
 
     def _roleLocalY(self, role_offset, focused_index):
-        """The local y-offset (within group 51's frame, pre-vscale template units) whichever
+        """The y-offset from the anchor row (pre-vscale template units) whichever
         control currently plays role_offset (0 = anchor, negative = above it, positive = below
         it) must sit at. Ported verbatim from HomeWindow._roleLocalY() (home.py) - see that
         method's own docstring for the full stacking-recurrence reasoning."""
@@ -1329,7 +1328,7 @@ class HubsMixin(object):
     def _setRoleGeometry(self, wrapper, role_offset, focused_index):
         """Position (and, for peek-below, size) wrapper for role_offset - shared by the initial
         bind (_recommendedHubsCallback()) and _startHubSlide(). The wrapper goes to its hub's place
-        in the stack (_stackY()); group 51's offset (_placeStack()) does the rest. Ported from
+        in the stack (_stackY()); group 52's offset (_placeStack()) does the rest. Ported from
         HomeWindow._setRoleGeometry() (home.py), which placed wrappers relative to the anchor."""
         y = self._roleLocalY(role_offset, focused_index)
         wrapper.setPosition(0, util.vscale(self._stackY(focused_index + role_offset), r=0))
@@ -1496,7 +1495,7 @@ class HubsMixin(object):
         hero overlay and art box (see the constants block's own comment above). Pure property
         write: this used to also reposition group 51 between two rest offsets in lockstep with
         the template's own Conditional clip-shift animation; both are gone now that the overlay
-        is unconditional (GROUP51_BASELINE_OFFSET's own comment)."""
+        is unconditional."""
         self.setBoolProperty('no_hero_art', no_hero_art)
 
     def _previewSelectedItem(self, hub):
@@ -2553,8 +2552,7 @@ class HubsMixin(object):
             # no_hero_art is written explicitly in every branch of _bindAllHubSlots() below (via
             # updateHeroFrom()/_setNoHeroArt()), never left implicit: a property that's never been
             # written at all reads as empty in Kodi, same as explicitly set to '' - which is the
-            # *shown* state, not the hidden one. Group 51's position is no longer tied to it - set
-            # once per entry in onFirstInit() (GROUP51_BASELINE_OFFSET's own comment).
+            # *shown* state, not the hidden one. The rows' position is no longer tied to it.
 
             self._bindAllHubSlots()
             # Rows with nothing in any of them: the library is empty (one with anything in it always
@@ -2704,8 +2702,8 @@ class HubsMixin(object):
         off-screen ones 0.2 s later from a timer thread (defer_peek); measured on the AM6B (step
         11 stage A in the navigation review, F1), that didn't shorten either, so it went.
 
-        Lands any slide still running first: it would go on moving group 51 from where it
-        started, over the rows placed here."""
+        Lands any slide still running first, so its ticker doesn't finish it later over the rows
+        placed here."""
         self._settleHubSlide()
         if not self.visibleHubs:
             for index in range(len(self.hubControls)):
@@ -2737,8 +2735,8 @@ class HubsMixin(object):
         anchor_ds = self._previewSelectedItem(anchor_hub)
         self.updateHeroFrom(anchor_ds)
 
-        # Group 51 first, then each row placed and bound in turn: an empty row isn't shown (the
-        # template's NumItems condition), so a row appears already in place.
+        # The stack's offset first, then each row placed and bound in turn: an empty row isn't
+        # shown (the template's NumItems condition), so a row appears already in place.
         self._placeStack(self.focusedHubIndex)
 
         for control_id in sorted(self.HUB_ROTATION_RING, key=lambda cid: abs(self._ringRoleOffset(cid))):
@@ -2775,8 +2773,9 @@ class HubsMixin(object):
         sync) is real again as of plan item 11 - see that method's own docstring. Calls
         self._bindHubToControl() for the wrap control's fresh bind instead of HomeWindow.showHub().
 
-        The animation is a HubSlide (step 11 in the navigation review): group 51 alone moves, timed
-        by the clock and stepped from the view's wait loop on the main thread (_tickHubSlide()).
+        The animation is a HubSlide (step 11 in the navigation review): group 52 alone moves,
+        drawn by Kodi from one held animation, and the view's wait loop on the main thread sees
+        it land (_tickHubSlide()).
         It belongs to the view showing now and to self._listGeneration (bumped by every swap),
         and is dropped without touching its control once either has moved on. Note self.closing
         (LibraryWindow's own "session ending"), not self._closing, which MultiWindow.__getattr__
@@ -2816,9 +2815,12 @@ class HubsMixin(object):
         # fresh content bind and a position snap to its new role. Its old and new roles are the
         # ring's two extremes, -1 -> +2 going down and +2 -> -1 going up, neither ever on screen
         # (HUB_ROTATION_RING's own comment), and its new place stays off screen for the whole
-        # slide - so the move happens now and the bind waits until the slide lands
-        # (_payWrapBind()). Bound before the slide, it was most of the wait before the rows
-        # moved (step 11 in the navigation review: a median 58 ms, against 12 once landed).
+        # slide - so the move happens now and the bind (bindWrap()) once the slide has started.
+        # Bound before, it was most of the wait before the rows moved (step 11 in the navigation
+        # review: a median 58 ms). Bound after landing (stage D), a quick next press paid it as
+        # its own slide brought the row into view, so the row's restored position visibly
+        # scrolled sideways (its fixedlist's scrolltime); bound at the start, that scroll plays
+        # out off screen, and Kodi is already drawing the slide, so nothing waits on it.
         if delta > 0:
             wrap_role, wrap_new_role = self.HUB_MIN_ROLE, self.HUB_MAX_ROLE
         else:
@@ -2862,12 +2864,10 @@ class HubsMixin(object):
             elif new_role == -1:
                 self.setBoolProperty('hub.has_prev', True)
 
-        # The one mover: group 51, from the old anchor's offset to the new one's (_group51Y()).
-        group = self.getControl(self.GROUP51_ID)
-        slide = HubSlide(group, group.getPosition()[0], self._group51Y(old_focused_index),
-                         self._group51Y(new_index), self.HUB_SLIDE_TIME, self.__dict__.get('_current'),
-                         list_gen, timing)
-        slide.owedBind = bindWrap
+        # The one mover: group 52, from the old anchor's offset to the new one's (_stackOffset()).
+        slide = HubSlide(self._slideStack, self._stackOffset(old_focused_index),
+                         self._stackOffset(new_index), self.HUB_SLIDE_TIME, self.HUB_SLIDE_LAND_MARGIN,
+                         self.__dict__.get('_current'), list_gen, timing)
 
         # Native focus moves to the destination row now, not when the slide finishes: Kodi hands a
         # Left/Right to whichever row has focus before any of this code sees it, so a Right pressed
@@ -2881,12 +2881,14 @@ class HubsMixin(object):
             # yields in between - but cheap to cover): land it now rather than animate.
             slide.land()
             self._finishHubSlide()
-            self._payWrapBind(slide)
+            bindWrap()
             return
 
         self.setBoolProperty('hub.sliding', True)
         timing.mark('setup')
         slide.start()
+        bindWrap()
+        timing.mark('wrap bind')
         self._hubSlide = slide
         self.addTicker(self._tickHubSlide)
 
@@ -2898,7 +2900,7 @@ class HubsMixin(object):
 
     def _tickHubSlide(self, now):
         """The running slide's ticker (MultiWindow.addTicker()), once per wait slice on the main
-        thread: one step, then finish once it lands. False when there's nothing left to step."""
+        thread: finish the slide once it lands. False when there's nothing left to watch."""
         slide = self._hubSlide
         if slide is None:
             return False
@@ -2910,22 +2912,8 @@ class HubsMixin(object):
             return True
         self._hubSlide = None
         self._finishHubSlide()
-        self._payWrapBind(slide)
         slide.logTiming()
         return False
-
-    def _payWrapBind(self, slide):
-        """Bind the row that wrapped round, once slide has landed (step 11 stage D): it's off
-        screen for the whole slide, so its bind no longer holds up the rows starting to move. Paid
-        by the tick that lands the slide, or by _settleHubSlide() before the next press rotates
-        the ring - the next slide can bring that row into view. A slide whose view has gone is
-        dropped unpaid; the next view binds every row itself."""
-        bind, slide.owedBind = slide.owedBind, None
-        if bind is None:
-            return
-        started = time.time()
-        bind()
-        slide.timing.add('wrap bind after', (time.time() - started) * 1000)
 
     def _finishHubSlide(self):
         """Slide-completion - deliberately NOT a full _recommendedHubsCallback() rebuild (that
@@ -2948,8 +2936,7 @@ class HubsMixin(object):
 
     def _settleHubSlide(self):
         """Land the slide in progress at once and finish it: the next press starts from a settled
-        state, and a swap (switchTab(), openSection()) lands it while its view is still there. On
-        the main thread, like the steps, so nothing else can be moving the group at the same time.
+        state, and a swap (switchTab(), openSection()) lands it while its view is still there.
         A slide whose view has already gone is just dropped."""
         slide = self._hubSlide
         if slide is None:
@@ -2960,5 +2947,4 @@ class HubsMixin(object):
             return
         slide.land()
         self._finishHubSlide()
-        self._payWrapBind(slide)
         slide.logTiming('cut short')

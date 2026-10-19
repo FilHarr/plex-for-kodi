@@ -1793,15 +1793,14 @@ class HomeHubDisplayTitleTest(KodiTestCase):
 
 class HubStackTest(KodiTestCase):
     """Step 11 stage B: each row wrapper sits at its hub's place in one tall stack (_stackY()), and
-    group 51's offset (_group51Y()) brings the focused row to the anchor line, so a slide moves
-    group 51 alone. Relative to the anchor, every row must land exactly where the old per-row
+    group 52's offset (_stackOffset()) brings the focused row to the anchor line, so a slide moves
+    group 52 alone. Relative to the anchor, every row must land exactly where the old per-row
     recurrence (_roleLocalY()) put it, missing hubs above the first and past the last included."""
 
     class Host(object):
         ROW_GAP = library.LibraryWindow.ROW_GAP
-        GROUP51_BASELINE_OFFSET = library.LibraryWindow.GROUP51_BASELINE_OFFSET
         _stackY = library.LibraryWindow._stackY
-        _group51Y = library.LibraryWindow._group51Y
+        _stackOffset = library.LibraryWindow._stackOffset
         _roleLocalY = library.LibraryWindow._roleLocalY
 
         def __init__(self, heights):
@@ -1826,17 +1825,16 @@ class HubStackTest(KodiTestCase):
         self.assertEqual(446 + 25, host._stackY(1))
         self.assertEqual(-(446 + 25), host._stackY(-1))
 
-    def test_the_focused_row_sits_on_the_baseline(self):
+    def test_the_focused_row_sits_on_the_anchor_line(self):
         host = self.Host(self.HEIGHTS)
-        base = library.util.vscale(host.GROUP51_BASELINE_OFFSET, r=0)
         for focused in range(len(self.HEIGHTS)):
-            anchor = host._group51Y(focused) + library.util.vscale(host._stackY(focused), r=0)
-            self.assertEqual(base, anchor, 'focused {0}'.format(focused))
+            anchor = host._stackOffset(focused) + library.util.vscale(host._stackY(focused), r=0)
+            self.assertEqual(0, anchor, 'focused {0}'.format(focused))
 
     def test_a_slide_moves_the_group_by_the_rows_between(self):
         host = self.Host(self.HEIGHTS)
-        self.assertEqual(-(371 + 25), host._group51Y(2) - host._group51Y(1))
-        self.assertEqual(371 + 25, host._group51Y(1) - host._group51Y(2))
+        self.assertEqual(-(371 + 25), host._stackOffset(2) - host._stackOffset(1))
+        self.assertEqual(371 + 25, host._stackOffset(1) - host._stackOffset(2))
 
 
 class HubRingRolesTest(KodiTestCase):
@@ -1887,76 +1885,98 @@ class FakeClock(object):
         return self.now
 
 
-class FakeGroup(object):
-    def __init__(self):
-        self.moves = []
-
-    def setPosition(self, x, y):
-        self.moves.append((x, y))
-
-
 class HubSlideTest(KodiTestCase):
-    """Step 11 stage C: HubSlide moves group 51 by the clock - each step goes where the elapsed time
-    says - so a late step shortens the slide instead of stretching it (stage A measured the old
-    12 fixed steps at about twice their 250 ms)."""
+    """Kodi draws the slide (step 11 stage E): one held animation at the start, none per step, and
+    it lands once the clock passes the slide's time plus the margin; cut short, it's replaced by
+    its end, held."""
 
-    def _slide(self, start_y=0, end_y=-400):
+    def _slide(self):
         clock = FakeClock()
-        group = FakeGroup()
-        timing = library.kodigui.StepTiming('test')
-        slide = library_hubs.HubSlide(group, 7, start_y, end_y, 0.25, 'view', 1, timing, clock=clock)
+        calls = []
+        slide = library_hubs.HubSlide(lambda *args: calls.append(args), 0, -400, 0.25, 0.02, 'view', 1,
+                                      library.kodigui.StepTiming('test'), clock=clock)
         slide.start()
-        return slide, clock, group
+        return slide, clock, calls
 
-    def test_each_step_goes_where_the_clock_says(self):
-        slide, clock, group = self._slide()
-        clock.now += 0.125  # half way: smoothstep(0.5) = 0.5
+    def test_one_call_at_the_start_and_none_per_step(self):
+        slide, clock, calls = self._slide()
+        self.assertEqual([(0, -400, 0.25)], calls)
+        clock.now += 0.125
         self.assertTrue(slide.step())
-        self.assertEqual([(7, -200)], group.moves)
+        self.assertEqual(1, len(calls))
 
-    def test_a_late_step_jumps_ahead_rather_than_stretching(self):
-        slide, clock, group = self._slide()
+    def test_it_lands_after_the_margin_without_a_call(self):
+        slide, clock, calls = self._slide()
+        clock.now += 0.26
+        self.assertTrue(slide.step())
         clock.now += 0.02
-        slide.step()
-        clock.now += 0.2  # one long stall
-        slide.step()
-        self.assertEqual(2, len(group.moves))
-        self.assertLess(group.moves[-1][1], -380)  # nearly there: eased past 0.88
-
-    def test_it_lands_on_time_and_stops(self):
-        slide, clock, group = self._slide()
-        clock.now += 0.3
         self.assertFalse(slide.step())
-        self.assertEqual((7, -400), group.moves[-1])
         self.assertFalse(slide.step())
-        self.assertEqual(1, len(group.moves))
+        slide.land()
+        self.assertEqual(1, len(calls))
 
-    def test_no_call_when_the_position_has_not_changed(self):
-        slide, clock, group = self._slide()
-        clock.now += 0.001  # smoothstep(0.004) * 400 rounds to 0
-        slide.step()
-        self.assertEqual([], group.moves)
-
-    def test_landing_early_snaps_to_the_end_once(self):
-        slide, clock, group = self._slide()
+    def test_landing_early_holds_the_end_once(self):
+        slide, clock, calls = self._slide()
         clock.now += 0.05
-        slide.step()
         slide.land()
         slide.land()
-        self.assertEqual((7, -400), group.moves[-1])
-        self.assertEqual(2, len(group.moves))
+        self.assertEqual([(0, -400, 0.25), (-400, -400, 0)], calls)
+        self.assertFalse(slide.step())
+
+
+class SlideStackTest(KodiTestCase):
+    """_slideStack() sends group 52 one held Conditional slide; _placeStack() uses it with time 0
+    and moves nothing else."""
+
+    class Host(object):
+        _slideStack = library.LibraryWindow._slideStack
+        _placeStack = library.LibraryWindow._placeStack
+        HUB_SLIDE_GROUP_ID = library.LibraryWindow.HUB_SLIDE_GROUP_ID
+
+        def __init__(self):
+            self.controls = {}
+
+        def getControl(self, control_id):
+            return self.controls.setdefault(control_id, AnimatedGroup())
+
+        def _stackOffset(self, focused_index):
+            return -400 * focused_index
+
+    def test_slide_string(self):
+        host = self.Host()
+        host._slideStack(-400, -800, 0.25)
+        self.assertEqual(
+            [[('conditional', 'effect=slide start=0,-400 end=0,-800 time=250 tween=sine easing=inout '
+                              'condition=true')]],
+            host.controls[52].animations)
+
+    def test_place_holds_the_offset_at_once_on_group_52_only(self):
+        host = self.Host()
+        host._placeStack(2)
+        self.assertEqual([52], list(host.controls))
+        self.assertEqual(
+            [[('conditional', 'effect=slide start=0,-800 end=0,-800 time=0 tween=sine easing=inout '
+                              'condition=true')]],
+            host.controls[52].animations)
+
+
+class AnimatedGroup(object):
+    def __init__(self):
+        self.animations = []
+
+    def setAnimations(self, animations):
+        self.animations.append(animations)
 
 
 class HubSlideTickerTest(KodiTestCase):
-    """The host's side (_tickHubSlide(), _settleHubSlide()): the slide steps from the view's wait
-    loop on the main thread, finishes once, and is dropped without touching its control once the
-    view it belongs to has gone."""
+    """The host's side (_tickHubSlide(), _settleHubSlide()): the view's wait loop on the main
+    thread sees the slide land and finishes it once, and drops it without touching its control
+    once the view it belongs to has gone."""
 
     class Host(object):
         _tickHubSlide = library.LibraryWindow._tickHubSlide
         _settleHubSlide = library.LibraryWindow._settleHubSlide
         _hubSlideLive = library.LibraryWindow._hubSlideLive
-        _payWrapBind = library.LibraryWindow._payWrapBind
 
         def __init__(self, slide):
             self._hubSlide = slide
@@ -1970,14 +1990,14 @@ class HubSlideTickerTest(KodiTestCase):
 
     def _slide(self):
         clock = FakeClock()
-        group = FakeGroup()
-        slide = library_hubs.HubSlide(group, 0, 0, -400, 0.25, 'view', 1,
+        calls = []
+        slide = library_hubs.HubSlide(lambda *args: calls.append(args), 0, -400, 0.25, 0.02, 'view', 1,
                                       library.kodigui.StepTiming('test'), clock=clock)
         slide.start()
-        return slide, clock, group
+        return slide, clock, calls
 
-    def test_steps_until_it_lands_then_finishes_once(self):
-        slide, clock, group = self._slide()
+    def test_it_runs_until_it_lands_then_finishes_once(self):
+        slide, clock, calls = self._slide()
         host = self.Host(slide)
         clock.now += 0.1
         self.assertTrue(host._tickHubSlide(clock.now))
@@ -1987,57 +2007,20 @@ class HubSlideTickerTest(KodiTestCase):
         self.assertIsNone(host._hubSlide)
         self.assertFalse(host._tickHubSlide(clock.now))
         self.assertEqual(1, host.finished)
+        self.assertEqual(1, len(calls))
 
     def test_settling_lands_it_and_finishes_once(self):
-        slide, clock, group = self._slide()
+        slide, clock, calls = self._slide()
         host = self.Host(slide)
         host._settleHubSlide()
         host._settleHubSlide()
-        self.assertEqual((0, -400), group.moves[-1])
+        self.assertEqual((-400, -400, 0), calls[-1])
         self.assertEqual(1, host.finished)
         self.assertFalse(host._tickHubSlide(clock.now))
 
-    def _owing(self, slide):
-        binds = []
-        slide.owedBind = lambda: binds.append(True)
-        return binds
-
-    def test_the_wrapping_rows_bind_is_paid_once_it_lands(self):
-        """Stage D: the row that wrapped round is bound after the slide, not before it moves."""
-        slide, clock, group = self._slide()
-        binds = self._owing(slide)
-        host = self.Host(slide)
-        clock.now += 0.1
-        host._tickHubSlide(clock.now)
-        self.assertEqual([], binds, 'not while the slide is moving')
-        clock.now += 0.2
-        host._tickHubSlide(clock.now)
-        self.assertEqual([True], binds)
-        host._settleHubSlide()
-        self.assertEqual([True], binds)
-
-    def test_the_next_press_pays_it_before_rotating(self):
-        slide, clock, group = self._slide()
-        binds = self._owing(slide)
-        host = self.Host(slide)
-        clock.now += 0.1
-        host._tickHubSlide(clock.now)
-        host._settleHubSlide()
-        self.assertEqual([True], binds)
-
-    def test_a_dropped_slide_leaves_it_unpaid(self):
-        """The next view binds every row itself, and this one's controls may be gone."""
-        slide, clock, group = self._slide()
-        binds = self._owing(slide)
-        host = self.Host(slide)
-        host._current = 'a hosted screen'
-        host._tickHubSlide(clock.now)
-        host._settleHubSlide()
-        self.assertEqual([], binds)
-
     def test_a_slide_whose_view_has_gone_is_dropped_untouched(self):
         for change in ('view', 'swap', 'closing'):
-            slide, clock, group = self._slide()
+            slide, clock, calls = self._slide()
             host = self.Host(slide)
             if change == 'view':
                 host._current = 'a hosted screen'
@@ -2048,7 +2031,7 @@ class HubSlideTickerTest(KodiTestCase):
             clock.now += 0.1
             self.assertFalse(host._tickHubSlide(clock.now), change)
             host._settleHubSlide()
-            self.assertEqual([], group.moves, change)
+            self.assertEqual(1, len(calls), change)
             self.assertEqual(0, host.finished, change)
 
 

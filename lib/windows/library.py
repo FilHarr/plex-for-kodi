@@ -2385,16 +2385,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # rest of this one-time setup.
             self.loadHubSettings()
 
-            # Group 51 has no correct position at all until Python sets it explicitly - grouplist
-            # 50 auto-stacks its only child flush to 0, ignoring the declared posy (see that
-            # control's own comment in script-plex-recommended.xml.tpl). This shell's control 51
-            # is brand new every 'recommended' entry (RecommendedWindow gets torn down and
-            # reconstructed by switchTab()/openSection() like any other view-type swap), so it's
-            # positioned here, once per entry, at the first row's offset. The hub engine moves it
-            # from then on: every bind (_placeStack()) and every slide (_startHubSlide()).
-            g51 = self.getControl(51)
-            g51.setPosition(g51.getPosition()[0], util.vscale(self.GROUP51_BASELINE_OFFSET, r=0))
-
             # Built once (self.hubControls starts None, see __init__), rebound via newControl()
             # on every later 'recommended' entry - same shape self.tabList/self.sectionList
             # already use just below, live-proven safe across 20+ plain section-to-section swaps.
