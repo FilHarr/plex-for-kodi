@@ -41,6 +41,7 @@ from .library_hubs import HubsMixin
 from .mixins.playbackbtn import PlaybackBtnMixin
 from .mixins.common import CommonMixin
 from .mixins.spoilers import SpoilersMixin
+from .mixins.thememusic import ThemeMusicMixin
 
 
 # Sort keys the addon used to persist under its own spelling, mapped to the server's (as
@@ -773,6 +774,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
         if not self._isRealShell(cls):
             self._isHostedShell = False
+            # The section's own grid or Home is back: its theme ends, as upstream's onReInit()
+            # stopped it when the show's window closed. A hosted show swaps out in place, so that
+            # onReInit() (below) never runs for it.
+            self._stopThemeMusic()
             kodigui.MultiWindow._setupCurrent(self, cls)
             if issubclass(cls, RecommendedWindow):
                 self._hideStaleHero()
@@ -1065,7 +1070,25 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 self._pendingRestoreHubId = None
                 self._backStack.append(entry)
         else:
+            # Back to a screen with no theme of its own (a collection, Search's results): the
+            # theme ends there too.
+            self._stopThemeMusic(towards=cls)
             self.swapTo(cls, push=False, **kwargs)
+
+    def _stopThemeMusic(self, towards=None):
+        """towards: the hosted screen Back is returning to. One with a theme of its own keeps or
+        swaps it itself (ThemeMusicMixin.themeMusicInit()), so it's left playing for that."""
+        if not player.PLAYER.bgmPlaying:
+            return
+        if towards is not None and issubclass(towards, ThemeMusicMixin):
+            return
+        if util.addonSettings.themeMusicFade:
+            # fades out on its own thread
+            player.PLAYER.stopAndWait(fade=True, deferred=True)
+        else:
+            # Unfaded, stopAndWait() waits for the player in a MONITOR wait, which runs queued
+            # callbacks inside it - not mid-swap.
+            threading.Thread(target=player.PLAYER.stopAndWait, name='PLEX:BGM-STOP').start()
 
     def _openSearch(self):
         """openSection() for the sidebar's Search entry (windowutils.SEARCH_ENTRY): Search

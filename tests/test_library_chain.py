@@ -195,6 +195,11 @@ class FakeHostWindow(object):
         self._allClosed = False
         # A real LibraryWindow.openSection() returns True/False; configurable here per-test.
         self.openSectionReturnValue = False
+        self.themeStops = []
+
+    def _stopThemeMusic(self, towards=None):
+        # The real one reads lib.player's PLAYER - covered directly in ThemeMusicStopTest.
+        self.themeStops.append(towards)
 
     def openSection(self, *args, **kwargs):
         self.openSectionCalls.append((args, kwargs))
@@ -2407,3 +2412,74 @@ class SearchDestinationTest(KodiTestCase):
             self.assertNotIn(name, vars(library.LibraryWindow), name)
         self.assertFalse(hasattr(library.search, 'dialog'))
         self.assertFalse(hasattr(library.search, 'SearchDialog'))
+
+
+class ThemedShell(library.ThemeMusicMixin, FakeShell):
+    """A hosted screen with a theme of its own, as Episodes, Seasons and pre-play are."""
+
+
+class ThemeMusicStopTest(KodiTestCase):
+    """A show's theme ends on Back from it. Upstream stopped it in the Library window's
+    onReInit(), as the show's own window closed; a hosted show is swapped out in place, so that
+    never ran and the theme played on (LibraryWindow._stopThemeMusic())."""
+
+    def setUp(self):
+        super(ThemeMusicStopTest, self).setUp()
+        self.player = mock.Mock(bgmPlaying=True)
+        for patch in (mock.patch.object(library.player, 'PLAYER', self.player),
+                      mock.patch.object(library.util.addonSettings, 'themeMusicFade', True)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def stop(self, towards=None):
+        library.LibraryWindow._stopThemeMusic(mock.Mock(), towards=towards)
+
+    def test_a_playing_theme_fades_out_without_waiting(self):
+        self.stop()
+        self.player.stopAndWait.assert_called_once_with(fade=True, deferred=True)
+
+    def test_unfaded_the_stop_waits_on_its_own_thread_not_mid_swap(self):
+        with mock.patch.object(library.util.addonSettings, 'themeMusicFade', False), \
+                mock.patch.object(library.threading, 'Thread') as thread:
+            self.stop()
+        self.assertIs(self.player.stopAndWait, thread.call_args[1]['target'])
+        thread.return_value.start.assert_called_once_with()
+        self.player.stopAndWait.assert_not_called()
+
+    def test_nothing_playing_nothing_stopped(self):
+        self.player.bgmPlaying = False
+        self.stop()
+        self.player.stopAndWait.assert_not_called()
+
+    def test_back_to_a_screen_without_a_theme_stops_it(self):
+        self.stop(towards=FakeShell)
+        self.assertTrue(self.player.stopAndWait.called)
+
+    def test_back_to_a_screen_with_a_theme_leaves_it_to_that_screen(self):
+        self.stop(towards=ThemedShell)
+        self.player.stopAndWait.assert_not_called()
+
+    def test_the_sections_own_view_coming_back_stops_it(self):
+        host = FakeHostWindow()
+        _setupCurrent(host, FakeThinProxy)
+        self.assertEqual([None], host.themeStops)
+
+    def test_a_hosted_screen_set_up_leaves_it_to_that_screen(self):
+        host = FakeHostWindow()
+        _setupCurrent(host, FakeShell)
+        self.assertEqual([], host.themeStops)
+
+    def test_back_along_a_chain_names_the_screen_it_returns_to(self):
+        host = FakeHostWindow()
+        host._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
+        host._backStack = [(ThemedShell, {})]
+        popBack(host)
+        self.assertEqual([ThemedShell], host.themeStops)
+
+    def test_back_to_the_section_leaves_it_to_the_sections_view(self):
+        """openSection() sets the grid or Home view up again, which stops it."""
+        host = FakeHostWindow()
+        host._backStack = [(None, {'section': 'the-section', 'filter_': None})]
+        host.openSectionReturnValue = True
+        popBack(host)
+        self.assertEqual([], host.themeStops)

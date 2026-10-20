@@ -142,6 +142,9 @@ class ViewClosedHost(object):
     def swapTo(self, cls, push=True, **kwargs):
         self.calls.append(('swapTo', cls, push, kwargs))
 
+    def _stopThemeMusic(self, towards=None):
+        pass
+
 
 class View(object):
     def __init__(self, exit_command):
