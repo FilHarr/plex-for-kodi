@@ -21,7 +21,7 @@ def split2len(s, n):
     return list(_f(s, n))
 
 
-def formatMediaDetails(video, leading_newlines=0):
+def formatMediaDetails(video, leading_newlines=0, hide_chapter_names=False):
     """
     Formats technical media/part/stream details (file/part counts, per-part filename/size/
     duration, per-stream video/audio/subtitle detail, chapters, markers) for a video -
@@ -129,7 +129,8 @@ def formatMediaDetails(video, leading_newlines=0):
         if len(chapters) > 4:
             chOver += 1
             continue
-        chapters.append(chapter.tag or "Chapter #{}".format(str(index+1)))
+        # hide_chapter_names: an episode covered by "No unplayed episode titles" (docs/spoiler-previews.md)
+        chapters.append(not hide_chapter_names and chapter.tag or "Chapter #{}".format(str(index+1)))
 
     if chapters:
         addMedia.append("Chapters: {}{}\n".format(", ".join(chapters), chOver and " (+{})".format(chOver) or ''))
@@ -162,6 +163,7 @@ class MediaDetailsDialog(kodigui.BaseDialog):
     def __init__(self, *args, **kwargs):
         kodigui.BaseDialog.__init__(self, *args, **kwargs)
         self.video = kwargs.get('video')
+        self.hideChapterNames = kwargs.get('hide_chapter_names', False)
 
     def onAction(self, action):
         if action == xbmcgui.ACTION_SELECT_ITEM:
@@ -173,7 +175,7 @@ class MediaDetailsDialog(kodigui.BaseDialog):
         self.setProperty('heading', T(35059, 'File info'))
         # lstrip() guards against the video having no media at all, which would otherwise leave
         # the textbox showing a lone leading blank line.
-        details = formatMediaDetails(self.video).lstrip('\n')
+        details = formatMediaDetails(self.video, hide_chapter_names=self.hideChapterNames).lstrip('\n')
         self.setProperty('info', details)
         # The textbox itself isn't in Kodi's focus chain - only its scrollbar (id 101) is, and
         # nothing focuses it automatically (no <defaultcontrol> in base.xml.tpl). Without this,
@@ -181,8 +183,8 @@ class MediaDetailsDialog(kodigui.BaseDialog):
         self.setFocusId(101)
 
 
-def showMediaDetails(video):
-    w = MediaDetailsDialog.open(video=video)
+def showMediaDetails(video, hide_chapter_names=False):
+    w = MediaDetailsDialog.open(video=video, hide_chapter_names=hide_chapter_names)
     ref = util.windowRef(w)
     del w
     util.collectIfAlive(ref)

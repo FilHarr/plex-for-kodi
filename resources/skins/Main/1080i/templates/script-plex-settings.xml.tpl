@@ -53,9 +53,11 @@
         </control>
     </control>
 
+    <!-- The focused setting's description; while its options are open, the focused option's own help in its place
+         when it has some (OptionsSetting.optionDescriptions()). -->
     <control type="textbox">
         <animation effect="slide" end="-277,0" time="200" tween="quadratic" easing="out" condition="Control.HasFocus(125)">Conditional</animation>
-        <visible>Control.HasFocus(100) | Control.HasFocus(125)</visible>
+        <visible>Control.HasFocus(100) | [Control.HasFocus(125) + String.IsEmpty(Container(125).ListItem.Property(description))]</visible>
         <posx>872</posx>
         <posy>886.5</posy>
         <width>1024</width>
@@ -66,6 +68,20 @@
         <scrolltime>200</scrolltime>
         <autoscroll delay="5000" time="4000" repeat="15000"></autoscroll>
         <label>$INFO[Container(100).ListItem.Property(description)]</label>
+    </control>
+    <control type="textbox">
+        <animation effect="slide" end="-277,0" time="200" tween="quadratic" easing="out" condition="Control.HasFocus(125)">Conditional</animation>
+        <visible>Control.HasFocus(125) + !String.IsEmpty(Container(125).ListItem.Property(description))</visible>
+        <posx>872</posx>
+        <posy>886.5</posy>
+        <width>1024</width>
+        <height>172</height>
+        <font>font10</font>
+        <textcolor>FFFFFFFF</textcolor>
+        <align>left</align>
+        <scrolltime>200</scrolltime>
+        <autoscroll delay="5000" time="4000" repeat="15000"></autoscroll>
+        <label>$INFO[Container(125).ListItem.Property(description)]</label>
     </control>
 
     <control type="group" id="50">

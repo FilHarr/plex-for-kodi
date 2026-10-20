@@ -217,6 +217,13 @@ class OptionsSetting(BasicSetting):
     def __init__(self, ID, label, default, options, **kwargs):
         BasicSetting.__init__(self, ID, label, default, **kwargs)
         self.options = options
+        self.optionDescs = {}
+
+    def optionDescriptions(self, descs):
+        """Help for single options, {option ID: text}: shown in the description's place while that option has
+        focus in the options list (script-plex-settings.xml.tpl), the setting's own otherwise."""
+        self.optionDescs = descs
+        return self
 
     def translate(self, val):
         for ID, label in self.options:
@@ -745,11 +752,15 @@ class Settings(object):
                         ('no_unwatched_episode_titles', T(33012, '')),
                         ('blur_images', T(33706, '')),
                         ('blur_resume_images', T(33707, '')),
-                        ('blur_chapters', T(33081, '')),
+                        # stored as blur_chapters, its name when it blurred them (docs/spoiler-previews.md)
+                        ('blur_chapters', T(35190, 'Hide preview thumbnails and chapter images')),
                         ('hide_summary', T(33708, '')),
                         ('hide_ratings', T(33705, '')),
                     )
-                ).description(T(33007, "")),
+                ).description(T(35193, "")).optionDescriptions({
+                    'no_unwatched_episode_titles': T(35192, ''),
+                    'blur_chapters': T(35191, ''),
+                }),
                 MultiOptionsSetting(
                     'spoilers_allowed_genres2', T(33016, ''),
                     ["Reality", "Game Show", "Documentary", "Sport"],
@@ -1381,7 +1392,8 @@ class SettingsWindow(kodigui.BaseWindow, windowutils.UtilMixin):
                 items.append(kodigui.ManagedListItem(label))
         elif setting.type in ('OPTIONS', 'MULTI'):
             for ID, label in setting.options:
-                items.append(kodigui.ManagedListItem(label, data_source=ID))
+                items.append(kodigui.ManagedListItem(label, data_source=ID,
+                                                     properties={'description': setting.optionDescs.get(ID, '')}))
 
         self.optionsList.reset()
         self.optionsList.addItems(items)

@@ -121,12 +121,10 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
     POSITION_CAP_ID = 208
     CACHE_CAP_ID = 210
     BAR_CAP = 4
-    # the chapter row's thumbnails (300x168 in the template's CHAPTERS row)
+    # the size of the file chapters' pictures from the server (300x168 cards in the template's chapter row)
     CHAPTER_THUMB_DIM = util.scaleResolution(300, 168)
     # the card rows' 200ms fade (includes/osd_card_row.xml.tpl), plus a margin
     ROW_FADE_OUT = 0.3
-    # the blurred no-spoilers seek thumbnail's size
-    LI_AR16X9_THUMB_DIM = (178, 100)
 
     SETTINGS_BUTTON_ID = 403
     OPTIONS_BUTTON_ID = 411
@@ -227,6 +225,10 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._scanBifAt = 0
         # this item's preview index download has been started (startPreviews(); previews.store has it)
         self._previewsStarted = False
+        # spoilers, for the item playing (spoilerHiding()): no moving preview and a placeholder on every chapter card;
+        # the episode's title, and file chapters' names as "Chapter N"
+        self.hidePreviews = False
+        self.hideTitles = False
         self.title = ''
         self.title2 = ''
         self.fromSeek = 0
@@ -638,6 +640,9 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self.title = title
         self.title2 = title2
         self.chapters = chapters or []
+        if not keepMarkerDef:
+            # a new item, not a transcode's seek restarting this one; before the title lines below use it
+            self.hidePreviews, self.hideTitles = self.spoilerHiding(self.player.video)
         self.isDirectPlay = not meta.isTranscoded
         self.isTranscoded = not self.isDirectPlay
         self.setProperty('video.title', title)
@@ -645,8 +650,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         # set spoiler-relevant properties immediately; updateProperties() only runs after the window has rendered
         # (fresh dialog) or possibly never (reused dialog without a playlist), which would briefly - or permanently -
         # leak the episode title/times with the previous or empty property state (#279)
-        self.setBoolProperty('hide.title', self.player.video.type == 'episode'
-                             and 'no_unwatched_episode_titles' in (self.no_spoilers or ()))
+        self.setBoolProperty('hide.title', self.hideTitles)
         self.setBoolProperty('no.osd.hide_info', self.no_time_no_osd_spoilers)
         self.setProperty('ep.year', (self.player.video.type == 'episode') and self.player.video.year or '')
         self.setTitleLines()
@@ -2160,7 +2164,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         durationMs = v.duration.asInt() or self._duration
         runtime = durationMs and util.durationToShortText(durationMs, noSpaces=True) or ''
         if v.type == 'episode':
-            hideTitle = 'no_unwatched_episode_titles' in (self.no_spoilers or ())
+            hideTitle = self.hideTitles
             show = u'{0}'.format(v.grandparentTitle or '')
             title = show if hideTitle else u'{0}'.format(v.title or '')
             sub = (u'{0} \u2022 {1}'.format(T(32310, 'S{}').format(v.parentIndex), T(32311, 'E{}').format(v.index)),
@@ -2190,11 +2194,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self.setProperty('time.ends_label', self.showItemEndsLabel and (util.T(32543, 'Ends at')) or '')
         self.setBoolProperty('no.osd.hide_info', self.no_time_no_osd_spoilers)
 
-        hide_title = False
-        if is_show and 'no_unwatched_episode_titles' in self.no_spoilers:
-            hide_title = True
-
-        self.setBoolProperty('hide.title', hide_title)
+        self.setBoolProperty('hide.title', self.hideTitles)
         self.setTitleLines()
 
         if self.isDirectPlay:
@@ -2244,19 +2244,15 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             chaps = []
             chapOffsets = []
             markerOffsets = set()
-            thumb_opts = ("blur_chapters" in self.no_spoilers
-                          and {"blur": util.addonSettings.episodeNoSpoilerBlur} or {})
             if self.chapters:
                 for index, chapter in enumerate(self.chapters):
-                    thumb = chapter.thumb and chapter.thumb.asTranscodedImageURL(
-                        *self.CHAPTER_THUMB_DIM, **thumb_opts) or None
-                    # mli = kodigui.ManagedListItem(data_source=chapter.startTime(),
-                    #                               thumbnailImage=thumb,
-                    #                               label=chapter.tag or T(33607, 'Chapter {}').format(index + 1))
-                    # items.append(mli)
+                    thumb = (not self.hidePreviews and chapter.thumb
+                             and chapter.thumb.asTranscodedImageURL(*self.CHAPTER_THUMB_DIM) or None)
                     st = chapter.startTime()
                     chapOffsets.append(st)
-                    chaps.append((st, thumb, chapter.tag or T(33607, 'Chapter {}').format(index + 1)))
+                    # a file's chapter names can tell the story ("The Betrayal"): hidden with episode titles
+                    name = not self.hideTitles and chapter.tag or T(33607, 'Chapter {}').format(index + 1)
+                    chaps.append((st, thumb, name))
 
             # fake chapters by using markers
             if util.getUserSetting('virtual_chapters', True) and self.markers and (not self.chapters or util.getUserSetting('combined_chapters', True)):
@@ -2295,7 +2291,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                     if skipMarker:
                         continue
 
-                    bifUrl = self.previewImage(offset, dims=self.CHAPTER_THUMB_DIM, blur_opts=thumb_opts)[0]
+                    bifUrl = not self.hidePreviews and self.previewImage(offset)[0] or None
                     markerOffsets.add(offset)
                     chaps.append((offset, bifUrl,
                                   label.format(" #{}".format(credCnt) if credits and creditsCounter > 1 else "")))
@@ -2306,9 +2302,11 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             for offset, thumb, label in sorted(chaps):
                 # time: the chapter's start, under its name - the row's stand-in for the seekbar's time bubble.
                 # A marker's card has a preview picture: the server's until the index is in (onPreviewsReady()).
+                # spoiler: the card's "hidden" placeholder (includes/osd_card_row.xml.tpl), pictures hidden.
                 mli = kodigui.ManagedListItem(data_source=offset, thumbnailImage=thumb, label=label,
                                               properties={'sub': util.simplifiedTimeDisplay(offset),
-                                                          'marker_preview': offset in markerOffsets and '1' or ''})
+                                                          'marker_preview': offset in markerOffsets and '1' or '',
+                                                          'spoiler': self.hidePreviews and '1' or ''})
                 items.append(mli)
 
         # Without chapters the row stays empty, which also leaves it unfocusable: down from the buttons goes nowhere.
@@ -2488,7 +2486,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         Starts this item's preview index downloads (previews.store) once it's playing - after any resume seek, so
         they stay out of start-up buffering - one per part. Called from tick(), so a second or so in; once an item.
         """
-        if self._previewsStarted or not self.hasBif or self.handler.waitingForSOS:
+        if self._previewsStarted or not self.hasBif or self.hidePreviews or self.handler.waitingForSOS:
             return
         player = self.handler.player
         playerObject = player.playerObject
@@ -2512,30 +2510,43 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         found = previews.part_at([(part.id, part.duration.asInt()) for part in playerObject.media.parts], offset)
         return found and previews.store.picture(*found) or None
 
-    def previewImage(self, offset, scanning=False, dims=None, blur_opts=None):
+    def previewImage(self, offset, scanning=False):
         """
         The preview picture at offset, and whether it's local: the downloaded index's (localPreview()), else one
         from the server (PlexPlayer.getBifUrl()) - a scan's at one per SCAN_BIF_STEP, so passing over the same
-        stretch reuses what Kodi has fetched. Spoiler blurring is the server's photo transcoder's, so blurred ones
-        always come from it; dims and blur_opts are its size and options (the moving preview's by default).
+        stretch reuses what Kodi has fetched.
         """
-        if "blur_chapters" not in self.no_spoilers:
-            local = self.localPreview(offset)
-            if local:
-                return local, True
+        local = self.localPreview(offset)
+        if local:
+            return local, True
         if scanning:
             offset -= offset % self.SCAN_BIF_STEP
-        url = self.handler.player.playerObject.getBifUrl(offset)
-        if url and "blur_chapters" in self.no_spoilers:
-            url = self.player.video.server.getImageTranscodeURL(
-                url, *(dims or self.LI_AR16X9_THUMB_DIM),
-                **(blur_opts or {"blur": util.addonSettings.episodeNoSpoilerBlur}))
-        return url, False
+        return self.handler.player.playerObject.getBifUrl(offset), False
+
+    def spoilerHiding(self, video):
+        """
+        (hide previews, hide titles) for video (docs/spoiler-previews.md): the "No TV spoilers" options
+        "Hide preview thumbnails and chapter images" (stored as blur_chapters, its name when it blurred them) and
+        "No unplayed episode titles" (the OSD's episode title, and file chapters' names), for an episode they cover -
+        unwatched, or not fully watched with "in progress", outside the allowed genres (SpoilersMixin.hideSpoilers()).
+        Decided once an item, in setup(), so passing the watched mark mid-play reveals nothing.
+        """
+        previewsOpt = 'blur_chapters' in self.no_spoilers
+        titlesOpt = 'no_unwatched_episode_titles' in self.no_spoilers
+        if not (previewsOpt or titlesOpt):
+            return False, False
+        try:
+            hide = self.hideSpoilers(video, use_cache=False)
+        except Exception:
+            # the genres can need a request; hiding is the safe way to be wrong
+            util.ERROR()
+            hide = video.type == 'episode'
+        return previewsOpt and hide, titlesOpt and hide
 
     def onPreviewsReady(self):
         """A part's index is in (on its download's thread): the chapter row's marker cards, built from the server's
         pictures, switch to the downloaded ones."""
-        if not self.initialized or "blur_chapters" in self.no_spoilers:
+        if not self.initialized or self.hidePreviews:
             return
         for mli in self.bigSeekControl:
             if mli.getProperty('marker_preview'):
@@ -2575,7 +2586,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             return
 
         if not no_osd or (no_osd and not self.no_time_no_osd_spoilers):
-            if self.hasBif:
+            if self.hasBif and not self.hidePreviews:
                 bifUrl, local = self.previewImage(offset, scanning=scanning)
                 setBif = True
                 if scanning:

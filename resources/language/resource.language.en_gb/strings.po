@@ -3884,3 +3884,19 @@ msgstr ""
 msgctxt "#35189"
 msgid "Hold Left or Right during playback to pause and scan the timeline. Press again to change speed, OK or Play to play from there, Back to cancel. Needs a remote that repeats a held key."
 msgstr ""
+
+msgctxt "#35190"
+msgid "Hide preview thumbnails and chapter images"
+msgstr ""
+
+msgctxt "#35191"
+msgid "For episodes these settings cover: the preview thumbnail above the seek bar isn't shown at all, and the chapter row's pictures are covered with a placeholder. The chapters' names and times still show."
+msgstr ""
+
+msgctxt "#35192"
+msgid "Also replaces chapter names with \"Chapter 1\", \"Chapter 2\" and so on."
+msgstr ""
+
+msgctxt "#35193"
+msgid "Select in which cases to blur TV episode thumbnails, redact summaries, hide episode titles etc."
+msgstr ""

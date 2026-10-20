@@ -65,6 +65,7 @@
         <itemlayout width="340">
             <control type="group">
                 <control type="image">
+                    <visible>String.IsEmpty(ListItem.Property(spoiler))</visible>
                     <posx>40</posx>
                     <posy>{{ vscale(12) }}</posy>
                     <width>300</width>
@@ -81,6 +82,28 @@
                     <texture background="true" diffuse="script.plex/masks/ar16x9-mask-300.png">$INFO[ListItem.Thumb]</texture>
                     <aspectratio scalediffuse="false">scale</aspectratio>
                     <colordiffuse>FFAAAAAA</colordiffuse>
+                </control>
+                <!-- Spoilers (SeekDialog.spoilerHiding()): pictures hidden, so the card's dark fill and the eye-slash
+                     (indicators/hidden.png, as for hidden hubs) - not the film placeholder, which means "no picture". -->
+                <control type="group">
+                    <visible>!String.IsEmpty(ListItem.Property(spoiler))</visible>
+                    <control type="image">
+                        <posx>40</posx>
+                        <posy>{{ vscale(12) }}</posy>
+                        <width>300</width>
+                        <height>{{ vscale(168) }}</height>
+                        <texture diffuse="script.plex/masks/ar16x9-mask-300.png">script.plex/white-square.png</texture>
+                        <aspectratio scalediffuse="false">scale</aspectratio>
+                        <colordiffuse>FF262626</colordiffuse>
+                    </control>
+                    <control type="image">
+                        <posx>166</posx>
+                        <posy>{{ vscale(72) }}</posy>
+                        <width>48</width>
+                        <height>{{ vscale(48) }}</height>
+                        <texture>script.plex/indicators/hidden.png</texture>
+                        <colordiffuse>66FFFFFF</colordiffuse>
+                    </control>
                 </control>
                 <!-- The playing item: post-play's play overlay (script-plex-video_player.xml.tpl, the next item's art) -
                      a 64 dark circle centred on the art (190,96) with the 38.75 play glyph in it - the glyph gold, as this
@@ -149,6 +172,7 @@
                     <animation effect="zoom" start="100" end="104" time="100" center="190,{{ vscale(96) }}" reversible="false">Focus</animation>
                     <animation effect="zoom" start="104" end="100" time="100" center="190,{{ vscale(96) }}" reversible="false">UnFocus</animation>
                     <control type="image">
+                        <visible>String.IsEmpty(ListItem.Property(spoiler))</visible>
                         <posx>40</posx>
                         <posy>{{ vscale(12) }}</posy>
                         <width>300</width>
@@ -163,6 +187,28 @@
                         <height>{{ vscale(168) }}</height>
                         <texture background="true" diffuse="script.plex/masks/ar16x9-mask-300.png">$INFO[ListItem.Thumb]</texture>
                         <aspectratio scalediffuse="false">scale</aspectratio>
+                    </control>
+                    <!-- Spoilers (SeekDialog.spoilerHiding()): pictures hidden, so the card's dark fill and the eye-slash
+                         (indicators/hidden.png, as for hidden hubs) - not the film placeholder, which means "no picture". -->
+                    <control type="group">
+                        <visible>!String.IsEmpty(ListItem.Property(spoiler))</visible>
+                        <control type="image">
+                            <posx>40</posx>
+                            <posy>{{ vscale(12) }}</posy>
+                            <width>300</width>
+                            <height>{{ vscale(168) }}</height>
+                            <texture diffuse="script.plex/masks/ar16x9-mask-300.png">script.plex/white-square.png</texture>
+                            <aspectratio scalediffuse="false">scale</aspectratio>
+                            <colordiffuse>FF262626</colordiffuse>
+                        </control>
+                        <control type="image">
+                            <posx>166</posx>
+                            <posy>{{ vscale(72) }}</posy>
+                            <width>48</width>
+                            <height>{{ vscale(48) }}</height>
+                            <texture>script.plex/indicators/hidden.png</texture>
+                            <colordiffuse>B3FFFFFF</colordiffuse>
+                        </control>
                     </control>
                     <!-- The playing item: post-play's play overlay (script-plex-video_player.xml.tpl, the next item's art) -
                          a 64 dark circle centred on the art (190,96) with the 38.75 play glyph in it - the glyph gold, as this

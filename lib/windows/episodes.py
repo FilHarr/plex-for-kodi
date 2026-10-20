@@ -1996,7 +1996,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # own getVideoInfo()) was actually new information, on request. A dialog like Settings'/
         # More's own popups, not a full window transition, so no cameFrom bookkeeping needed either
         # (that existed only for InfoWindow's own close-and-return-to-this-window flow).
-        info.showMediaDetails(episode)
+        # a file's chapter names go with episode titles, for an episode the spoiler settings cover
+        info.showMediaDetails(episode, hide_chapter_names=self.noTitles and self.hideSpoilers(episode, use_cache=False))
 
     def summaryButtonClicked(self):
         mli = self.episodeListControl.getSelectedItem()
