@@ -19,6 +19,7 @@ from . import optionsdialog
 from . import section_ids
 from . import sidebar_model
 from . import windowutils
+from .mixins.spoilers import SpoilersMixin
 from .copies import (sameTitleKey as _sameKey, _versions, _int, _quality, VERSIONED_TYPES,  # noqa: F401
                      pickCopy, versionEntries, chooseVersion, copyLabel, chooseFrom)
 
@@ -32,7 +33,7 @@ class HistoryItem(object):
         self.is_clear = is_clear
 
 
-class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin):
+class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, SpoilersMixin):
     """Search, a sidebar destination like a library or Watchlist (the user, 2026-10-06), shown by
     the host (LibraryWindow._openSearch()) with the sidebar, its Search entry the active one.
     Opened from the sidebar, it starts fresh: an empty query, with the history. Back goes to Home's
@@ -94,6 +95,8 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
         windowutils.UtilMixin.__init__(self)
+        # episodes' titles and stills in the results (episodeSpoilers())
+        SpoilersMixin.__init__(self)
         # A search to run straight away, its type button and the result to focus in it: Back to a
         # search from a result opened from it (restoreState())
         self.initialQuery = kwargs.get('query')
@@ -698,6 +701,8 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         """A result's grid item: its art drawn as artType (HUBMAP), its title, an episode's show,
         the type line and, on a multi-server account, its server."""
         mli = self._listItem(hubItem, *util.scaleResolution(*self.ART_SIZES.get(artType, self.ART_SIZES['square'])))
+        if mli is not None and hubItem.TYPE == 'episode':
+            self.episodeSpoilers(mli, hubItem, artType)
         if mli is not None:
             mli.setProperty('art.type', artType)
             mli.setProperty('subtitle', self.subtitle(hubItem))
@@ -706,6 +711,22 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             # one with copies, the server it opens on and how many others (placesLine())
             mli.setProperty('server.name', placesLine(hubItem))
         return mli
+
+    def episodeSpoilers(self, mli, episode, artType, redo=False):
+        """An episode the spoiler settings cover: its title hidden and its still blurred, as on the Episodes screen
+        (docs/spoilers-everywhere.md). redo: its show's genres are in (spoilerCovered()), so both are set either
+        way."""
+        if not (self.noTitles or self.noImages):
+            return
+        covered = self.spoilerCovered(
+            episode, on_known=lambda ep, mli=mli: mli.dataSource is ep and self.episodeSpoilers(mli, ep, artType, True))
+        if not covered and not redo:
+            return
+        mli.setLabel(covered and self.noTitles and T(33008, '[Spoilers removed]') or episode.title)
+        opts = covered and self.noImages and {'blur': util.addonSettings.episodeNoSpoilerBlur} or {}
+        if opts or redo:
+            width, height = util.scaleResolution(*self.ART_SIZES.get(artType, self.ART_SIZES['square']))
+            mli.setThumbnailImage(episode.get('thumb').asTranscodedImageURL(width, height, **opts))
 
     # Each art shape's size on its card (script-plex-search.xml.tpl, by art.type), asked for at that
     # size through the poster resolution setting (util.scaleResolution()), as the other screens ask.

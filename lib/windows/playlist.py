@@ -20,6 +20,7 @@ from . import opener
 from . import videoplayer
 from . import windowutils
 from .mixins.row_restore import RowRestoreMixin
+from .mixins.spoilers import SpoilersMixin
 
 PLAYLIST_PAGE_SIZE = 500
 
@@ -59,7 +60,7 @@ class ChunkRequestTask(backgroundthread.Task):
 
 
 class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.SidebarMixin, signalsmixin.SignalsMixin,
-                     RowRestoreMixin):
+                     RowRestoreMixin, SpoilersMixin):
     xmlFile = 'script-plex-playlist.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -90,6 +91,8 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
         signalsmixin.SignalsMixin.__init__(self)
+        # episodes' titles and stills (createEpisodeListItem())
+        SpoilersMixin.__init__(self)
         self.playlist = kwargs.get('playlist')
         self.exitCommand = None
         self.tasks = backgroundthread.Tasks()
@@ -441,11 +444,24 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                                                                T(32311, 'E').format(episode.index))
         )
         mli.setLabel2(label2)
-        mli.setThumbnailImage(episode.thumb.asTranscodedImageURL(*self.LI_AR16X9_THUMB_DIM))
+        # an episode the spoiler settings cover: its title hidden and its still blurred, as on the Episodes screen
+        # (docs/spoilers-everywhere.md); redone if its show's genres had to be fetched (_episodeSpoilerKnown())
+        covered = ((self.noTitles or self.noImages)
+                   and self.spoilerCovered(episode, on_known=lambda ep, mli=mli: self._episodeSpoilerKnown(mli, ep)))
+        if covered and self.noTitles:
+            mli.setLabel(T(33008, '[Spoilers removed]'))
+        opts = covered and self.noImages and {'blur': util.addonSettings.episodeNoSpoilerBlur} or {}
+        mli.setThumbnailImage(episode.thumb.asTranscodedImageURL(*self.LI_AR16X9_THUMB_DIM, **opts))
         mli.setProperty('track.duration', util.durationToShortText(episode.duration.asInt()))
         mli.setProperty('video', '1')
         mli.setProperty('watched', episode.isPlayed and '1' or '')
         mli.setProperty('unwatched', episode.isFullyWatched and '' or '1')
+
+    def _episodeSpoilerKnown(self, mli, episode):
+        """episode's show genres are in (spoilerCovered()): its row again, if it still holds it."""
+        if mli.dataSource is episode:
+            mli.setLabel(episode.title)
+            self.createEpisodeListItem(mli, episode)
 
     def createMovieListItem(self, mli, movie):
         mli.setLabel(movie.defaultTitle)

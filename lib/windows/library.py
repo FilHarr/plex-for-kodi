@@ -40,6 +40,7 @@ from .library_grid import GridMixin, TYPE_PLURAL, isOtherVideos
 from .library_hubs import HubsMixin
 from .mixins.playbackbtn import PlaybackBtnMixin
 from .mixins.common import CommonMixin
+from .mixins.spoilers import SpoilersMixin
 
 
 # Sort keys the addon used to persist under its own spelling, mapped to the server's (as
@@ -356,7 +357,7 @@ def logHomeReset(window, note=None):
 # util.CronReceiver: tick() (see there) - and its halfHour()/day() no-ops, which util.CRON calls on
 # every receiver too; without them the call fell through MultiWindow.__getattr__() to the view.
 class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow, windowutils.UtilMixin, windowutils.SidebarMixin, CommonMixin,
-                    util.CronReceiver):
+                    util.CronReceiver, SpoilersMixin):
     bgXML = 'script-plex-blank.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -385,6 +386,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         PlaybackBtnMixin.__init__(self)
         kodigui.MultiWindow.__init__(self, *args, **kwargs)
         windowutils.UtilMixin.__init__(self)
+        # the hero's episode title and summary (setHeroInfo())
+        SpoilersMixin.__init__(self)
         self.section = kwargs.get('section')
 
         # Sidebar entry-section persistence (ported from Sidebar-Tab-Unification's
@@ -1749,6 +1752,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             finally:
                 for signal, handler in watched:
                     plexapp.util.APP.off(signal, handler)
+            # the spoiler options, for the hero from here on
+            self.cacheSpoilerSettings()
             if themeChanged:
                 util.LOG('Library: theme-relevant settings changed ({0}), recompiling templates',
                          ', '.join(themeChanged))

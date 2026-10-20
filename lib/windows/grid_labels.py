@@ -129,7 +129,8 @@ def _first(item):
     return item.get('title') or ''
 
 
-def lines(base, item):
+def lines(base, item, hide_title=False):
+    """hide_title: an episode the spoiler settings cover, its title "[Spoilers removed]" (docs/spoilers-everywhere.md)."""
     kind = item.TYPE
     first = _first(item)
     default = _typeDefault(item)
@@ -146,7 +147,7 @@ def lines(base, item):
         second, third = default, releaseText(item.get('originallyAvailableAt'))
     elif base in RECENTLY_ADDED_TV:
         if kind == 'episode':
-            second, third = default, item.get('title') or ''
+            second, third = default, hide_title and T(33008, '[Spoilers removed]') or item.get('title') or ''
         elif kind == 'show':
             # a whole show added at once: its name alone, on request (2026-10-09)
             return Lines(first, '', '', None)

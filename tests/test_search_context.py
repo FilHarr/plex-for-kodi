@@ -79,6 +79,8 @@ def searchWindow(control=None, text='alien'):
     win.historyAdded = []
     win.addToHistory = win.historyAdded.append
     win.processCommand = win.processedCommands.append
+    # spoilers off: createListItem()'s episodeSpoilers() reads these (SpoilersMixin)
+    win.noTitles = win.noImages = False
     return win
 
 

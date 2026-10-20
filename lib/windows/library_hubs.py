@@ -1366,6 +1366,16 @@ class HubsMixin(object):
         self._setNoHeroArt(False)
         return result
 
+    def _heroSpoilerKnown(self, ds):
+        """An episode's show genres are in (SpoilersMixin.spoilerCovered()): the hero again, if it's still that one."""
+        if getattr(self, '_heroItem', None) is ds:
+            self.setHeroInfo(ds)
+
+    def spoilerScreenOpen(self):
+        """SpoilersMixin's, for this host: a view is up. Not the generic check - a missing attribute here is looked
+        up on the current view (MultiWindow.__getattr__()), so it would read a hosted screen's state."""
+        return bool(self.__dict__.get('_current')) and not util.MONITOR.abortRequested()
+
     def setHeroInfo(self, ds):
         """Populates the Window properties script-plex-recommended.xml.tpl's own hero-overlay
         block reads. Ported verbatim from HomeWindow.setHeroInfo() (home.py) - see that method's
@@ -1382,6 +1392,11 @@ class HubsMixin(object):
 
         ds_type = getattr(ds, 'type', '') or ''
         title = getattr(ds, 'title', '') or ''
+        # an episode the spoiler settings cover: its title and summary hidden (docs/spoilers-everywhere.md); redone
+        # if its show's genres had to be fetched and turn out to exempt it (_heroSpoilerKnown())
+        self._heroItem = ds
+        covered = (ds_type == 'episode' and (self.noTitles or self.noSummaries)
+                   and self.spoilerCovered(ds, on_known=self._heroSpoilerKnown))
         # Two-line treatment (small clearlogo, or a text heading where there's no logo, with a
         # second text line under it): episodes, and the rolled-up season items Plex puts in mixed
         # recently-added hubs when several episodes of one season land together (on request,
@@ -1397,7 +1412,7 @@ class HubsMixin(object):
             subtitle = title
             title = getattr(ds, 'parentTitle', '') or title
         elif ds_type == 'episode':
-            subtitle = title
+            subtitle = covered and self.noTitles and T(33008, '[Spoilers removed]') or title
             title = getattr(ds, 'grandparentTitle', '') or title
         elif ds_type == 'playlist':
             # Playlists (on request, 2026-09-20): the template renders the heading in the episode
@@ -1432,6 +1447,8 @@ class HubsMixin(object):
         self.setProperty('duration', ds_type != 'playlist' and duration and util.durationToShortText(duration.asInt(), noSpaces=True) or '')
 
         summary = getattr(ds, 'summary', None)
+        if covered and self.noSummaries:
+            summary = T(33008, '[Spoilers removed]')
         # Cut to the box's three lines (util.summaryForBox()) - live-reported lag moving along the
         # Recently Played Music row (2026-09-20) that the hero-sync timing showed wasn't Python at
         # all; see util.SUMMARY_BOX_WIDTH's own comment.

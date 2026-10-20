@@ -30,6 +30,7 @@ from . import hub_limits
 from . import kodigui
 from . import opener
 from . import panel_colors
+from .mixins.spoilers import SpoilersMixin
 
 
 class GroupPaginator(collection.BoundedGridPaginator):
@@ -190,7 +191,7 @@ class CreditsGridWindow(SeeMoreWindow):
                                         from_watchlist=self.entryFromWatchlist))
 
 
-class HubGridWindow(SeeMoreWindow):
+class HubGridWindow(SeeMoreWindow, SpoilersMixin):
     """A Recommended row's every item, from its "See more" tile (LibraryWindow.hubSeeMoreClicked()):
     the row's whole list from the server - as far as hub_limits lets it reach: a Recently Released or
     Watched row's window, a Recently Added row's number - in the row's tile shape, with the grid's own
@@ -219,6 +220,8 @@ class HubGridWindow(SeeMoreWindow):
 
     def __init__(self, *args, **kwargs):
         SeeMoreWindow.__init__(self, *args, **kwargs)
+        # an episode's title in the Recently Added grids' third line (fillItem())
+        SpoilersMixin.__init__(self)
         self.hub = kwargs.get('hub')
         self.rowTitle = kwargs.get('title') or self.hub.title or ''
         self.base = hub_limits.baseIdentifier(self.hub)
@@ -331,7 +334,9 @@ class HubGridWindow(SeeMoreWindow):
             pass
 
     def fillItem(self, mli, obj):
-        lines = grid_labels.lines(self.base, obj)
+        hide = (obj.TYPE == 'episode' and self.noTitles
+                and self.spoilerCovered(obj, on_known=lambda ep, mli=mli: self._refillItem(mli, ep)))
+        lines = grid_labels.lines(self.base, obj, hide_title=hide)
         mli.dataSource = obj
         mli.setLabel(lines.line1)
         mli.setLabel2(lines.line2)
@@ -344,6 +349,12 @@ class HubGridWindow(SeeMoreWindow):
             mli.setProperty('is.photo', '1')
         if obj.TYPE in self.VIDEO_TYPES:
             self.setWatchedInfo(obj, mli)
+
+    def _refillItem(self, mli, obj):
+        """obj's show genres are in (spoilerCovered()): its tile again, if it still holds obj."""
+        with self._fillLock:
+            if mli.dataSource is obj:
+                self.fillItem(mli, obj)
 
     def thumbFor(self, obj):
         w, h = self.THUMB_DIM
