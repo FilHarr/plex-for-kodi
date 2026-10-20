@@ -366,3 +366,40 @@ class ClearLogoTest(KodiTestCase):
                 _, logos = self.controlsFor(window)
                 for logo in logos:
                     self.assertEqual("keep", logo.findtext("aspectratio"))
+
+
+class GridRestoreIndexTest(KodiTestCase):
+    """Back to a library grid left below its first row: the header, the filter row and the grid's
+    own slides read restore.index (LibraryWindow._setRestoreIndex(), set before the view shows) as
+    well as the focused tile, which isn't selected until the fill has its items - content.filling
+    held them at the top meanwhile, so they showed and then slid away."""
+
+    WINDOWS = ("posters", "posters-small", "squares", "ar16x9")
+    ROW_END_RE = re.compile(r"Container\(101\)\.ListItem\.Property\(index\),(\d+)\)")
+
+    def setUp(self):
+        super(GridRestoreIndexTest, self).setUp()
+        self.rendered = render_theme(make_engine(self.mktemp()), "modern-colored")
+
+    def test_every_slide_held_while_filling_also_follows_the_restore_position(self):
+        for window in self.WINDOWS:
+            root = ET.fromstring(self.rendered[window])
+            conditions = [a.get("condition") for a in root.iter("animation")
+                          if "content.filling" in (a.get("condition") or "")]
+            with self.subTest(window=window):
+                self.assertTrue(conditions)
+                for condition in conditions:
+                    rowEnd = self.ROW_END_RE.search(condition).group(1)
+                    self.assertIn("Integer.IsGreater(Window.Property(restore.index),{0})".format(rowEnd),
+                                  condition)
+
+    def test_the_filter_row_starts_hidden_past_the_first_row(self):
+        # (the list views never hide theirs)
+        for window in self.WINDOWS:
+            root = ET.fromstring(self.rendered[window])
+            filterRow = [c for c in root.iter("control") if c.get("id") == "600"]
+            with self.subTest(window=window):
+                self.assertEqual(1, len(filterRow))
+                visible = " + ".join(v.text or "" for v in filterRow[0].findall("visible"))
+                rowEnd = self.ROW_END_RE.search(visible).group(1)
+                self.assertIn("!Integer.IsGreater(Window.Property(restore.index),{0})".format(rowEnd), visible)

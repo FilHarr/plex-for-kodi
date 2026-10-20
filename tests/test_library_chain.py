@@ -196,10 +196,16 @@ class FakeHostWindow(object):
         # A real LibraryWindow.openSection() returns True/False; configurable here per-test.
         self.openSectionReturnValue = False
         self.themeStops = []
+        self._pendingRestoreItemPos = None
+        self.restoreIndexes = []
 
     def _stopThemeMusic(self, towards=None):
         # The real one reads lib.player's PLAYER - covered directly in ThemeMusicStopTest.
         self.themeStops.append(towards)
+
+    def _setRestoreIndex(self, pos):
+        # The real one writes through xbmcgui.WindowXML - covered directly in RestoreIndexTest.
+        self.restoreIndexes.append(pos)
 
     def openSection(self, *args, **kwargs):
         self.openSectionCalls.append((args, kwargs))
@@ -2483,3 +2489,75 @@ class ThemeMusicStopTest(KodiTestCase):
         host.openSectionReturnValue = True
         popBack(host)
         self.assertEqual([], host.themeStops)
+
+
+class RestoreIndexTest(KodiTestCase):
+    """Back to a library grid left below its first row: the grid templates take the header,
+    filter row and grid past the first row from restore.index, the position Back returns to, set
+    on the new view before it shows (LibraryWindow._setRestoreIndex()) and cleared with
+    content.filling once the fill ends (GridMixin._setFilling()). The focused tile isn't selected
+    until the fill has its items, and content.filling held them at the top meanwhile."""
+
+    def test_it_is_written_to_the_view_before_it_shows(self):
+        host = mock.Mock()
+        with mock.patch.object(library.xbmcgui.WindowXML, 'setProperty', create=True) as setProperty:
+            library.LibraryWindow._setRestoreIndex(host, 42)
+            library.LibraryWindow._setRestoreIndex(host, 0)
+            library.LibraryWindow._setRestoreIndex(host, None)
+        self.assertEqual([mock.call(host._current, 'restore.index', '42'),
+                          mock.call(host._current, 'restore.index', ''),
+                          mock.call(host._current, 'restore.index', '')], setProperty.call_args_list)
+
+    def test_the_sections_own_view_gets_the_position_back_returns_to(self):
+        host = FakeHostWindow()
+        host._pendingRestoreItemPos = 42
+        _setupCurrent(host, FakeThinProxy)
+        self.assertEqual([42], host.restoreIndexes)
+
+    def test_a_hosted_screen_gets_none_over_whatever_its_window_id_last_held(self):
+        host = FakeHostWindow()
+        host._pendingRestoreItemPos = 42
+        _setupCurrent(host, FakeShell)
+        self.assertEqual([None], host.restoreIndexes)
+
+    class FillHost(object):
+        _setFilling = library.GridMixin._setFilling
+        fill = library.GridMixin.fill
+
+        def __init__(self, pos=None, section_type='movie'):
+            self._pendingRestoreItemPos = pos
+            self._current = FakeShell(FakeShell.xmlFile, FakeShell.path, FakeShell.theme, FakeShell.res)
+            self.section = mock.Mock(TYPE=section_type)
+            self.boolProperties = []
+
+        def setBoolProperty(self, key, value):
+            self.boolProperties.append((key, value))
+
+        def restoreIndex(self):
+            return [v for k, v in self._current.setPropertyCalls if k == 'restore.index']
+
+    def test_a_fill_starts_with_its_restore_position_and_ends_without_it(self):
+        host = self.FillHost(pos=42)
+        host._setFilling(True)
+        host._setFilling(False)
+        self.assertEqual([('content.filling', True), ('content.filling', False)], host.boolProperties)
+        self.assertEqual(['42', ''], host.restoreIndex())
+
+    def test_a_fill_with_nothing_to_restore_clears_it(self):
+        host = self.FillHost(pos=None)
+        host._setFilling(True)
+        self.assertEqual([''], host.restoreIndex())
+
+    def test_a_fill_that_fails_clears_it_as_no_chunk_will(self):
+        host = self.FillHost(pos=42)
+        host.fillShows = mock.Mock(side_effect=ValueError('no server'))
+        with self.assertRaises(ValueError):
+            host.fill()
+        self.assertEqual([''], host.restoreIndex())
+
+    def test_a_photo_grid_clears_it_once_filled(self):
+        host = self.FillHost(pos=42, section_type='photo')
+        host.fillPhotos = mock.Mock()
+        host.fill()
+        host.fillPhotos.assert_called_once_with()
+        self.assertEqual([''], host.restoreIndex())

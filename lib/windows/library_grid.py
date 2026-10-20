@@ -1488,10 +1488,27 @@ class GridMixin(object):
 
         if self.section.TYPE in ('photo', 'photodirectory'):
             self.fillPhotos()
+            # never sets content.filling, but its restore.index still has to go
+            self._setFilling(False)
         elif self.section.TYPE == 'playlists':
             self.fillPlaylists(keep_focus=keep_focus)
         else:
-            self.fillShows(keep_focus=keep_focus)
+            try:
+                self.fillShows(keep_focus=keep_focus)
+            except Exception:
+                # no chunk is coming to end it: the header would stay hidden
+                self._setFilling(False)
+                raise
+
+    def _setFilling(self, filling):
+        """content.filling, which holds the grid templates' header, filter row and grid at the
+        top while a fill runs, and restore.index (LibraryWindow._setRestoreIndex()), which takes
+        them past the first row instead when the fill is landing back on a tile beyond it. Set from
+        the fill's own restore position as it starts, for a refill in place too (back from Play on
+        the grid), and cleared with content.filling, once the tiles are there to read."""
+        self.setBoolProperty('content.filling', filling)
+        pos = self._pendingRestoreItemPos if filling else None
+        self._current.setProperty('restore.index', str(pos) if pos else '')
 
     def getFilterOpts(self):
         if not self.filter:
@@ -1637,7 +1654,7 @@ class GridMixin(object):
         self._retireListItems()
         self.setBoolProperty('no.content', False)
         self.setBoolProperty('no.content.filtered', False)
-        self.setBoolProperty('content.filling', True)
+        self._setFilling(True)
         items = []
         jitems = []
         self.keyItems = {}
@@ -1754,6 +1771,7 @@ class GridMixin(object):
                         self._noteSectionEmpty(True)  # no tabs row either
                 # or nothing because the server isn't answering: the panel says so instead
                 self.updateServerUnavailable()
+                self._setFilling(False)
 
                 return
             else:
@@ -1916,7 +1934,7 @@ class GridMixin(object):
         self.setBoolProperty('no.content', False)
         self.setBoolProperty('no.content.filtered', False)
         self.setBoolProperty('no.content.playlists', False)
-        self.setBoolProperty('content.filling', True)
+        self._setFilling(True)
 
         playlists = [pl for pl in self._sectionPlaylists() if pl.playlistType == self.itemType]
 
@@ -1928,7 +1946,7 @@ class GridMixin(object):
         if not playlists:
             self.setBoolProperty('no.content', True)
             self.setBoolProperty('no.content.playlists', True)  # its own wording (library.xml.tpl)
-            self.setBoolProperty('content.filling', False)
+            self._setFilling(False)
             return
 
         items = []
@@ -1946,7 +1964,7 @@ class GridMixin(object):
         if not keep_focus:
             self.setFocusId(self.POSTERS_PANEL_ID)
 
-        self.setBoolProperty('content.filling', False)
+        self._setFilling(False)
 
     @busy.dialog()
     def fillPhotos(self):
@@ -2235,7 +2253,7 @@ class GridMixin(object):
                     if marks is not None and pos - start == CHUNK_SCREENFUL:
                         marks['screenful'] = time.time()
 
-        self.setBoolProperty('content.filling', False)
+        self._setFilling(False)
 
     def requestChunk(self, start):
         if util.addonSettings.retrieveAllMediaUpFront or self.section.TYPE == 'playlists':

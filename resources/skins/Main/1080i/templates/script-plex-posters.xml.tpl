@@ -1,7 +1,7 @@
 {% extends "library_posters.xml.tpl" %}
 {% block content %}
 <control type="group" id="50">
-    <animation effect="slide" time="200" end="0,{{ vscale(-115, negpos=True) }}" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <animation effect="slide" time="200" end="0,{{ vscale(-115, negpos=True) }}" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),{% block first_row_end %}5{% endblock %})">Conditional</animation>
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
     <posx>60</posx>
     <posy>{{ vscale(125) }}</posy>
@@ -285,7 +285,7 @@
          posy=132.5, so the delta needed to land its bottom edge (posy+height) at 0 is
          -(132.5+145)=-277.5) - same condition group 50 uses for its own header-hide slide, so
          this moves in lockstep with the grid rather than on its own timing. -->
-    <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),{% block first_row_end %}5{% endblock %})">Conditional</animation>
     <defaultcontrol>301</defaultcontrol>
     <!-- 184, not the old 120: moves the whole row left so the view button's new label-pill
          (overlay 393 below) ends flush with the grid's own right edge when focused, instead of
@@ -397,7 +397,7 @@
          End position centers the scrubber's full 27-key extent (26 letters + '#', 34px each =
          918) in the 1080-tall screen: (1080-918)/2 = 81 top margin, a 150-81=69px move up from
          the resting posy. -->
-    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),{% block first_row_end %}5{% endblock %})">Conditional</animation>
     <posx>1836</posx>
     <posy>{{ vscale(150) }}</posy>
     <width>20</width>
@@ -445,7 +445,7 @@
          Same delta as the scrubber rather than independently centering this control's own 910
          height (which would want -85, (1080-910)/2) so the two stay level with each other, since
          they sit side by side and started level (both resting at posy/top=150). -->
-    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),{% block first_row_end %}5{% endblock %})">Conditional</animation>
     {% include "includes/scrollbar_style.xml.tpl" %}
     <!-- Back to the scrubber when it's also showing (alpha orderings); straight to the grid/
          filter-row otherwise, mirroring the scrubber's own two-tier index routing (100 once the

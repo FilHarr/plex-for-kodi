@@ -14,7 +14,7 @@
    The poster grid's first-row numbers follow its column count: its last index (2), its size (3),
    and up off the first row going to the filter row from the left two columns, the buttons from
    the third. #}
-{% block header_animation %}<animation effect="slide" end="0,{{ vscale(-125) }}" time="200" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),2) + !ControlGroup(200).HasFocus(0) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>{% endblock %}
+{% block header_animation %}<animation effect="slide" end="0,{{ vscale(-125) }}" time="200" tween="quadratic" easing="out" condition="[[Integer.IsGreater(Container(101).ListItem.Property(index),2) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),2)] + !ControlGroup(200).HasFocus(0)">Conditional</animation>{% endblock %}
 {% block hide_filter_from_index %}2{% endblock %}
 {% block header_bg %}
 <control type="image">

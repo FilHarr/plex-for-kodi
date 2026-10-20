@@ -779,6 +779,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # onReInit() (below) never runs for it.
             self._stopThemeMusic()
             kodigui.MultiWindow._setupCurrent(self, cls)
+            self._setRestoreIndex(self._pendingRestoreItemPos)
             if issubclass(cls, RecommendedWindow):
                 self._hideStaleHero()
             util.DEBUG_LOG("Library: _setupCurrent({0}) thin-proxy branch complete", cls)
@@ -794,6 +795,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._retireListItems()
         self._current = cls(cls.xmlFile, cls.path, cls.theme, cls.res, **self._nextKwargs)
         self._currentKwargs = self._nextKwargs
+        self._setRestoreIndex(None)
         # Both weak (see the top of this method): _hostRef routes the shell's routeAction() through
         # routeAction() (kodigui.BaseWindow.routeActionToHost()), _chainHost is what its
         # navigation calls (openWindow(), goHome(), ...) find as the chain's host.
@@ -853,6 +855,20 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         the view), so nothing overwrites this before the bind."""
         util.DEBUG_LOG("Library: hiding the stale hero before show")
         xbmcgui.WindowXML.setProperty(self._current, 'no_hero_art', '1')
+
+    def _setRestoreIndex(self, pos):
+        """Called on a fresh view before it's shown: the grid position Back is returning to
+        (popBack()), as restore.index, which the grid templates read as already scrolled past the
+        first row - header, filter row and grid start there, with no slide. Without it they read
+        the focused tile, but that isn't selected until the fill has its items, and content.filling
+        holds them at the top meanwhile, so they showed and then slid away on every Back to a
+        scrolled grid. Cleared once the fill ends (GridMixin._fillEnded()).
+
+        Written to every view, '' when there's none: Kodi reuses window ids, and a new window
+        starts with the properties its id last held (_hideStaleHero()). Written with
+        xbmcgui.WindowXML.setProperty() directly for the reason given there, and so it isn't in
+        the host's replay cache either, which _onFirstInit() would write back over it."""
+        xbmcgui.WindowXML.setProperty(self._current, 'restore.index', str(pos) if pos else '')
 
     def _retireListItems(self):
         """Mark the list items in-flight work is writing into as stale (_listGeneration), and wait
