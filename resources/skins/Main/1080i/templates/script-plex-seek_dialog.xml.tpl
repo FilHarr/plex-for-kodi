@@ -633,23 +633,26 @@
     <visible>!String.IsEmpty(Window.Property(has.bif)) + !String.IsEmpty(Window.Property(bif.image)) + !String.IsEmpty(Window.Property(button.seek)) + [String.IsEmpty(Window.Property(no.osd.hide_info)) | !String.IsEmpty(Window.Property(show.OSD))]</visible>
     <animation effect="fade" time="100" delay="100" end="100">Visible</animation>
     <posx>0</posx>
-    <!-- Above the buttons (909-979), 16 clear: 893 - 184. Python's setPosition() keeps this y. -->
-    <posy>709</posy>
+    <!-- The size of the OSD's card rows' art (includes/osd_card_row.xml.tpl), 300x168, and rounded as it is, with
+         masks/ar16x9-mask-300.png (corners 11); in a 2px black frame, 304x172, masked the same so it follows the
+         curve. Above the buttons (909-979), 16 clear: 893 - 172. Python's setPosition() keeps this y, and slides it
+         along the bar by the frame's width (SeekDialog.BIF_WIDTH). -->
+    <posy>721</posy>
     <control type="image">
         <posx>0</posx>
         <posy>0</posy>
-        <width>324</width>
-        <height>{{ vscale(184) }}</height>
-        <texture>script.plex/white-square.png</texture>
+        <width>304</width>
+        <height>{{ vscale(172) }}</height>
+        <texture diffuse="script.plex/masks/ar16x9-mask-300.png">script.plex/white-square.png</texture>
         <colordiffuse>FF000000</colordiffuse>
     </control>
     <control type="image">
         <posx>2</posx>
-        <posy>2</posy>
-        <width>320</width>
-        <height>{{ vscale(180) }}</height>
+        <posy>{{ vscale(2) }}</posy>
+        <width>300</width>
+        <height>{{ vscale(168) }}</height>
         <fadetime>10</fadetime>
-        <texture>$INFO[Window.Property(bif.image)]</texture>
+        <texture diffuse="script.plex/masks/ar16x9-mask-300.png">$INFO[Window.Property(bif.image)]</texture>
     </control>
 </control>
 <control type="group" id="801">

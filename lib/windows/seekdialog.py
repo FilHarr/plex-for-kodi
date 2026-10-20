@@ -26,6 +26,7 @@ from . import kodigui
 from . import windowutils
 from . import playersettings
 from . import optionsdialog
+from . import previews
 from . import seek_scan
 from .mixins.spoilers import SpoilersMixin
 from .mixins.subtitledl import PlexSubtitleDownloadMixin
@@ -112,6 +113,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
     SELECTION_INDICATOR = 202  # the seek marker
     CACHE_IMAGE_ID = 206
     BIF_IMAGE_ID = 300
+    BIF_WIDTH = 304  # the preview thumbnail's frame (the template's group 300): the card rows' 300 art, 2 each side
     # The seekbar is the music player's: 80% of the screen, centred - see the SEEKBAR comment in
     # script-plex-seek_dialog.xml.tpl, whose 232/1496 these and BAR_X/BAR_RIGHT must match.
     SEEK_IMAGE_WIDTH = 1496
@@ -163,8 +165,9 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
     # The least auto-seek delay, as the setting's slider has it. 0 made a seek on every press, a jerky mess; it and anything
     # else under this saved before count as this.
     MIN_AUTO_SEEK_DELAY = 0.5
-    # Hold left/right to scan (startScan()): how often a scan moves the seek point, and its thumbnails - one per
-    # SCAN_BIF_STEP of video, changed at most every SCAN_BIF_INTERVAL (each new one's a fetch from the server)
+    # Hold left/right to scan (startScan()): how often a scan moves the seek point; and, while its thumbnails come
+    # from the server (previewImage()), one per SCAN_BIF_STEP of video, changed at most every SCAN_BIF_INTERVAL - each
+    # new one's a fetch. Local ones change on every move.
     SCAN_TICK = 0.1
     SCAN_BIF_STEP = 2000
     SCAN_BIF_INTERVAL = 0.4
@@ -220,8 +223,10 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._holdDetector = seek_scan.HoldDetector()
         self._scan = None
         self._scanLock = threading.Lock()
-        self._scanBifOffset = None
+        self._scanBifUrl = None
         self._scanBifAt = 0
+        # this item's preview index download has been started (startPreviews(); previews.store has it)
+        self._previewsStarted = False
         self.title = ''
         self.title2 = ''
         self.fromSeek = 0
@@ -695,6 +700,11 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._ignoreInput = False
         self.bifURL = bif_url
         self.hasBif = bool(self.bifURL)
+        if not keepMarkerDef:
+            # a new item, not a transcode's seek restarting this one: the last one's previews go, its own are
+            # downloaded once it's playing (tick())
+            previews.store.clear()
+            self._previewsStarted = False
 
         if self.hasBif:
             self.baseURL = re.sub(r'/\d+\?', '/{0}?', self.bifURL)
@@ -1132,6 +1142,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
     def doClose(self, delete=False, **kw):
         util.DEBUG_LOG("SeekDialog: Closing")
         self._endScan()
+        previews.store.clear()
         server = getattr(self, '_npServer', None)
         if server is not None:
             server.off("np:timelineResponse", self.timelineResponseCallback)
@@ -1511,7 +1522,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._holdDetector.held(direction, now)
         with self._scanLock:
             self._scan = scan
-        self._scanBifOffset = None
+        self._scanBifUrl = None
         self._scanBifAt = 0
         self.selectedOffset = scan.offset
         self._seekingWithoutOSD = False
@@ -2232,6 +2243,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             self.setProperty('chapters.label', T(33611, 'Chapters'))
             chaps = []
             chapOffsets = []
+            markerOffsets = set()
             thumb_opts = ("blur_chapters" in self.no_spoilers
                           and {"blur": util.addonSettings.episodeNoSpoilerBlur} or {})
             if self.chapters:
@@ -2283,11 +2295,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                     if skipMarker:
                         continue
 
-                    bifUrl = self.handler.player.playerObject.getBifUrl(offset)
-                    if "blur_chapters" in self.no_spoilers:
-                        bifUrl = self.player.video.server.getImageTranscodeURL(bifUrl,
-                                                                               *self.CHAPTER_THUMB_DIM,
-                                                                               **thumb_opts)
+                    bifUrl = self.previewImage(offset, dims=self.CHAPTER_THUMB_DIM, blur_opts=thumb_opts)[0]
+                    markerOffsets.add(offset)
                     chaps.append((offset, bifUrl,
                                   label.format(" #{}".format(credCnt) if credits and creditsCounter > 1 else "")))
 
@@ -2295,9 +2304,11 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                         credCnt += 1
 
             for offset, thumb, label in sorted(chaps):
-                # time: the chapter's start, under its name - the row's stand-in for the seekbar's time bubble
+                # time: the chapter's start, under its name - the row's stand-in for the seekbar's time bubble.
+                # A marker's card has a preview picture: the server's until the index is in (onPreviewsReady()).
                 mli = kodigui.ManagedListItem(data_source=offset, thumbnailImage=thumb, label=label,
-                                              properties={'sub': util.simplifiedTimeDisplay(offset)})
+                                              properties={'sub': util.simplifiedTimeDisplay(offset),
+                                                          'marker_preview': offset in markerOffsets and '1' or ''})
                 items.append(mli)
 
         # Without chapters the row stays empty, which also leaves it unfocusable: down from the buttons goes nowhere.
@@ -2472,6 +2483,66 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         except RuntimeError:  # Not playing
             return 1
 
+    def startPreviews(self):
+        """
+        Starts this item's preview index downloads (previews.store) once it's playing - after any resume seek, so
+        they stay out of start-up buffering - one per part. Called from tick(), so a second or so in; once an item.
+        """
+        if self._previewsStarted or not self.hasBif or self.handler.waitingForSOS:
+            return
+        player = self.handler.player
+        playerObject = player.playerObject
+        if not playerObject or player.isExternal or not xbmc.getCondVisibility('Player.HasVideo'):
+            return
+        self._previewsStarted = True
+        parts = []
+        for part in playerObject.media.parts:
+            path = part.getIndexPath("hd") or part.getIndexPath("sd")
+            if path:
+                parts.append((part.id, path))
+        if parts:
+            util.DEBUG_LOG("SeekDialog: downloading the preview index of {} part(s)", len(parts))
+            previews.store.start(parts, playerObject.item.getServer(), on_ready=self.onPreviewsReady)
+
+    def localPreview(self, offset):
+        """The downloaded preview at offset (ms into the item, across its parts), or None while there isn't one."""
+        playerObject = self.handler.player.playerObject
+        if not playerObject:
+            return None
+        found = previews.part_at([(part.id, part.duration.asInt()) for part in playerObject.media.parts], offset)
+        return found and previews.store.picture(*found) or None
+
+    def previewImage(self, offset, scanning=False, dims=None, blur_opts=None):
+        """
+        The preview picture at offset, and whether it's local: the downloaded index's (localPreview()), else one
+        from the server (PlexPlayer.getBifUrl()) - a scan's at one per SCAN_BIF_STEP, so passing over the same
+        stretch reuses what Kodi has fetched. Spoiler blurring is the server's photo transcoder's, so blurred ones
+        always come from it; dims and blur_opts are its size and options (the moving preview's by default).
+        """
+        if "blur_chapters" not in self.no_spoilers:
+            local = self.localPreview(offset)
+            if local:
+                return local, True
+        if scanning:
+            offset -= offset % self.SCAN_BIF_STEP
+        url = self.handler.player.playerObject.getBifUrl(offset)
+        if url and "blur_chapters" in self.no_spoilers:
+            url = self.player.video.server.getImageTranscodeURL(
+                url, *(dims or self.LI_AR16X9_THUMB_DIM),
+                **(blur_opts or {"blur": util.addonSettings.episodeNoSpoilerBlur}))
+        return url, False
+
+    def onPreviewsReady(self):
+        """A part's index is in (on its download's thread): the chapter row's marker cards, built from the server's
+        pictures, switch to the downloaded ones."""
+        if not self.initialized or "blur_chapters" in self.no_spoilers:
+            return
+        for mli in self.bigSeekControl:
+            if mli.getProperty('marker_preview'):
+                local = self.localPreview(mli.dataSource)
+                if local and mli.thumbnailImage != local:
+                    mli.setThumbnailImage(local)
+
     def updateProgress(self, set_to_current=True, offset=None, onlyTimeIndicator=False, no_osd=False):
         """
         Updates the progress bars (seek and position) and the currently-selected-time-label for the current position or
@@ -2491,8 +2562,8 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
         current_w = int(self.offset / float(self.duration) * self.SEEK_IMAGE_WIDTH)
 
-        # the thumbnail's left edge runs from the bar's left end to 324px short of its right end
-        bifx = (w - int(ratio * 324)) + self.BAR_X
+        # the thumbnail's left edge runs from the bar's left end to its width short of its right end
+        bifx = (w - int(ratio * self.BIF_WIDTH)) + self.BAR_X
         # the seek marker, centred on the bar at the point
         self.selectionIndicator.setPosition(self.BAR_X + w, self._markerY)
 
@@ -2505,21 +2576,15 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
 
         if not no_osd or (no_osd and not self.no_time_no_osd_spoilers):
             if self.hasBif:
-                bifOffset = offset
+                bifUrl, local = self.previewImage(offset, scanning=scanning)
                 setBif = True
                 if scanning:
-                    bifOffset = offset - offset % self.SCAN_BIF_STEP
                     now = time.time()
-                    setBif = bifOffset != self._scanBifOffset and now - self._scanBifAt >= self.SCAN_BIF_INTERVAL
+                    setBif = bifUrl != self._scanBifUrl and (local or now - self._scanBifAt >= self.SCAN_BIF_INTERVAL)
                     if setBif:
-                        self._scanBifOffset, self._scanBifAt = bifOffset, now
+                        self._scanBifUrl, self._scanBifAt = bifUrl, now
                 if setBif:
-                    bifUrl = self.handler.player.playerObject.getBifUrl(bifOffset)
-                    if "blur_chapters" in self.no_spoilers:
-                        bifUrl = self.player.video.server.getImageTranscodeURL(bifUrl,
-                                                                               *self.LI_AR16X9_THUMB_DIM,
-                                                                               **{"blur": util.addonSettings.episodeNoSpoilerBlur})
-                    self.setProperty('bif.image', bifUrl)
+                    self.setProperty('bif.image', bifUrl or '')
                 self.bifImageControl.setPosition(bifx, self._bifY)
 
         if set_to_current:
@@ -3099,6 +3164,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             return
 
         if self.initialized:
+            self.startPreviews()
             if waitForBuffer:
                 cont = self.waitForBuffer()
                 if not cont:
