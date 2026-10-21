@@ -44,9 +44,19 @@
                     <texture diffuse="script.plex/masks/ar16x9-mask.png">script.plex/white-square.png</texture>
                     <colordiffuse>FF191B1E</colordiffuse>
                 </control>
+                <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
                 <control type="image">
-                    <!-- Native fallback= - see hub_itemlayout_ar16x9.xml.tpl's own copy for the
-                         full reasoning. -->
+                    <visible>String.IsEmpty(ListItem.Property(is.photo))</visible>
+                    <posx>0</posx>
+                    <posy>0</posy>
+                    <width>512</width>
+                    <height>{{ vscale(288) }}</height>
+                    <texture diffuse="script.plex/masks/ar16x9-mask.png">script.plex/white-square.png</texture>
+                    <aspectratio scalediffuse="false">scale</aspectratio>
+                    <colordiffuse>0AFFFFFF</colordiffuse>
+                </control>
+                <control type="image">
+                    <!-- fallback=: no URL yet or failed - see hub_itemlayout_ar16x9.xml.tpl's own copy. -->
                     <visible>String.IsEmpty(ListItem.Property(is.photo))</visible>
                     <posx>0</posx>
                     <posy>0</posy>

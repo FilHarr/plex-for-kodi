@@ -64,6 +64,18 @@
              mask and box, so their corners can't disagree. -->
         <itemlayout width="340">
             <control type="group">
+                <!-- A dark card under the placeholder: these rows sit over the video, where the semi-transparent
+                     placeholder on a light picture reads as a gap. The art covers it once it's in; FF262626 is the
+                     spoiler card's fill, so the two differ only by their icon. -->
+                <control type="image">
+                    <posx>40</posx>
+                    <posy>{{ vscale(12) }}</posy>
+                    <width>300</width>
+                    <height>{{ vscale(168) }}</height>
+                    <texture diffuse="script.plex/masks/ar16x9-mask-300.png">script.plex/white-square.png</texture>
+                    <aspectratio scalediffuse="false">scale</aspectratio>
+                    <colordiffuse>FF262626</colordiffuse>
+                </control>
                 <control type="image">
                     <visible>String.IsEmpty(ListItem.Property(spoiler))</visible>
                     <posx>40</posx>
@@ -171,6 +183,18 @@
                     <!-- 190,96 = the art's centre (40 + 300/2, 12 + 168/2) -->
                     <animation effect="zoom" start="100" end="104" time="100" center="190,{{ vscale(96) }}" reversible="false">Focus</animation>
                     <animation effect="zoom" start="104" end="100" time="100" center="190,{{ vscale(96) }}" reversible="false">UnFocus</animation>
+                    <!-- A dark card under the placeholder: these rows sit over the video, where the semi-transparent
+                         placeholder on a light picture reads as a gap. The art covers it once it's in; FF262626 is the
+                         spoiler card's fill, so the two differ only by their icon. -->
+                    <control type="image">
+                        <posx>40</posx>
+                        <posy>{{ vscale(12) }}</posy>
+                        <width>300</width>
+                        <height>{{ vscale(168) }}</height>
+                        <texture diffuse="script.plex/masks/ar16x9-mask-300.png">script.plex/white-square.png</texture>
+                        <aspectratio scalediffuse="false">scale</aspectratio>
+                        <colordiffuse>FF262626</colordiffuse>
+                    </control>
                     <control type="image">
                         <visible>String.IsEmpty(ListItem.Property(spoiler))</visible>
                         <posx>40</posx>

@@ -481,6 +481,16 @@
                         <control type="group">
                             <posx>3</posx>
                             <posy>3</posy>
+                            <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                            <control type="image">
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>240</width>
+                                <height>{{ vscale(360) }}</height>
+                                <texture diffuse="script.plex/masks/poster-mask.png">script.plex/white-square.png</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
+                                <colordiffuse>0AFFFFFF</colordiffuse>
+                            </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
@@ -549,6 +559,16 @@
                             <control type="group">
                                 <posx>3</posx>
                                 <posy>3</posy>
+                                <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                                <control type="image">
+                                    <posx>0</posx>
+                                    <posy>0</posy>
+                                    <width>240</width>
+                                    <height>{{ vscale(360) }}</height>
+                                    <texture diffuse="script.plex/masks/poster-mask.png">script.plex/white-square.png</texture>
+                                    <aspectratio scalediffuse="false">scale</aspectratio>
+                                    <colordiffuse>0AFFFFFF</colordiffuse>
+                                </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
@@ -772,6 +792,16 @@
                         <control type="group">
                             <posx>3</posx>
                             <posy>3</posy>
+                            <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                            <control type="image">
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>512</width>
+                                <height>{{ vscale(288) }}</height>
+                                <texture diffuse="script.plex/masks/ar16x9-mask.png">script.plex/white-square.png</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
+                                <colordiffuse>0AFFFFFF</colordiffuse>
+                            </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
@@ -861,6 +891,16 @@
                             <control type="group">
                                 <posx>3</posx>
                                 <posy>3</posy>
+                                <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                                <control type="image">
+                                    <posx>0</posx>
+                                    <posy>0</posy>
+                                    <width>512</width>
+                                    <height>{{ vscale(288) }}</height>
+                                    <texture diffuse="script.plex/masks/ar16x9-mask.png">script.plex/white-square.png</texture>
+                                    <aspectratio scalediffuse="false">scale</aspectratio>
+                                    <colordiffuse>0AFFFFFF</colordiffuse>
+                                </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
@@ -1001,6 +1041,16 @@
                             <visible>String.IsEmpty(ListItem.Property(is.more))</visible>
                             <posx>3</posx>
                             <posy>3</posy>
+                            <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                            <control type="image">
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>240</width>
+                                <height>{{ vscale(360) }}</height>
+                                <texture diffuse="script.plex/masks/poster-mask.png">script.plex/white-square.png</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
+                                <colordiffuse>0AFFFFFF</colordiffuse>
+                            </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
@@ -1111,6 +1161,16 @@
                             <control type="group">
                                 <posx>3</posx>
                                 <posy>3</posy>
+                                <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                                <control type="image">
+                                    <posx>0</posx>
+                                    <posy>0</posy>
+                                    <width>240</width>
+                                    <height>{{ vscale(360) }}</height>
+                                    <texture diffuse="script.plex/masks/poster-mask.png">script.plex/white-square.png</texture>
+                                    <aspectratio scalediffuse="false">scale</aspectratio>
+                                    <colordiffuse>0AFFFFFF</colordiffuse>
+                                </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>

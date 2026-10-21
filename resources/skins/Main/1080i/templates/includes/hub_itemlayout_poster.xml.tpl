@@ -24,11 +24,25 @@
             </control>
             <posx>3</posx>
             <posy>3</posy>
+            <!-- The placeholder card under the art: the 4% fill the thumb_fallbacks images have, through the art's
+                 own mask. fallback= alone (below) shows only while a tile has no URL yet (the grid's placeholder
+                 items) or its art failed: a tile first drawn with its URL shows nothing until the art is in (Kodi's
+                 GUIImage: no earlier picture to hold), so the same wait looked like a gap on some screens and a
+                 placeholder on others. With this under it, every tile goes from card to art. Two layers through
+                 the one mask was dropped once (f4ddffdc) for a glow at the rounded corners - the old, brighter
+                 fallback showing through the art's anti-aliased edge; at 4% that's at most ~1%, which doesn't show. -->
             <control type="image">
-                <!-- Native fallback= (not a separate stacked/masked control - see this include's
-                     own history) - Kodi shows this while ListItem.Thumb is empty/loading/failed,
-                     swapping seamlessly once it resolves, so there's only ever one masked layer for
-                     the art, never two independently-rounded corners that could misalign. -->
+                <posx>0</posx>
+                <posy>0</posy>
+                <width>240</width>
+                <height>{{ vscale(360) }}</height>
+                <texture diffuse="script.plex/masks/poster-mask.png">script.plex/white-square.png</texture>
+                <aspectratio scalediffuse="false">scale</aspectratio>
+                <colordiffuse>0AFFFFFF</colordiffuse>
+            </control>
+            <control type="image">
+                <!-- fallback=: shown while ListItem.Thumb is empty (no URL yet) or failed - not while
+                     it loads; the placeholder card above covers that (hub_itemlayout_poster.xml.tpl). -->
                 <posx>0</posx>
                 <posy>0</posy>
                 <width>240</width>

@@ -41,11 +41,20 @@
                 <texture diffuse="script.plex/masks/square-mask.png">script.plex/white-square.png</texture>
                 <colordiffuse>FF191B1E</colordiffuse>
             </control>
+            <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
             <control type="image">
-                <!-- Native fallback= (not a separate stacked/masked control - see this include's
-                     own history) - Kodi shows this while ListItem.Thumb is empty/loading/failed,
-                     swapping seamlessly once it resolves, so there's only ever one masked layer for
-                     the art, never two independently-rounded corners that could misalign. -->
+                <visible>String.IsEmpty(ListItem.Property(is.photo))</visible>
+                <posx>0</posx>
+                <posy>0</posy>
+                <width>240</width>
+                <height>{{ vscale(240) }}</height>
+                <texture diffuse="script.plex/masks/square-mask.png">script.plex/white-square.png</texture>
+                <aspectratio scalediffuse="false">scale</aspectratio>
+                <colordiffuse>0AFFFFFF</colordiffuse>
+            </control>
+            <control type="image">
+                <!-- fallback=: shown while ListItem.Thumb is empty (no URL yet) or failed - not while
+                     it loads; the placeholder card above covers that (hub_itemlayout_poster.xml.tpl). -->
                 <visible>String.IsEmpty(ListItem.Property(is.photo))</visible>
                 <posx>0</posx>
                 <posy>0</posy>

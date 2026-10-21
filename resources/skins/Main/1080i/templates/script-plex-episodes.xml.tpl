@@ -528,6 +528,17 @@
                         <control type="group">
                             <posx>3</posx>
                             <posy>3</posy>
+                            <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                            <control type="image">
+                                <visible>String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>512</width>
+                                <height>{{ vscale(288) }}</height>
+                                <texture diffuse="script.plex/masks/ar16x9-mask.png">script.plex/white-square.png</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
+                                <colordiffuse>0A333333</colordiffuse>
+                            </control>
                             <!-- Dims every non-focused thumbnail so the fixed-center item pops; itemlayout only
                                  renders for items that aren't focused, so no HasFocus condition is needed here.
                                  colordiffuse tints this same masked draw directly rather than stacking a second
@@ -552,6 +563,17 @@
                                 <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                 <aspectratio scalediffuse="false">scale</aspectratio>
                                 <colordiffuse>FF333333</colordiffuse>
+                            </control>
+                            <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                            <control type="image">
+                                <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>512</width>
+                                <height>{{ vscale(288) }}</height>
+                                <texture diffuse="script.plex/masks/ar16x9-mask.png">script.plex/white-square.png</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
+                                <colordiffuse>0AFFFFFF</colordiffuse>
                             </control>
                             <!-- Season card's own art (is.season.card - EpisodesWindow.createSeasonCardItem()):
                                  a separate control, not just a per-item colordiffuse switch on the one above -
@@ -803,6 +825,17 @@
                             <control type="group">
                                 <posx>3</posx>
                                 <posy>3</posy>
+                                <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                                <control type="image">
+                                    <visible>String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                    <posx>0</posx>
+                                    <posy>0</posy>
+                                    <width>512</width>
+                                    <height>{{ vscale(288) }}</height>
+                                    <texture diffuse="script.plex/masks/ar16x9-mask.png">script.plex/white-square.png</texture>
+                                    <aspectratio scalediffuse="false">scale</aspectratio>
+                                    <colordiffuse>0AFFFFFF</colordiffuse>
+                                </control>
                                 <control type="image">
                                     <visible>String.IsEmpty(ListItem.Property(is.season.card))</visible>
                                     <posx>0</posx>
@@ -811,6 +844,17 @@
                                     <height>{{ vscale(288) }}</height>
                                     <texture background="true" diffuse="script.plex/masks/ar16x9-mask.png" fallback="$INFO[ListItem.Property(thumb.fallback)]">$INFO[ListItem.Thumb]</texture>
                                     <aspectratio scalediffuse="false">scale</aspectratio>
+                                </control>
+                                <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                                <control type="image">
+                                    <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                    <posx>0</posx>
+                                    <posy>0</posy>
+                                    <width>512</width>
+                                    <height>{{ vscale(288) }}</height>
+                                    <texture diffuse="script.plex/masks/ar16x9-mask.png">script.plex/white-square.png</texture>
+                                    <aspectratio scalediffuse="false">scale</aspectratio>
+                                    <colordiffuse>0AFFFFFF</colordiffuse>
                                 </control>
                                 <!-- Season card's own art - see itemlayout's own copy of this control/comment
                                      above for the full reasoning. -->
@@ -1363,6 +1407,16 @@
                         <control type="group">
                             <posx>3</posx>
                             <posy>3</posy>
+                            <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                            <control type="image">
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>512</width>
+                                <height>{{ vscale(288) }}</height>
+                                <texture diffuse="script.plex/masks/ar16x9-mask.png">script.plex/white-square.png</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
+                                <colordiffuse>0AFFFFFF</colordiffuse>
+                            </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
@@ -1448,6 +1502,16 @@
                             <control type="group">
                                 <posx>3</posx>
                                 <posy>3</posy>
+                                <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                                <control type="image">
+                                    <posx>0</posx>
+                                    <posy>0</posy>
+                                    <width>512</width>
+                                    <height>{{ vscale(288) }}</height>
+                                    <texture diffuse="script.plex/masks/ar16x9-mask.png">script.plex/white-square.png</texture>
+                                    <aspectratio scalediffuse="false">scale</aspectratio>
+                                    <colordiffuse>0AFFFFFF</colordiffuse>
+                                </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>
@@ -1589,6 +1653,16 @@
                             <visible>String.IsEmpty(ListItem.Property(is.more))</visible>
                             <posx>3</posx>
                             <posy>3</posy>
+                            <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                            <control type="image">
+                                <posx>0</posx>
+                                <posy>0</posy>
+                                <width>240</width>
+                                <height>{{ vscale(360) }}</height>
+                                <texture diffuse="script.plex/masks/poster-mask.png">script.plex/white-square.png</texture>
+                                <aspectratio scalediffuse="false">scale</aspectratio>
+                                <colordiffuse>0AFFFFFF</colordiffuse>
+                            </control>
                             <control type="image">
                                 <posx>0</posx>
                                 <posy>0</posy>
@@ -1699,6 +1773,16 @@
                             <control type="group">
                                 <posx>3</posx>
                                 <posy>3</posy>
+                                <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+                                <control type="image">
+                                    <posx>0</posx>
+                                    <posy>0</posy>
+                                    <width>240</width>
+                                    <height>{{ vscale(360) }}</height>
+                                    <texture diffuse="script.plex/masks/poster-mask.png">script.plex/white-square.png</texture>
+                                    <aspectratio scalediffuse="false">scale</aspectratio>
+                                    <colordiffuse>0AFFFFFF</colordiffuse>
+                                </control>
                                 <control type="image">
                                     <posx>0</posx>
                                     <posy>0</posy>

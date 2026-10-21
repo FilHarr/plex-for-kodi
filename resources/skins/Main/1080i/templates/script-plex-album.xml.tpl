@@ -35,6 +35,16 @@
         <height>{{ vscale(394) }}</height>
         <texture border="24">script.plex/drop-shadow-directional.png</texture>
     </control>
+    <!-- The placeholder card, under the art while it loads (see hub_itemlayout_poster.xml.tpl) -->
+    <control type="image">
+        <posx>61</posx>
+        <posy>0</posy>
+        <width>370</width>
+        <height>{{ vscale(370) }}</height>
+        <texture diffuse="script.plex/masks/square-mask.png">script.plex/white-square.png</texture>
+        <aspectratio scalediffuse="false">scale</aspectratio>
+        <colordiffuse>0AFFFFFF</colordiffuse>
+    </control>
     <control type="image">
         <posx>61</posx>
         <posy>0</posy>
