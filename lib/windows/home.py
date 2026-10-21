@@ -291,6 +291,7 @@ class SectionHubsTask(backgroundthread.Task):
             panel_colors.warmHubs(hubs)
             hubs = HubsList(hubs).init()
             hubs.identifier = self.section.key
+            hubs.libraryEmpty = self._libraryEmpty(hubs)
             if self.isCanceled():
                 return
             self.callback(self.section, hubs, reselect_pos_dict=self.reselect_pos_dict)
@@ -307,6 +308,21 @@ class SectionHubsTask(backgroundthread.Task):
             hubs = HubsList().init()
             hubs.invalid = True
             self.callback(self.section, hubs)
+
+    def _libraryEmpty(self, hubs):
+        """Whether the library itself is empty, asked only when none of its rows has anything in
+        it: the rows can't say, as the server leaves out every row its owner turned off for
+        Recommended, Recently Added too (checked live on Animal, 2026-10-21). The grid's own count
+        (section.all(0, 0)). None when not asked - rows with items, or the Watchlist, whose rows
+        are plex.tv's - or not answered."""
+        if (any(hub.items for hub in hubs) or not isinstance(self.section, plexlibrary.LibrarySection)
+                or self.section.TYPE == 'movies_shows'):
+            return None
+        try:
+            return not self.section.all(0, 0).totalSize.asInt()
+        except Exception as e:
+            util.DEBUG_LOG('No count for section {0}: {1}', repr(self.section.title), e)
+            return None
 
 
 

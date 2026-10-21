@@ -2007,6 +2007,8 @@ class HubsMixin(object):
                 if self.getFocusId() != anchor_id:
                     self.setFocusId(anchor_id)
             else:
+                # the last row's last item gone: no rows (_showNoRowsState()), the tabs row kept
+                self.setBoolProperty('no.hubs', self.section.key is not None)
                 self.setFocusId(self.SECTION_LIST_ID)
 
         self.processCommand(command)
@@ -2440,6 +2442,26 @@ class HubsMixin(object):
         if (generation == self._listGeneration and not self.closing
                 and self.contentMode == 'recommended'):
             self._focusAnchorHub()
+            self._moveOnFromNoRows()
+
+    def _moveOnFromNoRows(self):
+        """A section shown on Recommended only because it has no tab saved, with no rows to show
+        (no.hubs, _showNoRowsState()): on to the Library tab, as the user asked (2026-10-21) -
+        not saved as its tab, so it opens on Recommended again once it has rows. One chosen on
+        Recommended (a tab click, saved) stays there and says why it's empty. Posted like a tab
+        click (tabListClicked()), and only with no other navigation waiting, which it would
+        replace (postNav())."""
+        if not (self.__dict__.get('_recommendedByDefault') and self.getProperty('no.hubs')):
+            return
+        self._recommendedByDefault = False
+        if self._backStack or self._isHostedShell:
+            return
+        with self._navLock:
+            if self._navPending:
+                return
+        util.DEBUG_LOG('Library: no rows to show for {0}, on to the Library tab', self.section.title)
+        self.postNav('switchTab', self.switchTab, args=('library',),
+                     kwargs={'item_type': self._libraryTabItemType(), 'save': False})
 
     def _focusAnchorHub(self):
         """After a fresh bind (_recommendedHubsCallback()), focus the anchor row."""
@@ -2528,7 +2550,6 @@ class HubsMixin(object):
             # fillPlaylists()/fillPhotos(), none of which this 'recommended' path leads to.
             self._pendingRestoreItemPos = None
 
-            is_home = section.key is None
             # A hub can be returned by the server with zero current items (e.g. a personalized/
             # dynamic hub with nothing to show right now). Left in, such a hub would still
             # occupy a role slot in the rotation (the geometry math below has no item-count
@@ -2572,16 +2593,7 @@ class HubsMixin(object):
             # *shown* state, not the hidden one. The rows' position is no longer tied to it.
 
             self._bindAllHubSlots()
-            # Rows with nothing in any of them: the library is empty (one with anything in it always
-            # has a Recently Added row) - the template's "no content" message, as the grid has, and
-            # no tabs row. A failed fetch also comes back empty, but it marks the server suspect,
-            # and says nothing about the library: the panel below takes the message's place.
-            empty = False
-            if (not is_home and not getattr(hubs, 'invalid', False)
-                    and not (section.server.offline or section.server.suspect)):
-                empty = not any(hub.items for hub in hubs)
-                self._noteSectionEmpty(empty)
-            self.setBoolProperty('no.content', empty)
+            self._showNoRowsState(section, hubs)
             if section.TYPE == 'movies_shows' and getattr(hubs, 'invalid', False):
                 # the Watchlist's rows are plex.tv's, which no server panel covers: when it didn't
                 # answer (a rate limit, say), say so, as its Library view does
@@ -2593,6 +2605,28 @@ class HubsMixin(object):
             util.DEBUG_LOG("Library: _recommendedHubsCallback() bound {0} hub(s) for {1}, anchor={2}",
                            min(len(sorted_hubs), len(self.hubControls)), section.key,
                            self._anchorControlId())
+
+    def _showNoRowsState(self, section, hubs):
+        """What a library's Recommended view says with no rows to show, after a bind. An empty
+        library (SectionHubsTask's count, hubs.libraryEmpty): the "no content" message, as the grid
+        has, and no tabs row. A library with things in it but no rows - every one turned off, on the
+        server or in Manage Hubs, or with nothing in it right now: no.hubs, its own message, with
+        the tabs row kept for the Library tab (the sidebar's Right goes there). The rows alone used
+        to decide, and a library whose rows were all turned off on the server read as empty, with
+        no way to its grid. A failed fetch also comes back empty, but it marks the server suspect
+        and says nothing about the library: the panel (updateServerUnavailable()) takes the
+        message's place."""
+        empty = noRows = False
+        if (section.key is not None and not getattr(hubs, 'invalid', False)
+                and not (section.server.offline or section.server.suspect)):
+            empty = getattr(hubs, 'libraryEmpty', None)
+            if empty is None:
+                # not asked (the Watchlist's rows are plex.tv's): the rows decide
+                empty = not any(hub.items for hub in hubs)
+            self._noteSectionEmpty(empty)
+            noRows = not empty and not self.visibleHubs
+        self.setBoolProperty('no.content', empty)
+        self.setBoolProperty('no.hubs', noRows)
 
     def _visibleHubsFor(self, section, hubs):
         """The rows a section shows of the hubs fetched for it: the saved config brought up to date
@@ -2697,6 +2731,8 @@ class HubsMixin(object):
             self.visibleHubs = new
             self.focusedHubIndex = index
             self._bindAllHubSlots()
+            if section.key is not None:
+                self._showNoRowsState(section, hubs)
             self.updateServerUnavailable()
             util.DEBUG_LOG('Library: hub rows rebound in place ({0}): {1} rows, anchor {2}',
                            reason, len(new), self.hubMemoryKey(new[index]) if new else None)

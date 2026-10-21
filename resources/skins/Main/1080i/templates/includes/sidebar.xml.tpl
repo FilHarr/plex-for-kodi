@@ -29,7 +29,7 @@
         <aligny>center</aligny>
         <onup>noop</onup>
         <ondown>9001</ondown>
-        <onright condition="!String.IsEmpty(Window.Property(server.unavailable))">2600</onright><onright>50</onright>
+        <onright condition="!String.IsEmpty(Window.Property(server.unavailable))">2600</onright><onright condition="!String.IsEmpty(Window.Property(no.hubs)) + String.IsEmpty(Window.Property(hide.section_tabs))">320</onright><onright>50</onright>
         <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <label> </label>
@@ -103,7 +103,7 @@
              hard ceiling before overlapping the server button (id 201, posy=1009) is 1009-118=891 (this
              list's own posy is 118), so 880 leaves 11px of margin, no pitch/icon shrink needed. -->
         <height>{{ vscale(880) }}</height>
-        <onright condition="!String.IsEmpty(Window.Property(server.unavailable))">2600</onright><onright>50</onright>
+        <onright condition="!String.IsEmpty(Window.Property(server.unavailable))">2600</onright><onright condition="!String.IsEmpty(Window.Property(no.hubs)) + String.IsEmpty(Window.Property(hide.section_tabs))">320</onright><onright>50</onright>
         <onup>202</onup>
         <ondown>201</ondown>
         <scrolltime>200</scrolltime>
@@ -490,7 +490,7 @@
         <align>center</align>
         <aligny>center</aligny>
         <onup>9001</onup>
-        <onright condition="!String.IsEmpty(Window.Property(server.unavailable))">2600</onright><onright>50</onright>
+        <onright condition="!String.IsEmpty(Window.Property(server.unavailable))">2600</onright><onright condition="!String.IsEmpty(Window.Property(no.hubs)) + String.IsEmpty(Window.Property(hide.section_tabs))">320</onright><onright>50</onright>
         <ondown>noop</ondown>
         <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>

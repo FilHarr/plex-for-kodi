@@ -990,12 +990,17 @@ class UpdatePromptTest(KodiTestCase):
 
 
 class EmptyLibraryTest(KodiTestCase):
-    """A library section whose rows come back with nothing in any of them is empty, and the
-    Recommended view says so - the grid's "no content" message."""
+    """A library section with nothing in it says so in its Recommended view - the grid's "no
+    content" message; one with things in it but no rows to show says that instead (no.hubs)."""
+
+    class Rows(list):
+        """Rows as SectionHubsTask hands them over, with its count (libraryEmpty)."""
 
     class Host(object):
         _recommendedHubsCallback = library.HubsMixin._recommendedHubsCallback
+        _showNoRowsState = library.HubsMixin._showNoRowsState
         _keepHomeAnswers = library.HubsMixin._keepHomeAnswers
+        hidden = False
         HUB_CONTROL_ID = 400
         HUB_ROTATION_RING = [401, 400, 402, 403]
 
@@ -1021,7 +1026,7 @@ class EmptyLibraryTest(KodiTestCase):
         _visibleHubsFor = library.HubsMixin._visibleHubsFor
 
         def isHubHidden(self, *args):
-            return False
+            return self.hidden
 
         def _bindAllHubSlots(self):
             pass
@@ -1041,8 +1046,14 @@ class EmptyLibraryTest(KodiTestCase):
     def hub(self, items):
         return mock.Mock(items=items, getCleanHubIdentifier=lambda **kw: 'h')
 
-    def bind(self, hubs, key="1", **server_state):
+    def rows(self, hubs, libraryEmpty):
+        rows = self.Rows(hubs)
+        rows.libraryEmpty = libraryEmpty
+        return rows
+
+    def bind(self, hubs, key="1", hidden=False, **server_state):
         self.host = self.Host()
+        self.host.hidden = hidden
         server = mock.Mock(offline=False, suspect=False, uuid=ANIMAL)
         server.configure_mock(**server_state)
         self.host._recommendedHubsCallback(mock.Mock(key=key, server=server), hubs, 1)
@@ -1072,6 +1083,114 @@ class EmptyLibraryTest(KodiTestCase):
     def test_a_server_being_retested_says_nothing_about_the_library(self):
         self.assertEqual('', self.bind([], suspect=True))
         self.assertFalse(hasattr(self.host, 'noted'))
+        self.assertEqual('', self.host.props.get('no.hubs'))
+
+    def test_rows_all_turned_off_on_the_server_are_not_an_empty_library(self):
+        # Stand Up with every row turned off for Recommended: the server sends only the rows that
+        # can't be, with nothing in them, and the count says the library has things in it
+        self.assertEqual('', self.bind(self.rows([self.hub([])], libraryEmpty=False)))
+        self.assertFalse(self.host.noted)
+        self.assertEqual('1', self.host.props.get('no.hubs'))
+
+    def test_the_count_says_when_the_library_is_empty(self):
+        self.assertEqual('1', self.bind(self.rows([self.hub([])], libraryEmpty=True)))
+        self.assertTrue(self.host.noted)
+        self.assertEqual('', self.host.props.get('no.hubs'))
+
+    def test_rows_all_hidden_in_manage_hubs_say_there_are_no_rows(self):
+        self.assertEqual('', self.bind([self.hub(["an item"])], hidden=True))
+        self.assertEqual('1', self.host.props.get('no.hubs'))
+
+    def test_rows_showing_say_nothing(self):
+        self.bind([self.hub(["an item"])])
+        self.assertEqual('', self.host.props.get('no.hubs'))
+
+
+class MoveOnFromNoRowsTest(KodiTestCase):
+    """A section on Recommended only because it has no tab saved, with no rows to show, moves on
+    to the Library tab once - not saved as its tab. One chosen on Recommended stays."""
+
+    class Host(object):
+        _moveOnFromNoRows = library.HubsMixin._moveOnFromNoRows
+
+        def __init__(self, byDefault, noRows):
+            self._recommendedByDefault = byDefault
+            self.props = {'no.hubs': noRows and '1' or ''}
+            self._backStack = []
+            self._isHostedShell = False
+            self._navLock = library.threading.Lock()
+            self._navPending = []
+            self.section = mock.Mock(title='Stand Up')
+            self.posted = []
+
+        def getProperty(self, key):
+            return self.props.get(key, '')
+
+        def switchTab(self, *args, **kwargs):
+            pass
+
+        def _libraryTabItemType(self):
+            return None
+
+        def postNav(self, name, fn, args=(), kwargs=None):
+            self.posted.append((name, args, kwargs))
+
+    def test_a_default_recommended_with_no_rows_moves_on_unsaved(self):
+        host = self.Host(True, True)
+        host._moveOnFromNoRows()
+        self.assertEqual([('switchTab', ('library',), {'item_type': None, 'save': False})], host.posted)
+        host._moveOnFromNoRows()
+        self.assertEqual(1, len(host.posted))
+
+    def test_a_chosen_recommended_stays(self):
+        host = self.Host(False, True)
+        host._moveOnFromNoRows()
+        self.assertEqual([], host.posted)
+
+    def test_rows_showing_stay(self):
+        host = self.Host(True, False)
+        host._moveOnFromNoRows()
+        self.assertEqual([], host.posted)
+
+    def test_navigation_waiting_is_not_replaced(self):
+        host = self.Host(True, True)
+        host._navPending.append(('openSection',))
+        host._moveOnFromNoRows()
+        self.assertEqual([], host.posted)
+
+
+class LibraryCountTest(KodiTestCase):
+    """SectionHubsTask counts a library only when none of its rows has anything in it."""
+
+    def count(self, hubs, TYPE='movie', total=3, fails=False):
+        from lib.windows import home
+        section = mock.Mock(spec=home.plexlibrary.LibrarySection, TYPE=TYPE, title='Stand Up')
+        if fails:
+            section.all.side_effect = Exception('no answer')
+        else:
+            section.all.return_value.totalSize.asInt.return_value = total
+        task = home.SectionHubsTask().setup(section, None)
+        self.section = section
+        return task._libraryEmpty(hubs)
+
+    def hub(self, items):
+        return mock.Mock(items=items)
+
+    def test_rows_with_items_are_not_counted(self):
+        self.assertIsNone(self.count([self.hub([]), self.hub(["an item"])]))
+        self.section.all.assert_not_called()
+
+    def test_empty_rows_ask_for_the_count(self):
+        self.assertFalse(self.count([self.hub([])], total=6))
+        self.section.all.assert_called_once_with(0, 0)
+        self.assertTrue(self.count([self.hub([])], total=0))
+
+    def test_the_watchlist_is_not_counted(self):
+        self.assertIsNone(self.count([], TYPE='movies_shows'))
+        self.section.all.assert_not_called()
+
+    def test_no_answer_leaves_it_to_the_rows(self):
+        self.assertIsNone(self.count([], fails=True))
 
 
 class SectionTabsTest(KodiTestCase):

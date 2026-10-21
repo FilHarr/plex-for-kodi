@@ -480,6 +480,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # same as sort/filter/item-type" design point, not built until now) - falling back to
         # Recommended if this section has never had a tab choice saved yet (the user's choice,
         # 2026-09-25; Playlists keeps its grid - see openSection()).
+        # Recommended only because this section has no tab saved (openSection()'s same flag)
+        self._recommendedByDefault = False
         if self.section and self.section.TYPE == 'mixed':
             self.contentMode = 'recommended'
         elif kwargs.get('content_mode'):
@@ -490,7 +492,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # filtered by a genre etc.: the whole library, as in openSection()
             self.contentMode = 'library'
         else:
-            self.contentMode = self.librarySettings.getContentMode() or 'recommended'
+            saved = self.librarySettings.getContentMode()
+            self.contentMode = saved or 'recommended'
+            self._recommendedByDefault = not saved
 
         # Session-lifecycle surface (quiet-orbiting-heron.md's Cold Start + windowutils.HOME
         # migration plan) - ported from HomeWindow, which owns all of this today. closeOption is
@@ -1182,7 +1186,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if self.openSection(section, filter_=filter_, force=True, fresh=False):
             self._backStack = precedingBackStack + [entry]
 
-    def switchTab(self, mode, item_type=None):
+    def switchTab(self, mode, item_type=None, save=True):
         """Swap this already-open window between content modes ('library' grid vs.
         'recommended' hubs) in place, the same construct-fresh-via-_open()'s-loop pattern
         openSection() already uses for section swaps - see that method's own docstring for why
@@ -1202,6 +1206,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         entry point for the opposite direction (switching *to* 'collection'), calling this
         directly with item_type='collection' only when a real contentMode swap is needed too (i.e.
         starting from 'recommended' or a hosted shell) - see its own docstring.
+
+        save=False: not saved as the section's tab - the move to the Library tab from a
+        Recommended view with no rows (HubsMixin._moveOnFromNoRows()), not the user's choice.
         """
         try:
             isCurrent = self.is_current_window
@@ -1235,6 +1242,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # A tab switch is a fresh entry - see _hubReselectPositions' own comment (__init__).
         self._hubReselectPositions = {}
         self.contentMode = mode
+        self._recommendedByDefault = False
         if item_type is not None:
             self.librarySettings.setItemType(item_type)
         # An explicit tab click is exactly the case that should abandon any chain in progress -
@@ -1249,7 +1257,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # save, since openSection()'s own TYPE=='mixed' check always forces 'recommended' back on
         # next entry regardless of what's persisted, never actually reads this value for such a
         # section.
-        self.librarySettings.setContentMode(mode)
+        if save:
+            self.librarySettings.setContentMode(mode)
         self.reset()
         self.refill = True
 
@@ -1402,6 +1411,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if filter_:
             self.librarySettings.showWholeLibrary()
 
+        # Recommended only because this section has no tab saved: with no rows to show, the first
+        # bind moves it on to the Library tab (HubsMixin._moveOnFromNoRows())
+        self._recommendedByDefault = False
         if self.section.TYPE == 'mixed':
             # Sections with no library-grid content at all (home_section, so far the only one -
             # see its own TYPE comment, home.py) have nothing to show on the 'library' tab -
@@ -1441,7 +1453,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # previous section's tab, which it used to carry over, so a section opened on
             # whichever tab the section before it happened to be on (the user's choice,
             # 2026-09-25).
-            self.contentMode = self.librarySettings.getContentMode() or 'recommended'
+            saved = self.librarySettings.getContentMode()
+            self.contentMode = saved or 'recommended'
+            self._recommendedByDefault = not saved
 
         self.reset()
         self.refill = True
@@ -2400,11 +2414,11 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if self is windowutils.HOME and self.section is home.home_section:
             self.offerOnboarding()
         timing.mark('controls')
-        # A new view starts without the "isn't responding" panel or the "no content" message; its
-        # first fill or bind decides (updateServerUnavailable(), _recommendedHubsCallback(), the
-        # grid's fill). The host carries properties over to each view, so they're cleared here
-        # rather than left to the last view's state.
-        for key in ('server.unavailable', 'no.content', 'no.content.playlists'):
+        # A new view starts without the "isn't responding" panel or the "no content"/"no rows"
+        # messages; its first fill or bind decides (updateServerUnavailable(),
+        # _recommendedHubsCallback(), the grid's fill). The host carries properties over to each
+        # view, so they're cleared here rather than left to the last view's state.
+        for key in ('server.unavailable', 'no.content', 'no.content.playlists', 'no.hubs'):
             if self.getProperty(key):
                 self.setProperty(key, '')
 

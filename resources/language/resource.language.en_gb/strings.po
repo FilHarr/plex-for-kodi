@@ -3900,3 +3900,11 @@ msgstr ""
 msgctxt "#35193"
 msgid "Select in which cases to blur TV episode thumbnails, redact summaries, hide episode titles etc."
 msgstr ""
+
+msgctxt "#35194"
+msgid "All recommended rows are either disabled on the server or have nothing in them right now."
+msgstr ""
+
+msgctxt "#35195"
+msgid "The 'Library' tab will show all available content"
+msgstr ""

@@ -38,6 +38,9 @@ class FakeHost(object):
     def _focusAnchorHub(self):
         self.focused += 1
 
+    def _moveOnFromNoRows(self):
+        pass
+
 
 class FetchedHubsTest(KodiTestCase):
     def test_the_bind_is_posted_not_run_on_the_worker(self):

@@ -433,6 +433,36 @@
     </control>
 </control>
 
+{# A library with no rows to show (LibraryWindow._showNoRowsState()): all turned off, or nothing
+   in them right now. The tabs row stays, for the Library tab. #}
+<control type="group">
+    <visible>String.IsEmpty(Window.Property(busy)) + !String.IsEmpty(Window.Property(no.hubs)) + String.IsEmpty(Window.Property(server.unavailable))</visible>
+    <posx>0</posx>
+    <posy>{{ vscale(465) }}</posy>
+    <control type="label">
+        <scroll>false</scroll>
+        <posx>60</posx>
+        <posy>0</posy>
+        <width>1800</width>
+        <height>{{ vscale(35) }}</height>
+        <font>font13</font>
+        <align>center</align>
+        <textcolor>FFFFFFFF</textcolor>
+        <label>[B]$ADDON[script.plexmod 35194][/B]</label>
+    </control>
+    <control type="label">
+        <scroll>false</scroll>
+        <posx>60</posx>
+        <posy>{{ vscale(60) }}</posy>
+        <width>1800</width>
+        <height>{{ vscale(35) }}</height>
+        <font>font13</font>
+        <align>center</align>
+        <textcolor>FFCCCCCC</textcolor>
+        <label>$ADDON[script.plexmod 35195]</label>
+    </control>
+</control>
+
 <!-- Focused hub item info overlay - clearlogo/title, meta row and summary, matching pre_play's own
      details block (script-plex-pre_play.xml.tpl) exactly: same posx=52/posy=135 group offset as
      pre_play's own group id=50, same inner posx=61 controls (absolute x=113, the shared baseline
