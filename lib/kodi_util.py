@@ -54,6 +54,13 @@ FROM_KODI_REPOSITORY = ADDON.getAddonInfo('name') == "PM4K for Plex"
 # (script.plexmod-uno) is updated by its own repository. Gates the update settings and About rows too.
 UPDATER_ENABLED = not FROM_KODI_REPOSITORY and ADDON_ID == UPSTREAM_ADDON_ID
 
+# The service's global properties. script.plex.* is shared by every installed copy, so a renamed copy keeps its own:
+# with a shared service.started, whichever copy's service ran second at boot took itself for a restart after an
+# update and skipped its kiosk start. The stock ID keeps the plain names its earlier versions set.
+_SERVICE_PROP_SUFFIX = '' if ADDON_ID == UPSTREAM_ADDON_ID else '.' + ADDON_ID
+SERVICE_STARTED_PROP = 'service.started' + _SERVICE_PROP_SUFFIX
+SERVICE_VERSION_PROP = 'service.version' + _SERVICE_PROP_SUFFIX
+
 try:
     PYTHON_VERSION = platform.python_version()
     PYTHON_VERSION_TUPLE = tuple(map(int, platform.python_version_tuple()))

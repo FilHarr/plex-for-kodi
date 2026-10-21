@@ -21,15 +21,15 @@ from lib.properties import getGlobalProperty, setGlobalProperty
 MONITOR = xbmc.Monitor()
 
 def main(restarting_service=False):
-    service_started = getGlobalProperty('service.started')
+    service_started = getGlobalProperty(ku.SERVICE_STARTED_PROP)
     if service_started and not restarting_service:
         # Prevent add-on updates from starting a new version of the addon
         return
 
     lo.service_log('Started', realm="Service")
-    setGlobalProperty('service.started', '1', wait=True)
+    setGlobalProperty(ku.SERVICE_STARTED_PROP, '1', wait=True)
     # About's "Service running" shows it; the update loop below re-sets it after each reload
-    setGlobalProperty('service.version', ku.ADDON.getAddonInfo('version'))
+    setGlobalProperty(ku.SERVICE_VERSION_PROP, ku.ADDON.getAddonInfo('version'))
 
     if ku.ADDON.getSetting('kiosk.mode') == 'true' and not service_started:
         ku.xbmc.log(ku.ADDON_ID + ': Starting from service (Kiosk Mode)', ku.xbmc.LOGINFO)
@@ -40,7 +40,7 @@ def main(restarting_service=False):
     if ku.UPDATER_ENABLED and ku.ADDON.getSetting('auto_update_check') != "false":
         while not MONITOR.abortRequested():
             # enter the update loop. if it exits positively, it wants to be reloaded
-            setGlobalProperty('service.version', ku.ADDON.getAddonInfo('version'))
+            setGlobalProperty(ku.SERVICE_VERSION_PROP, ku.ADDON.getAddonInfo('version'))
             try:
                 loop_result = uc.update_loop()
             except Exception:

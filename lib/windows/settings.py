@@ -1184,8 +1184,8 @@ class Settings(object):
                             util.translatePath("special://profile")),
                 InfoSetting('service_status', T(33689, 'Service running'),
                             lambda: "{} ({})".format(
-                                util.getGlobalProperty("service.started") and T(32328, "Yes") or T(32329, "No"),
-                                util.getGlobalProperty("service.version"))),
+                                util.getGlobalProperty(util.SERVICE_STARTED_PROP) and T(32328, "Yes") or T(32329, "No"),
+                                util.getGlobalProperty(util.SERVICE_VERSION_PROP))),
                 InfoSetting('i_last_update_check', T(33690, "Last update check"),
                             lambda: util.getGlobalProperty('last_update_check', datetime.datetime.fromtimestamp(0).strftime('%Y-%m-%dT%H:%M:%S.%f')))
                 if util.UPDATER_ENABLED else None,
