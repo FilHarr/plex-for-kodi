@@ -693,20 +693,38 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             parts.append(T(*name))
         return u' \u00b7 '.join(u'{0}'.format(part) for part in parts if part)
 
+    # A collection's library type (librarySectionType, resolveCollections()) as its count words it
+    COUNT_KINDS = {'1': 'movie', '2': 'show'}
+
+    def collectionCount(self, hubItem):
+        """A collection's count in its library's word ("12 movies", util.collectionCountText()), as
+        the library grid shows it. Nothing for anything else, or a collection with no count."""
+        if hubItem.TYPE != 'collection' or hubItem.get('childCount') == '':
+            return ''
+        return util.collectionCountText(hubItem.get('childCount').asInt(),
+                                        self.COUNT_KINDS.get(u'{0}'.format(hubItem.get('librarySectionType')), ''))
+
     def subtitle(self, hubItem):
         """The line under an episode's title: its show. Nothing for anything else."""
         return hubItem.get('grandparentTitle', '') if hubItem.TYPE == 'episode' else ''
 
     def createListItem(self, hubItem, artType):
         """A result's grid item: its art drawn as artType (HUBMAP), its title, an episode's show,
-        the type line and, on a multi-server account, its server."""
+        the type line, a collection's count and, on a multi-server account, its server."""
         mli = self._listItem(hubItem, *util.scaleResolution(*self.ART_SIZES.get(artType, self.ART_SIZES['square'])))
         if mli is not None and hubItem.TYPE == 'episode':
             self.episodeSpoilers(mli, hubItem, artType)
         if mli is not None:
             mli.setProperty('art.type', artType)
-            mli.setProperty('subtitle', self.subtitle(hubItem))
-            mli.setLabel2(self.typeLine(hubItem))
+            count = self.collectionCount(hubItem)
+            if count:
+                # its type line, then how many it holds: the card's four-line layout (an episode's,
+                # whose show is its second line) with these as its second and third lines
+                mli.setProperty('subtitle', self.typeLine(hubItem))
+                mli.setLabel2(count)
+            else:
+                mli.setProperty('subtitle', self.subtitle(hubItem))
+                mli.setLabel2(self.typeLine(hubItem))
             # the line under the type: where it is - its server on a multi-server account, or for
             # one with copies, the server it opens on and how many others (placesLine())
             mli.setProperty('server.name', placesLine(hubItem))
@@ -749,7 +767,13 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
                 mli = kodigui.ManagedListItem(hubItem.title, thumbnailImage=hubItem.get('composite').asTranscodedImageURL(width, height), data_source=hubItem)
                 mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/photo.png')
             else:
-                mli = kodigui.ManagedListItem(hubItem.title, thumbnailImage=hubItem.get('thumb').asTranscodedImageURL(width, height), data_source=hubItem)
+                if hubItem.TYPE == 'collection' and hubItem.hasNoPicture():
+                    # empty, with no poster: no composite to ask for (Collection.hasNoPicture())
+                    thumb = util.standInThumb('script.plex/thumb_fallbacks/{0}.png'.format(
+                        self.COLLECTION_FALLBACKS.get(u'{0}'.format(hubItem.get('librarySectionType')), 'movie')))
+                else:
+                    thumb = hubItem.get('thumb').asTranscodedImageURL(width, height)
+                mli = kodigui.ManagedListItem(hubItem.title, thumbnailImage=thumb, data_source=hubItem)
                 if hubItem.TYPE in ('movie', 'clip'):
                     mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/movie.png')
                 elif hubItem.TYPE in ('artist', 'album', 'track'):

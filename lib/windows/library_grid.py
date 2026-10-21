@@ -2202,9 +2202,13 @@ class GridMixin(object):
                             mli.setLabel(obj.defaultTitle or '')
 
                         if obj.TYPE == 'collection':
-                            mli.setThumbnailImage(obj.server.getImageTranscodeURL(
-                                obj.artCompositeURL(*tuple(2*dim for dim in thumbDim)), *thumbDim)
-                            )
+                            if obj.hasNoPicture():
+                                # empty, with no poster: no composite to ask for (Collection.hasNoPicture())
+                                mli.setThumbnailImage(util.standInThumb(self.thumb_fallback))
+                            else:
+                                mli.setThumbnailImage(obj.server.getImageTranscodeURL(
+                                    obj.artCompositeURL(*tuple(2*dim for dim in thumbDim)), *thumbDim)
+                                )
                         else:
                             if obj.TYPE == 'photodirectory' and obj.composite:
                                 mli.setThumbnailImage(obj.composite.asTranscodedImageURL(*thumbDim))
@@ -2229,6 +2233,8 @@ class GridMixin(object):
                                     sub_title = res
                                     if not exclusive:
                                         sub_title = "{} ({})".format(res, obj.get('year'))
+                        if obj.TYPE == 'collection' and obj.get('childCount') != '':
+                            sub_title = util.collectionCountText(obj.get('childCount').asInt(), self.section.TYPE)
                         mli.setProperty('year', sub_title)
 
                         if obj.TYPE != 'collection':

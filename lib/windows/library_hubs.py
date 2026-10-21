@@ -1109,8 +1109,11 @@ class HubsMixin(object):
     def createCollectionListItem(self, obj, wide=False):
         w, h = self.THUMB_POSTER_DIM
         # a collection often has no poster of its own; the library grid falls back to the
-        # composite of its members, so match that here
-        if obj.defaultThumb:
+        # composite of its members, so match that here - an empty one with no poster has none
+        # (Collection.hasNoPicture())
+        if obj.hasNoPicture():
+            thumb = util.standInThumb('script.plex/thumb_fallbacks/movie.png')
+        elif obj.defaultThumb:
             thumb = obj.defaultThumb.asTranscodedImageURL(w, h)
         else:
             thumb = obj.server.getImageTranscodeURL(obj.artCompositeURL(w * 2, h * 2), w, h)

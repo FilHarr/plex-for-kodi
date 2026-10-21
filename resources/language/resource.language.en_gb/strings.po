@@ -3908,3 +3908,19 @@ msgstr ""
 msgctxt "#35195"
 msgid "The 'Library' tab will show all available content"
 msgstr ""
+
+msgctxt "#35196"
+msgid "{} movie"
+msgstr ""
+
+msgctxt "#35197"
+msgid "{} movies"
+msgstr ""
+
+msgctxt "#35198"
+msgid "{} show"
+msgstr ""
+
+msgctxt "#35199"
+msgid "{} shows"
+msgstr ""

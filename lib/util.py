@@ -311,6 +311,18 @@ def playlistSubtitle(playlistType, count, duration):
     return u' • '.join(parts)
 
 
+def collectionCountText(count, kind):
+    """A library grid collection's second line: how many it holds, in its library's word ("12 movies",
+    "1 show"), as the sort/filter row's count names the library's items; "items" for any other kind."""
+    if kind == 'movie':
+        text = T(35196, '{} movie') if count == 1 else T(35197, '{} movies')
+    elif kind == 'show':
+        text = T(35198, '{} show') if count == 1 else T(35199, '{} shows')
+    else:
+        text = T(35158, '{} item') if count == 1 else T(35055, '{0} items')
+    return text.format(count)
+
+
 def remainingTimeToShortText(ms):
     """
     Formats a remaining-playback-time duration in the same short, no-space style as

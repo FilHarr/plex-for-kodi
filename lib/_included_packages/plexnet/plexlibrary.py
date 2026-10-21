@@ -693,6 +693,14 @@ class Collection(media.MediaItem):
         path = "{0}?width={1}&height={2}".format(self.defaultThumb, w, h)
         return self.server.buildUrl(path, includeToken=True)
 
+    def hasNoPicture(self):
+        """An empty collection with no poster of its own. Its thumb is then the composite of its members
+        (/library/collections/<key>/composite/<ts>), which PMS answers 404 for when there are none - so a
+        screen shows its stand-in rather than asking. One with a poster chosen or uploaded points at
+        /library/metadata/<key>/thumb/<ts> instead, empty or not (Animal, 2026-10-21: 16 empty with no
+        poster, 11 empty with one). childCount must say 0: a listing without it isn't taken as empty."""
+        return self.get('childCount') == '0' and '/composite/' in (self.thumb or '')
+
     def memberType(self):
         """What the collection holds: its own subtype (movie/show/artist...), which PMS sends on
         every route - section listings, /library/metadata and /all?type=18 alike (checked live,

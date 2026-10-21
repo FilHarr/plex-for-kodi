@@ -362,6 +362,9 @@ class HubGridWindow(SeeMoreWindow, SpoilersMixin):
             fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(
                 obj.playlistType == 'audio' and 'music' or 'movie')
             return obj.buildComposite(width=w, height=h, media='thumb') or util.standInThumb(fallback)
+        if obj.TYPE == 'collection' and obj.hasNoPicture():
+            # empty, with no poster: no composite to ask for (Collection.hasNoPicture())
+            return util.standInThumb('script.plex/thumb_fallbacks/movie.png')
         if obj.TYPE == 'collection' and not obj.defaultThumb:
             return obj.server.getImageTranscodeURL(obj.artCompositeURL(w * 2, h * 2), w, h)
         return obj.defaultThumb.asTranscodedImageURL(w, h)

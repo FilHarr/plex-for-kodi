@@ -255,7 +255,10 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         if data.TYPE == 'collection':
             # Collections often have no own poster - fall back to a composite of member posters,
             # same as library.py's _chunkCallback() (library.py:4071-4076) and the dead-code
-            # createCollectionListItem() (library.py:5291-5294) both already do.
+            # createCollectionListItem() (library.py:5291-5294) both already do. An empty one with no
+            # poster has no composite either (Collection.hasNoPicture()).
+            if data.hasNoPicture():
+                return util.standInThumb('script.plex/thumb_fallbacks/movie.png')
             return data.artCompositeURL(*self.THUMB_DIM)
         return data.defaultThumb.asTranscodedImageURL(*self.THUMB_DIM)
 
@@ -412,12 +415,13 @@ class CollectionWindow(BoundedGridWindow):
         self.processCommand(opener.open(pq, context=self))
 
     def metaLine(self, count):
-        """"<n> items" plus, after a bullet, the members' year span "minYear-maxYear" - only when
+        """"<n> movies" plus, after a bullet, the members' year span "minYear-maxYear" - only when
         it is a span: a single-year collection (live: a one-show TV collection reports
         minYear == maxYear) shows just the count, no bullet, no year (on request, 2026-09-20).
         minYear/maxYear come with the collection on every path that reaches this window (the
-        library grid's /all?type=18 listing, verified the same day)."""
-        parts = [T(35055, '{0} items').format(count)]
+        library grid's /all?type=18 listing, verified the same day). The count in the word of what
+        it holds, as its library grid tile says it (util.collectionCountText())."""
+        parts = [util.collectionCountText(count, self.collection.memberType())]
         min_year = self.collection.get('minYear')
         max_year = self.collection.get('maxYear')
         if min_year and max_year and min_year != max_year:
