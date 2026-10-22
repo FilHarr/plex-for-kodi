@@ -653,6 +653,9 @@
         <height>{{ vscale(168) }}</height>
         <fadetime>10</fadetime>
         <texture diffuse="script.plex/masks/ar16x9-mask-300.png">$INFO[Window.Property(bif.image)]</texture>
+        <!-- Preview pictures come at the film's own shape (320x132 for a 1920x800 file): fitted whole, the frame's
+             black showing above and below, as the film sits on a 16:9 screen. -->
+        <aspectratio scalediffuse="false">keep</aspectratio>
     </control>
 </control>
 <control type="group" id="801">
@@ -825,8 +828,8 @@
 
     <!-- The card rows below the timeline - see includes/osd_card_row.xml.tpl. Down from the timeline reaches the
          chapters, down again the play queue; either is passed over when empty. -->
-    {% include "includes/osd_card_row.xml.tpl" with group_id=500 & list_id=501 & label_prop="chapters.label" & enable_prop="has.chapters" & onup=100 & ondown=511 %}
-    {% include "includes/osd_card_row.xml.tpl" with group_id=510 & list_id=511 & label_prop="queue.label" & enable_prop="has.queue" & onup=501 & ondown="noop" %}
+    {% include "includes/osd_card_row.xml.tpl" with group_id=500 & list_id=501 & label_prop="chapters.label" & enable_prop="has.chapters" & onup=100 & ondown=511 & letterbox=True %}
+    {% include "includes/osd_card_row.xml.tpl" with group_id=510 & list_id=511 & label_prop="queue.label" & enable_prop="has.queue" & onup=501 & ondown="noop" & letterbox=False %}
 
     <!-- ROW HINT: what's below, at the bottom of the OSD, centred - the card rows' headers and the down chevron
          (indicators/angle-small-down.png, the user's icon made white). From the buttons (or anywhere above the rows)

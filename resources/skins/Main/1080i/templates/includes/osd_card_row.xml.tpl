@@ -17,8 +17,12 @@
      A fixedlist like the other screens' hub rows: focus stays in the first slot and the items scroll under it.
      movement = itemsPerPage - 1, itemsPerPage being (1920 - 340) / 340 + 1 = 5; without it Kodi pins the focus slot
      from item 1 and leaves blank space past the last item.
+     letterbox: the chapters' pictures (chapter thumbnails, preview pictures) come at the film's own shape - 320x132
+     for a 1920x800 file - so they're fitted whole into the 16:9 card over black, as the film sits on a 16:9 screen,
+     rather than cropped; the queue's art is cropped to fill. A chapter with no picture gets a film strip on its
+     dark card.
      Uses: group_id, list_id, label_prop (the header's window property), enable_prop (set while the row has items),
-     onup, ondown. -->
+     onup, ondown, letterbox. -->
 <control type="group" id="{{ group_id }}">
     <animation effect="fade" start="100" end="0" time="200" reversible="true" condition="!Control.HasFocus({{ list_id }})">Conditional</animation>
     <posx>0</posx>
@@ -86,13 +90,37 @@
                     <aspectratio scalediffuse="false">scale</aspectratio>
                     <colordiffuse>FFAAAAAA</colordiffuse>
                 </control>
+                {% if letterbox %}
+                <!-- No picture: the dark card and a film strip (home/type/movie.png, Search's movie icon), built as
+                     the spoiler card is, so the two differ only by their icon. -->
+                <control type="image">
+                    <visible>String.IsEmpty(ListItem.Thumb) + String.IsEmpty(ListItem.Property(spoiler))</visible>
+                    <posx>166</posx>
+                    <posy>{{ vscale(72) }}</posy>
+                    <width>48</width>
+                    <height>{{ vscale(48) }}</height>
+                    <texture>script.plex/home/type/movie.png</texture>
+                    <colordiffuse>66FFFFFF</colordiffuse>
+                </control>
+                <!-- A picture: black, as the screen is - while it loads, then as its bars. -->
+                <control type="image">
+                    <visible>!String.IsEmpty(ListItem.Thumb)</visible>
+                    <posx>40</posx>
+                    <posy>{{ vscale(12) }}</posy>
+                    <width>300</width>
+                    <height>{{ vscale(168) }}</height>
+                    <texture diffuse="script.plex/masks/ar16x9-mask-300.png">script.plex/white-square.png</texture>
+                    <aspectratio scalediffuse="false">scale</aspectratio>
+                    <colordiffuse>FF000000</colordiffuse>
+                </control>
+                {% endif %}
                 <control type="image">
                     <posx>40</posx>
                     <posy>{{ vscale(12) }}</posy>
                     <width>300</width>
                     <height>{{ vscale(168) }}</height>
                     <texture background="true" diffuse="script.plex/masks/ar16x9-mask-300.png">$INFO[ListItem.Thumb]</texture>
-                    <aspectratio scalediffuse="false">scale</aspectratio>
+                    <aspectratio scalediffuse="false">{% if letterbox %}keep{% else %}scale{% endif %}</aspectratio>
                     <colordiffuse>FFAAAAAA</colordiffuse>
                 </control>
                 <!-- Spoilers (SeekDialog.spoilerHiding()): pictures hidden, so the card's dark fill and the eye-slash
@@ -204,13 +232,34 @@
                         <texture diffuse="script.plex/masks/ar16x9-mask-300.png">script.plex/thumb_fallbacks/movie16x9.png</texture>
                         <aspectratio scalediffuse="false">scale</aspectratio>
                     </control>
+                    {% if letterbox %}
+                    <control type="image">
+                        <visible>String.IsEmpty(ListItem.Thumb) + String.IsEmpty(ListItem.Property(spoiler))</visible>
+                        <posx>166</posx>
+                        <posy>{{ vscale(72) }}</posy>
+                        <width>48</width>
+                        <height>{{ vscale(48) }}</height>
+                        <texture>script.plex/home/type/movie.png</texture>
+                        <colordiffuse>B3FFFFFF</colordiffuse>
+                    </control>
+                    <control type="image">
+                        <visible>!String.IsEmpty(ListItem.Thumb)</visible>
+                        <posx>40</posx>
+                        <posy>{{ vscale(12) }}</posy>
+                        <width>300</width>
+                        <height>{{ vscale(168) }}</height>
+                        <texture diffuse="script.plex/masks/ar16x9-mask-300.png">script.plex/white-square.png</texture>
+                        <aspectratio scalediffuse="false">scale</aspectratio>
+                        <colordiffuse>FF000000</colordiffuse>
+                    </control>
+                    {% endif %}
                     <control type="image">
                         <posx>40</posx>
                         <posy>{{ vscale(12) }}</posy>
                         <width>300</width>
                         <height>{{ vscale(168) }}</height>
                         <texture background="true" diffuse="script.plex/masks/ar16x9-mask-300.png">$INFO[ListItem.Thumb]</texture>
-                        <aspectratio scalediffuse="false">scale</aspectratio>
+                        <aspectratio scalediffuse="false">{% if letterbox %}keep{% else %}scale{% endif %}</aspectratio>
                     </control>
                     <!-- Spoilers (SeekDialog.spoilerHiding()): pictures hidden, so the card's dark fill and the eye-slash
                          (indicators/hidden.png, as for hidden hubs) - not the film placeholder, which means "no picture". -->
