@@ -1,3 +1,28 @@
+[-0.3.0-]
+- Video player: a redesigned OSD. A two-line title, the seek bar below the buttons and focused when the OSD opens, and only Settings, Subtitles and VS10 as buttons; Repeat and Shuffle are rows in Settings
+- Video player: chapters and the play queue are card rows below the seek bar, in place of the play queue pop-up
+- Video player: the skip intro/credits button matches the new buttons and stays up without the OSD
+- Video player: seeking pauses playback and resumes once the seek lands; pausing leaves the OSD up
+- Video player: Settings and its pickers open at the right; the Subtitles button opens the Subtitle picker, with Download subtitles, Subtitle Delay and auto-sync
+- Video player: scan the timeline at up to 16x with a remote's FF and RW, or by holding left or right ("Hold left/right to scan" in Player UI, off by default)
+- Video player: preview thumbnails come from the whole index file, so no more green or black previews, and change on every step of a scan
+- Video player: the auto-seek delay's lowest setting is 0.5s
+- TV spoilers: "Blur chapter images" is now "Hide preview thumbnails and chapter images", for the episodes the spoiler settings cover; with "No unplayed episode titles", chapter names show as "Chapter 1", "Chapter 2"...
+- TV spoilers: also applied to the hero over the rows, See more grids, playlists and search results
+- TV spoilers: "In progress" no longer hides an episode being re-watched
+- Hub rows: Kodi draws the slide between rows, so it's smoother
+- Art: every tile shows a plain card while its art loads
+- Collections: library grids, search results and a collection's own screen say how many it holds ("12 movies")
+- Collections: no request for the picture of an empty collection without a poster
+- Recommended: a library with all its Recommended rows turned off on the server no longer reads as empty
+- Short dates follow every date format Kodi offers
+- Watchlist: a brief plex.tv rate limit is retried once, instead of hiding the Watchlist for a minute
+- Fixed: "Start Plex On Kodi Startup" did nothing with the stock PlexMod also installed. Updating to this version on a running Kodi starts Plex Uno once
+- Fixed: a show's theme music kept playing after Back
+- Fixed: the header showed, then slid away, on Back to a scrolled library grid
+- Fixed: subtitles stayed on after choosing Off once a downloaded subtitle had been selected
+- Fixed: "Ends at" was cut off with a 12-hour clock
+
 [-0.2.1-]
 - Kodi 22: the add-on starts again (it stopped at "cannot modify read-only attribute ... BaseWindow.onAction")
 - Post-play: Replay after a movie played on its own plays it again
