@@ -14,6 +14,7 @@ from kodi_six import xbmcgui
 from iso639 import languages
 from . import backgroundthread
 from . import kodijsonrpc
+from . import p3i_detector
 from .windows import seekdialog, windowutils, blackoutdialog
 from . import util
 from . import seamless_branching
@@ -2921,7 +2922,16 @@ class PlexPlayer(xbmc.Player, signalsmixin.SignalsMixin):
         self.trigger('starting.video')
         self.handler.queuingNext = False
         self.handler.queuingSpecific = False
-        self.play(url, li)
+        # p3i's black-border/L5 detection skipped for a Direct Stream or transcode (both isTranscoded - a copied
+        # video with transcoded audio too): it holds playback until it has scanned a stream that can't seek
+        # (p3i_detector). Armed last, from the server's final decision; Kodi takes it with the play request.
+        skipToken = p3i_detector.arm_skip() if meta.isTranscoded else None
+        try:
+            self.play(url, li)
+        except Exception:
+            # never submitted: our skip taken back, not one a newer request armed since
+            p3i_detector.clear_skip(skipToken)
+            raise
 
     def playVideoPlaylist(self, playlist, resume=False, handler=None, session_id=None):
         if self.bgmPlaying:
