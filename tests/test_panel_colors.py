@@ -159,3 +159,112 @@ class NewPosterTest(KodiTestCase):
     def test_the_stamp(self):
         self.assertEqual(1791848398, panel_colors.stamp('/library/metadata/100952/thumb/1791848398'))
         self.assertEqual(0, panel_colors.stamp(None))
+
+
+ARTIST_ART = {'topLeft': '03030f', 'topRight': '161517', 'bottomLeft': '0b0c13', 'bottomRight': '101215'}
+COVER = {'topLeft': '4e1337', 'topRight': '340f03', 'bottomLeft': '665f19', 'bottomRight': '913b5d'}
+
+
+class CoverServer(object):
+    """/services/ultrablur/colors?url=<image>: the colours PMS works out for an image it serves."""
+    uuid = 'server'
+    name = 'Server'
+
+    def __init__(self, covers):
+        self.covers = covers
+        self.asked = []
+
+    def query(self, path, params=None):
+        assert path == '/services/ultrablur/colors', path
+        self.asked.append(params['url'])
+        container = ET.Element('MediaContainer')
+        if self.covers.get(params['url']):
+            ET.SubElement(container, 'UltraBlurColors', self.covers[params['url']])
+        return container
+
+
+class Music(object):
+    def __init__(self, server, TYPE, own=None, **data):
+        self.server = server
+        self.TYPE = TYPE
+        self.ultraBlurColors = own
+        self.data = data
+
+    def get(self, name, default=None):
+        return self.data.get(name, default)
+
+
+class AlbumCoverTest(KodiTestCase):
+    """An album's colours from its cover, not the artist's background Plex makes them from (8 of Barenaked Ladies'
+    11 albums on Animal the same, 2026-10-23); a track's from its album's cover."""
+
+    def setUp(self):
+        panel_colors.CACHE.clear()
+        self.addCleanup(panel_colors.CACHE.clear)
+        self.server = CoverServer({'/library/metadata/5/thumb/100': COVER})
+
+    def album(self, cover='/library/metadata/5/thumb/100'):
+        return Music(self.server, 'album', ARTIST_ART, ratingKey='5', thumb=cover)
+
+    def test_an_album_takes_its_covers_colours(self):
+        album = self.album()
+        panel_colors.warmCovers([album])
+        self.assertEqual(COVER, panel_colors.coloursFor(album))
+
+    def test_a_track_takes_its_albums_covers(self):
+        track = Music(self.server, 'track', ARTIST_ART, parentRatingKey='5', parentThumb='/library/metadata/5/thumb/100')
+        panel_colors.warmCovers([track])
+        self.assertEqual(COVER, panel_colors.coloursFor(track))
+        # and the album, as the Album screen paints it, from the same answer
+        self.assertEqual(COVER, panel_colors.coloursFor(self.album()))
+        self.assertEqual(1, len(self.server.asked))
+
+    def test_not_warmed_is_its_own_and_asks_nothing(self):
+        self.assertEqual(ARTIST_ART, panel_colors.coloursFor(self.album()))
+        self.assertEqual([], self.server.asked)
+
+    def test_the_episode_warm_before_rows_show_asks_nothing_for_albums(self):
+        """warm() runs before a grid's chunk or a row shows: one request per cover would hold them up."""
+        panel_colors.warm([self.album()])
+        self.assertEqual([], self.server.asked)
+
+    def test_the_same_cover_asks_nothing_again_and_another_asks(self):
+        panel_colors.warmCovers([self.album()])
+        panel_colors.warmCovers([self.album()])
+        self.assertEqual(1, len(self.server.asked))
+        panel_colors.warmCovers([self.album('/library/metadata/5/thumb/200')])
+        self.assertEqual(2, len(self.server.asked))
+
+    def test_no_colours_for_the_cover_leaves_its_own(self):
+        album = self.album('/library/metadata/5/thumb/999')
+        panel_colors.warmCovers([album])
+        self.assertEqual(ARTIST_ART, panel_colors.coloursFor(album))
+
+    def test_warm_later_does_it_on_its_worker(self):
+        album = self.album()
+        panel_colors.warmLater([album])
+        worker = panel_colors._laterWorker[0]
+        if worker is not None:
+            worker.join(5)
+        self.assertEqual(COVER, panel_colors.coloursFor(album))
+
+    def test_warm_later_without_albums_starts_nothing(self):
+        panel_colors.warmLater([Music(self.server, 'movie')])
+        self.assertEqual([], self.server.asked)
+
+    def test_a_refused_cover_isnt_asked_again_and_the_rest_go_on(self):
+        """Animal answers one cover with a 500 every time: it was asked again on every warm (2026-10-23)."""
+        class Refusing(CoverServer):
+            def query(self, path, params=None):
+                if params['url'].endswith('/bad'):
+                    self.asked.append(params['url'])
+                    raise plexnet.exceptions.BadRequest('(500) internal_server_error')
+                return CoverServer.query(self, path, params)
+
+        self.server = Refusing({'/library/metadata/5/thumb/100': COVER})
+        bad = Music(self.server, 'album', ARTIST_ART, ratingKey='4', thumb='/library/metadata/4/bad')
+        panel_colors.warmCovers([bad, self.album()])
+        self.assertEqual(ARTIST_ART, panel_colors.coloursFor(bad))
+        self.assertEqual(COVER, panel_colors.coloursFor(self.album()))
+        panel_colors.warmCovers([bad])
+        self.assertEqual(1, self.server.asked.count('/library/metadata/4/bad'))

@@ -134,7 +134,7 @@
         <label>$INFO[ListItem.Label]</label>
     </control>
     <control type="label">
-        <scroll>false</scroll>
+        <scroll>{% if focused %}Control.HasFocus(101){% else %}false{% endif %}</scroll>
         <posx>{{ text_x }}</posx>
         <posy>{{ vscale(50) }}</posy>
         <width>{{ 1519 - text_x }}</width>

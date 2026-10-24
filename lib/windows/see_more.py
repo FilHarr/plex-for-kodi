@@ -313,8 +313,10 @@ class HubGridWindow(SeeMoreWindow, SpoilersMixin):
         size = min(self.CHUNK_SIZE, self.total - start)
         try:
             items = plexobjects.listItems(self.hub.server, self.gridKey, offset=start, limit=size)
-            # episodes' panels in their season's colours (panel_colors.py), before they show
+            # episodes' panels in their season's colours (panel_colors.py), before they show; albums' and
+            # tracks' in their covers', after (one request each)
             panel_colors.warm(items)
+            panel_colors.warmLater(items)
         except Exception as e:
             util.DEBUG_LOG('See more: chunk {0} of {1} failed: {2}', start, self.gridKey, e)
             self._requested.discard(start)

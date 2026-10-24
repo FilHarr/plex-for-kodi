@@ -227,8 +227,10 @@ class HttpRequest(object):
         self.method = 'POST'
         res = self.getPostWithTimeout(timeout, body)
         if not res:
+            # an error status's response is falsy too; None is no answer at all (timed out, refused), returned
+            # as None
             if return_on_status_code:
-                return res.status_code
+                return res.status_code if res is not None else None
             return ''
         return res.text.encode('utf8')
 

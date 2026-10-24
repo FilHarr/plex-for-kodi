@@ -18,7 +18,6 @@ from lib.util import T
 from lib.language_util import getNativeLanguages
 from . import busy
 from . import credits
-from . import dropdown
 from . import info
 from . import kodigui
 from . import opener
@@ -511,13 +510,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     SHUFFLE_BUTTON_ID = 302
     OPTIONS_BUTTON_ID = 303
     INFO_BUTTON_ID = 304
-    SETTINGS_BUTTON_ID = 305
     RESUME_BUTTON_ID = 308
     RESTART_BUTTON_ID = 309
-    # The season card's own Play/Resume focus-pill overlays (script-plex-episodes.xml.tpl) and the
-    # pill/label inside each - the only two overlays on this screen whose text isn't fixed at build
-    # time, since they name the episode the card is about. sizeSeasonCardPlayLabel() resizes all
-    # three ids of whichever one is live. 384-387, not the 390s the other overlays use: those are
+    # The season card's own Play/Resume/Restart focus-pill overlays (script-plex-episodes.xml.tpl) and
+    # the pill/label inside each - the only overlays on this screen whose text isn't fixed at build
+    # time, since they name the episode the card is about. sizeSeasonCardPlayLabel() resizes the
+    # three ids of whichever are live. 380-387, not the 390s the other overlays use: those are
     # full, and 398/399 were the only ids left there.
     SEASON_CARD_PLAY_LABEL_GROUP_ID = 398
     SEASON_CARD_PLAY_LABEL_PILL_ID = 384
@@ -525,6 +523,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     SEASON_CARD_RESUME_LABEL_GROUP_ID = 399
     SEASON_CARD_RESUME_LABEL_PILL_ID = 386
     SEASON_CARD_RESUME_LABEL_TEXT_ID = 387
+    SEASON_CARD_RESTART_LABEL_GROUP_ID = 380
+    SEASON_CARD_RESTART_LABEL_PILL_ID = 381
+    SEASON_CARD_RESTART_LABEL_TEXT_ID = 382
     # Click/focus target laid over the summary textbox (script-plex-episodes.xml.tpl) - 350, not
     # something in the 300-309 button cluster (all already taken here, unlike Seasons'/Artist's own
     # copy of this control, which reuses 305 since neither of them has a button at that id any
@@ -791,7 +792,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                                 pick if pick is not None else first)
 
     def seasonCardEpisode(self):
-        """The episode the season card's own Play/Resume button starts, or None.
+        """The episode the season card's own Play/Resume/Restart buttons start, or None.
 
         _seasonPick()'s answer, except where that comes up empty: nothing unwatched and nothing
         part-way through means a fully watched season, where _defaultEpisode() answers None (land on
@@ -865,13 +866,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.sizeSeasonCardPlayLabel(in_progress, mli.getProperty('resume.timeleft'))
 
         # This can land while the button row already has focus (the background resolve above), and
-        # flipping in.progress swaps which of Play/Resume is the visible control - Kodi drops focus
-        # entirely when the focused one goes invisible. selectPlayButton() can't do this: it bails
-        # out on hadUserInteraction, which getting here by focusing the card implies.
-        # No RESTART_BUTTON_ID: that one is hidden on this card entirely (its own comment in
-        # script-plex-episodes.xml.tpl), so it can't be what has focus here.
+        # flipping in.progress swaps Play for Resume+Restart or back - Kodi drops focus entirely when
+        # the focused one goes invisible. selectPlayButton() can't do this: it bails out on
+        # hadUserInteraction, which getting here by focusing the card implies.
         focused = self.getFocusId()
-        if focused in (self.PLAY_BUTTON_ID, self.PLAY_BUTTON_DISABLED_ID, self.RESUME_BUTTON_ID):
+        if focused in (self.PLAY_BUTTON_ID, self.PLAY_BUTTON_DISABLED_ID, self.RESUME_BUTTON_ID,
+                       self.RESTART_BUTTON_ID):
             target = self.getPlayButtonID(mli)
             if target != focused:
                 kodigui.waitForVisibility(target, amount=2)
@@ -879,10 +879,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                     self.setCondFocusId(target)
 
     def sizeSeasonCardPlayLabel(self, in_progress, timeleft=''):
-        """Shrink the season card's own Play/Resume overlay to the label it's actually showing.
+        """Shrink the season card's own Play, or Resume and Restart, overlays to the labels they're
+        actually showing.
 
         Same formula and the same reason as ShowWindow.sizePlayButtonLabel() (subitems.py): the
-        episode number in these two labels isn't known at build time, so the widths passed in the
+        episode number in these labels isn't known at build time, so the widths passed in the
         skin are only the worst case - "S1E1" to "S12E345" is ~45px of difference. label_width is
         the measured text + 4, the pill is label + 62 and the group label + 18
         (includes/episode_button_label.xml.tpl documents the formula). The episode cards' own
@@ -893,23 +894,26 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             text = u'{0} {1}'.format(T(32316, 'Resume'), episode).rstrip()
             if timeleft:
                 text = u'{0} • {1}'.format(text, timeleft)
-            ids = (self.SEASON_CARD_RESUME_LABEL_GROUP_ID, self.SEASON_CARD_RESUME_LABEL_PILL_ID,
-                   self.SEASON_CARD_RESUME_LABEL_TEXT_ID)
+            labels = [(text, (self.SEASON_CARD_RESUME_LABEL_GROUP_ID, self.SEASON_CARD_RESUME_LABEL_PILL_ID,
+                              self.SEASON_CARD_RESUME_LABEL_TEXT_ID)),
+                      (u'{0} {1}'.format(T(35061, 'Restart'), episode).rstrip(),
+                       (self.SEASON_CARD_RESTART_LABEL_GROUP_ID, self.SEASON_CARD_RESTART_LABEL_PILL_ID,
+                        self.SEASON_CARD_RESTART_LABEL_TEXT_ID))]
         else:
-            text = u'{0} {1}'.format(T(33020, 'Play'), episode).rstrip()
-            ids = (self.SEASON_CARD_PLAY_LABEL_GROUP_ID, self.SEASON_CARD_PLAY_LABEL_PILL_ID,
-                   self.SEASON_CARD_PLAY_LABEL_TEXT_ID)
+            labels = [(u'{0} {1}'.format(T(33020, 'Play'), episode).rstrip(),
+                       (self.SEASON_CARD_PLAY_LABEL_GROUP_ID, self.SEASON_CARD_PLAY_LABEL_PILL_ID,
+                        self.SEASON_CARD_PLAY_LABEL_TEXT_ID))]
 
-        label_width = int(round(measureTextWidth(text, FONT10_POINT_SIZE))) + 4
-        group_id, pill_id, text_id = ids
-        try:
-            self.getControl(text_id).setWidth(label_width)
-            self.getControl(pill_id).setWidth(label_width + 62)
-            self.getControl(group_id).setWidth(label_width + 18)
-        except (SystemError, RuntimeError):
-            # Any state where the row hasn't rendered yet. The build-time widths are the worst case
-            # anyway, so a miss here leaves a slightly roomy pill rather than a broken one.
-            util.DEBUG_LOG('Episodes: no season card Play/Resume label controls to resize')
+        for text, (group_id, pill_id, text_id) in labels:
+            label_width = int(round(measureTextWidth(text, FONT10_POINT_SIZE))) + 4
+            try:
+                self.getControl(text_id).setWidth(label_width)
+                self.getControl(pill_id).setWidth(label_width + 62)
+                self.getControl(group_id).setWidth(label_width + 18)
+            except (SystemError, RuntimeError):
+                # Any state where the row hasn't rendered yet. The build-time widths are the worst case
+                # anyway, so a miss here leaves a slightly roomy pill rather than a broken one.
+                util.DEBUG_LOG('Episodes: no season card Play/Resume/Restart label controls to resize')
 
     @busy.dialog(delay_time=1.0)
     def doClose(self, **kw):
@@ -1447,7 +1451,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                     self.selectEpisode()
                     return
                 elif action == xbmcgui.ACTION_CONTEXT_MENU:
-                    self.optionsButtonClicked(from_item=True)
+                    self.moreButtonClicked()
                     return
 
             elif controlID == self.RELATED_LIST_ID and self.relatedPaginator and \
@@ -1487,8 +1491,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                     return
 
             if action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
-                if self.dismissSidebarPopupOnBack():
-                    return
                 self.doClose()
                 return
         except:
@@ -1660,15 +1662,13 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         elif controlID == self.PLAY_BUTTON_ID:
             self.playButtonClicked()
         elif controlID == self.RESUME_BUTTON_ID:
-            self.episodeListClicked(force_resume=True)
+            self.episodeListClicked()
         elif controlID == self.RESTART_BUTTON_ID:
             self.episodeListClicked(start_over=True)
         elif controlID == self.SHUFFLE_BUTTON_ID:
             self.shuffleButtonClicked()
         elif controlID == self.OPTIONS_BUTTON_ID:
-            self.optionsButtonClicked()
-        elif controlID == self.SETTINGS_BUTTON_ID:
-            self.settingsButtonClicked()
+            self.moreButtonClicked()
         elif controlID == self.INFO_BUTTON_ID:
             self.infoButtonClicked()
         elif controlID == self.SUMMARY_BUTTON_ID:
@@ -1682,7 +1682,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             item = mli.dataSource
             if item is None:
                 # "Show" tab - see _goToShow()'s own comment (shared with the options menu's
-                # "Go To Show" entry, optionsButtonClicked()).
+                # "Go To Show" action, runMoreAction()).
                 self._goToShow(parent_list=self.seasonsListControl)
             elif item != self.season:
                 self.switchSeason(item)
@@ -1705,6 +1705,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # first, whether or not this is live yet: the sidebar rows read it (SidebarMixin)
+        self.trackSidebarFocus(controlID)
         if self.ignoresInput():
             return
         self.reselectActiveSection(controlID, self.lastFocusID)
@@ -1747,12 +1749,12 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         elif xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + !ControlGroup(300).HasFocus(0)'):
             self.setProperty('on.extras', '1')
 
-    def toggleWatched(self, mli=None, item=None, state=None, **kw):
+    def toggleWatched(self, mli=None, item=None, state=None, heading=None, **kw):
         if not mli and not item:
             return
 
         item = item or mli.dataSource
-        watched = super(EpisodesWindow, self).toggleWatched(item, state=state, **VIDEO_RELOAD_KW)
+        watched = super(EpisodesWindow, self).toggleWatched(item, state=state, heading=heading, **VIDEO_RELOAD_KW)
         if watched is None:
             return
 
@@ -1873,7 +1875,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     def _goToShow(self, parent_list=None):
         """Shared by the season-tab row's "Show" tab (onClick(), SEASONS_LIST_ID handling) and the
-        options menu's "Go To Show" entry (optionsButtonClicked()) - both want identical treatment.
+        More settings' "Go To Show" action (runMoreAction()) - both want identical treatment.
         initialEpisode (reset(), untouched by in-page switchSeason()) is None only when this window
         was opened with season= rather than episode= - i.e. from a season click on the Seasons page
         itself (opener.py's seasonClicked()) - meaning that exact Seasons page is still sitting
@@ -1940,10 +1942,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # opens the show/season page instead of trying to switch to it as a season.
         return kodigui.ManagedListItem(T(35058, 'Show'))
 
-    def playButtonClicked(self, force_episode=None, from_auto_play=False, start_over=False,
-                          force_resume=False):
+    def playButtonClicked(self, force_episode=None, from_auto_play=False, start_over=False):
         return self.episodeListClicked(force_episode=force_episode, from_auto_play=from_auto_play,
-                                       start_over=start_over, force_resume=force_resume)
+                                       start_over=start_over)
 
     def shuffleButtonClicked(self):
         # Season-card-only now (button row's own visible condition) - shuffles the whole
@@ -1957,17 +1958,32 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         videoplayer.play(play_queue=pl, context=self)
         return True
 
-    def settingsButtonClicked(self):
+    @kodigui.releasesDialogDim
+    def moreButtonClicked(self):
+        """More (and the episode list's context menu): the More settings dialog - the episode's media settings
+        with its actions under them (moreActions()), or on the season card its actions alone - the one chosen
+        run once it's closed (runMoreAction())."""
         mli = self.episodeListControl.getSelectedItem()
-        if not mli or mli.getProperty("is.boundary"):
+        if not mli:
+            return
+        # is.boundary is also true for the paginator's own loading-spinner markers, but those never
+        # carry is.season.card, so this only matches the season pseudo-card itself.
+        isSeasonCard = bool(mli.getProperty("is.boundary") and mli.getProperty("is.season.card"))
+        if mli.getProperty("is.boundary") and not isSeasonCard:
             return
 
-        episode = mli.dataSource
-
-        if not episode.mediaChoice:
+        episode = None if isSeasonCard else mli.dataSource
+        if episode is not None and not episode.mediaChoice:
             playerObject = plexplayer.PlexPlayer(episode)
             playerObject.build()
-        playersettings.showDialog(video=episode, non_playback=True)
+        choice = playersettings.showDialog(video=episode, non_playback=True, heading=T(35200, 'More settings'),
+                                           actions=self.moreActions(mli, isSeasonCard))
+        if episode is not None:
+            self.refreshAfterSettings(episode, mli)
+        if choice:
+            self.runMoreAction(choice, mli, isSeasonCard)
+
+    def refreshAfterSettings(self, episode, mli):
         # setPostReloadItemInfo(), not just setItemAudioAndSubtitleInfo(): the Settings popup can
         # now also change the media choice itself (its new Video entry - playersettings.py), which
         # setItemAudioAndSubtitleInfo() alone never refreshed (video.res/video.codec/
@@ -2034,8 +2050,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         showTitle = episode.grandparentTitle or (self.show_.title if self.show_ else '')
         info.showSummary(showTitle, episode.summary, subtitle=episode.title)
 
-    def episodeListClicked(self, force_episode=None, from_auto_play=False, start_over=False,
-                           force_resume=False):
+    def episodeListClicked(self, force_episode=None, from_auto_play=False, start_over=False):
 
         if self.playBtnClicked and not from_auto_play:
             util.DEBUG_LOG("Not honoring play action: currentItemLoaded: {0}, "
@@ -2085,32 +2100,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             util.messageDialog(T(32312, 'unavailable'), T(32332, 'This item is currently unavailable.'))
             return
 
-        resume = False
-        if episode.viewOffset.asInt() and not start_over:
-            if force_resume:
-                # Dedicated Resume button (button row) - skip the dialog/assume_resume check below
-                # entirely, the button itself already made the choice explicit.
-                resume = True
-            elif not util.getSetting('assume_resume'):
-                choice = dropdown.showDropdown(
-                    options=[
-                        {'key': 'resume', 'display': T(32429, 'Resume from {0}').format(util.timeDisplay(episode.viewOffset.asInt()).lstrip('0').lstrip(':'))},
-                        {'key': 'play', 'display': T(32317, 'Play from beginning')}
-                    ],
-                    pos=(660, "middle"),
-                    close_direction='none',
-                    set_dropdown_prop=False,
-                    header=T(32314, 'In Progress'),
-                    dialog_props=from_auto_play and self.dialogProps or None
-                )
-
-                if not choice:
-                    return
-
-                if choice['key'] == 'resume':
-                    resume = True
-            else:
-                resume = True
+        # An episode with a resume point resumes - Resume, the card itself, or auto-play from a hub's "Resume
+        # from" - unless start_over (Restart, or a hub's "Play from beginning") asks for its beginning.
+        resume = bool(episode.viewOffset.asInt()) and not start_over
 
         if not from_auto_play:
             self.playBtnClicked = True
@@ -2139,51 +2131,41 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
             self.doClose()
 
-    def optionsButtonClicked(self, from_item=False):
+    def moreActions(self, mli, isSeasonCard):
+        """The More settings dialog's actions, [(key, label)], for an episode card or the season card (runMoreAction()
+        runs them)."""
         options = []
-
-        mli = self.episodeListControl.getSelectedItem()
-        # is.boundary is also true for the paginator's own loading-spinner markers, but those never
-        # carry is.season.card, so this only matches the season pseudo-card itself.
-        isSeasonCard = bool(mli and mli.getProperty("is.boundary") and mli.getProperty("is.season.card"))
-        # self.season is the season card's usual target, but the same pseudo-card doubles as a
-        # show-level card (createSeasonCardItem()'s own seasonOrShow fallback) when there's no
-        # specific season - self.show_ then, for refresh/cache_reset below.
+        # the season card's target (see runMoreAction()), for its server below
         seasonCardItem = self.season or self.show_
 
-        if mli and not mli.getProperty("is.boundary"):
-            # "Play from beginning" used to live here (assume_resume users only, since the plain
-            # Play button already asks otherwise) - dropped now that the button row itself splits
-            # into dedicated Resume/Restart buttons for a part-watched episode, on request.
+        if not isSeasonCard:
             inProgress = mli.dataSource.viewOffset.asInt()
 
             if not mli.dataSource.isWatched or inProgress:
-                options.append({'key': 'mark_watched', 'display': T(32319, 'Mark Played')})
+                options.append(('mark_watched', T(32319, 'Mark Played')))
             if mli.dataSource.isWatched or inProgress:
-                options.append({'key': 'mark_unwatched', 'display': T(32318, 'Mark Unplayed')})
+                options.append(('mark_unwatched', T(32318, 'Mark Unplayed')))
 
             # if True:
-            #     options.append({'key': 'add_to_playlist', 'display': '[COLOR FF808080]Add To Playlist[/COLOR]'})
+            #     options.append(('add_to_playlist', '[COLOR FF808080]Add To Playlist[/COLOR]'))
 
         # Season-card-only now, not shown on every episode card's own menu (its watched state is a
         # season-level action, not something that made sense mixed in with a specific episode's own
         # Mark Played/Unplayed above - on request).
         if isSeasonCard and self.season:
             if self.season.isWatched:
-                options.append({'key': 'mark_season_unwatched', 'display': T(32320, 'Mark Season Unplayed')})
+                options.append(('mark_season_unwatched', T(32320, 'Mark Season Unplayed')))
             else:
-                options.append({'key': 'mark_season_watched', 'display': T(32321, 'Mark Season Played')})
+                options.append(('mark_season_watched', T(32321, 'Mark Season Played')))
 
         if self.show_:
-            if options:
-                options.append(dropdown.SEPARATOR)
-
-            options.append({'key': 'playback_settings', 'display': T(32925, 'Playback Settings')})
-            options.append(dropdown.SEPARATOR)
+            # over More settings, which Back returns to
+            options.append(('playback_settings', T(32925, 'Playback Settings'),
+                            lambda: self.playbackSettings(self.show_)))
 
         # the show's server: the season card has no dataSource of its own
         if plexapp.ACCOUNT.isAdmin and seasonCardItem.server.owned:
-            options.append({'key': 'refresh', 'display': T(33719, 'Refresh metadata')})
+            options.append(('refresh', T(33719, 'Refresh metadata')))
 
             # Delete stays episode-only: the confirmation dialog below (delete()) is worded for a
             # single episode's own S/E numbers (item.parentIndex/item.index), which doesn't carry
@@ -2191,51 +2173,41 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             # destructive action than deleting one episode - not something to wire up to the same
             # confirmation text by accident.
             if not isSeasonCard and mli.dataSource.server.allowsMediaDeletion:
-                options.append({'key': 'delete', 'display': T(32322, 'Delete')})
+                # in a muted red, set apart from the rest as the one that can't be undone
+                options.append(('delete', u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32322, 'Delete'))))
 
         # if xbmc.getCondVisibility('Player.HasAudio') and self.section.TYPE == 'artist':
-        #     options.append({'key': 'add_to_queue', 'display': 'Add To Queue'})
+        #     options.append(('add_to_queue', 'Add To Queue'))
 
-        if options:
-            options.append(dropdown.SEPARATOR)
-
-        options.append({'key': 'to_show', 'display': T(32323, 'Go To Show')})
+        options.append(('to_show', T(32323, 'Go To Show')))
 
         if 'items' in util.getSetting('cache_requests'):
-            options.append({'key': 'cache_reset', 'display': T(33728, "Clear cache for item")})
+            options.append(('cache_reset', T(33728, "Clear cache for item")))
 
-        pos = (500, util.vscalei(620))
-        bottom = False
-        if from_item:
-            viewPos = self.episodeListControl.getViewPosition()
-            optsLen = len(list(filter(None, options)))
-            # dropDown handles any overlap with the right window boundary, so we don't need to care here
-            pos = (
-                (((viewPos + 1) * 359) - 100),
-                util.vscalei(649) if optsLen < 7 else 649 - util.vscalei(66) * (optsLen - 6))
+        # Delete last, wherever it was added (sorted() keeps the rest in order)
+        return sorted(options, key=lambda o: o[0] == 'delete')
 
-        choice = dropdown.showDropdown(options, pos, pos_is_bottom=bottom, close_direction='left',
-                                       set_dropdown_prop=False)
-        if not choice:
-            return
+    def runMoreAction(self, key, mli, isSeasonCard):
+        # self.season is the season card's usual target, but the same pseudo-card doubles as a
+        # show-level card (createSeasonCardItem()'s own seasonOrShow fallback) when there's no
+        # specific season - self.show_ then, for refresh/cache_reset below.
+        seasonCardItem = self.season or self.show_
 
-        if choice['key'] == 'mark_watched':
+        if key == 'mark_watched':
             self.toggleWatched(mli, state=True)
-        elif choice['key'] == 'mark_unwatched':
+        elif key == 'mark_unwatched':
             self.toggleWatched(mli, state=False)
-        elif choice['key'] == 'mark_season_watched':
-            self.toggleWatched(item=self.season, state=True)
-        elif choice['key'] == 'mark_season_unwatched':
-            self.toggleWatched(item=self.season, state=False)
-        elif choice['key'] == 'to_show':
+        elif key == 'mark_season_watched':
+            self.toggleWatched(item=self.season, state=True, heading=T(32321, 'Mark Season Played'))
+        elif key == 'mark_season_unwatched':
+            self.toggleWatched(item=self.season, state=False, heading=T(32320, 'Mark Season Unplayed'))
+        elif key == 'to_show':
             self._goToShow()
-        elif choice['key'] == 'delete':
+        elif key == 'delete':
             self.delete(mli.dataSource)
             self.episodesPaginator.leafCount = int(self.season.leafCount) if self.season else 0
             self.fillEpisodes()
-        elif choice['key'] == 'playback_settings':
-            self.playbackSettings(self.show_, pos, bottom)
-        elif choice['key'] == 'refresh':
+        elif key == 'refresh':
             # updateItems() with no item, not updateItems(mli): the per-item branch reads
             # item.dataSource, which is None for the season card - the no-arg branch just
             # re-fills the whole episode list instead, which covers this card too.
@@ -2245,7 +2217,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             else:
                 mli.dataSource.refresh()
                 self.updateItems(mli)
-        elif choice["key"] == "cache_reset":
+        elif key == "cache_reset":
             try:
                 target = seasonCardItem if isSeasonCard else mli.dataSource
                 util.DEBUG_LOG('Clearing requests cache for {}...', target)
@@ -2259,15 +2231,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 util.DEBUG_LOG("Couldn't clear cache: {}", e)
 
     def delete(self, item):
-        button = optionsdialog.show(
-            T(32326, 'Really delete?'),
-            T(33036, "Delete episode S{0:02d}E{1:02d} from {2}?").format(item.parentIndex.asInt(),
-                                                                         item.index.asInt(), item.defaultTitle),
-            T(32328, 'Yes'),
-            T(32329, 'No')
-        )
-
-        if button != 0:
+        if not optionsdialog.confirmDelete(item):
             return
 
         if not self._delete():
@@ -2571,6 +2535,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         mli.setProperty('content.rating', video.contentRating.split('/', 1)[-1])
         mli.setProperty('genres.short', self.genres_short)
+        # the show's edition, which Plex gives each episode too
+        mli.setProperty('edition', u'{0}'.format(video.editionTitle or ''))
         self.populateRatings(video, mli, hide_ratings=self.hideSpoilers(video) and self.noRatings)
 
     def setPostReloadItemInfo(self, video, mli):
@@ -2715,12 +2681,13 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             mli.setProperty('date', str(show.year or ''))
             mli.setProperty('genres.short', self.genres_short)
             mli.setProperty('content.rating', show.contentRating.split('/', 1)[-1])
+            mli.setProperty('edition', u'{0}'.format(show.editionTitle or ''))
             self.populateRatings(show, mli)
 
         # watched/unwatched: same properties, same meaning, as a real episode's own
         # (EpisodesPaginator.prepareListItem()) - Season has the same isFullyWatched/isWatched
         # aggregate properties a Show does (already used elsewhere in this file, e.g.
-        # optionsButtonClicked()'s Mark Season Played/Unplayed entries), so the shared
+        # More settings' Mark Season Played/Unplayed actions), so the shared
         # includes/watched_indicator.xml.tpl include (already unconditionally rendered by this
         # template for every item) picks this up and shows a real watched/unwatched indicator for
         # this card too, with no template changes of its own needed beyond the season-card-specific

@@ -23,20 +23,6 @@
     <!-- This is the buttonless OSD -->
     <visible>[!String.IsEmpty(Window.Property(show.OSD)) | [String.IsEmpty(Window.Property(is_plextuary)) + Window.IsVisible(seekbar)] | !String.IsEmpty(Window.Property(button.seek))] + !Window.IsVisible(osdvideosettings) + !Window.IsVisible(osdaudiosettings) + !Window.IsVisible(osdsubtitlesettings) + !Window.IsVisible(subtitlesearch) + !Window.IsActive(playerprocessinfo) + !Window.IsActive(selectdialog) + !Window.IsVisible(osdcmssettings)</visible>
     <animation effect="fade" time="200" delay="200" end="0">Hidden</animation>
-    <control type="group">
-        <visible>String.IsEmpty(Window.Property(is_plextuary)) + String.IsEmpty(Window.Property(settings.visible)) + [Window.IsVisible(seekbar) | Window.IsVisible(videoosd) | Player.ShowInfo]</visible>
-        <animation effect="fade" start="100" end="0">Hidden</animation>
-        <posx>0</posx>
-        <posy>0</posy>
-        <control type="image">
-            <posx>0</posx>
-            <posy>0</posy>
-            <width>1920</width>
-            <height>1080</height>
-            <texture>script.plex/player-fade.png</texture>
-            <colordiffuse>FF080808</colordiffuse>
-        </control>
-    </control>
 
     <control type="group">
         <posx>0</posx>
@@ -772,9 +758,8 @@
             </control>
         </control>
 
-        <!-- VS10 mode switcher - CoreELEC/Amlogic only. Visibility controlled via nav.vs10 window property
-             set in seekdialog.py. To restrict to CoreELEC hardware once tested, change the Python side:
-             self.setBoolProperty('nav.vs10', xbmc.getCondVisibility('System.AddonIsEnabled(service.coreelec.settings)')) -->
+        <!-- VS10 mode switcher: nav.vs10 (seekdialog.py) - CoreELEC's VS10 builds (util.CE_VS10), unless
+             "Show buttons" leaves it out. Opens the Settings dialog's VS10 Mode picker. -->
         <control type="group">
             <visible>!String.IsEmpty(Window.Property(nav.vs10))</visible>
             <width>70</width>

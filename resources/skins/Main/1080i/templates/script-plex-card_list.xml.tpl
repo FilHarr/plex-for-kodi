@@ -5,13 +5,14 @@
 <defaultcontrol>100</defaultcontrol>
 {% endblock %}
 {% block controls %}
-<!-- Card lists (dropdown.CardListDialog: the Libraries picker, Manage Hubs, the search's servers):
-     script-plex-dropdown_header's frame, with rows of 84, each three rounded cards: the row (its
-     title, and in font8 a second line - a library's server), a toggle tile (a library's pin, a
-     hub's shown/hidden) and Move. Left/Right choose which Select acts on
-     (Window.Property(picker.column): open, pin, move); the focused row shows the chosen card in the
-     sidebar's focus grey. A 'single' row has its toggle only, where Move would be. Written from the
-     header dropdown; keep the frame in step with it. -->
+<!-- Card lists (dropdown.CardListDialog: the Libraries picker, Manage Hubs, the search's servers), in
+     the settings and pickers' frame (includes/option_card_frame.xml.tpl): the 30% dim, a F2111111 panel
+     876 high from 103 (CardListDialog places and sizes it), the heading in font25_title in its top 66.
+     Its own place across the screen. Each row three rounded cards: the row (its title in font20_title,
+     and in font8 a second line - a library's server), a toggle tile (a library's pin, a hub's
+     shown/hidden) and Move. Left/Right choose which Select acts on (Window.Property(picker.column):
+     open, pin, move); the focused row shows the chosen card in the sidebar's focus grey. A 'single'
+     row has its toggle only, where Move would be. -->
 <control type="button" id="700">
     <!-- dummy for clicks off list -->
     <posx>0</posx>
@@ -20,6 +21,15 @@
     <height>1080</height>
     <texturefocus>-</texturefocus>
     <texturenofocus>-</texturenofocus>
+</control>
+<!-- The full-screen dim behind it: 30% black, the settings and pickers' (option_card_frame.xml.tpl) -->
+<control type="image">
+    <posx>0</posx>
+    <posy>0</posy>
+    <width>1920</width>
+    <height>1080</height>
+    <texture>script.plex/white-square.png</texture>
+    <colordiffuse>4D000000</colordiffuse>
 </control>
 <control type="group" id="100">
     <defaultcontrol>250</defaultcontrol>
@@ -42,27 +52,33 @@
             <posy>0</posy>
             <width>640</width>
             <height>{{ vscale(132) }}</height>
-            <texture colordiffuse="D3111111" border="10">script.plex/white-square-rounded.png</texture>
+            <texture colordiffuse="F2111111" border="10">script.plex/white-square-rounded.png</texture>
         </control>
         <control type="label">
-            <posx>20</posx>
+            <posx>40</posx>
             <posy>0</posy>
-            <width>600</width>
+            <width>560</width>
             <height>{{ vscale(66) }}</height>
-            <font>font12</font>
+            <font>font25_title</font>
             <align>center</align>
             <aligny>center</aligny>
             <textcolor>FFEEEEEE</textcolor>
             <scroll>true</scroll>
             <scrollspeed>15</scrollspeed>
-            <label>[B]$INFO[Window.Property(header)][/B]</label>
+            <label>$INFO[Window.Property(header)]</label>
         </control>
     </control>
-    <control type="list" id="250">
+    <!-- Two lists, one shown (Window.Property(tall), CardListDialog): the pickers' rows, 61 apart with 55
+         cards, 13 to the 793 (option_card_frame.xml.tpl); or, when a row has a second line (a
+         library's server), 84 apart with 78 cards, 9 to 756. Rows in font20_title, the second line
+         in font8. A list's rows are all one height, hence two. -->
+    {% for list_id, bar_id, row_height, card_height, list_height, icon_y, tall in ((250, 1152, 61, 55, 793, 17.5, False), (251, 1153, 84, 78, 756, 29, True)) %}
+    <control type="list" id="{{ list_id }}">
+        <visible>{% if tall %}!{% endif %}String.IsEmpty(Window.Property(tall))</visible>
         <posx>0</posx>
         <posy>0</posy>
         <width>600</width>
-        <height>{{ vscale(840) }}</height>
+        <height>{{ list_height|vscale }}</height>
         <!-- Left/Right choose a card (LibraryPickerDialog.onAction()), never leave the list -->
         <onleft>noop</onleft>
         <onright>noop</onright>
@@ -70,14 +86,14 @@
         <ondown>noop</ondown>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
-        <pagecontrol>1152</pagecontrol>
-        <itemlayout height="{{ vscale(84) }}">
+        <pagecontrol>{{ bar_id }}</pagecontrol>
+        <itemlayout height="{{ row_height|vscale }}">
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single))</visible>
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>472</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -85,7 +101,7 @@
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>536</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -93,7 +109,7 @@
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>600</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -101,7 +117,7 @@
                 <posx>480</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -109,7 +125,7 @@
                 <posx>544</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <!-- one line, or the title over its server in font8 -->
@@ -118,8 +134,8 @@
                 <posx>20</posx>
                 <posy>0</posy>
                 <width>432</width>
-                <height>{{ vscale(84) }}</height>
-                <font>font12</font>
+                <height>{{ row_height|vscale }}</height>
+                <font>font20_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
                 <textcolor>DDFFFFFF</textcolor>
@@ -133,7 +149,7 @@
                 <posy>{{ vscale(12) }}</posy>
                 <width>432</width>
                 <height>{{ vscale(36) }}</height>
-                <font>font12</font>
+                <font>font20_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
                 <textcolor>DDFFFFFF</textcolor>
@@ -156,7 +172,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
                 <posx>495</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="FFFFFFFF">$INFO[ListItem.Thumb]</texture>
@@ -165,7 +181,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim))</visible>
                 <posx>495</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="66FFFFFF">$INFO[ListItem.Thumb]</texture>
@@ -174,7 +190,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
                 <posx>559</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="FFFFFFFF">$INFO[ListItem.Thumb]</texture>
@@ -183,7 +199,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim))</visible>
                 <posx>559</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="66FFFFFF">$INFO[ListItem.Thumb]</texture>
@@ -192,20 +208,20 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(nomove))</visible>
                 <posx>559</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="66FFFFFF">script.plex/indicators/move.png</texture>
                 <aspectratio>keep</aspectratio>
             </control>
         </itemlayout>
-        <focusedlayout height="{{ vscale(84) }}">
+        <focusedlayout height="{{ row_height|vscale }}">
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single))</visible>
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>472</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -213,7 +229,7 @@
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>536</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -221,7 +237,7 @@
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>600</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -229,7 +245,7 @@
                 <posx>480</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -237,7 +253,7 @@
                 <posx>544</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <!-- the chosen card in the focus grey; the title card tinted when a button is -->
@@ -246,7 +262,7 @@
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>600</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -254,7 +270,7 @@
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>472</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -262,7 +278,7 @@
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>472</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="22FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -270,7 +286,7 @@
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>536</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -278,7 +294,7 @@
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>536</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="22FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -286,7 +302,7 @@
                 <posx>480</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -294,7 +310,7 @@
                 <posx>544</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -302,7 +318,7 @@
                 <posx>544</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <!-- picked up to move: all three cards a step brighter -->
@@ -311,7 +327,7 @@
                 <posx>0</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>472</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="4DFFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -319,7 +335,7 @@
                 <posx>480</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="4DFFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="image">
@@ -327,7 +343,7 @@
                 <posx>544</posx>
                 <posy>{{ vscale(3) }}</posy>
                 <width>56</width>
-                <height>{{ vscale(78) }}</height>
+                <height>{{ card_height|vscale }}</height>
                 <texture colordiffuse="4DFFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <!-- one line, or the title over its server in font8 -->
@@ -336,8 +352,8 @@
                 <posx>20</posx>
                 <posy>0</posy>
                 <width>432</width>
-                <height>{{ vscale(84) }}</height>
-                <font>font12</font>
+                <height>{{ row_height|vscale }}</height>
+                <font>font20_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
                 <textcolor>FFFFFFFF</textcolor>
@@ -351,7 +367,7 @@
                 <posy>{{ vscale(12) }}</posy>
                 <width>432</width>
                 <height>{{ vscale(36) }}</height>
-                <font>font12</font>
+                <font>font20_title</font>
                 <align>left</align>
                 <aligny>center</aligny>
                 <textcolor>FFFFFFFF</textcolor>
@@ -374,7 +390,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
                 <posx>495</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="FFFFFFFF">$INFO[ListItem.Thumb]</texture>
@@ -383,7 +399,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim)) + String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))</visible>
                 <posx>495</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="99FFFFFF">$INFO[ListItem.Thumb]</texture>
@@ -392,7 +408,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim)) + ![String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))]</visible>
                 <posx>495</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="66FFFFFF">$INFO[ListItem.Thumb]</texture>
@@ -401,7 +417,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(indicator.dim))</visible>
                 <posx>559</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="FFFFFFFF">$INFO[ListItem.Thumb]</texture>
@@ -410,7 +426,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim)) + String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))</visible>
                 <posx>559</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="99FFFFFF">$INFO[ListItem.Thumb]</texture>
@@ -419,7 +435,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(single)) + !String.IsEmpty(ListItem.Property(indicator.dim)) + ![String.IsEqual(Window.Property(picker.column),pin) + String.IsEmpty(ListItem.Property(moving))]</visible>
                 <posx>559</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="66FFFFFF">$INFO[ListItem.Thumb]</texture>
@@ -428,7 +444,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(nomove)) + [String.IsEqual(Window.Property(picker.column),move) | !String.IsEmpty(ListItem.Property(moving))]</visible>
                 <posx>559</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="FFFFFFFF">script.plex/indicators/move.png</texture>
@@ -437,7 +453,7 @@
             <control type="image">
                 <visible>!String.IsEmpty(ListItem.Property(buttons)) + String.IsEmpty(ListItem.Property(single)) + String.IsEmpty(ListItem.Property(nomove)) + ![String.IsEqual(Window.Property(picker.column),move) | !String.IsEmpty(ListItem.Property(moving))]</visible>
                 <posx>559</posx>
-                <posy>{{ vscale(29) }}</posy>
+                <posy>{{ icon_y|vscale }}</posy>
                 <width>26</width>
                 <height>{{ vscale(26) }}</height>
                 <texture colordiffuse="66FFFFFF">script.plex/indicators/move.png</texture>
@@ -445,23 +461,26 @@
             </control>
         </focusedlayout>
     </control>
-    <!-- 10 rows high, as LibraryPickerDialog.maxRows: it only shows once the list scrolls -->
-    <control type="scrollbar" id="1152">
-        <hitrect x="600" y="0" w="50" h="{{ vscale(840) }}" />
+    <!-- the list's height: it only shows once the list scrolls. Grey focused too, brighter (DDFFFFFF, the
+         options' own text) over the 77FFFFFF it's otherwise, rather than the old orange (on request, 2026-10-23). Reached by Right past a row's last column
+         (CardListDialog.onAction()) -->
+    <control type="scrollbar" id="{{ bar_id }}">
+        <hitrect x="600" y="0" w="50" h="{{ list_height|vscale }}" />
         <left>604</left>
         <top>0</top>
         <width>12</width>
-        <height>{{ vscale(840) }}</height>
-        <visible>true</visible>
+        <height>{{ list_height|vscale }}</height>
+        <visible>{% if tall %}!{% endif %}String.IsEmpty(Window.Property(tall))</visible>
         <texturesliderbackground colordiffuse="40000000" border="5">script.plex/white-square-rounded.png</texturesliderbackground>
         <texturesliderbar colordiffuse="77FFFFFF" border="5">script.plex/white-square-rounded.png</texturesliderbar>
-        <texturesliderbarfocus colordiffuse="FFE5A00D" border="5">script.plex/white-square-rounded.png</texturesliderbarfocus>
+        <texturesliderbarfocus colordiffuse="DDFFFFFF" border="5">script.plex/white-square-rounded.png</texturesliderbarfocus>
         <textureslidernib>-</textureslidernib>
         <textureslidernibfocus>-</textureslidernibfocus>
         <pulseonselect>false</pulseonselect>
         <orientation>vertical</orientation>
         <showonepage>false</showonepage>
-        <onleft>250</onleft>
+        <onleft>{{ list_id }}</onleft>
     </control>
+    {% endfor %}
 </control>
 {% endblock controls %}

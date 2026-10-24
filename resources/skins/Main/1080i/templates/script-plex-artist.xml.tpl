@@ -3,12 +3,6 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
-    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
-         of this include for the full reasoning (this window is one of the seven real hosted-shell
-         types too, same _sidebarTarget()-aware Python side, same onClick forwarding - shared with
-         script-plex-seasons.xml.tpl since ArtistWindow(subitems.py) subclasses ShowWindow without
-         overriding onClick). -->
-    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 {% block content %}
 <control type="group" id="50">
@@ -120,6 +114,9 @@
                 <!-- 402 (Popular Tracks), not 400 - see group 50's own defaultcontrol comment above. -->
                 <ondown>402</ondown>
                 <onleft>9000</onleft>
+                <!-- Right stops at the last button: a grouplist without an onright of its own links its
+                     last control's Right back to its first (Kodi's CGUIControlGroupList::AddControl). -->
+                <onright>noop</onright>
                 <itemgap>{{ theme.artist.buttongroup.itemgap }}</itemgap>
                 <orientation>horizontal</orientation>
                 <scrolltime tween="quadratic" easing="out">200</scrolltime>

@@ -242,8 +242,10 @@
 <!-- The cover: the same background again (the window's own solid colour when that setting is
      on, else default_background.xml.tpl), clipped to the band above y=518 and drawn over the rows,
      so they pass under it there - the clip group 50 can't have (see its comment). This clip
-     works because nothing inside it moves. Both copies read the same window properties, so their
-     crossfades start on the same frame (no seam at 518 on the PC or the AM6B, 2026-10-19). The
+     works because nothing inside it moves. Both copies switch layers on the same window property and
+     have their corner colours painted together (panel_cover gives this copy its own ids, 2111-2118 -
+     BaseWindow._paintPanelLayer(), kodigui.py), so their crossfades start on the same frame (no seam at
+     518 on the PC or the AM6B, 2026-10-19). The
      hero text, tabs and sidebar are in the header block, drawn after this, so they stay on top.
      Anything new drawn behind the rows above y=518 has to go in here too. -->
 <control type="grouplist">
@@ -267,7 +269,7 @@
             <texture>script.plex/white-square.png</texture>
             <colordiffuse>$INFO[Window.Property(background_colour)]</colordiffuse>
         </control>
-        {% include "includes/default_background.xml.tpl" %}
+        {% include "includes/default_background.xml.tpl" with panel_cover=True %}
     </control>
 </control>
 
@@ -643,9 +645,4 @@
 
 {% include "includes/sidebar.xml.tpl" %}
 
-<!-- Sidebar declared last (not via default.xml.tpl's header_sidebar hook) so the server/user
-     dropdown popouts (groups 802/901) and the rail itself draw on top of the hero-info overlay
-     above, instead of behind it - matching script-plex-home.xml.tpl's own z-order exactly (see
-     that file's own comment on this same pattern). -->
-{% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}

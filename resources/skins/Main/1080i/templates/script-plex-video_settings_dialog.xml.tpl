@@ -6,19 +6,8 @@
 <zorder>101</zorder>
 {% endblock %}
 {% block controls %}
-<control type="group">
-    <visible>String.IsEmpty(Window.Property(is_plextuary)) + !String.IsEmpty(Window.Property(via.OSD)) + !Window.IsVisible(sliderdialog)</visible>
-    <animation effect="fade" start="100" end="0">Hidden</animation>
-    <posx>0</posx>
-    <posy>0</posy>
-    <control type="image">
-        <posx>0</posx>
-        <posy>0</posy>
-        <width>1920</width>
-        <height>1080</height>
-        <texture>script.plex/player-fade.png</texture>
-        <colordiffuse>FF080808</colordiffuse>
-    </control>
-</control>
-{% include "includes/settings_card_frame.xml.tpl" with list_height=640 & row_height=64 & card_height=58 & frame_x=660 & frame_y=153 & backdrop_height=932 & shadow_height=1012 %}
+<!-- The Settings dialog (playersettings.VideoSettingsDialog: the video player's, pre-play's, the episodes'):
+     the option pickers' frame - 876 high, 103-979, its right edge 10 from the screen's, 13 rows of 61 - so
+     each picker opens exactly over it. -->
+{% include "includes/settings_card_frame.xml.tpl" with list_height=793 & row_height=61 & card_height=55 & frame_x=1290 & frame_y=169 & backdrop_height=876 & shadow_height=956 %}
 {% endblock controls %}

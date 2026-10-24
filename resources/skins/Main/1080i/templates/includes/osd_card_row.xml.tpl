@@ -329,6 +329,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
+                    <scroll>true</scroll>
                     <visible>String.IsEmpty(ListItem.Property(playing))</visible>
                     <posx>40</posx>
                     <posy>{{ vscale(212) }}</posy>
@@ -341,6 +342,7 @@
                     <label>$INFO[ListItem.Property(sub)]</label>
                 </control>
                 <control type="label">
+                    <scroll>true</scroll>
                     <visible>!String.IsEmpty(ListItem.Property(playing))</visible>
                     <posx>40</posx>
                     <posy>{{ vscale(212) }}</posy>

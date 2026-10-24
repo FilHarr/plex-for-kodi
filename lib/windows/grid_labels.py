@@ -87,6 +87,19 @@ def seasonEpisode(item):
                                     T(32311, 'E').format(item.get('index')))
 
 
+def menuHeading(item):
+    """An item's menu heading (the hub and grid items' pickers): "Title (Year)" for a film or show, "Show (Season 2)"
+    for a season, "Show (S1 • E2)" for an episode."""
+    if item.TYPE == 'episode':
+        title, extra = item.get('grandparentTitle') or item.defaultTitle, seasonEpisode(item)
+    elif item.TYPE == 'season':
+        title, extra = item.get('parentTitle'), item.defaultTitle
+    else:
+        title, extra = item.defaultTitle, item.get('year')
+    title, extra = u'{0}'.format(title or ''), u'{0}'.format(extra or '')
+    return u'{0} ({1})'.format(title, extra) if title and extra else title or extra
+
+
 def seasonsOrEpisodes(show):
     """"5 seasons", or "12 episodes" for a show of one season."""
     seasons = show.get('childCount').asInt()
@@ -98,11 +111,21 @@ def seasonsOrEpisodes(show):
     return T(34003, '{} seasons').format(seasons)
 
 
+def editionLine(item, year=None):
+    """A caption's year line, the item's edition before it when it has one: "The Final Cut • 1982" (the user,
+    2026-10-23 - the edition used to ride on the title, "Blade Runner • The Final Cut"). The edition alone
+    with no year; the year alone with no edition. year: the item's own when None."""
+    if year is None:
+        year = item.get('year')
+    parts = [u'{0}'.format(part) for part in (item.get('editionTitle'), year) if part]
+    return u' \u2022 '.join(parts)
+
+
 def _typeDefault(item):
     """The item type's own second line: the fallback for every rule."""
     kind = item.TYPE
     if kind == 'movie' or kind == 'clip':
-        return str(item.get('year') or '')
+        return editionLine(item)
     if kind == 'show':
         return seasonsOrEpisodes(item)
     if kind == 'season':

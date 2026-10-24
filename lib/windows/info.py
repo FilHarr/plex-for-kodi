@@ -60,7 +60,9 @@ def formatMediaDetails(video, leading_newlines=0, hide_chapter_names=False):
 
             pmFolder = part.getPathMappedUrl(return_only_folder=True)
             addMedia.append("File: ")
-            splitFnAt = 74
+            # a file name has no spaces to wrap at: split to the dialog's 590-wide text (~46 characters
+            # of a typical name in font10 after "File: "; was 74 for the old 950)
+            splitFnAt = 44
             fnLen = len(os.path.basename(part.file))
             appended = False
             for s in split2len(os.path.basename(part.file), splitFnAt):
@@ -201,7 +203,7 @@ class SummaryDialog(kodigui.BaseDialog):
     text. Episodes is the only caller that populates subtitle (the episode's own name, under the
     show title) - every other caller leaves it empty. Was briefly rendered through
     MediaDetailsDialog's own shared xml file; forked into its own
-    (script-plex-artist_info_dialog.xml) once this popup's own size (600x1000, centered) and its
+    (script-plex-artist_info_dialog.xml) once this popup's own size (then 600x1000, centered; now the More settings box) and its
     title/summary needing independently sized fonts diverged from that dialog's own layout - kept
     that filename even once this stopped being artist-specific, rather than a churn-only rename.
     """
@@ -232,8 +234,12 @@ class SummaryDialog(kodigui.BaseDialog):
         self.setProperty('subtitle', self.subtitle or '')
         self.setProperty('info', util.widenParagraphBreaks(self.info) if self.info else '')
         # See MediaDetailsDialog's own onFirstInit() comment - same underlying scrollbar mechanism,
-        # same fix needed to make a long summary actually scrollable.
-        self.setFocusId(101)
+        # same fix needed to make a long summary actually scrollable. The template has the summary twice,
+        # from under a one- or two-line heading (101 with a subtitle, 102 without), each with its own
+        # scrollbar shown by the subtitle property just set: wait for it to show, or the focus is refused.
+        scrollbar = 101 if self.subtitle else 102
+        kodigui.waitForVisibility(scrollbar, amount=1)
+        self.setFocusId(scrollbar)
 
 
 def showSummary(title, info, subtitle=None):

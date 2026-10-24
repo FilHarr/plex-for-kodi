@@ -14,7 +14,7 @@ class CommonMixin(object):
     # value (live-reported 2026-09-24: Home's time-left pill carried into other screens).
     # tests/test_meta_row.py checks each screen covers the list.
     META_ROW_PROPERTIES = ('episode.code', 'duration', 'date', 'genres.short', 'content.rating',
-                           'remainingTime', 'unavailable')
+                           'edition', 'remainingTime', 'unavailable')
 
     def blankMetaRow(self, *keys):
         """Write '' to the given META_ROW_PROPERTIES - the ones the caller has no value for."""
@@ -86,24 +86,31 @@ class CommonMixin(object):
             return self.retractFromExtras()
         return False
 
-    def toggleWatched(self, item, state=None, **kw):
+    def toggleWatched(self, item, state=None, heading=None, **kw):
         """
-
         :param item:
         :param state: the state we want to set watched to
+        :param heading: the confirm's, without its "?" - the option chosen ("Mark Season Played"); by default Mark
+            Played or Mark Unplayed, as the watched key and most menus have it
         :param kw:
         :return:
         """
+        # Music isn't marked played or unplayed (nor in Plex's own apps): plexnet's Audio items have no markWatched() -
+        # the watched key on an artist, album or track errored, after asking. None, as a "No".
+        if not callable(getattr(type(item), 'markWatched', None)):
+            return None
+
         if state is None:
             state = not item.isFullyWatched
 
-        if util.getSetting('home_confirm_actions') and item.TYPE in ('season', 'show'):
-            if item.TYPE == 'season':
-                title = u"{} - {}".format(item.parentTitle, item.title)
-            else:
-                title = item.title
+        # Confirm item actions: every item, whichever screen or menu marks it (the hub and grid menus leave the
+        # asking to this) - was shows and seasons only. The heading alone: the item's the one just chosen, in
+        # view behind the box.
+        if util.getSetting('home_confirm_actions'):
+            if not heading:
+                heading = T(32319, "Mark Played") if state else T(32318, "Mark Unplayed")
             button = optionsdialog.show(
-                T(32319, "Mark Played") if state else T(32318, "Mark Unplayed"),  title,
+                u'{0}?'.format(heading), '',
                 T(32328, 'Yes'),
                 T(32329, 'No'),
                 dialog_props=getattr(self, "carriedProps", getattr(self, "dialogProps", None))

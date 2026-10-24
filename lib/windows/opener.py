@@ -5,6 +5,7 @@ from plexnet import playqueue, plexapp, plexlibrary
 
 from lib import util
 from . import busy
+from . import kodigui
 
 
 def open(obj, context=None, **kwargs):
@@ -85,6 +86,8 @@ def open(obj, context=None, **kwargs):
 
 
 def handleOpen(winclass, **kwargs):
+    # a More settings action navigating: its dim comes off as it starts, not once the next screen's up
+    kodigui.releaseDialogDim()
     w = None
     try:
         # we might just want the play preparation functionality of a window class to directly play an item or playlist

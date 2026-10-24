@@ -3,9 +3,6 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
-    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
-         of this include for the full reasoning. -->
-    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 
 {% block content %}
@@ -1837,7 +1834,7 @@
                         <label>$INFO[ListItem.Label]</label>
                     </control>
                     <control type="label">
-                        <scroll>false</scroll>
+                        <scroll>Control.HasFocus(2100)</scroll>
                         <posx>0</posx>
                         <posy>{{ vscale(32) }}</posy>
                         <width>235</width>
@@ -1849,7 +1846,7 @@
                         <label>$INFO[ListItem.Label2]</label>
                     </control>
                     <control type="label">
-                        <scroll>false</scroll>
+                        <scroll>Control.HasFocus(2100)</scroll>
                         <posx>0</posx>
                         <posy>{{ vscale(60) }}</posy>
                         <width>235</width>
@@ -1878,7 +1875,7 @@
                         <label>$INFO[ListItem.Label]</label>
                     </control>
                     <control type="label">
-                        <scroll>false</scroll>
+                        <scroll>Control.HasFocus(2100)</scroll>
                         <posx>0</posx>
                         <posy>{{ vscale(32) }}</posy>
                         <width>235</width>
@@ -1907,7 +1904,7 @@
                         <label>$INFO[ListItem.Label]</label>
                     </control>
                     <control type="label">
-                        <scroll>false</scroll>
+                        <scroll>Control.HasFocus(2100)</scroll>
                         <posx>0</posx>
                         <posy>{{ vscale(32) }}</posy>
                         <width>235</width>
@@ -1919,7 +1916,7 @@
                         <label>$INFO[ListItem.Property(subtitle)]</label>
                     </control>
                     <control type="label">
-                        <scroll>false</scroll>
+                        <scroll>Control.HasFocus(2100)</scroll>
                         <posx>0</posx>
                         <posy>{{ vscale(60) }}</posy>
                         <width>235</width>
@@ -1931,7 +1928,7 @@
                         <label>$INFO[ListItem.Label2]</label>
                     </control>
                     <control type="label">
-                        <scroll>false</scroll>
+                        <scroll>Control.HasFocus(2100)</scroll>
                         <posx>0</posx>
                         <posy>{{ vscale(88) }}</posy>
                         <width>235</width>
@@ -1960,7 +1957,7 @@
                         <label>$INFO[ListItem.Label]</label>
                     </control>
                     <control type="label">
-                        <scroll>false</scroll>
+                        <scroll>Control.HasFocus(2100)</scroll>
                         <posx>0</posx>
                         <posy>{{ vscale(32) }}</posy>
                         <width>235</width>
@@ -1972,7 +1969,7 @@
                         <label>$INFO[ListItem.Property(subtitle)]</label>
                     </control>
                     <control type="label">
-                        <scroll>false</scroll>
+                        <scroll>Control.HasFocus(2100)</scroll>
                         <posx>0</posx>
                         <posy>{{ vscale(60) }}</posy>
                         <width>235</width>
@@ -2054,6 +2051,7 @@
                 <texture colordiffuse="FFFFFFFF">$INFO[ListItem.Property(icon)]</texture>
             </control>
             <control type="label">
+                <scroll>Control.HasFocus(2050)</scroll>
                 <posx>60</posx>
                 <posy>0</posy>
                 <width>334</width>

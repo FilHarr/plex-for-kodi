@@ -15,6 +15,7 @@ from lib import util
 from lib.util import T
 from plexnet.serverdecision import DecisionFailure
 from . import busy
+from . import grid_labels
 from . import kodigui
 from . import opener
 from . import pagination
@@ -58,7 +59,8 @@ class OnDeckPaginator(pagination.MCLPaginator):
 
         # episodes get both caption lines in createListItem(), which knows whether the title is hidden
         if data.type != 'episode':
-            mli.setLabel2(data.year)
+            # the year, after the edition if there is one (grid_labels.editionLine())
+            mli.setLabel2(grid_labels.editionLine(data))
 
     def createListItem(self, ondeck):
         title = ondeck.grandparentTitle or ondeck.title

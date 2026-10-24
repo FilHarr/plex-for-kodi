@@ -8,10 +8,6 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
-    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
-         of this include for the full reasoning (this window is one of the seven real hosted-shell
-         types too, same _sidebarTarget()-aware Python side, same onClick forwarding). -->
-    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 {% block content %}
 <control type="group" id="50">
@@ -182,14 +178,15 @@
         <control type="grouplist">
             <posx>53</posx>
             <posy>{{ vscale(155) }}</posy>
-            <width>708</width>
+            <!-- 900, as includes/pp_meta_row.xml.tpl's -->
+            <width>900</width>
             <height>{{ vscale(30) }}</height>
             <align>left</align>
             <itemgap>0</itemgap>
             <orientation>horizontal</orientation>
             <usecontrolcoords>true</usecontrolcoords>
             <control type="grouplist">
-                <width>708</width>
+                <width>900</width>
                 <height>{{ vscale(30) }}</height>
                 <itemgap>23</itemgap>
                 <orientation>horizontal</orientation>
@@ -205,6 +202,23 @@
                     <label>$INFO[Container(400).ListItem.Property({{ prop }})]</label>
                 </control>
                 {% endfor %}
+            </control>
+            <!-- the edition pill (includes/pp_meta_row.xml.tpl's): a show's edition, which Plex gives its seasons
+                 and episodes too -->
+            <control type="button">
+                <visible>!String.IsEmpty(Container(400).ListItem.Property(edition)) + String.IsEmpty(Container(400).ListItem.Property(unavailable))</visible>
+                <posx>23</posx>
+                <width>auto</width>
+                <height>{{ vscale(30) }}</height>
+                <font>font20</font>
+                <align>center</align>
+                <aligny>top</aligny>
+                <focusedcolor>FFD2CCCE</focusedcolor>
+                <textcolor>FFD2CCCE</textcolor>
+                <textoffsetx>10</textoffsetx>
+                <texturefocus colordiffuse="40000000" border="8">script.plex/white-square-rounded.png</texturefocus>
+                <texturenofocus colordiffuse="40000000" border="8">script.plex/white-square-rounded.png</texturenofocus>
+                <label>$INFO[Container(400).ListItem.Property(edition)]</label>
             </control>
             <control type="button">
                 <visible>!String.IsEmpty(Container(400).ListItem.Property(remainingTime)) + String.IsEmpty(Container(400).ListItem.Property(unavailable))</visible>
@@ -1083,6 +1097,9 @@
                     <onup>400</onup>
                     <ondown>402</ondown>
                     <onleft>9000</onleft>
+                    <!-- Right stops at the last button: a grouplist without an onright of its own links its
+                         last control's Right back to its first (Kodi's CGUIControlGroupList::AddControl). -->
+                    <onright>noop</onright>
                     <itemgap>{{ theme.episodes.buttongroup.itemgap }}</itemgap>
                     <orientation>horizontal</orientation>
                     <scrolltime tween="quadratic" easing="out">200</scrolltime>
@@ -1109,14 +1126,14 @@
                              focused episode's data is loaded and it has no view offset, PlayLoading
                              (306, reused for every state) while that data is still loading, Resume+Restart
                              once loaded with a view offset (in.progress - setProgress(), this file) instead
-                             of a single Play button, on request. The season card takes the same three
-                             states from its own episode (applySeasonCardPlayState(), episodes.py) but
-                             stops at Resume - see that button's own comment below. -->
-                        {% include template with name="play" & id=301 & overlay=True & onleft=304 & onright=305 &
+                             of a single Play button, on request. The season card takes the same states
+                             from its own episode (applySeasonCardPlayState(), episodes.py), its labels
+                             naming that episode. -->
+                        {% include template with name="play" & id=301 & overlay=True & onleft=304 & onright=303 &
                             enable="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(in.progress))" &
                             visible="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(in.progress))"
                         %}
-                        {% include template with name="play" & id=306 & overlay=True & onleft=304 & onright=305 &
+                        {% include template with name="play" & id=306 & overlay=True & onleft=304 & onright=303 &
                                             visible="String.IsEmpty(Window.Property(current_item.loaded))"
                         %}
                         <!-- Two variants of this label, split on is.season.card: a real episode card
@@ -1133,15 +1150,15 @@
                         {% include ol with id=390 & visible="[Control.HasFocus(301) | Control.HasFocus(306)] + String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="play" &
                             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                             label_width=51 & pill_width=113 & group_width=69 &
-                            onleft=301 & onright=305
+                            onleft=301 & onright=303
                         %}
                         {% include ol with id=398 & visible="[Control.HasFocus(301) | Control.HasFocus(306)] + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="play" &
                             label="$ADDON[script.plexmod 33020] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
                             label_width=161 & pill_width=223 & group_width=179 &
                             pill_id=384 & label_id=385 &
-                            onleft=301 & onright=305
+                            onleft=301 & onright=303
                         %}
-                        {% include template with name="resume" & id=308 & overlay=True & onleft=304 & onright=305 &
+                        {% include template with name="resume" & id=308 & overlay=True & onleft=304 & onright=303 &
                             visible="!String.IsEmpty(Window.Property(current_item.loaded)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
                         %}
                         <!-- Two variants, not one width covering both: remainingTimeToShortText() (util.py)
@@ -1153,12 +1170,12 @@
                         {% include ol with id=392 & visible="Control.HasFocus(308) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + !String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
                             label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
                             label_width=208 & pill_width=270 & group_width=226 &
-                            onleft=308 & onright=305
+                            onleft=308 & onright=303
                         %}
                         {% include ol with id=397 & visible="Control.HasFocus(308) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
                             label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
                             label_width=237 & pill_width=299 & group_width=255 &
-                            onleft=308 & onright=305
+                            onleft=308 & onright=303
                         %}
                         <!-- One control for the season card, not the short/long pair above: its
                              width is measured and applied at runtime anyway (sizeSeasonCardPlayLabel(),
@@ -1172,28 +1189,29 @@
                             label="$ADDON[script.plexmod 32316] $INFO[Window.Property(play.episode)]" & label_suffix_info="resume.timeleft" &
                             label_width=347 & pill_width=409 & group_width=365 &
                             pill_id=386 & label_id=387 &
-                            onleft=308 & onright=305
+                            onleft=308 & onright=303
                         %}
-                        <!-- Episode cards only, unlike its Resume partner: on the season card the
-                             pair would be offering to restart an episode the card doesn't name
-                             (the button row is the only thing that says which one it is), and
-                             "start this season over" isn't what it would do either - on request,
-                             Resume alone there. Playing a season-card episode from the beginning
-                             is still reachable, just from the episode's own card. -->
-                        {% include template with name="restart" & id=309 & overlay=True & onleft=308 & onright=305 &
-                            visible="!String.IsEmpty(Window.Property(current_item.loaded)) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
+                        <!-- On the season card too, its label naming the episode it restarts (the card
+                             doesn't name one, and it's that episode, not the season, that starts over):
+                             "Restart S1E4", sized like its Resume (sizeSeasonCardPlayLabel(),
+                             episodes.py). Worst case "Restart S12E345" = 188 measured (font10). -->
+                        {% include template with name="restart" & id=309 & overlay=True & onleft=308 & onright=303 &
+                            visible="!String.IsEmpty(Window.Property(current_item.loaded)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
                         %}
-                        {% include ol with id=393 & visible="Control.HasFocus(309)" & name="restart" &
+                        {% include ol with id=393 & visible="Control.HasFocus(309) + String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="restart" &
                             label="$ADDON[script.plexmod 35061]" & label_suffix_info="" &
                             label_width=82 & pill_width=144 & group_width=100 &
-                            onleft=309 & onright=305
+                            onleft=309 & onright=303
                         %}
-                        {% include template with name="settings" & id=305 & overlay=True & visible="!Container(400).ListItem.Property(is.season.card)" %}
-                        {% include ol with id=394 & visible="Control.HasFocus(305)" & name="settings" &
-                            label="$ADDON[script.plexmod 35060]" & label_suffix_info="" &
-                            label_width=164 & pill_width=226 & group_width=182 &
-                            onleft=305 & onright=303
+                        {% include ol with id=380 & visible="Control.HasFocus(309) + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="restart" &
+                            label="$ADDON[script.plexmod 35061] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
+                            label_width=192 & pill_width=254 & group_width=210 &
+                            pill_id=381 & label_id=382 &
+                            onleft=309 & onright=303
                         %}
+                        <!-- More: the More settings dialog (moreButtonClicked(), episodes.py) - the episode's
+                             media settings with its actions at the bottom, or the season card's actions;
+                             there's no separate Settings button. -->
                         {% include template with name="more" & id=303 & overlay=True %}
                         {% include ol with id=395 & visible="Control.HasFocus(303)" & name="more" &
                             label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &

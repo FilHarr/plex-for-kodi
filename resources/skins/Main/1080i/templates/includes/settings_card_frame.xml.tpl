@@ -1,18 +1,28 @@
-<!-- The Settings dialog's card frame, list and scrollbar (script-plex-video_settings_dialog and its tall _side twin
-     for the video player), in the Libraries picker's card style (script-plex-card_list.xml.tpl): a F2111111
+<!-- The Settings dialog's card frame, list and scrollbar (script-plex-video_settings_dialog), in the Libraries picker's card style (script-plex-card_list.xml.tpl): a F2111111
      backdrop (95%) 20 wider than the list each side with the heading in its top 66, each row its own 99111111
      card, the focused one lit with 33FFFFFF. The heading in font25_title; a row's setting on the left in
      font20_title, its value right-aligned in font8. 600 wide, as the option pickers: the name column 176 - the
      longest name, Show Stream Info, is 172 in font20_title (Inter Bold 20), plus 4 for clipping - then a 20 gap,
      the value's 364 and 20 of padding. list_height is the list's and the scrollbar's height (Kodi can't resize
      a scrollbar from Python), in whole rows; row_height the row pitch and card_height its card (row_height
-     less 6: 3 clear above and below). The centred one: 64 rows (58 cards), 10 of them (640); the tall one: 61
-     (55), 13 (793). frame_x/frame_y place group 200 (the list's top left), backdrop_height and shadow_height size
-     the frame. VideoSettingsDialog.fitFrame() fits the centred one to its rows, so its values here are only a
-     start; the tall one's are its own, so it opens in place - placed only from Python, a slower box (a Shield)
-     showed it centred first, then jumping to the right. -->
+     less 6: 3 clear above and below): 61 rows (55 cards), 13 of them (793). frame_x/frame_y place group 200 (the
+     list's top left), backdrop_height and shadow_height size the frame, its own, so it opens in place - placed
+     only from Python, a slower box (a Shield) showed it centred first, then jumping to the right. -->
+<!-- out of the way of what its rows open: an option picker (in this frame's place, so its shadow and backdrop
+     don't double up over this one's) and Kodi's own windows -->
+<!-- The full-screen dim behind it: 30% black, the screens' own row-scroll dim's (default_background.xml.tpl),
+     shown with the frame below - so a picker opened over this swaps it for its own, the same, in one frame. -->
+<control type="image">
+    <visible>!Window.IsVisible(script-plex-settings_select_dialog.xml) + !Window.IsVisible(sliderdialog) +!Window.IsVisible(osdvideosettings) + !Window.IsVisible(osdaudiosettings) + !Window.IsVisible(osdsubtitlesettings) + !Window.IsVisible(subtitlesearch) + !Window.IsActive(selectdialog) + !Window.IsVisible(osdcmssettings)</visible>
+    <posx>0</posx>
+    <posy>0</posy>
+    <width>1920</width>
+    <height>1080</height>
+    <texture>script.plex/white-square.png</texture>
+    <colordiffuse>4D000000</colordiffuse>
+</control>
 <control type="group" id="200">
-    <visible>!Window.IsVisible(sliderdialog) + !Window.IsVisible(osdvideosettings) + !Window.IsVisible(osdaudiosettings) + !Window.IsVisible(osdsubtitlesettings) + !Window.IsVisible(subtitlesearch) + !Window.IsActive(selectdialog) + !Window.IsVisible(osdcmssettings)</visible>
+    <visible>!Window.IsVisible(script-plex-settings_select_dialog.xml) + !Window.IsVisible(sliderdialog) +!Window.IsVisible(osdvideosettings) + !Window.IsVisible(osdaudiosettings) + !Window.IsVisible(osdsubtitlesettings) + !Window.IsVisible(subtitlesearch) + !Window.IsActive(selectdialog) + !Window.IsVisible(osdcmssettings)</visible>
     <posx>{{ frame_x }}</posx>
     <posy>{{ frame_y|vscale }}</posy>
     <control type="image" id="202">
@@ -61,9 +71,24 @@
                 <texture colordiffuse="99111111" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="label">
+                <visible>!String.IsEmpty(ListItem.Label2)</visible>
                 <posx>20</posx>
                 <posy>0</posy>
                 <width>176</width>
+                <height>{{ row_height|vscale }}</height>
+                <font>font20_title</font>
+                <align>left</align>
+                <aligny>center</aligny>
+                <textcolor>DDFFFFFF</textcolor>
+                <label>$INFO[ListItem.Label]</label>
+            </control>
+            <!-- a row without a value (an action - pre-play's Mark Played, Go to..., Delete - or Kodi
+                 settings): its name across the card, not clipped to the name column -->
+            <control type="label">
+                <visible>String.IsEmpty(ListItem.Label2)</visible>
+                <posx>20</posx>
+                <posy>0</posy>
+                <width>560</width>
                 <height>{{ row_height|vscale }}</height>
                 <font>font20_title</font>
                 <align>left</align>
@@ -100,9 +125,24 @@
                 <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
             </control>
             <control type="label">
+                <visible>!String.IsEmpty(ListItem.Label2)</visible>
                 <posx>20</posx>
                 <posy>0</posy>
                 <width>176</width>
+                <height>{{ row_height|vscale }}</height>
+                <font>font20_title</font>
+                <align>left</align>
+                <aligny>center</aligny>
+                <textcolor>FFFFFFFF</textcolor>
+                <scroll>true</scroll>
+                <scrollspeed>20</scrollspeed>
+                <label>$INFO[ListItem.Label]</label>
+            </control>
+            <control type="label">
+                <visible>String.IsEmpty(ListItem.Label2)</visible>
+                <posx>20</posx>
+                <posy>0</posy>
+                <width>560</width>
                 <height>{{ row_height|vscale }}</height>
                 <font>font20_title</font>
                 <align>left</align>
@@ -127,7 +167,8 @@
             </control>
         </focusedlayout>
     </control>
-    <!-- the picker's: 10 rows high, it only shows once the list scrolls -->
+    <!-- the pickers', the list's height: it only shows once the list scrolls. Grey focused too, brighter (DDFFFFFF, the
+         options' own text) over the 77FFFFFF it's otherwise, rather than the old orange (on request, 2026-10-23) -->
     <control type="scrollbar" id="101">
         <hitrect x="600" y="0" w="50" h="{{ list_height|vscale }}" />
         <left>604</left>
@@ -136,7 +177,7 @@
         <height>{{ list_height|vscale }}</height>
         <texturesliderbackground colordiffuse="40000000" border="5">script.plex/white-square-rounded.png</texturesliderbackground>
         <texturesliderbar colordiffuse="77FFFFFF" border="5">script.plex/white-square-rounded.png</texturesliderbar>
-        <texturesliderbarfocus colordiffuse="FFE5A00D" border="5">script.plex/white-square-rounded.png</texturesliderbarfocus>
+        <texturesliderbarfocus colordiffuse="DDFFFFFF" border="5">script.plex/white-square-rounded.png</texturesliderbarfocus>
         <textureslidernib>-</textureslidernib>
         <textureslidernibfocus>-</textureslidernibfocus>
         <pulseonselect>false</pulseonselect>

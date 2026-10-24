@@ -94,7 +94,7 @@ class MusicPlayerWindow(currentplaylist.CurrentPlaylistWindow):
         elif controlID == self.SKIP_NEXT_BUTTON_ID:
             self.skipNextButtonClicked()
         elif controlID == self.OPTIONS_BUTTON_ID:
-            self.optionsButtonClicked((1240, 1060))
+            self.optionsButtonClicked()
         elif controlID == self.STOP_BUTTON_ID:
             self.stopButtonClicked()
 

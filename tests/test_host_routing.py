@@ -256,10 +256,14 @@ class HostedShellsRouteFirstTest(KodiTestCase):
 
     def test_focus_starts_by_dropping_stale_calls(self):
         """The host frees a swapped-out shell's controls, but Kodi can still deliver its queued
-        onFocus (kodigui.BaseWindow.ignoresInput())."""
+        onFocus (kodigui.BaseWindow.ignoresInput()). Only the sidebar's focus property comes before it
+        (SidebarMixin.trackSidebarFocus()): a global property, no control of the shell's touched, and it has to
+        follow every focus event, live or not."""
         for cls in self.SHELLS:
             body = inspect.getsource(cls.onFocus).split('\n')[1:]
             code = [l.strip() for l in body if l.strip() and not l.strip().startswith('#')]
+            if code[0] == 'self.trackSidebarFocus(controlID)':
+                code = code[1:]
             self.assertEqual('if self.ignoresInput():', code[0], cls.__name__)
             self.assertEqual('return', code[1], cls.__name__)
 
@@ -329,7 +333,6 @@ class LibraryRouteClickTest(KodiTestCase):
     class Host(object):
         routeClick = library.LibraryWindow.routeClick
         SECTION_LIST_ID = library.LibraryWindow.SECTION_LIST_ID
-        USER_LIST_ID = library.LibraryWindow.USER_LIST_ID
         USER_BUTTON_ID = library.LibraryWindow.USER_BUTTON_ID
         SERVER_RETRY_BUTTON_ID = library.LibraryWindow.SERVER_RETRY_BUTTON_ID
 
@@ -340,9 +343,6 @@ class LibraryRouteClickTest(KodiTestCase):
         def _sidebarTarget(self):
             return self.screen
 
-        def doUserOption(self, target=None):
-            self.calls.append(('doUserOption', target))
-
         def postNav(self, name, fn, **kwargs):
             self.calls.append(('postNav', name))
 
@@ -350,13 +350,6 @@ class LibraryRouteClickTest(KodiTestCase):
         screen = self.Screen()
         self.assertTrue(self.Host(screen).routeClick(library.LibraryWindow.SECTION_LIST_ID))
         self.assertEqual(['sectionClicked'], screen.calls)
-
-    def test_the_user_dropdown_acts_on_the_showing_screen(self):
-        screen = self.Screen()
-        host = self.Host(screen)
-        self.assertTrue(host.routeClick(library.LibraryWindow.USER_LIST_ID))
-        self.assertEqual([('doUserOption', screen)], host.calls)
-        self.assertEqual([('show.options', False), ('focus', library.LibraryWindow.USER_BUTTON_ID)], screen.calls)
 
     def test_other_clicks_go_back_to_the_screen(self):
         self.assertFalse(self.Host(self.Screen()).routeClick(101))

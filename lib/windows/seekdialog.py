@@ -21,7 +21,6 @@ from lib.kodijsonrpc import builtin
 from lib.util import T
 from lib.language_util import getNativeLanguages
 from . import busy
-from . import dropdown
 from . import kodigui
 from . import windowutils
 from . import playersettings
@@ -150,11 +149,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
     BAR_BOTTOM = 1024
 
     NAVBAR_BTN_SIZE = 60
-    # The buttons' dropdowns (dropdown.CardDropdownDialog, its list 600 wide with the backdrop 20 past it each
-    # side): right-aligned with the button row's last pill (1840), so the list starts at 1840 - 20 - 600; the
-    # list's foot at 892, its backdrop's 17 lower at 909, 10 above the button pills (919).
-    DROPDOWN_X = 1220
-    DROPDOWN_BOTTOM = 892
 
     HIDE_DELAY = 4  # This uses the Cron tick so is +/- 1 second accurate
     OSD_HIDE_ANIMATION_DURATION = 0.2
@@ -1725,7 +1719,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         which asks Plex or Kodi as the setting says, over the picker and back to it.
         It was a menu of its own: Download, Subtitle Delay, Previous/Next, auto-sync and Enable/Disable.
         """
-        choice = playersettings.showSubtitlesDialog(self.player.video, session_id=self.handler.sessionID, side=True,
+        choice = playersettings.showSubtitlesDialog(self.player.video, session_id=self.handler.sessionID,
                                                     download=self.downloadSubtitles, player=self)
         if choice is playersettings.SUBTITLE_DELAY:
             self.subtitleDelay()
@@ -1790,7 +1784,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             if self.player.playState == self.player.STATE_PLAYING:
                 was_playing = True
                 self.player.pause()
-            downloaded = self.downloadPlexSubtitles(self.player.video, side=True)
+            downloaded = self.downloadPlexSubtitles(self.player.video)
             if downloaded:
                 self.setSubtitles(honor_forced_subtitles_override=False,
                                   honor_deselect_subtitles=False, ref=None)
@@ -1850,35 +1844,13 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                 self.player.updateInfoTag(item)
 
     def vs10ButtonClicked(self):
-        # amlogic.vs10.mode.raw values: 0/1 = Dolby Vision, 2 = HDR10, 3 = SDR, 5 = Original
-        current_mode = xbmc.getInfoLabel('Player.Process(amlogic.vs10.mode.raw)')
-        check = 'script.plex/indicators/tick.png'  # the option pickers' tick
-
-        options = [
-            {'key': 'dv',           'display': 'Dolby Vision',  'indicator': current_mode in ('0', '1') and check or ''},
-            {'key': 'hdr10',        'display': 'HDR10',          'indicator': current_mode == '2' and check or ''},
-            {'key': 'sdr',          'display': 'SDR',            'indicator': current_mode == '3' and check or ''},
-            {'key': 'original',     'display': 'Original',       'indicator': current_mode == '5' and check or ''},
-            {'key': 'process_info', 'display': 'Player Info',    'indicator': '', 'separator': True},
-        ]
-
-        choice = dropdown.showDropdown(
-            options,
-            (self.DROPDOWN_X, self.DROPDOWN_BOTTOM),
-            pos_is_bottom=True,
-            close_on_playback_ended=True,
-            with_indicator=True,
-            header=T(34090, 'VS10 Mode'),
-            dialog_class=dropdown.CardDropdownDialog
-        )
-
-        if not choice:
-            return
-
-        if choice['key'] == 'process_info':
+        """
+        The VS10 button: the Settings dialog's VS10 Mode picker (playersettings.showVS10Dialog), tall at the right -
+        Dolby Vision, HDR10, SDR and Original, the current one ticked, and Kodi's Player Info.
+        It was a dropdown of its own above the button row.
+        """
+        if playersettings.showVS10Dialog() is playersettings.VS10_PLAYER_INFO:
             xbmc.executebuiltin('ActivateWindow(playerprocessinfo)')
-        else:
-            xbmc.executebuiltin('Action(vs10.{})'.format(choice['key']))
 
     def toggleSubtitles(self):
         """

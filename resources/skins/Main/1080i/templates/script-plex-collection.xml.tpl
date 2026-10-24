@@ -14,10 +14,6 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
-    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
-         of this include for the full reasoning (this window is one of the seven real hosted-shell
-         types too, same _sidebarTarget()-aware Python side, same onClick forwarding). -->
-    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 {% block content %}
 <control type="group" id="50">
@@ -160,6 +156,9 @@
             <onup>200</onup>
             <ondown>101</ondown>
             <onleft>9000</onleft>
+            <!-- Right stops at the last button: a grouplist without an onright of its own links its
+                 last control's Right back to its first (Kodi's CGUIControlGroupList::AddControl). -->
+            <onright>noop</onright>
             <itemgap>{{ theme.artist.buttongroup.itemgap }}</itemgap>
             <orientation>horizontal</orientation>
             <scrolltime tween="quadratic" easing="out">200</scrolltime>
@@ -411,7 +410,7 @@
                             </control>
                             <control type="label">
                                 <visible>!String.IsEmpty(ListItem.Property(subtitle))</visible>
-                                <scroll>false</scroll>
+                                <scroll>true</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(401) }}</posy>
                                 <width>240</width>
@@ -423,7 +422,7 @@
                             </control>
                             <control type="label">
                                 <visible>!String.IsEmpty(ListItem.Property(year)) + String.IsEmpty(ListItem.Property(subtitle))</visible>
-                                <scroll>false</scroll>
+                                <scroll>true</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(401) }}</posy>
                                 <width>240</width>

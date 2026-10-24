@@ -8,20 +8,6 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
-    <!-- Declared last so groups 802/901 draw on top - same reasoning as library.xml.tpl/
-         script-plex-recommended.xml.tpl's own copy of this include. This screen is one of the
-         seven real hosted-shell types (LibraryWindow.swapTo(), library.py) - its own onAction is
-         monkeypatched to the *host* LibraryWindow's while it's showing (shared chrome like the
-         sidebar is handled centrally across the chain), but the host's own showUserMenu()/
-         showServers()/doUserOption()/selectServer() are all _sidebarTarget()-aware (library.py -
-         see that method's own comment for the live-confirmed native crash a naive version of this
-         include hit, and why write operations specifically had to be retargeted, not just these
-         controls added) so they correctly read/write *this* window's own controls, declared here,
-         while this screen is the one actually live. This window's own onClick (SidebarMixin.
-         handleSidebarDropdownClick(), called first thing in this window's own onClick()) forwards
-         USER_LIST_ID/SERVER_LIST_ID clicks back to the host, since onClick - unlike onAction -
-         isn't delegated for a real shell. -->
-    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 {% block content %}
 <control type="group" id="50">
@@ -122,6 +108,9 @@
             <onup>200</onup>
             <ondown>400</ondown>
             <onleft>9000</onleft>
+            <!-- Right stops at the last button: a grouplist without an onright of its own links its
+                 last control's Right back to its first (Kodi's CGUIControlGroupList::AddControl). -->
+            <onright>noop</onright>
             <itemgap>{{ theme.pre_play.buttongroup.itemgap }}</itemgap>
             <orientation>horizontal</orientation>
             <scrolltime tween="quadratic" easing="out">200</scrolltime>
@@ -129,7 +118,7 @@
 
             <!-- Label-on-focus pill overlays (390-399) below: same treatment/recipe Episodes'/
                  Seasons'/library-posters' own button rows already have (episode_button_label.xml.tpl -
-                 see button-label-overlay-recipe). Info/Play/Add-remove-watchlist/Media settings/More
+                 see button-label-overlay-recipe). Info/Play/Add-remove-watchlist/More
                  reuse those rows' own $ADDON strings/measured widths since it's the same label text;
                  Trailer is new here (string 35064 "Watch trailer", measured 140px, same +4px buffer
                  convention as every other call site as of 2026-09-04 - see that recipe). No overlay
@@ -152,7 +141,7 @@
                      Container(400).ListItem.Property of the same name - this screen's subject is the
                      window's own single video (setInfo(), preplay.py), not a row's selected item.
                      Ids 301/307, the only two left free in this screen's 300-block (302-306 are
-                     Play/Trailer/Info/Settings/More, 308/309 the watchlist pair, 310-322 the media
+                     Play/Trailer/Info/Settings (since removed)/More, 308/309 the watchlist pair, 310-322 the media
                      info pills) - so they don't read in row order, unlike Episodes' own 308/309. -->
                 {% include template with name="play" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(in.progress))" %}
                 {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
@@ -198,14 +187,10 @@
                 {% include ol with id=394 & visible="Control.HasFocus(309)" & name="watchlisted" &
                     label="$ADDON[script.plexmod 34011]" & label_suffix_info="" &
                     label_width=255 & pill_width=317 & group_width=273 &
-                    onleft=309 & onright=305
+                    onleft=309 & onright=306
                 %}
-                {% include template with name="settings" & id=305 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback))" %}
-                {% include ol with id=395 & visible="Control.HasFocus(305)" & name="settings" &
-                    label="$ADDON[script.plexmod 35060]" & label_suffix_info="" &
-                    label_width=164 & pill_width=226 & group_width=182 &
-                    onleft=305 & onright=306
-                %}
+                <!-- More: the More settings dialog (moreButtonClicked(), preplay.py) - the media settings
+                     with this screen's own actions at the bottom; there's no separate Settings button. -->
                 {% include template with name="more" & id=306 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback))" %}
                 {% include ol with id=396 & visible="Control.HasFocus(306)" & name="more" &
                     label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
@@ -337,7 +322,7 @@
                          summary box exactly (bumped from 708x90/posy=233/font12 on request, for
                          consistency between the two screens). Right edge (112+813=925 on screen) now
                          reaches further into the hero-art box's left edge (691) than the clearlogo/
-                         metadata column above (still 708 wide, see pp_meta_row.xml.tpl) - same
+                         clearlogo above (708 wide; the meta row is 900, see pp_meta_row.xml.tpl) - same
                          mismatch recommended's own version has - but that box is masked to fade to
                          transparent along its left edge (see default_background.xml.tpl), so text
                          overlapping that fade zone blends rather than crosses a hard image edge. -->

@@ -2,69 +2,12 @@
 {% block headers %}<defaultcontrol>406</defaultcontrol>{% endblock %}
 {% block controls %}
 {% block backgroundcolor %}<backgroundcolor>0xff000000</backgroundcolor>{% endblock %}
-{# BACKGROUND: the 4-corner tinted panel - the same corner-anchored falloff shape, mask and
-   flips as the shared background (includes/default_background.xml.tpl), over the same flat base
-   fill - but with each corner's colour set on the control itself from Python
-   (CurrentPlaylistWindow.updateFromTrack, currentplaylist.py) rather than read out of a window
-   property through $INFO[] on every frame.
-
-   Why these two screens don't use the shared include's panel: here the panel IS the whole
-   background - no hero art box, nothing covering the corners - and the property-driven version
-   flashed the flat base on every single track change, including changes within one album, where
-   the colours don't change and nothing is written at all (live, 2026-09-19; confirmed by
-   temporarily colouring the base fill red). Kodi re-resolves both an $INFO[] <colordiffuse> and a
-   String.IsEmpty() <visible> condition every frame, and a track change resets the info cache
-   (Info.OnChanged), so for a frame those corners read empty and stopped drawing. Kodi's
-   setColorDiffuse stores a constant CGUIInfoColor with no info label attached (Control.cpp), so
-   there is nothing left to re-resolve, and the controls carry no visible condition or fade to
-   flap either. The window's own backgroundcolor stays declared below for the same reason it used
-   to be black here: this window is otherwise transparent, and what sits behind it is
-   BackgroundWindow's own 0xff111111 - which is the base colour, and would be indistinguishable
-   from this panel failing. #}
-<control type="image">
-    <posx>0</posx>
-    <posy>0</posy>
-    <width>1920</width>
-    <height>1080</height>
-    <texture>script.plex/white-square.png</texture>
-    <colordiffuse>FF111111</colordiffuse>
-</control>
-<!-- topLeft -->
-<control type="image" id="301">
-    <posx>0</posx>
-    <posy>0</posy>
-    <width>1920</width>
-    <height>1080</height>
-    <texture diffuse="script.plex/masks/background-corner.png">script.plex/white-square.png</texture>
-    <colordiffuse>00000000</colordiffuse>
-</control>
-<!-- topRight -->
-<control type="image" id="302">
-    <posx>0</posx>
-    <posy>0</posy>
-    <width>1920</width>
-    <height>1080</height>
-    <texture diffuse="script.plex/masks/background-corner.png" flipx="true">script.plex/white-square.png</texture>
-    <colordiffuse>00000000</colordiffuse>
-</control>
-<!-- bottomLeft -->
-<control type="image" id="303">
-    <posx>0</posx>
-    <posy>0</posy>
-    <width>1920</width>
-    <height>1080</height>
-    <texture diffuse="script.plex/masks/background-corner.png" flipy="true">script.plex/white-square.png</texture>
-    <colordiffuse>00000000</colordiffuse>
-</control>
-<!-- bottomRight -->
-<control type="image" id="304">
-    <posx>0</posx>
-    <posy>0</posy>
-    <width>1920</width>
-    <height>1080</height>
-    <texture diffuse="script.plex/masks/background-corner.png" flipx="true" flipy="true">script.plex/white-square.png</texture>
-    <colordiffuse>00000000</colordiffuse>
-</control>
+{# BACKGROUND: the shared colour panel (includes/background_panel.xml.tpl), static - one layer, no <visible>
+   condition or fade: here it is the whole background, and a condition on a window property drops out for a frame
+   on each track change (see the include). Painted from CurrentPlaylistWindow.updateFromTrack()
+   (currentplaylist.py). The window's own black backgroundcolor stays: what sits behind it otherwise is
+   BackgroundWindow's 0xff111111 - the base colour, indistinguishable from this panel failing. #}
+{% include "includes/background_panel.xml.tpl" with static=True %}
 
 <!-- Clock: the header's own (default.xml.tpl / library.xml.tpl / settings, user_select),
      verbatim - these two windows have no header, so it's declared here to keep it where every
@@ -374,4 +317,5 @@
         </control>
     </control>
 </control>
+{% include "includes/dialog_gap_dim.xml.tpl" %}
 {% endblock controls %}

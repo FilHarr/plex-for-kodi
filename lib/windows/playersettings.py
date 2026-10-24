@@ -14,6 +14,12 @@ from .mixins.subtitledl import PlexSubtitleDownloadMixin
 
 
 class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDownloadMixin):
+    """
+    The Settings dialog (script-plex-video_settings_dialog.xml.tpl): the video player's (from its OSD), pre-play's
+    and the episodes'. In the option pickers' frame (dialog.SelectDialog's) - 876 high from 103, its right edge 10
+    from the screen's, 13 rows of 61 (the template's 793, then it scrolls) - so each of its pickers opens exactly
+    over it.
+    """
     xmlFile = 'script-plex-video_settings_dialog.xml'
     path = util.ADDON.getAddonInfo('path')
     theme = 'Main'
@@ -25,9 +31,11 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
     FRAME_GROUP_ID = 200
     FRAME_BACKDROP_ID = 201
     FRAME_SHADOW_ID = 202
-    FRAME_X = 660  # centres the 600-wide list
-    ROW_HEIGHT = util.vscalei(64)  # the template's row pitch (58 cards, 6 apart)
-    MAX_ROWS = 10
+    ROW_HEIGHT = util.vscalei(61)  # the template's row pitch (55 cards, 6 apart)
+    FRAME_X = 1290
+    FRAME_TOP = 103
+    FRAME_HEIGHT = 876
+    LIST_HEIGHT = 793
 
     def __init__(self, *args, **kwargs):
         kodigui.BaseDialog.__init__(self, *args, **kwargs)
@@ -42,16 +50,24 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
         self.roundRobin = kwargs.get('round_robin', True)
         self.lastSelectedItem = 0
         self.shuffleAsked = None  # the shuffle state last asked for, until the play queue has it
+        self.vs10Asked = None  # the VS10 mode last asked for, until the player reports it
+        # The window's own actions under the settings, [(key, label)] (pre-play's and the episodes' More
+        # settings): choosing one closes this and leaves its key in self.choice for the caller to run. With no
+        # video (the episodes' season card) they're all there is. One given as (key, label, run) runs here
+        # instead, this left open: run() opens its own picker over it, as the settings' rows do, and Back
+        # comes back here (Playback Settings).
+        self.heading = kwargs.get('heading') or T(32343, 'Settings')
+        self.actions = kwargs.get('actions') or []
+        self.actionRunners = dict((a[0], a[2]) for a in self.actions if len(a) > 2 and a[2])
+        self.choice = None
 
-        if not self.video.mediaChoice:
+        if self.video is not None and not self.video.mediaChoice:
             playerObject = plexnet.plexplayer.PlexPlayer(self.video)
             playerObject.build()
 
     def onFirstInit(self):
         self.settingsList = kodigui.ManagedControlList(self, self.SETTINGS_LIST_ID, 6)
-        self.setProperty('heading', T(32343, 'Settings'))
-        if self.viaOSD:
-            self.setProperty('via.OSD', '1')
+        self.setProperty('heading', self.heading)
         self.showSettings(True)
         util.CRON.registerReceiver(self)
 
@@ -103,7 +119,8 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
         quality_type = self.video.getQualityType()
         return self.video.settings.getPrefOverride(quality_type, self.video.settings.getQualityIndex(quality_type))
 
-    def showSettings(self, init=False):
+    def settingsOptions(self):
+        """The settings rows, [(key, label, value)]."""
         video = self.video
         override = self.qualityOverride
         if override is not None and override < 16:
@@ -126,6 +143,17 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
         if len(accessibleMedia) > 1:
             options.append(('video', T(32053, 'Video'),
                             video.mediaChoice and video.mediaChoice.media.versionString() or ''))
+
+        # VS10 Mode, the VS10 button's picker: the video player's, on CoreELEC's VS10 builds (shown whether or not
+        # the button is). Until the mode reads back as the one asked for, the row shows that one.
+        if self.viaOSD and util.CE_VS10:
+            mode = currentVS10Mode()
+            if self.vs10Asked is not None and self.vs10Asked != mode:
+                mode = self.vs10Asked
+            else:
+                self.vs10Asked = None
+            labels = dict((m, label) for m, label, _ in VS10_MODES())
+            options.append(('vs10', T(34090, 'VS10 Mode'), labels.get(mode, '')))
 
         options += [
             ('audio', T(32395, 'Audio'), audio),
@@ -158,6 +186,13 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
                     ('stream_info', T(32484, 'Show Stream Info'), ''),
                 ]
 
+        return options
+
+    def showSettings(self, init=False):
+        options = self.settingsOptions() if self.video is not None else []
+        # the window's own actions, last (editSetting() tells them from the settings by their tuple)
+        options += [(('action', a[0]), a[1], '') for a in self.actions]
+
         items = []
         for o in options:
             item = kodigui.ManagedListItem(o[1], o[2], data_source=o[0])
@@ -172,19 +207,13 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
         self.setFocusId(self.SETTINGS_LIST_ID)
 
     def fitFrame(self, rows):
-        """
-        The card frame (the template's group 200) fitted to the settings: the list as many rows high as there are, up
-        to 10 (then it scrolls); the backdrop the list plus its heading's 66 and 17 below
-        (the last card's 3 and these: 20 under it, as at the sides); the shadow 40
-        past that each way; all centred on the screen.
-        """
-        listHeight = min(rows, self.MAX_ROWS) * self.ROW_HEIGHT
+        """The list as many rows high as there are, up to the template's 13 (then it scrolls), in the fixed frame."""
         header = util.vscalei(66)
-        self.settingsList.setHeight(listHeight)
-        self.getControl(self.FRAME_BACKDROP_ID).setHeight(listHeight + header + util.vscalei(17))
-        self.getControl(self.FRAME_SHADOW_ID).setHeight(listHeight + header + util.vscalei(97))
-        top = max(0, (self.height - listHeight - header - util.vscalei(17)) // 2)
-        self.getControl(self.FRAME_GROUP_ID).setPosition(self.FRAME_X, top + header)
+        height = util.vscalei(self.FRAME_HEIGHT)
+        self.settingsList.setHeight(min(rows * self.ROW_HEIGHT, util.vscalei(self.LIST_HEIGHT)))
+        self.getControl(self.FRAME_BACKDROP_ID).setHeight(height)
+        self.getControl(self.FRAME_SHADOW_ID).setHeight(height + util.vscalei(80))
+        self.getControl(self.FRAME_GROUP_ID).setPosition(self.FRAME_X, util.vscalei(self.FRAME_TOP) + header)
 
     @staticmethod
     def kodiSettingsOptions():
@@ -240,18 +269,36 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
             return
 
         result = mli.dataSource
-        # every picker from here: the video player's (Settings from its OSD) tall at the right
-        # (dialog.SideSelectDialog), pre-play's centred
-        side = bool(self.viaOSD)
+
+        if isinstance(result, tuple) and result[0] == 'action' and result[1] in self.actionRunners:
+            self.actionRunners[result[1]]()
+            return
+
+        if isinstance(result, tuple) and result[0] == 'action':
+            # one of the window's own actions (self.actions): the caller runs it, once this has closed - the dim
+            # held over the gap, for a confirm box or picker it may open (the caller releases it)
+            self.choice = result[1]
+            kodigui.holdDialogDim()
+            self.doClose()
+            return
 
         if result == 'video':
-            showVideoDialog(self.video, non_playback=self.nonPlayback, side=side)
+            showVideoDialog(self.video, non_playback=self.nonPlayback)
+        elif result == 'vs10':
+            choice = showVS10Dialog()
+            if choice is VS10_PLAYER_INFO:
+                # as the VS10 button's, this out of its way (Show Stream Info's way too)
+                self.doClose()
+                xbmc.executebuiltin('ActivateWindow(playerprocessinfo)')
+                return
+            if choice is not None:
+                self.vs10Asked = choice
         elif result == 'audio':
-            showAudioDialog(self.video, non_playback=self.nonPlayback, session_id=self.sessionID, side=side)
+            showAudioDialog(self.video, non_playback=self.nonPlayback, session_id=self.sessionID)
         elif result == 'subs':
             def download():
                 # pre-play's: Plex's search (Kodi's needs a video playing)
-                downloaded = self.downloadPlexSubtitles(self.video, non_playback=self.nonPlayback, side=side)
+                downloaded = self.downloadPlexSubtitles(self.video, non_playback=self.nonPlayback)
                 if downloaded:
                     self.video.selectStream(downloaded, from_session=not self.nonPlayback, sync_to_server=False)
                     self.video.manually_selected_sub_stream = downloaded.id
@@ -262,7 +309,7 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
             if player:
                 download = player.downloadSubtitles
             choice = showSubtitlesDialog(self.video, non_playback=self.nonPlayback, session_id=self.sessionID,
-                                         side=side, download=download, player=player)
+                                         download=download, player=player)
             if choice is SUBTITLE_DELAY:
                 # Kodi's slider, over this (which hides while it's up)
                 xbmc.executebuiltin('Action(SubtitleDelay)')
@@ -272,12 +319,12 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
             # the current one, as showSettings() labels it: a cap below 16, else Original (16)
             override = self.qualityOverride
             current = override if override is not None and override < 16 else 16
-            showQualityDialog(self.video, non_playback=self.nonPlayback, current=current, side=side)
+            showQualityDialog(self.video, non_playback=self.nonPlayback, current=current)
         elif result == 'repeat':
             labels = self.REPEAT_LABELS()
             modes = ('off', 'all', 'one')
             choice = showOptionsDialog(T(32934, 'Repeat'), [(m, labels[m]) for m in modes],
-                                       selected_idx=modes.index(self.parent.repeatMode()), side=side)
+                                       selected_idx=modes.index(self.parent.repeatMode()))
             if choice is not None:
                 self.parent.setRepeatMode(choice)
                 if not self.parent.handler.playlist:
@@ -286,7 +333,7 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
         elif result == 'shuffle':
             self.shuffleAsked = self.parent.toggleShuffle()
         elif result == 'kodi':
-            choice = showOptionsDialog(T(35182, 'Kodi settings'), self.kodiSettingsOptions(), side=side)
+            choice = showOptionsDialog(T(35182, 'Kodi settings'), self.kodiSettingsOptions())
             if choice is not None:
                 xbmc.executebuiltin(choice)
         elif result == "stream_info":
@@ -309,7 +356,7 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
         self.showSettings()
 
 
-def showVideoDialog(video, non_playback=False, side=False):
+def showVideoDialog(video, non_playback=False):
     """
     Same version-choosing logic the episode button row's own "media" button used to have
     (mediaButtonClicked() - episodes.py, now removed in favor of this entry).
@@ -330,7 +377,7 @@ def showVideoDialog(video, non_playback=False, side=False):
     # non_playback wasn't passed (live-confirmed - the episode screen isn't actually playing
     # anything, so this closed spontaneously without it). Same param Audio/Subtitles above already
     # forward from self.nonPlayback - this one was missing it.
-    choice = showOptionsDialog(T(32053, 'Video'), options, non_playback=non_playback, selected_idx=idx, side=side)
+    choice = showOptionsDialog(T(32053, 'Video'), options, non_playback=non_playback, selected_idx=idx)
     if choice is None:
         return
 
@@ -347,7 +394,7 @@ def showVideoDialog(video, non_playback=False, side=False):
     video.clearCache()
 
 
-def showAudioDialog(video, non_playback=False, session_id=None, side=False):
+def showAudioDialog(video, non_playback=False, session_id=None):
     options = []
     idx = None
     for i, s in enumerate(video.audioStreams):
@@ -355,7 +402,7 @@ def showAudioDialog(video, non_playback=False, session_id=None, side=False):
             idx = i
         options.append((s, (s.getTitle(metadata.apiTranslate), s.title)))
     choice = showOptionsDialog(T(32395, 'Audio'), options, non_playback=non_playback, selected_idx=idx,
-                               trim=False, side=side)
+                               trim=False)
     if choice is None:
         return
 
@@ -403,11 +450,10 @@ def subtitleOptions(video, with_download=False, player=None):
     return options, idx
 
 
-def showSubtitlesDialog(video, non_playback=False, session_id=None, with_download=False, side=False, download=None,
+def showSubtitlesDialog(video, non_playback=False, session_id=None, with_download=False, download=None,
                         player=None):
     """
-    The subtitle streams to choose from (subtitleOptions()), the current one ticked; choosing one selects it. side:
-    the video player's tall picker at the right (dialog.SideSelectDialog).
+    The subtitle streams to choose from (subtitleOptions()), the current one ticked; choosing one selects it.
     Download subtitles: with download (a callable), runs it with the picker left open beneath whatever it opens,
     and comes back to the picker, a downloaded subtitle among its streams; with_download alone returns
     DOWNLOAD_SUBTITLES for the caller to run instead. player (the video player's dialog) adds Subtitle Delay and
@@ -422,7 +468,7 @@ def showSubtitlesDialog(video, non_playback=False, session_id=None, with_downloa
         return None
 
     options, idx = subtitleOptions(video, withDownload, player)
-    choice = showOptionsDialog(T(32396, 'Subtitle'), options, non_playback=non_playback, selected_idx=idx, side=side,
+    choice = showOptionsDialog(T(32396, 'Subtitle'), options, non_playback=non_playback, selected_idx=idx,
                                on_choice=onChoice)
     if choice is None:
         return
@@ -434,7 +480,7 @@ def showSubtitlesDialog(video, non_playback=False, session_id=None, with_downloa
     video.manually_selected_sub_stream = choice.id
 
 
-def showQualityDialog(video, non_playback=False, current=None, side=False):
+def showQualityDialog(video, non_playback=False, current=None):
     """current: the quality in force (16 Original, else a cap's 15-3), focused and ticked when it's offered."""
     options = []
     video_bitrate = video.mediaChoice.media.bitrate.asInt()
@@ -462,7 +508,7 @@ def showQualityDialog(video, non_playback=False, current=None, side=False):
     # found by value: a cap above the file's bitrate isn't offered (clamp_video_bitrates), so positions don't line up
     values = [value for value, _ in options]
     selected_idx = values.index(current) if current in values else None
-    choice = showOptionsDialog('Quality', options, non_playback=non_playback, selected_idx=selected_idx, side=side)
+    choice = showOptionsDialog('Quality', options, non_playback=non_playback, selected_idx=selected_idx)
     if choice is None:
         return
 
@@ -471,32 +517,69 @@ def showQualityDialog(video, non_playback=False, current=None, side=False):
     video.settings.setPrefOverride('online_quality2', choice)
 
 
-class SideVideoSettingsDialog(VideoSettingsDialog):
+# showVS10Dialog()'s answer for Kodi's Player Info, for the caller to open once its own dialogs are out of the way
+VS10_PLAYER_INFO = object()
+
+
+def VS10_MODES():
     """
-    The video player's Settings dialog (script-plex-video_settings_dialog_side.xml.tpl): in the option pickers'
-    tall frame at the right (dialog.SideSelectDialog's) - 876 high from 103, its right edge 10 from the screen's,
-    13 rows of 61 (the template's 793, then it scrolls) - so each of its pickers opens exactly over it.
+    VS10 Mode's choices (CoreELEC's VS10 builds, util.CE_VS10): (its vs10.<mode> action, its label, the
+    amlogic.vs10.mode.raw values that mean it).
     """
-    xmlFile = 'script-plex-video_settings_dialog_side.xml'
-    ROW_HEIGHT = util.vscalei(61)  # the template's row pitch (55 cards, 6 apart)
-    FRAME_X = 1290
-    FRAME_TOP = 103
-    FRAME_HEIGHT = 876
-    LIST_HEIGHT = 793
-
-    def fitFrame(self, rows):
-        header = util.vscalei(66)
-        height = util.vscalei(self.FRAME_HEIGHT)
-        self.settingsList.setHeight(min(rows * self.ROW_HEIGHT, util.vscalei(self.LIST_HEIGHT)))
-        self.getControl(self.FRAME_BACKDROP_ID).setHeight(height)
-        self.getControl(self.FRAME_SHADOW_ID).setHeight(height + util.vscalei(80))
-        self.getControl(self.FRAME_GROUP_ID).setPosition(self.FRAME_X, util.vscalei(self.FRAME_TOP) + header)
+    return (('dv', 'Dolby Vision', ('0', '1')), ('hdr10', 'HDR10', ('2',)), ('sdr', 'SDR', ('3',)),
+            ('original', T(32001, 'Original'), ('5',)))
 
 
-def showDialog(video, non_playback=False, via_osd=False, parent=None):
-    # the video player's (from its OSD) tall at the right, with its pickers; pre-play's centred
-    w = (via_osd and SideVideoSettingsDialog or VideoSettingsDialog).open(
-        video=video, non_playback=non_playback, via_osd=via_osd, parent=parent)
+def currentVS10Mode():
+    """The VS10 mode in force (VS10_MODES()'s), or None when it's none of them."""
+    raw = xbmc.getInfoLabel('Player.Process(amlogic.vs10.mode.raw)')
+    for mode, _, raws in VS10_MODES():
+        if raw in raws:
+            return mode
+    return None
+
+
+def showVS10Dialog():
+    """
+    The VS10 modes, the current one ticked, and Kodi's Player Info; choosing a mode switches to it. Returns the
+    mode chosen, VS10_PLAYER_INFO for the caller to open, or None.
+    """
+    current = currentVS10Mode()
+    options = [(mode, label) for mode, label, _ in VS10_MODES()]
+    idx = next((i for i, (mode, _) in enumerate(options) if mode == current), None)
+    options.append((VS10_PLAYER_INFO, 'Player Info'))
+    choice = showOptionsDialog(T(34090, 'VS10 Mode'), options, selected_idx=idx)
+    if choice is None or choice is VS10_PLAYER_INFO:
+        return choice
+
+    xbmc.executebuiltin('Action(vs10.{})'.format(choice))
+    return choice
+
+
+def showDialog(video, non_playback=False, via_osd=False, parent=None, heading=None, actions=None):
+    """
+    heading: the window's title, Settings by default. actions: [(key, label)] listed under the settings (pre-play's
+    More settings); returns the key of the one chosen, or None.
+    """
+    w = VideoSettingsDialog.open(video=video, non_playback=non_playback, via_osd=via_osd, parent=parent,
+                                 heading=heading, actions=actions)
+    choice = w.choice
     ref = util.windowRef(w)
     del w
     util.collectIfAlive(ref)
+    return choice
+
+
+def showMoreDialog(options, non_playback=True):
+    """
+    A screen's More menu as the More settings dialog, its actions alone: in place of dropdown.showDropdown(), taking
+    its options ({'key', 'display'} dicts; its separators are dropped) and returning the one chosen the same way, or
+    None. One with a 'run' callable runs with this left open instead (VideoSettingsDialog's actions).
+    non_playback=False closes it when playback ends (the music player's).
+    """
+    options = [o for o in options if o]
+    if not options:
+        return None
+    key = showDialog(None, non_playback=non_playback, heading=T(35200, 'More settings'),
+                     actions=[(i, o['display'], o.get('run')) for i, o in enumerate(options)])
+    return options[key] if key is not None else None

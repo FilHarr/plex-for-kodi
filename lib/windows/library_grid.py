@@ -24,7 +24,9 @@ from lib import shuffle
 from lib.util import T
 from . import busy
 from . import collection
-from . import dropdown
+from . import grid_labels
+from . import itemmenu
+from . import playersettings
 from . import kodigui
 from . import opener
 from . import videoplayer
@@ -33,6 +35,7 @@ from . import panel_colors
 from . import preplay
 from . import subitems
 from . import sidebar_model
+from .dialog import showOptionsDialog
 from .mixins.watchlist import removeFromWatchlistBlind
 
 
@@ -263,7 +266,7 @@ FILTER_LABELS = {
     'location': (34034, 'Folder Location'),
     'unwatched': (32368, 'Unplayed'),
     'hdr': (34037, 'HDR'),
-    'dovi': (34036, 'DOVI'),
+    'dovi': (34036, 'DoVi'),
 }
 
 
@@ -331,6 +334,8 @@ class ChunkRequestTask(backgroundthread.Task):
             if self.isCanceled():
                 return
             self.callback(items, self.start)
+            # albums' and tracks' in their covers', after (one request each)
+            panel_colors.warmLater(items)
         except plexnet.exceptions.BadRequest:
             util.DEBUG_LOG('404 on section: {0}', repr(self.section.title))
 
@@ -406,20 +411,12 @@ class GridMixin(object):
                     self.updateKey(mli)
             timing.mark('key')
         elif action == xbmcgui.ACTION_CONTEXT_MENU:
-            # item action possible?
-            had_action = self.itemOptions()
-            if not had_action:
-                if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)):
-                    self.lastNonOptionsFocusID = self.lastFocusID
-                    self.setFocusId(self.OPTIONS_GROUP_ID)
-                    return True
-                else:
-                    if self.lastNonOptionsFocusID:
-                        self.setFocusId(self.lastNonOptionsFocusID)
-                        self.lastNonOptionsFocusID = None
-                        return True
-            else:
-                return True
+            # The focused item's menu (itemOptions()), from the grid only; anywhere else, or on an item without one,
+            # the key does nothing. It used to move focus to the header and back, as the other screens' did until
+            # they dropped it (episodes.py's onAction()).
+            if self.getFocusId() == self.POSTERS_PANEL_ID:
+                self.itemOptions()
+            return True
         elif self.isWatchedAction(action):
             mli = self.showPanelControl.getSelectedItem()
             if not mli or not mli.dataSource:
@@ -427,9 +424,9 @@ class GridMixin(object):
             self.toggleWatched(mli)
             return True
 
-        elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_CONTEXT_MENU):
+        elif action == xbmcgui.ACTION_NAV_BACK:
             if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)) and \
-                    (not util.addonSettings.fastBack or action == xbmcgui.ACTION_CONTEXT_MENU):
+                    not util.addonSettings.fastBack:
                 if xbmc.getCondVisibility('Integer.IsGreater(Container(101).ListItem.Property(index),5)'):
                     self.showPanelControl.selectItem(0)
                     return True
@@ -500,18 +497,23 @@ class GridMixin(object):
         self.showPhotoItemProperties(mli.dataSource)
 
     def toggleWatched(self, mli, state=None, **kw):
+        """state: played (True) or unplayed (False); flipped when None. The new state, or None if it was
+        declined at the confirmation (CommonMixin.toggleWatched())."""
         item = mli.dataSource
         wl_ref = item.show() if item.TYPE in ('episode', 'season') else item
-        watched = super(GridMixin, self).toggleWatched(item)
+        watched = super(GridMixin, self).toggleWatched(item, state=state)
         if watched is None:
             return
 
         if watched:
             removeFromWatchlistBlind(wl_ref.guid, wl_ref)
         self.updateUnwatchedAndProgress(mli)
+        return watched
         util.MONITOR.watchStatusChanged()
 
     def itemOptions(self):
+        """The menu key's item menu (itemmenu.py), if the item has one - a photo, a folder or an empty collection
+        hasn't."""
         mli = self.showPanelControl.getSelectedItem()
         if not mli:
             return True
@@ -519,66 +521,33 @@ class GridMixin(object):
         if mli.dataSource is None:
             return True
 
-        if mli.dataSource.TYPE in ('episode', 'season', 'movie', 'show'):
-            options = []
-            ds = mli.dataSource
-            wl_ref = ds.show() if ds.TYPE in ('episode', 'season') else ds
-
-            if self.section.TYPE != "movies_shows":
-                # we don't want mark watched for watchlist items
-                if not mli.getProperty('watched'):
-                    options.append({'key': 'mark_watched', 'display': T(32319, "Mark Played")})
-
-                if (ds.isFullyWatched or ds.isWatched or
-                        (ds.TYPE in ("show", "season") and 0 < ds.unViewedLeafCount < ds.leafCount)):
-                    options.append({'key': 'mark_unwatched', 'display': T(32318, "Mark Unplayed")})
-            else:
-                options.append({'key': 'remove_from_watchlist', 'display': T(34011, "Remove from watchlist")})
-
-            title = mli.label
-            secondary = mli.label2
-            if ds.TYPE in ("movie", "show"):
-                secondary = mli.getProperty('year')
-            elif ds.TYPE == "episode":
-                title = ds.defaultTitle
-                secondary = mli.getProperty('subtitle')
-
-            label = u"{} ({})".format(six.ensure_str(title), six.ensure_str(secondary))
-
-            choice = dropdown.showDropdown(
-                options,
-                pos=(660, 441),
-                close_direction='none',
-                set_dropdown_prop=False,
-                header=T(33030, 'Choose action for: {}').format(label),
-                align_items="left",
-            )
-
-            if choice and choice["key"] in ("mark_watched", "mark_unwatched", "remove_from_watchlist"):
-                if util.getSetting('home_confirm_actions'):
-                    button = optionsdialog.show(
-                        T(32319, "Mark Played") if choice["key"] == "mark_watched"
-                        else T(34011,"Remove from watchlist")
-                        if choice["key"] == "remove_from_watchlist" else T(32318, "Mark Unplayed"),
-                        label,
-                        T(32328, 'Yes'),
-                        T(32329, 'No'),
-                    )
-
-                    if button != 0:
-                        return True
-
-                if choice["key"] == "mark_watched":
-                    self.toggleWatched(mli, state=True)
-
-                elif choice["key"] == "mark_unwatched":
-                    self.toggleWatched(mli, state=False)
-
-                elif choice["key"] == "remove_from_watchlist":
-                    removeFromWatchlistBlind(wl_ref.guid, wl_ref)
-                    self.doRefill()
+        ds = mli.dataSource
+        rows = itemmenu.options(mli, watchlist=self.section.TYPE == "movies_shows")
+        if not rows:
             return True
+        choice = itemmenu.choose(mli, rows)
 
+        # Mark Played/Unplayed ask in toggleWatched() (CommonMixin), as everywhere else
+        if choice == "mark_watched":
+            self.toggleWatched(mli, state=True)
+
+        elif choice == "mark_unwatched":
+            self.toggleWatched(mli, state=False)
+
+        elif choice == "remove_from_watchlist":
+            if util.getSetting('home_confirm_actions'):
+                button = optionsdialog.show(u'{0}?'.format(T(34011, "Remove from watchlist")), '',
+                                            T(32328, 'Yes'), T(32329, 'No'))
+                if button != 0:
+                    return True
+
+            wl_ref = ds.show() if ds.TYPE in ('episode', 'season') else ds
+            removeFromWatchlistBlind(wl_ref.guid, wl_ref)
+            self.doRefill()
+
+        elif choice:
+            itemmenu.run(self, mli, choice, entry_section_id=self.entrySectionId)
+        return True
 
     def _keyUpdateDue(self, mli):
         """Whether updateKey() has anything to write for mli: its letter isn't the one showing, or
@@ -688,21 +657,21 @@ class GridMixin(object):
         else:
             self.playButtonClicked(shuffle=True)
 
+    def pickShuffleMode(self, options):
+        """The Shuffle Mode picker (the settings and pickers' style, dialog.SelectDialog): options' {'key', 'display'}
+        rows, the first focused. The chosen option, or None."""
+        choice = showOptionsDialog(T(35009, "Shuffle Mode"), [(o['key'], o['display']) for o in options],
+                                   non_playback=True, menu=True, selected_idx=0,
+                                   dialog_props=getattr(self, 'carriedProps', None))
+        return next((o for o in options if o['key'] == choice), None) if choice is not None else None
+
     def movieShuffleSelected(self):
         options = [
             {'key': shuffle.MODE_UNWATCHED, 'display': T(35010, "Unwatched")},
             {'key': shuffle.MODE_REWATCH, 'display': T(35011, "Rewatch")},
             {'key': 'classic', 'display': T(35018, "Shuffle All")},
         ]
-        choice = dropdown.showDropdown(
-            options,
-            pos=(660, 441),
-            close_direction='none',
-            set_dropdown_prop=False,
-            header=T(35009, "Shuffle Mode"),
-            select_index=0,
-            align_items="left",
-        )
+        choice = self.pickShuffleMode(options)
         if not choice:
             return
         if choice['key'] == 'classic':
@@ -734,15 +703,7 @@ class GridMixin(object):
             {'key': shuffle.MODE_CATCHUP, 'display': T(35012, "Catchup")},
             {'key': 'classic', 'display': T(35018, "Shuffle All")},
         ]
-        choice = dropdown.showDropdown(
-            options,
-            pos=(660, 441),
-            close_direction='none',
-            set_dropdown_prop=False,
-            header=T(35009, "Shuffle Mode"),
-            select_index=0,
-            align_items="left",
-        )
+        choice = self.pickShuffleMode(options)
         if not choice:
             return
         if choice['key'] == 'classic':
@@ -796,6 +757,7 @@ class GridMixin(object):
         self._watchGridPlayback()
         self.processCommand(videoplayer.play(play_queue=pl, context=self))
 
+    @kodigui.releasesDialogDim
     def optionsButtonClicked(self):
         # Only ever "Go to <section>" now, and the button (303) is only shown for photodirectory
         # sections, where no.options is empty. It used to also offer "Play Next" whenever music
@@ -804,7 +766,8 @@ class GridMixin(object):
         if self.section.TYPE == 'photodirectory':
             options.append({'key': 'to_section', 'display': T(32324, u'Go to {0}').format(self.section.getLibrarySectionTitle())})
 
-        choice = dropdown.showDropdown(options, (255, 205))
+        # the More settings dialog, these alone (as the Episodes season card's)
+        choice = playersettings.showMoreDialog(options)
         if not choice:
             return
 
@@ -854,12 +817,12 @@ class GridMixin(object):
         except:
             pass
 
-        result = dropdown.showDropdown(options, (380, 106), with_indicator=True,
-                                       select_item=not self.getBoolProperty('no.content.filtered') and selectItem or None)
-        if not result:
+        # the pickers' style (dialog.SelectDialog), the type showing ticked
+        current = None if self.getBoolProperty('no.content.filtered') else options.index(selectItem) if selectItem else None
+        choice = showOptionsDialog(T(35210, 'Type'), [(o['type'], o['display']) for o in options], non_playback=True,
+                                   menu=True, selected_idx=current, dialog_props=getattr(self, 'carriedProps', None))
+        if choice is None:
             return
-
-        choice = result['type']
 
         self._applyItemTypeChoice(choice)
 
@@ -1038,12 +1001,16 @@ class GridMixin(object):
         except:
             pass
 
-        result = dropdown.showDropdown(options, (560, 106), with_indicator=True,
-                                       select_item=not self.getBoolProperty('no.content.filtered') and selectItem or None)
-        if not result:
+        # the pickers' style (dialog.SelectDialog): the sort showing ticked, its direction under it - choosing it
+        # again turns it round
+        direction = T(35214, 'Descending') if self.sortDesc else T(35213, 'Ascending')
+        rows = [(o['type'], (o['display'], direction) if o is selectItem else o['display']) for o in options]
+        current = None if self.getBoolProperty('no.content.filtered') else options.index(selectItem) if selectItem else None
+        choice = showOptionsDialog(T(35211, 'Sort by'), rows, non_playback=True, menu=True, selected_idx=current,
+                                   dialog_props=getattr(self, 'carriedProps', None))
+        if choice is None:
             return
-
-        choice = result['type']
+        result = next(o for o in options if o['type'] == choice)
 
         if choice == self.sort:
             self.sortDesc = not self.sortDesc
@@ -1183,9 +1150,7 @@ class GridMixin(object):
 
         if not filters:
             util.DEBUG_LOG('No filters available for section {0}', self.section.key)
-            dropdown.showDropdown(
-                [{'val': None, 'display': T(32375, 'No filters available'), 'ignore': True}],
-                (200, 106))
+            util.messageDialog(T(35212, 'Filter'), T(32375, 'No filters available'))
             return
 
         # Group boolean toggles (HDR/DOVI/Atmos/Unwatched/...) at the top, separated from
@@ -1206,9 +1171,8 @@ class GridMixin(object):
             label = self._filterLabel(fkey, f.title)
 
             if ftype == 'boolean':
-                # Caps signals these are combinable toggles, distinct from the
-                # single-select (title-case) value categories.
-                boolOptions.append({'type': fkey, 'display': label.upper(),
+                # their own ticks tell these combinable toggles from the value filters (pickFilter())
+                boolOptions.append({'type': fkey, 'display': label,
                                     'indicator': self.boolFilters.get(fkey) and check or '',
                                     'is_bool': True})
             else:
@@ -1216,21 +1180,7 @@ class GridMixin(object):
                 valueOptions.append({'type': fkey, 'display': label, 'is_sub_list': True,
                                      'indicator': active and check or ''})
 
-        options = []
-        if self.filter or any(self.boolFilters.values()):
-            options.append({'type': 'clear_filter', 'display': T(32376, 'CLEAR FILTER').upper(),
-                            'indicator': 'script.plex/indicators/remove.png'})
-            options.append(None)  # Separator
-
-        options.extend(boolOptions)
-        if boolOptions and valueOptions:
-            options.append(None)  # Separator between toggles and value filters
-        options.extend(valueOptions)
-
-        result = dropdown.showDropdown(options, (200, 106), with_indicator=True,
-                                       suboption_callback=self.subOptionCallback,
-                                       select_item=not self.getBoolProperty('no.content.filtered') and self.filter or None,
-                                       open_sublists=not self.getBoolProperty('no.content.filtered'))
+        result = self.pickFilter(boolOptions, valueOptions)
         if not result:
             return
 
@@ -1252,6 +1202,59 @@ class GridMixin(object):
 
         if self.filter or choice == 'clear_filter' or result.get('is_bool') or self._filterTypeByKey.get(choice) == 'boolean':
             self.fill(keep_focus=True)
+
+    def pickFilter(self, boolOptions, valueOptions):
+        """The Filter picker (the settings and pickers' style, dialog.SelectDialog): All, ticked while nothing's
+        filtered (choosing it clears the rest); the on/off filters (HDR, Unplayed...), each ticked while on; the value
+        filters (Genre, Year...), each with a chevron where the tick goes - the one in use ticked instead, with its
+        value under it. A value filter opens its values in a picker over this one (subOptionCallback()), whose Back
+        comes back here. The chosen option - a value filter's with its value as 'sub' - or None."""
+        dialogProps = getattr(self, 'carriedProps', None)
+        active = self.filter and self.filter.get('type')
+        filtered = bool(self.filter or any(self.boolFilters.values()))
+        rows = [(('all', 'clear_filter'), T(32345, 'All'), not filtered)]
+        rows.extend((('bool', o['type']), o['display'], bool(o['indicator'])) for o in boolOptions)
+        for o in valueOptions:
+            label = o['display']
+            if o['type'] == active and self.filter.get('sub'):
+                label = (label, self.filter['sub']['display'])
+            rows.append((('value', o['type']), label, o['type'] == active, {'more': '1'}))
+        byKey = {('all', 'clear_filter'): {'type': 'clear_filter'}}
+        byKey.update((('bool', o['type']), o) for o in boolOptions)
+        byKey.update((('value', o['type']), o) for o in valueOptions)
+        current = None
+        if not self.getBoolProperty('no.content.filtered'):
+            current = next((i for i, r in enumerate(rows) if r[0] == ('value', active)), None) if active else \
+                None if filtered else 0
+
+        picked = {}
+
+        def onChoice(key):
+            if key[0] != 'value':
+                return None
+            option = byKey[key]
+            here = (rows, next(i for i, r in enumerate(rows) if r[0] == key))
+            subs = [s for s in (self.subOptionCallback(option) or []) if not s.get('ignore')]
+            if not subs:
+                util.messageDialog(option['display'], T(32375, 'No filters available'))
+                return here
+            subIndex = next((i for i, s in enumerate(subs) if s.get('indicator')), None)
+            sub = showOptionsDialog(option['display'], [(i, s['display']) for i, s in enumerate(subs)],
+                                    non_playback=True, selected_idx=subIndex, dialog_props=dialogProps)
+            if sub is None:
+                # Back: the filters again
+                return here
+            picked['sub'] = subs[sub]
+            return None
+
+        choice = showOptionsDialog(T(35212, 'Filter'), rows, non_playback=True, menu=True, selected_idx=current,
+                                   on_choice=onChoice, dialog_props=dialogProps)
+        if choice is None:
+            return None
+        option = byKey[choice]
+        if choice[0] == 'value':
+            return dict(option, sub=picked['sub'])
+        return option
 
     def clearFilters(self, skip_display=False):
         self.filter = None
@@ -2199,7 +2202,8 @@ class GridMixin(object):
                             # uses for its now-playing tint (subitems.py).
                             mli.setProperty('track.ID', obj.ratingKey)
                         else:
-                            mli.setLabel(obj.defaultTitle or '')
+                            # a film's bare title: its edition is on the line under it (sub_title below)
+                            mli.setLabel((obj.title if obj.TYPE == 'movie' else obj.defaultTitle) or '')
 
                         if obj.TYPE == 'collection':
                             if obj.hasNoPicture():
@@ -2235,6 +2239,9 @@ class GridMixin(object):
                                         sub_title = "{} ({})".format(res, obj.get('year'))
                         if obj.TYPE == 'collection' and obj.get('childCount') != '':
                             sub_title = util.collectionCountText(obj.get('childCount').asInt(), self.section.TYPE)
+                        elif sub_title == obj.get('year'):
+                            # just the year: the edition before it, if any (grid_labels.editionLine())
+                            sub_title = grid_labels.editionLine(obj)
                         mli.setProperty('year', sub_title)
 
                         if obj.TYPE != 'collection':

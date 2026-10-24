@@ -10,10 +10,6 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
-    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
-         of this include for the full reasoning (this window is one of the seven real hosted-shell
-         types too, same _sidebarTarget()-aware Python side, same onClick forwarding). -->
-    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 {% block content %}
 <control type="group" id="50">
@@ -241,7 +237,7 @@
                             </control>
                             <control type="label">
                                 <visible>!String.IsEmpty(ListItem.Property(subtitle))</visible>
-                                <scroll>false</scroll>
+                                <scroll>true</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(401) }}</posy>
                                 <width>240</width>
@@ -253,7 +249,7 @@
                             </control>
                             <control type="label">
                                 <visible>!String.IsEmpty(ListItem.Property(year)) + String.IsEmpty(ListItem.Property(subtitle))</visible>
-                                <scroll>false</scroll>
+                                <scroll>true</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(401) }}</posy>
                                 <width>240</width>

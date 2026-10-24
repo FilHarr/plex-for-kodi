@@ -3377,8 +3377,8 @@ msgid "Editions"
 msgstr "Edition"
 
 msgctxt "#34036"
-msgid "DOVI"
-msgstr "DOVI"
+msgid "DoVi"
+msgstr "DoVi"
 
 msgctxt "#34037"
 msgid "HDR"

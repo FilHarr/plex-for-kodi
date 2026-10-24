@@ -2845,7 +2845,7 @@ msgid "Editions"
 msgstr ""
 
 msgctxt "#34036"
-msgid "DOVI"
+msgid "DoVi"
 msgstr ""
 
 msgctxt "#34037"
@@ -3923,4 +3923,60 @@ msgstr ""
 
 msgctxt "#35199"
 msgid "{} shows"
+msgstr ""
+
+msgctxt "#35200"
+msgid "More settings"
+msgstr ""
+
+msgctxt "#35201"
+msgid "All rows"
+msgstr ""
+
+msgctxt "#35202"
+msgid "Manage recommended rows"
+msgstr ""
+
+msgctxt "#35203"
+msgid "Map path"
+msgstr ""
+
+msgctxt "#35204"
+msgid "Map paths"
+msgstr ""
+
+msgctxt "#35205"
+msgid "Add: {}"
+msgstr ""
+
+msgctxt "#35206"
+msgid "Remove: {}"
+msgstr ""
+
+msgctxt "#35207"
+msgid "Scanning {}"
+msgstr ""
+
+msgctxt "#35208"
+msgid "Emptying trash: {}"
+msgstr ""
+
+msgctxt "#35210"
+msgid "Type"
+msgstr ""
+
+msgctxt "#35211"
+msgid "Sort by"
+msgstr ""
+
+msgctxt "#35212"
+msgid "Filter"
+msgstr ""
+
+msgctxt "#35213"
+msgid "Ascending"
+msgstr ""
+
+msgctxt "#35214"
+msgid "Descending"
 msgstr ""

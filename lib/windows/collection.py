@@ -6,16 +6,17 @@ from kodi_six import xbmcgui
 
 from lib import util
 from lib.util import T
-from plexnet import playqueue
+from . import grid_labels
 from . import info
+from . import itemmenu
 from . import kodigui
-from . import opener
 from . import pagination
 from . import panel_colors
 from . import preplay
 from . import windowutils
 from .mixins.common import CommonMixin
 from .mixins.tasks import TasksMixin
+from .mixins.watchlist import removeFromWatchlistBlind
 
 # Movement actions that can land the grid selection on a paginator boundary sentinel - same set
 # library.py's MOVE_SET (library.py:47-58) covers, just not imported from there (BoundedGridWindow
@@ -92,8 +93,10 @@ class BoundedGridPaginator(pagination.MCLPaginator):
 class CollectionPaginator(BoundedGridPaginator):
     def getData(self, offset, amount):
         items = self.parentWindow.collection.all(offset, amount)
-        # a collection can hold episodes: their panels in their season's colours (panel_colors.py)
+        # a collection can hold episodes: their panels in their season's colours (panel_colors.py);
+        # albums in their covers', after (one request each)
         panel_colors.warm(items)
+        panel_colors.warmLater(items)
         return items
 
 
@@ -183,6 +186,15 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
             return
         controlID = self.getFocusId()
 
+        if controlID == self.GRID_ID and action == xbmcgui.ACTION_CONTEXT_MENU:
+            self.itemMenu()
+            return
+        if controlID == self.GRID_ID and self.isWatchedAction(action):
+            mli = self.gridControl.getSelectedItem()
+            if mli and mli.dataSource is not None and mli.dataSource.TYPE in itemmenu.VIDEO_TYPES:
+                self.markWatched(mli)
+            return
+
         if controlID == self.GRID_ID and action.getId() in MOVE_SET:
             # paginate() itself calls populate(), which fully repopulates gridControl - no
             # separate reload step needed (unlike EpisodesWindow, there's no per-item async
@@ -218,6 +230,8 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # first, whether or not this is live yet: the sidebar rows read it (SidebarMixin)
+        self.trackSidebarFocus(controlID)
         if self.ignoresInput():
             return
         # reselectActiveSection() (SidebarMixin) snaps the highlight to the section actually on
@@ -230,6 +244,38 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
 
     def setup(self):
         raise NotImplementedError
+
+    def itemMenu(self):
+        """The menu key's item menu, as the library grid's (itemmenu.py): Mark Played/Unplayed for a film or show,
+        Play/Shuffle for a collection in this one; nothing for a folder."""
+        mli = self.gridControl.getSelectedItem()
+        if not mli or mli.dataSource is None:
+            return
+        rows = itemmenu.options(mli)
+        if not rows:
+            return
+        choice = itemmenu.choose(mli, rows)
+        if choice in ('mark_watched', 'mark_unwatched'):
+            self.markWatched(mli, state=choice == 'mark_watched')
+        elif choice:
+            itemmenu.run(self, mli, choice, entry_section_id=self.entrySectionId,
+                         entry_from_watchlist=self.entryFromWatchlist)
+
+    def markWatched(self, mli, state=None):
+        """Marked (asked first in CommonMixin.toggleWatched(), when the setting's on; flipped when state is None),
+        then its tile redrawn - and off the Watchlist once played, as the library grid's (GridMixin.toggleWatched())."""
+        data = mli.dataSource
+        watched = self.toggleWatched(data, state=state)
+        if watched is None:
+            return
+        if watched:
+            wl_ref = data.show() if data.TYPE in ('episode', 'season') else data
+            removeFromWatchlistBlind(wl_ref.guid, wl_ref)
+        # markWatched()/markUnwatched() reloaded it; setWatchedInfo() only sets, so what it no longer sets goes first
+        mli.setProperty('watched', '')
+        mli.setProperty('unwatched.count', '')
+        self.setWatchedInfo(data, mli)
+        util.MONITOR.watchStatusChanged()
 
     def summaryButtonClicked(self):
         """Full-text summary popup - the same info.showSummary() dialog every other media screen's
@@ -270,12 +316,13 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         # Only what the templates read (the navigation review's step 12 follow-ups, checked by
         # tests/test_grid_item_properties.py): no per-item summary or art, which neither screen
         # reads. Each write is a GUI call.
-        mli.setLabel(data.defaultTitle)
+        # a film's bare title: its edition is on the line under it
+        mli.setLabel(data.title if data.TYPE == 'movie' else data.defaultTitle)
         # Second caption line under the poster (script-plex-collection.xml.tpl's 'year' label, the
-        # library grid's own - on request, 2026-09-20). Plain year only: the grid's sort-key
-        # subDisplay variants don't apply here, there's no sort. Nested collections/folders
-        # carry no year, so theirs stays a single line.
-        mli.setProperty('year', data.TYPE != 'collection' and data.get('year') or '')
+        # library grid's own - on request, 2026-09-20). The year, after the edition if there is one
+        # (grid_labels.editionLine()): the grid's sort-key subDisplay variants don't apply here,
+        # there's no sort. Nested collections/folders carry no year, so theirs stays a single line.
+        mli.setProperty('year', data.TYPE != 'collection' and grid_labels.editionLine(data) or '')
         mli.setThumbnailImage(self.thumbFor(data))
         if not data.isDirectory() and data.get('duration').asInt():
             mli.setLabel2(util.durationToText(data.fixedDuration()))
@@ -403,16 +450,9 @@ class CollectionWindow(BoundedGridWindow):
         info.showSummary(self.collection.title, self.collection.get('summary'))
 
     def playButtonClicked(self, shuffle=False):
-        """The whole collection as a server play queue, in the collection's own order or shuffled -
-        the way Plex's own clients play one. The queue is the collection's children listing
-        (library://<section>/directory//library/collections/<id>/children); PMS expands a show
-        collection into its episodes itself (checked live, 2026-09-30: a one-show collection gave
-        a 12-episode queue)."""
-        pq = playqueue.createPlayQueueForItem(self.collection, options={'shuffle': shuffle})
-        if not pq:
-            util.DEBUG_LOG('CollectionWindow: no play queue for {}', self.collection)
-            return
-        self.processCommand(opener.open(pq, context=self))
+        """The whole collection, in its own order or shuffled (itemmenu.playItem(), a collection's menu's
+        Play/Shuffle too)."""
+        itemmenu.playItem(self, self.collection, shuffle=shuffle)
 
     def metaLine(self, count):
         """"<n> movies" plus, after a bullet, the members' year span "minYear-maxYear" - only when
@@ -451,10 +491,8 @@ class CollectionWindow(BoundedGridWindow):
 
         leafCount = self.collection.get('childCount').asInt()
         self.setProperty('collection.meta', self.metaLine(leafCount))
-        # Play/Shuffle only for a collection there's a queue for: something in it, of a type a
-        # play queue can be made from (playqueue.PlayQueueFactory - video or audio here).
-        self.setBoolProperty('collection.playable',
-                             leafCount > 0 and bool(playqueue.PlayQueueFactory().getContentType(self.collection)))
+        # Play/Shuffle only for a collection there's a queue for (itemmenu.collectionPlayable())
+        self.setBoolProperty('collection.playable', itemmenu.collectionPlayable(self.collection))
 
         self.paginator = CollectionPaginator(self.gridControl, parent_window=self, leaf_count=leafCount)
         self.paginator.paginate()

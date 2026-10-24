@@ -543,33 +543,6 @@ class DropdownHeaderDialog(DropdownDialog):
     dropWidth = 660
 
 
-class CardDropdownDialog(DropdownHeaderDialog):
-    """A plain dropdown in the Libraries picker's card style (script-plex-card_dropdown.xml.tpl): the video
-    player's Subtitles and VS10 menus. With pos_is_bottom, pos's y is the foot of the list - the backdrop runs
-    17 past it, 20 under the last card (its row's 3 and these), as at the sides."""
-    xmlFile = 'script-plex-card_dropdown.xml'
-    optionHeight = util.vscalei(64)  # the template's row pitch (58 cards, 6 apart)
-    maxRows = 10
-
-    def onFirstInit(self):
-        DropdownHeaderDialog.onFirstInit(self)
-        # the backdrop and shadow 17 past the list, not the header dropdown's 26
-        rows = len([o for o in self.options if o is not SEPARATOR])
-        separators = len(self.options) - rows
-        listHeight = min(self.optionHeight * self.maxRows,
-                         rows * self.optionHeight + separators * self.separatorHeight)
-        header = util.vscalei(66)
-        self.getControl(111).setHeight(listHeight + header + util.vscalei(17))
-        self.getControl(110).setHeight(listHeight + header + util.vscalei(97))
-
-    @property
-    def y(self):
-        if not self.posIsBottom:
-            return self.pos[1]
-        rows = min(self.maxRows, len([o for o in self.options if o is not SEPARATOR]))
-        return self.pos[1] - rows * self.optionHeight
-
-
 class CardListDialog(DropdownHeaderDialog):
     """A list of rows as cards, each row up to three controls: the row itself (open), and two tiles
     on the right - a toggle (pin: the Libraries picker's pin, Manage Hubs' shown/hidden) and Move.
@@ -581,39 +554,60 @@ class CardListDialog(DropdownHeaderDialog):
     just acts; one that can't move ('nomove') shows no Move icon. options_callback gets the column
     in the row's dataSource ('column')."""
     xmlFile = 'script-plex-card_list.xml'
-    optionHeight = util.vscalei(84)
-    maxRows = 10
     OPEN = 'open'
     PIN = 'pin'
     MOVE = 'move'
     COLUMNS = (OPEN, PIN, MOVE)
 
+    # The settings and pickers' frame (dialog.SelectDialog): 876 high from 103 - the 66 heading, then the list -
+    # its shadow 40 past it all round. Across the screen it keeps its own place (pos).
+    FRAME_TOP = 103
+    FRAME_HEIGHT = 876
+    # The template's two lists: the pickers' rows (61 apart, 13 to the 793), or, when a row has a second line (a
+    # library's server), 84 apart, 9 to 756 - a list's rows are all one height
+    SHORT = (250, 61, 13)
+    TALL = (251, 84, 9)
+    # each list's scrollbar (script-plex-card_list.xml.tpl)
+    SCROLLBARS = {250: 1152, 251: 1153}
+
     def __init__(self, *args, **kwargs):
         DropdownHeaderDialog.__init__(self, *args, **kwargs)
         self.columns = tuple(kwargs.get('columns') or self.COLUMNS)
+        tall = any(o and (o.get('properties') or {}).get('subtitle') for o in self.options)
+        listID, rowHeight, self.maxRows = self.TALL if tall else self.SHORT
+        self.OPTIONS_LIST_ID = listID
+        self.optionHeight = util.vscalei(rowHeight)
+        # before it's shown, so the other list never shows
+        self.setProperty('tall', tall and '1' or '')
 
     @property
     def y(self):
-        """Centred on the screen, its header included (it sat so high its header was cut off -
-        live 2026-10-05): the list's height as onFirstInit() works it out, plus the header's."""
-        rows = len([o for o in self.options if o is not SEPARATOR])
-        separators = len(self.options) - rows
-        listHeight = min(self.optionHeight * self.maxRows,
-                         rows * self.optionHeight + separators * self.separatorHeight)
-        header = util.vscalei(86)
-        return max(header, (self.height - listHeight - header) // 2 + util.vscalei(66))
+        """The list's top: under the frame's 66 heading."""
+        return util.vscalei(self.FRAME_TOP + 66)
 
     def onFirstInit(self):
         self.column = self.columns[0]
         self.setProperty('picker.column', self.column)
         DropdownHeaderDialog.onFirstInit(self)
+        # the frame its fixed height, whatever the rows (DropdownDialog sized it to them)
+        height = util.vscalei(self.FRAME_HEIGHT)
+        self.getControl(111).setHeight(height)
+        self.getControl(110).setHeight(height + util.vscalei(80))
 
     def onAction(self, action):
         if (self.movingItem is None and action in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_RIGHT)
                 and self.getFocusId() == self.OPTIONS_LIST_ID):
             step = -1 if action == xbmcgui.ACTION_MOVE_LEFT else 1
-            index = max(0, min(len(self.columns) - 1, self.columns.index(self.column) + step))
-            self.column = self.columns[index]
+            index = self.columns.index(self.column) + step
+            if index >= len(self.columns):
+                # Right past the last column: the scrollbar, as Right from the other pickers' lists goes to theirs -
+                # only while there is one (the list scrolls: Kodi refuses focus to a hidden one). Its Left comes
+                # back (the template's onleft), to the column it left from.
+                bar = self.SCROLLBARS[self.OPTIONS_LIST_ID]
+                if xbmc.getCondVisibility('Control.IsVisible({0})'.format(bar)):
+                    self.setFocusId(bar)
+                return
+            self.column = self.columns[max(0, index)]
             self.setProperty('picker.column', self.column)
             return
         DropdownHeaderDialog.onAction(self, action)

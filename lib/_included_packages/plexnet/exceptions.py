@@ -34,3 +34,8 @@ class ServerNotOwned(Exception):
 
 class UserSwitchForbiddenException(Exception):
     pass
+
+
+class UserSwitchUnreachableException(Exception):
+    """plex.tv didn't answer a user switch (timed out, refused): not a wrong PIN."""
+    pass

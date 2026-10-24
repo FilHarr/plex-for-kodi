@@ -3,7 +3,7 @@ from __future__ import absolute_import
 from kodi_six import xbmc
 from kodi_six import xbmcgui
 from plexnet import plexapp
-from plexnet.exceptions import UserSwitchForbiddenException
+from plexnet.exceptions import UserSwitchForbiddenException, UserSwitchUnreachableException
 
 from lib import util
 from lib.util import T
@@ -223,6 +223,12 @@ class UserSelectWindow(kodigui.BaseWindow):
                     item.setProperty('editing.pin', '')
                     util.messageDialog(T(32427, 'Failed'), T(32926, 'Wrong pin entered!'))
                     return
+            except UserSwitchUnreachableException:
+                # no answer from plex.tv: not a wrong PIN, and nothing to wait for
+                e.close()
+                util.messageDialog(T(32427, 'Failed'),
+                                   T(32449, "Can't connect to plex.tv[CR]Check your internet connection and try again."))
+                return
             except UserSwitchForbiddenException:
                 # re-fetch users
                 plexapp.ACCOUNT.updateHomeUsers()

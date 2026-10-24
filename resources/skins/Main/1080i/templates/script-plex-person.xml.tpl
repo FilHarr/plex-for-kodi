@@ -10,12 +10,6 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
-    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
-         of this include for the full reasoning (this window is one of the seven real hosted-shell
-         types too, same _sidebarTarget()-aware Python side, same onClick forwarding - shared with
-         ActorWindow/DirectorWindow since they subclass PersonWindow (person.py) without
-         overriding onClick or xmlFile). -->
-    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 
 {% block content %}
@@ -453,7 +447,7 @@
                                 <label>$INFO[ListItem.Label]</label>
                             </control>
                             <control type="label">
-                                <scroll>false</scroll>
+                                <scroll>{% if focused %}Control.HasFocus(400){% else %}false{% endif %}</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(401) }}</posy>
                                 <width>240</width>

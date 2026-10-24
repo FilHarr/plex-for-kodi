@@ -80,7 +80,7 @@
             </control>
             <control type="label">
                 <visible>!String.IsEmpty(ListItem.Property(subtitle))</visible>
-                <scroll>false</scroll>
+                <scroll>{% if focused %}true{% else %}false{% endif %}</scroll>
                 <posx>0</posx>
                 <posy>{{ vscale(329) }}</posy>
                 <width>512</width>
@@ -92,7 +92,7 @@
             </control>
             <control type="label">
                 <visible>!String.IsEmpty(ListItem.Property(year)) + String.IsEmpty(ListItem.Property(subtitle))</visible>
-                <scroll>false</scroll>
+                <scroll>{% if focused %}true{% else %}false{% endif %}</scroll>
                 <posx>0</posx>
                 <posy>{{ vscale(329) }}</posy>
                 <width>512</width>

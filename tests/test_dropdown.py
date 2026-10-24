@@ -200,3 +200,31 @@ class ManageHubsColumnsTest(KodiTestCase):
         self.assertEqual('pin', dlg.column)
         dlg.onAction(FakeAction(xbmcgui.ACTION_MOVE_RIGHT))
         self.assertEqual('move', dlg.column)
+
+
+class CardListScrollbarTest(KodiTestCase):
+    """Right past the last column reaches the scrollbar, as Right from the other pickers' lists does - the only
+    way to it without a mouse - and only while there is one (the list scrolls)."""
+    picker = LibraryPickerButtonsTest.picker
+
+    def press_right(self, visible):
+        dlg = self.picker()
+        dlg.column = dlg.MOVE
+        focused = []
+        dlg.setFocusId = focused.append
+        with mock.patch.object(dropdown.xbmc, 'getCondVisibility', lambda cond: visible):
+            dlg.onAction(FakeAction(xbmcgui.ACTION_MOVE_RIGHT))
+        return dlg, focused
+
+    def test_right_on_the_last_column_goes_to_the_scrollbar(self):
+        dlg, focused = self.press_right(True)
+        self.assertEqual([dlg.SCROLLBARS[dlg.OPTIONS_LIST_ID]], focused)
+        self.assertEqual('move', dlg.column)
+
+    def test_not_when_the_list_doesnt_scroll(self):
+        dlg, focused = self.press_right(False)
+        self.assertEqual([], focused)
+        self.assertEqual('move', dlg.column)
+
+    def test_each_list_has_its_own(self):
+        self.assertEqual({250: 1152, 251: 1153}, dropdown.CardListDialog.SCROLLBARS)

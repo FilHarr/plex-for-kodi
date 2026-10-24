@@ -202,7 +202,7 @@ def _ask(info, *buttons):
     here) holds about four lines. Returns the chosen button's index, or None when backed out of.
     """
     from .windows import optionsdialog
-    return optionsdialog.show('Plextuary', info, *buttons, big=True)
+    return optionsdialog.show('Plextuary', info, *buttons)
 
 
 def _offerSkin():

@@ -152,4 +152,5 @@
 
     {% endblock header %}
     </control>
+    {% include "includes/dialog_gap_dim.xml.tpl" %}
 {% endblock controls %}

@@ -24,6 +24,7 @@ from lib import util
 from lib.util import T
 from . import background
 from . import busy
+from .dialog import optionGroup, showOptionsDialog
 from . import collection
 from . import dropdown
 from . import home
@@ -609,12 +610,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # server has (_playlistTypes()).
         self._tabListPlaylistTypes = ()
 
-        # Stage 3 (quiet-orbiting-heron.md's Cold Start plan): user-options dropdown (control 250,
-        # includes/sidebar_dropdowns.xml.tpl - shared, generic markup, already wired into every
-        # content-mode template). Built once per LibraryWindow lifetime in onFirstInit(), same
-        # pattern as self.sectionList/self.tabList above.
-        self.userList = None
-
     def onColdStart(self):
         """Called once, only when this construction is the app's top-level, session-owning window
         (MultiWindow.open()'s base_win_id contract - see main.py's cold-start call, Stage 2 of
@@ -818,7 +813,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # own views. Registration is idempotent (SignalsMixin.on()), and the host has normally
         # been registered since its first view anyway. Deliberately NOT the rest of
         # _onFirstInit(): LibraryWindow.onFirstInit() is real logic keyed to LibraryWindow's own
-        # templates (sectionList/tabList/userList/serverList, POSTERS_PANEL_ID focus) and would
+        # templates (sectionList/tabList, POSTERS_PANEL_ID focus) and would
         # run broken against a real shell's native window (e.g. PrePlayWindow's XML has none of
         # those controls). Nor does the shell get self._properties replayed onto it the way a
         # thin view does. Live-confirmed bug without that exclusion: self._properties accumulates
@@ -1619,18 +1614,17 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         genuinely on screen (that's how routeAction()'s SERVER_BUTTON_ID/USER_BUTTON_ID branches get
         reached at all while hosted), but *writes* - getControl(...).setHeight()/.setPosition(),
         ManagedControlList mutations, setFocusId() - do not: live-confirmed 100% reproducible
-        native Kodi crash (minidump captured) the moment showUserMenu() (then also the server
-        dropdown) ran those against self while a real shell was actually modal. Every
-        control-touching call in showUserMenu()/doUserOption() must go through this, not self,
-        for exactly that reason. self.userList itself stays owned by self (the
-        host) - only rebound (ManagedControlList.newControl(), same proven-safe pattern
-        self.sectionList/self.tabList/self.hubControls already use to survive a real content swap)
-        to whichever native control target.getControl() actually reaches, immediately before use."""
+        native Kodi crash (minidump captured) the moment the sidebar's old in-screen user and server
+        dropdowns ran those against self while a real shell was actually modal. Every control write
+        the host makes for the showing screen goes through this, not self, for exactly that reason;
+        the lists the host owns (self.sectionList/self.tabList/self.hubControls) are rebound
+        (ManagedControlList.newControl()) to whichever native control target.getControl() actually
+        reaches, immediately before use."""
         return self._current if self._isHostedShell else self
 
     def _sidebarListGuard(self):
-        """The WriteGuard (kodigui) for binding the shared sidebar lists - sectionList, tabList,
-        userList, serverList - to the current window's native controls. These lists outlive
+        """The WriteGuard (kodigui) for binding the shared sidebar lists - sectionList and
+        tabList - to the current window's native controls. These lists outlive
         every swap; the controls don't, and the objects getControl() and getListItem() hand back
         don't keep them alive (only constructors take a reference - Kodi's
         PythonSwig.cpp.template), so a write after the swap reaches freed memory. Live-caught
@@ -1648,66 +1642,48 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if guard is not None:
             guard.close()
 
-    def showUserMenu(self, mouse=False):
-        """Ported from HomeWindow.showUserMenu() (home.py) - see quiet-orbiting-heron.md's Cold
-        Start plan, Stage 3. Builds/shows the shared user-options dropdown (control 250,
-        includes/sidebar_dropdowns.xml.tpl) - already wired into every content-mode template, no
-        markup changes needed."""
-        items = []
+    @kodigui.releasesDialogDim
+    def showUserMenu(self):
+        """The sidebar user button's menu (dialog.UserMenuDialog: a picker under the button, by the sidebar), and
+        the option chosen from it (doUserOption()). A dialog, as the sidebar's other menus are: the screen keeps
+        its focus on the button under it, so the sidebar stays open (it was a list in the screen, outside the
+        sidebar's group - focus on it collapsed the sidebar). The dim held over the gap to what a choice opens
+        (Settings, Sign Out's confirm), off once that's up or the choice is done."""
+        options = []
         if util.getGlobalProperty("update_available"):
-            items.append(kodigui.ManagedListItem(T(33670, 'Update available'), data_source='update'))
+            options.append(('update', T(33670, 'Update available')))
         if plexapp.ACCOUNT.isSignedIn:
             if not len(plexapp.ACCOUNT.homeUsers) and not util.addonSettings.cacheHomeUsers:
                 plexapp.ACCOUNT.updateHomeUsers(refreshSubscription=True)
 
             if len(plexapp.ACCOUNT.homeUsers) > 1:
-                items.append(kodigui.ManagedListItem(T(32342, 'Switch User'), data_source='switch'))
+                options.append(('switch', T(32342, 'Switch User')))
             else:
-                items.append(kodigui.ManagedListItem(T(32980, 'Refresh Users'), data_source='refresh_users'))
+                options.append(('refresh_users', T(32980, 'Refresh Users')))
         elif plexapp.ACCOUNT.isOffline and plexapp.util.LOCAL_MODE:
             from lib import localmode
             if len(plexapp.ACCOUNT.homeUsers) > 1:
-                items.append(kodigui.ManagedListItem(T(32342, 'Switch User'), data_source='switch'))
+                options.append(('switch', T(32342, 'Switch User')))
             if localmode.isAccountLess():
-                items.append(kodigui.ManagedListItem(T(35042, 'Local users'), data_source='local_users'))
-        items.append(kodigui.ManagedListItem(T(32343, 'Settings'), data_source='settings'))
+                options.append(('local_users', T(35042, 'Local users')))
+        options.append(('settings', T(32343, 'Settings')))
         if plexapp.ACCOUNT.isSignedIn:
-            items.append(kodigui.ManagedListItem(T(35019, 'Go local'), data_source='go_local'))
-            items.append(kodigui.ManagedListItem(T(32344, 'Sign Out'), data_source='signout'))
+            options.append(('go_local', T(35019, 'Go local')))
+            options.append(('signout', T(32344, 'Sign Out')))
         elif plexapp.ACCOUNT.isOffline:
             if plexapp.util.LOCAL_MODE:
-                items.append(kodigui.ManagedListItem(T(35020, 'Go online'), data_source='go_online'))
+                options.append(('go_online', T(35020, 'Go online')))
             else:
-                items.append(kodigui.ManagedListItem(T(32459, 'Offline Mode'), data_source='go_online'))
+                options.append(('go_online', T(32459, 'Offline Mode')))
         else:
-            items.append(kodigui.ManagedListItem(T(32460, 'Sign In'), data_source='signin'))
-        items.append(kodigui.ManagedListItem(T(32924, 'Minimize'), data_source='minimize'))
-        items.append(kodigui.ManagedListItem(T(32336, 'Exit'), data_source='exit'))
+            options.append(('signin', T(32460, 'Sign In')))
+        options.append(('minimize', T(32924, 'Minimize')))
+        options.append(('exit', T(32336, 'Exit')))
 
-        if len(items) > 1:
-            items[0].setProperty('first', '1')
-            items[-1].setProperty('last', '1')
-        else:
-            items[0].setProperty('only', '1')
-        # somehow dynamically setting the list height here doesn't work. We need a height that's
-        # bigger than our possible available items in the template
-
-        target = self._sidebarTarget()
-        # Rebind first, not after - .reset()/.addItems() below operate on whatever self.userList's
-        # own .control currently points at, so this has to land before them. newControlEmpty(), not
-        # newControl(): about to repaint via addItems() anyway, so skip newControl()'s own redundant
-        # repaint-then-immediately-discard of whatever this list held from its last showing.
-        self.userList.newControlEmpty(target, guard=self._sidebarListGuard())
-        self.userList.reset()
-        self.userList.addItems(items)
-        itemHeight = util.vscale(66, r=0)
-
-        self.userList.setHeight((len(items) * itemHeight))
-        target.getControl(self.USER_MENU_GROUP_ID).setHeight((len(items) * itemHeight))
-        target.getControl(self.USER_MENU_BG_ID).setHeight((len(items) * itemHeight) + 80)
-
-        if not mouse:
-            target.setFocusId(self.USER_LIST_ID)
+        choice = showOptionsDialog('', options, non_playback=True, menu=True, user_menu=True, hold_dim=True,
+                                   dialog_props=getattr(self, 'carriedProps', None))
+        if choice:
+            self.doUserOption(choice)
 
     def _closeSessionWithOption(self, option, shutting_down=False):
         """Every doUserOption() branch that ends a session (go_online while local, signout, exit,
@@ -1735,7 +1711,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # as it arrives there (processCommand()).
         self.navigate(navintent.closeSession(option))
 
-    def doUserOption(self, force_option=None, target=None):
+    def doUserOption(self, option):
         """Ported from HomeWindow.doUserOption() (home.py) - see quiet-orbiting-heron.md's Cold
         Start plan, Stage 3. Adaptations: dialog_props reads carriedProps defensively (getattr,
         CommonMixin's own pattern) since LibraryWindow doesn't define it; storeLastBG() stays
@@ -1744,24 +1720,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         call it here either; every session-ending branch routes through _closeSessionWithOption()
         above instead of closing self directly - see that method's own comment for why.
 
-        target: explicit override for _sidebarTarget() - routeClick()'s USER_LIST_ID branch below
-        always has the right answer already (self when this call originated on self, the calling
-        shell itself when a real shell forwarded its own click here - see e.g.
-        preplay.PrePlayWindow.onClick()) and passing it avoids re-deriving it from self._current,
-        which would be wrong for that forwarded case (self._current is never the caller here, the
-        caller *is* self._current already forwarding to its host)."""
-        target = target or self._sidebarTarget()
-        if not force_option:
-            mli = self.userList.getSelectedItem()
-            if not mli:
-                return
-
-            option = mli.dataSource
-        else:
-            option = force_option
-
-        target.setFocusId(self.USER_BUTTON_ID)
-
+        option: the user menu's choice (showUserMenu()), or the user button's fast switch."""
         if option == 'settings':
             from . import settings
             # Theme-relevant settings (watched_indicators, hide_aw_bg) are baked into the compiled
@@ -1822,9 +1781,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 if thumbsChanged:
                     windowutils.HOME.rebindHubsShowing('season thumbnails setting')
         elif option == 'update':
-            self.setBoolProperty('show.options', False)
             self.setProperty('busy', '1')
-            target.setFocusId(self.SECTION_LIST_ID)
+            self._sidebarTarget().setFocusId(self.SECTION_LIST_ID)
             util.setGlobalProperty('update_requested', '1', wait=True)
         elif option == 'go_online':
             if plexapp.util.LOCAL_MODE:
@@ -2016,7 +1974,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 ),
                 T(33683, 'Exit, download and install'),
                 T(33684, 'Later') if not is_downgrade else T(32329, 'No'),
-                delay_buttons=1.8, big=True, close_timeout=3600
+                delay_buttons=1.8, close_timeout=3600
             )
             resp = "commence" if button == 0 else "cancel"
             util.setGlobalProperty('update_response', resp, wait=True)
@@ -2397,11 +2355,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.setBoolProperty('hide.section_tabs', self._hideSectionTabs())
         self._checkSectionTabs(self.section)
 
-        if self.userList is None:
-            self.userList = kodigui.ManagedControlList(self, self.USER_LIST_ID, 5, guard=sidebarGuard)
-        else:
-            self.userList.newControl(self, guard=sidebarGuard)
-
         if self is windowutils.HOME and not self.__dict__.get('_signalsHooked'):
             # Only the true root reacts to the server signals (hookSignals())
             self._signalsHooked = True
@@ -2465,7 +2418,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 # newControlEmpty(), not newControl(): this section's hub content is about to
                 # be replaced wholesale by the hub bind below anyway, so repainting whatever
                 # the *previous* section's Recommended tab last left in these items (newControl()'s
-                # normal behavior - correct for tabList/sectionList/userList/serverList just
+                # normal behavior - correct for tabList/sectionList just
                 # above, whose content genuinely carries over unchanged across a section swap)
                 # would otherwise flash that stale content on screen for the ~100-200ms gap
                 # until _recommendedHubsCallback()/replaceItems() actually lands. Live-confirmed
@@ -2989,14 +2942,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             logHomeReset(self, 'input before the focus event')
         self._goRootAwaitFocus = None
 
-        # Dismiss the sidebar user/server popup first, before it can ever reach the back-stack
-        # pop below - see dismissSidebarPopupOnBack()'s own comment (windowutils.py) for the bug
-        # this fixes: back while the popup was open used to pop the descendant chain a step
-        # instead of just closing the popup.
-        if action in (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK) and \
-                self.dismissSidebarPopupOnBack(target=self._sidebarTarget()):
-            return True
-
         # The showing view's own Back steps (handleBack()) come before the chain pops below, so
         # they apply mid-chain too: a hosted screen's (kodigui.BaseWindow), and the grid's snap to
         # item 0 (GridMixin.gridBack()), e.g. in a collection's grid reached with a non-empty
@@ -3047,10 +2992,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                     self.showLibraryPicker()
                     return True
             elif controlID == self.USER_BUTTON_ID:
-                # Stage 3 (quiet-orbiting-heron.md's Cold Start plan) - ported from HomeWindow's
-                # identical USER_BUTTON_ID handling (home.py's onAction()). Safe against a real hosted
-                # shell too: showUserMenu()/doUserOption() write through _sidebarTarget().
-                if action == xbmcgui.ACTION_SELECT_ITEM:
+                # Ported from HomeWindow's USER_BUTTON_ID handling (home.py's onAction()): the user
+                # menu (showUserMenu()), a dialog, so the same for a hosted screen
+                if action in (xbmcgui.ACTION_SELECT_ITEM, xbmcgui.ACTION_MOUSE_LEFT_CLICK):
                     self.showUserMenu()
                     return True
                 elif action == xbmcgui.ACTION_CONTEXT_MENU and util.getSetting('previous_user'):
@@ -3060,13 +3004,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                         return True
                     user = plexapp.ACCOUNT.getHomeUser(uid)
                     if not user or user.isProtected:
-                        self.doUserOption(force_option="switch")
+                        self.doUserOption("switch")
                         return True
-                    self.doUserOption(force_option={"fast_switch": user.id})
-                    return True
-                elif action == xbmcgui.ACTION_MOUSE_LEFT_CLICK:
-                    self.showUserMenu(mouse=True)
-                    self.setBoolProperty('show.options', True)
+                    self.doUserOption({"fast_switch": user.id})
                     return True
 
             # The showing view's own controls, when it's one of this window's own views
@@ -3089,18 +3029,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             # The screen's own sectionClicked() runs: a section click, or Search, reaches this
             # window through its goHome() (SidebarMixin._dispatchSectionOpen()).
             self._sidebarTarget().sectionClicked()
-            return True
-
-        if controlID == self.USER_LIST_ID:
-            # Stage 3: shared across every content mode and hosted screen, checked before the
-            # contentMode=='recommended' bypass in onClick(). Ported from HomeWindow's identical
-            # USER_LIST_ID handling (home.py's onClick()) - minus self._skipNextAction,
-            # input-suppression state LibraryWindow doesn't have and only matters for the
-            # refresh_users/local_users options staying "open".
-            target = self._sidebarTarget()
-            self.doUserOption(target=target)
-            target.setBoolProperty('show.options', False)
-            target.setFocusId(self.USER_BUTTON_ID)
             return True
 
         if controlID == self.SERVER_RETRY_BUTTON_ID:
@@ -3289,7 +3217,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         try:
             dropdown.showDropdown(
                 self._libraryPickerOptions(),
-                pos=(460, 200),
+                # the panel's left edge (20 before the list) at the content's with the sidebar open: the content
+                # block's 105, slid 220 while the sidebar is open (library_posters.xml.tpl), next to it
+                pos=(345, 200),
                 close_direction='none',
                 set_dropdown_prop=False,
                 with_indicator=True,
@@ -3470,6 +3400,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         except kodigui.ScreenClosed:
             pass
 
+    @kodigui.releasesDialogDim
     def sectionMenu(self):
         """Context menu (ACTION_CONTEXT_MENU) for the sidebar's currently-focused section item -
         ported from HomeWindow.sectionMenu() (home.py), adapted to this window's own state:
@@ -3483,37 +3414,20 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             return
 
         section = item.dataSource
-        choice = None
+        # In the option picker, beside the sidebar (the user, 2026-10-23): the actions, then the library's folders
+        # under a "Map path(s)" group title. Rows as (key, label); a folder's key ('map', its path, mapped). A
+        # menu with nothing in it isn't opened - the key does nothing (Watchlist, a library whose server
+        # isn't answering).
+        actions, maps = [], []
         if not section.key:
             # home section
-            options = []
-
-            use_sep = False
             if util.getSetting('cache_requests'):
-                options.append({'key': 'cache_reset', 'display': T(33720, "Clear all caches")})
-                use_sep = True
-
-            # Add Manage Hubs (the sidebar itself - what's in it, its order - is the Libraries
-            # picker's; Refresh Hubs is the hub items' menu's, hubMenu())
-            if use_sep:
-                options.append(dropdown.SEPARATOR)
-            options.append({'key': 'manage_hubs', 'display': T(34080, "Manage Hubs")})
-
-            if options:
-                choice = dropdown.showDropdown(
-                    options,
-                    pos=(660, 441),
-                    close_direction='none',
-                    set_dropdown_prop=False,
-                    header=T(33034, "Library settings"),
-                    select_index=0,
-                    align_items="left",
-                    dialog_props=getattr(self, 'carriedProps', None)
-                )
-
+                actions.append(('cache_reset', T(33720, "Clear all caches")))
+            # (the sidebar itself - what's in it, its order - is the Libraries picker's; Refresh Hubs is the
+            # hub items' menu's, hubMenu())
+            actions.append(('manage_hubs', T(35202, "Manage recommended rows")))
+            heading = T(33034, "Library settings")
         else:
-            options = []
-
             if isinstance(section, sidebar_model.LibraryPlaceholder):
                 # its server hasn't listed it yet: ask now, for the options that need the library
                 with busy.BusyContext(delay=True, delay_time=0.2):
@@ -3524,98 +3438,97 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             if (plexapp.ACCOUNT.isAdmin and not placeholder
                     and section != home.watchlist_section and not home.isPlaylists(section)
                     and section.server.owned):
-                options = [{'key': 'refresh', 'display': T(33082, "Scan Library Files")},
-                           {'key': 'emptyTrash', 'display': T(33083, "Empty Trash")},
-                           {'key': 'analyze', 'display': T(33084, "Analyze")},
-                           dropdown.SEPARATOR]
+                actions += [('refresh', T(33082, "Scan Library Files")),
+                            ('emptyTrash', T(33083, "Empty Trash")),
+                            ('analyze', T(33084, "Analyze"))]
+
+            if ('libraries' in util.getSetting('cache_requests') and section != home.watchlist_section
+                    and not placeholder):
+                actions.append(('section_cache_reset', T(33721, "Clear library cache (not items)")))
+
+            # not applicable to watchlist
+            if section != home.watchlist_section and not placeholder:
+                actions.append(('manage_hubs', T(35202, "Manage recommended rows")))
 
             if not placeholder and section.locations and util.getSetting('path_mapping'):
                 for loc in section.locations:
                     source, target = section.getMappedPath(loc)
-                    loc_is_mapped = source and target
-                    options.append(
-                        {'key': 'map', 'mapped': loc_is_mapped, 'path': loc, 'display': T(33026,
-                                                                                          "Map path: {}").format(loc)
-                            if not loc_is_mapped else T(33027, "Remove mapping: {}").format(target)
-                         }
-                    )
+                    mapped = bool(source and target)
+                    maps.append((('map', loc, mapped),
+                                 T(35206, "Remove: {}").format(target) if mapped else T(35205, "Add: {}").format(loc)))
+            heading = T(33030, 'Choose action for: {}').format(section.title)
 
-                options.append(dropdown.SEPARATOR)
+        options = list(actions)
+        if maps:
+            options.append(optionGroup(T(35204, "Map paths") if len(maps) > 1 else T(35203, "Map path")))
+            options += maps
+        if not options:
+            return
 
-            if ('libraries' in util.getSetting('cache_requests') and section != home.watchlist_section
-                    and not placeholder):
-                options.append({'key': 'section_cache_reset', 'display': T(33721, "Clear library cache (not items)")})
-                options.append(dropdown.SEPARATOR)
-
-            # Add Manage Hubs (not applicable to watchlist)
-            if section != home.watchlist_section and not placeholder:
-                options.append(dropdown.SEPARATOR)
-                options.append({'key': 'manage_hubs', 'display': T(34080, "Manage Hubs")})
-
-            choice = dropdown.showDropdown(
-                options,
-                pos=(660, 441),
-                close_direction='none',
-                set_dropdown_prop=False,
-                header=T(33030, 'Choose action for: {}').format(section.title),
-                select_index=0,
-                align_items="left",
-                dialog_props=getattr(self, 'carriedProps', None)
-            )
-
+        # hold_dim: Manage recommended rows and Empty Trash's confirm open as it closes
+        choice = showOptionsDialog(heading, options, non_playback=True, menu=True, beside_sidebar=True,
+                                   hold_dim=True, dialog_props=getattr(self, 'carriedProps', None))
         if not choice:
             return
 
-        if choice["key"] == "map":
-            is_mapped = choice.get("mapped")
+        if isinstance(choice, tuple) and choice[0] == "map":
+            _map, path, is_mapped = choice
+            # The sidebar row's mapped marker is all that shows it: the sidebar rebuilt, not the screen reopened
             if is_mapped:
                 # show deletion
-                source, target = section.getMappedPath(choice["path"])
+                source, target = section.getMappedPath(path)
                 section.deleteMapping(target)
-                return self.section
-
             else:
                 # show fb - select loc to map
-                d = xbmcgui.Dialog().browse(0, T(33031, "Select Kodi source for {}").format(choice["path"]), "files")
+                d = xbmcgui.Dialog().browse(0, T(33031, "Select Kodi source for {}").format(path), "files")
                 if not d:
                     return
-                section.addMapping(d, choice["path"])
-                return self.section
-        elif choice["key"] == "refresh":
+                section.addMapping(d, path)
+            self._rebuildSidebar()
+            return
+        elif choice == "refresh":
+            # Plex scans in the background and answers at once: the screen isn't reopened (it was - before
+            # the scan had found anything, and whichever library was showing). The rows are refreshed in place
+            # once the scan's done (_watchScan()).
             with busy.BusyContext(delay=True, delay_time=0.2):
+                before = self._scanState(section)
                 section.refresh()
-            return self.section
-        elif choice["key"] == "emptyTrash":
+            util.showNotification(T(35207, "Scanning {}").format(section.title))
+            self._watchScan(section, before)
+            return
+        elif choice == "emptyTrash":
             button = optionsdialog.show(
                 T(33083, 'Empty Trash'),
                 section.title,
-                T(32328, 'Yes'),
+                optionsdialog.destructive(T(32328, 'Yes')),
                 T(32329, 'No'),
                 dialog_props=getattr(self, 'carriedProps', None)
             )
             if button == 0:
+                # Not reopened either: Plex doesn't say when it's done
                 with busy.BusyContext(delay=True, delay_time=0.2):
                     section.emptyTrash()
-                return self.section
-        elif choice["key"] == "analyze":
+                util.showNotification(T(35208, "Emptying trash: {}").format(section.title))
+            return
+        elif choice == "analyze":
             with busy.BusyContext(delay=True, delay_time=0.2):
                 section.analyze()
             return
 
-        elif choice["key"] == "cache_reset":
+        elif choice == "cache_reset":
             try:
                 plexapp.util.INTERFACE.clearRequestsCache()
             except Exception as e:
                 util.DEBUG_LOG("Couldn't clear requests cache: {}", e)
 
-        elif choice["key"] == "section_cache_reset":
+        elif choice == "section_cache_reset":
             try:
                 util.DEBUG_LOG('Clearing requests cache for section {}...', section.title)
                 section.clearCache()
             except Exception as e:
                 util.DEBUG_LOG("Couldn't clear library cache: {}", e)
 
-        elif choice["key"] == "manage_hubs":
+        elif choice == "manage_hubs":
             self.showHubSettingsDialog(section)
             # Something changed (or the dialog found rows the screen doesn't show): the section's
             # rows refreshed in place if it's the one showing, else reopened via the caller's
@@ -3626,6 +3539,62 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                     return
                 return self.section
             return
+
+    # A scan watched for this long at most (_watchScan()), asked about this often
+    SCAN_WATCH_SECONDS = 600
+    SCAN_POLL_SECONDS = 2
+
+    @staticmethod
+    def _scanState(section):
+        """(scanning, scannedAt) for section, from its server's /library/sections; (None, None) if it can't say.
+        Checked live on Animal (2026-10-23): every library carries refreshing ("1" while it's scanned) and
+        scannedAt (when it last was)."""
+        try:
+            data = section.server.query('/library/sections')
+        except Exception as e:
+            util.DEBUG_LOG('Library: scan state of {0} unknown: {1}', section.title, e)
+            return None, None
+        for d in data if data is not None else ():
+            if d.get('key') == str(section.key):
+                return d.get('refreshing') == '1', d.get('scannedAt')
+        return None, None
+
+    def _watchScan(self, section, before):
+        """Until section's scan is done - seen scanning and then not, or scannedAt moved on from before's (a scan
+        that finds nothing can come and go between two polls) - then its rows refreshed in place if they're
+        showing, or Home's, which draw on every library: something new can land in Recently Added and the like.
+        No longer than SCAN_WATCH_SECONDS; on a thread of its own, the refresh on the main thread (postUI())."""
+        scannedBefore = before[1]
+
+        def run():
+            seen = False
+            deadline = time.time() + self.SCAN_WATCH_SECONDS
+            while time.time() < deadline:
+                if util.MONITOR.waitForAbort(self.SCAN_POLL_SECONDS) or self._shuttingDown or self.closing:
+                    return
+                scanning, scannedAt = self._scanState(section)
+                if scanning:
+                    seen = True
+                elif (scanning is False and seen) or (scannedAt and scannedAt != scannedBefore):
+                    util.DEBUG_LOG('Library: {0} scanned', section.title)
+                    self.postUI('scan finished', self._refreshAfterScan, args=(section,))
+                    return
+            util.DEBUG_LOG('Library: {0} still scanning after {1} s, not watched any more', section.title,
+                           self.SCAN_WATCH_SECONDS)
+
+        t = threading.Thread(target=run, name='scan watcher')
+        t.daemon = True
+        t.start()
+
+    def _refreshAfterScan(self, section):
+        """The rows refreshed in place (refreshHubsInPlace()) if the scanned library's, or Home's, are showing."""
+        showing = self.section
+        if showing is None:
+            return
+        if showing.key and (str(showing.key) != str(section.key)
+                            or getattr(showing.server, 'uuid', None) != getattr(section.server, 'uuid', None)):
+            return
+        self.refreshHubsInPlace('{0} scanned'.format(section.title))
 
     def _tabListNeedsRebuild(self, section):
         """True (and updates self._tabListIsPlaylists/self._tabListHasCategories/
@@ -4017,6 +3986,9 @@ class RecommendedWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windo
     HUB_CONTROL_ID = 400
 
     MULTI_WINDOW_ID = 0
+
+    # the colour panel's corners, and its cover copy over the hub rows (kodigui.BaseWindow)
+    PANEL_CORNER_CONTROLS = kodigui.BaseWindow.PANEL_COVER_CONTROLS
 
     # This view's own input, after the host's shared routing (kodigui.MultiWindowView): the hub
     # engine's handlers (library_hubs.py). Its Back steps are in hubAction(), which runs after

@@ -11,7 +11,7 @@ from lib import util
 from lib.util import T
 from lib.language_util import getNativeLanguages
 from . import busy
-from . import dropdown
+from . import grid_labels
 from . import info
 from . import kodigui
 from . import opener
@@ -40,7 +40,7 @@ class RelatedPaginator(pagination.BaseRelatedPaginator):
     def createListItem(self, rel):
         return kodigui.ManagedListItem(
             rel.title or '',
-            str(rel.year) if rel.year else '',
+            grid_labels.editionLine(rel),
             thumbnailImage=rel.defaultThumb.asTranscodedImageURL(*self.parentWindow.RELATED_DIM),
             data_source=rel
         )
@@ -74,7 +74,7 @@ class CollectionPaginator(pagination.BaseRelatedPaginator):
     def createListItem(self, item):
         return kodigui.ManagedListItem(
             item.title or '',
-            str(item.year) if item.year else '',
+            grid_labels.editionLine(item),
             thumbnailImage=item.defaultThumb.asTranscodedImageURL(*self.parentWindow.RELATED_DIM),
             data_source=item
         )
@@ -131,7 +131,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     INFO_BUTTON_ID = 304
     PLAY_BUTTON_ID = 302
     TRAILER_BUTTON_ID = 303
-    SETTINGS_BUTTON_ID = 305
     OPTIONS_BUTTON_ID = 306
     # Play splits into these two once the video has a view offset (in.progress - setInfo() below),
     # matching Episodes' own button row. 301/307, the only ids left free in this screen's 300-block,
@@ -366,8 +365,6 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 return
 
             elif action == xbmcgui.ACTION_NAV_BACK:
-                if self.dismissSidebarPopupOnBack():
-                    return
                 if self.handleBack():
                     return
 
@@ -435,7 +432,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         elif controlID == self.PLAY_BUTTON_ID:
             self.playVideo()
         elif controlID == self.RESUME_BUTTON_ID:
-            self.playVideo(force_resume=True)
+            self.playVideo()
         elif controlID == self.RESTART_BUTTON_ID:
             self.playVideo(start_over=True)
         elif controlID in self.WL_RELEVANT_BTNS and self.fromWatchlist and self.wl_availability:
@@ -449,15 +446,15 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.infoButtonClicked()
         elif controlID == self.SUMMARY_BUTTON_ID:
             self.summaryButtonClicked()
-        elif controlID == self.SETTINGS_BUTTON_ID:
-            self.settingsButtonClicked()
         elif controlID == self.TRAILER_BUTTON_ID:
             self.openItem(item=self.trailer)
         elif controlID == self.OPTIONS_BUTTON_ID:
-            self.optionsButtonClicked()
+            self.moreButtonClicked()
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # first, whether or not this is live yet: the sidebar rows read it (SidebarMixin)
+        self.trackSidebarFocus(controlID)
         if self.ignoresInput():
             return
         self.reselectActiveSection(controlID, self.lastFocusID)
@@ -501,11 +498,15 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     def roleFromWatchlist(self):
         return self.entryFromWatchlist
 
-    def settingsButtonClicked(self):
+    @kodigui.releasesDialogDim
+    def moreButtonClicked(self):
+        """More: the More settings dialog - the media settings (Video, Audio, Subtitles, Quality) with this
+        screen's own actions under them (moreActions()), run once it's closed (runMoreAction())."""
         if not self.video.mediaChoice:
             playerObject = plexplayer.PlexPlayer(self.video)
             playerObject.build()
-        playersettings.showDialog(video=self.video, non_playback=True)
+        choice = playersettings.showDialog(video=self.video, non_playback=True, heading=T(35200, 'More settings'),
+                                           actions=self.moreActions())
         # The dialog's own Video entry (playersettings.showVideoDialog()) can change mediaChoice
         # itself - the video pill's own visible text is driven by the video.res/video.rendering
         # *properties* (media_info_pills.xml.tpl's label markup), separate from video_text below
@@ -520,6 +521,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.setProperty('video.rendering', rendering)
         video_text = u'{0} {1}'.format(res, rendering) if rendering else res
         self.setAudioAndSubtitleInfo(video_text)
+        if choice:
+            self.runMoreAction(choice)
 
     def infoButtonClicked(self):
         # Popup, not opener.handleOpen(info.InfoWindow, ...) any more - same change episodes.py's
@@ -534,89 +537,61 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     def summaryButtonClicked(self):
         info.showSummary(self.video.title, self.video.summary)
 
-    def optionsButtonClicked(self):
+    def moreActions(self):
+        """This screen's actions for the More settings dialog, [(key, label)] (runMoreAction() runs them)."""
         options = []
 
         inProgress = self.video.viewOffset.asInt()
         if not self.video.isWatched or inProgress:
-            options.append({'key': 'mark_watched', 'display': T(32319, 'Mark Played')})
+            options.append(('mark_watched', T(32319, 'Mark Played')))
         if self.video.isWatched or inProgress:
-            options.append({'key': 'mark_unwatched', 'display': T(32318, 'Mark Unplayed')})
-
-        options.append(dropdown.SEPARATOR)
+            options.append(('mark_unwatched', T(32318, 'Mark Unplayed')))
 
         if self.video.type == 'episode':
-            options.append({'key': 'to_season', 'display': T(32400, 'Go to Season')})
-            options.append({'key': 'to_show', 'display': T(32323, 'Go to Show')})
+            options.append(('to_season', T(32400, 'Go to Season')))
+            options.append(('to_show', T(32323, 'Go to Show')))
 
         if self.video.type in ('episode', 'movie'):
-            options.append({'key': 'to_section', 'display': T(32324, u'Go to {0}').format(self.video.getLibrarySectionTitle())})
+            options.append(('to_section', T(32324, u'Go to {0}').format(self.video.getLibrarySectionTitle())))
 
         if plexapp.ACCOUNT.isAdmin and self.video.server.owned:
-            options.append(dropdown.SEPARATOR)
-            options.append({'key': 'refresh', 'display': T(33719, 'Refresh metadata')})
+            options.append(('refresh', T(33719, 'Refresh metadata')))
 
             if self.video.server.allowsMediaDeletion:
-                options.append({'key': 'delete', 'display': T(32322, 'Delete')})
+                # in a muted red, set apart from the rest as the one that can't be undone
+                options.append(('delete', u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32322, 'Delete'))))
 
         if 'items' in util.getSetting('cache_requests'):
-            options.append({'key': 'cache_reset', 'display': T(33728, "Clear cache for item")})
-        # if xbmc.getCondVisibility('Player.HasAudio') and self.section.TYPE == 'artist':
-        #     options.append({'key': 'add_to_queue', 'display': 'Add To Queue'})
+            options.append(('cache_reset', T(33728, "Clear cache for item")))
+        # Delete last, wherever it was added (sorted() keeps the rest in order)
+        return sorted(options, key=lambda o: o[0] == 'delete')
 
-        # if False:
-        #     options.append({'key': 'add_to_playlist', 'display': 'Add To Playlist'})
-        # x (misnamed here for a long time), not y: showDropdown takes (x, y), and with
-        # close_direction='left' this anchor is what keeps the dropdown under the More button as the
-        # row ahead of it grows.
-        # 518, not the old 880: stale since the button row resize, exactly as Seasons' own copy of
-        # this static fallback was - see optionsButtonClicked() (subitems.py) for the derivation,
-        # which applies verbatim here since this row went through the same 22->63 / 152->70 /
-        # itemgap -20->0 change: (880 - 22) * 70/132 + 63 = 518.
-        # 70 per extra button, not the old 106: that never matched a pitch in either layout (the old
-        # one was 132), and the current row is 70-wide boxes at itemgap 0, so one more visible button
-        # is exactly 70px of the row.
-        # in.progress (setInfo()), not the old global hide.resume property: that global was only ever
-        # written by refreshInfo(), which onFirstInit()/setup() don't call, so on a freshly opened
-        # window it still held the *previous* item's state - an unwatched movie opened right after an
-        # in-progress one shifted this anchor as though a resume button were there. in.progress is
-        # set by setInfo() on both paths and is the very property the row's Play/Resume+Restart split
-        # keys off, so it can't disagree with what's on screen. It costs one button, not two: Resume
-        # and Restart replace Play rather than joining it.
-        pos_x = 518
-        if self.getProperty('in.progress'):
-            pos_x += 70
-        if self.getProperty('trailer.button'):
-            pos_x += 70
-        choice = dropdown.showDropdown(options, (pos_x, 618), close_direction='left')
-        if not choice:
-            return
-
-        if choice['key'] == 'mark_watched':
+    def runMoreAction(self, key):
+        if key == 'mark_watched':
             self.toggleWatched(self.video, state=True, **VIDEO_RELOAD_KW)
-        elif choice['key'] == 'mark_unwatched':
+        elif key == 'mark_unwatched':
             self.toggleWatched(self.video, state=False, **VIDEO_RELOAD_KW)
-        elif choice['key'] == 'to_season':
+        elif key == 'to_season':
             self.processCommand(opener.open(self.video.parentRatingKey, context=self, server=self.video.server,
                                             entry_section_id=self.entrySectionId,
                                             entry_from_watchlist=self.entryFromWatchlist))
-        elif choice['key'] == 'to_show':
+        elif key == 'to_show':
             self.processCommand(opener.open(self.video.grandparentRatingKey, context=self, server=self.video.server,
                                             entry_section_id=self.entrySectionId,
                                             entry_from_watchlist=self.entryFromWatchlist))
-        elif choice['key'] == 'to_section':
+        elif key == 'to_section':
             self.cameFrom = "library"
             section = plexlibrary.LibrarySection.fromFilter(self.video)
             self.processCommand(opener.sectionClicked(section, context=self,
                                                       came_from=self.video.ratingKey)
                                 )
-        elif choice['key'] == 'delete':
+        elif key == 'delete':
             self.delete()
-        elif choice['key'] == 'refresh':
+        elif key == 'refresh':
             self.video.refresh()
             self.video.reload(checkFiles=1, **VIDEO_RELOAD_KW)
             self.refreshInfo()
-        elif choice["key"] == "cache_reset":
+        elif key == "cache_reset":
             try:
                 util.DEBUG_LOG('Clearing requests cache for {}...', self.video)
                 self.video.clearCache()
@@ -626,14 +601,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                 util.DEBUG_LOG("Couldn't clear cache: {}", e)
 
     def delete(self):
-        button = optionsdialog.show(
-            T(32326, 'Really delete?'),
-            T(33035, "Delete {}: {}?").format(type(self.video).__name__, self.video.defaultTitle),
-            T(32328, 'Yes'),
-            T(32329, 'No')
-        )
-
-        if button != 0:
+        if not optionsdialog.confirmDelete(self.video):
             return
 
         if self._delete():
@@ -725,7 +693,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
         return True
 
-    def playVideo(self, from_auto_play=False, force_resume=False, start_over=False):
+    def playVideo(self, from_auto_play=False, start_over=False):
         if self.playBtnClicked:
             return
 
@@ -733,35 +701,10 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             util.messageDialog(T(32312, 'Unavailable'), T(32313, 'This item is currently unavailable.'))
             return
 
-        resume = False
-        # start_over is the Restart button's own request, self.startOver the same thing carried in
-        # from whoever opened this window (kwargs) - either one skips the resume question entirely
-        # and leaves resume False, i.e. plays from the beginning.
-        if self.video.viewOffset.asInt() and not self.startOver and not start_over:
-            if force_resume:
-                # Dedicated Resume button - the button itself already made the choice explicit, so
-                # neither the dropdown nor the assume_resume check below applies.
-                resume = True
-            elif not util.getSetting('assume_resume'):
-                choice = dropdown.showDropdown(
-                    options=[
-                        {'key': 'resume', 'display': T(32429, 'Resume from {0}').format(util.timeDisplay(self.video.viewOffset.asInt()).lstrip('0').lstrip(':'))},
-                        {'key': 'play', 'display': T(32317, 'Play from beginning')}
-                    ],
-                    pos=(660, 441),
-                    close_direction='none',
-                    set_dropdown_prop=False,
-                    header=T(32314, 'In Progress'),
-                    dialog_props=from_auto_play and self.dialogProps or None
-                )
-
-                if not choice:
-                    return
-
-                if choice['key'] == 'resume':
-                    resume = True
-            else:
-                resume = True
+        # A video with a resume point resumes - Resume, Play, or auto-play from a hub's "Resume from" - unless
+        # start_over (the Restart button's) or self.startOver (the same, carried in from whoever opened this
+        # window: a hub's "Play from beginning") asks for its beginning.
+        resume = bool(self.video.viewOffset.asInt()) and not self.startOver and not start_over
 
         if not from_auto_play:
             self.playBtnClicked = True
@@ -902,7 +845,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         one, reloads it. setInfo() then writes everything from the full item; the buttons stay
         hidden until then (initialized)."""
         video = self.video
-        self.setProperty('title', video.defaultTitle)
+        # the bare title: a film's edition has its own pill on the meta row (pp_meta_row.xml.tpl), where
+        # defaultTitle would add it here too ("Heat • Director's Cut")
+        self.setProperty('title', video.title)
         self.setProperty('clear.logo', util.clearLogoFrom(video, *self.CLEAR_LOGO_DIM))
         self.setProperty('summary', util.summaryForBox(video.summary))
         self.setProperty('date', video.year)
@@ -929,7 +874,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         # Duration is required, not just the offset: the Resume label carries a time-left suffix
         # computed from it (resume.timeleft), and without one there'd be nothing to put after the
         # bullet. An item with an offset but no duration falls back to plain Play, which still
-        # offers resume through the usual assume_resume dropdown (playVideo()).
+        # resumes it (playVideo()).
         view_offset = self.video.viewOffset.asInt()
         duration = self.video.duration.asInt()
         in_progress = bool(view_offset and duration) and not self.fromWatchlist
@@ -947,7 +892,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.setProperty('writers',
                          writers and u'{0}{1}    {2}'.format(directors and '    ' or '', writersLabel, writers) or '')
 
-        self.setProperty('title', self.video.defaultTitle)
+        # the bare title, as paintClickedItem()'s: the edition has its own pill
+        self.setProperty('title', self.video.title)
         genres = u' / '.join([g.tag for g in self.video.genres()][:3])
         self.setProperty('info', genres)
         # Separate from 'info' above (used by the info/options dialogs elsewhere, 3 genres joined by
@@ -984,6 +930,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         # The rest of the shared meta row (CommonMixin.META_ROW_PROPERTIES) this screen has no
         # value for; a Watchlist item has none for the two below either.
         self.blankMetaRow('episode.code')
+        # a film's edition ("Director's Cut"), its own pill before the time left
+        self.setProperty('edition', u'{0}'.format(getattr(self.video, 'editionTitle', None) or ''))
         if not self.fromWatchlist:
             self.setAudioAndSubtitleInfo(video_text)
 

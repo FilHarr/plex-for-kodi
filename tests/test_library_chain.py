@@ -232,11 +232,6 @@ class FakeHostWindow(object):
     def onCloseSignal(self, *args, **kwargs):
         self.onCloseSignalCalls.append((args, kwargs))
 
-    def dismissSidebarPopupOnBack(self, target=None):
-        # Real windowutils.SidebarMixin.dismissSidebarPopupOnBack() - stubbed to "no popup showing"
-        # (its own real no-op return), the OnActionTest tests below aren't exercising this.
-        return False
-
     def _sidebarTarget(self):
         return None
 

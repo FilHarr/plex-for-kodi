@@ -12,13 +12,14 @@ from lib import player
 from lib import util
 from lib.util import T
 from . import busy
-from . import dropdown
+from . import grid_labels
 from . import home
 from . import info
 from . import kodigui
 from . import opener
 from . import videoplayer
 from . import windowutils
+from .dialog import showOptionsDialog
 from .mixins.row_restore import RowRestoreMixin
 from .mixins.spoilers import SpoilersMixin
 
@@ -158,6 +159,8 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # first, whether or not this is live yet: the sidebar rows read it (SidebarMixin)
+        self.trackSidebarFocus(controlID)
         if self.ignoresInput():
             return
         self.reselectActiveSection(controlID, self.lastFocusID)
@@ -226,38 +229,31 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         self.tasks.cancel()
         ChunkRequestTask.reset()
 
-    def plItemPlaybackMenu(self, select_choice='visit'):
+    def plItemPlaybackMenu(self):
         mli = self.playlistListControl.getSelectedItem()
         if not mli or not mli.dataSource:
             return
 
         can_resume = mli.dataSource.viewOffset.asInt()
 
+        # in the option picker, each with its own (unset) tick: selected_idx then only focuses the row - Play
+        # when a click visits the item (playlistVisitMedia), so the menu offers the other
         options = [
-            {'key': 'visit', 'display': T(33019, 'Visit Media Item')},
-            {'key': 'play', 'display': T(33020, 'Play') if not can_resume else T(32317, 'Play from beginning')},
+            ('visit', T(33019, 'Visit Media Item'), False),
+            ('play', T(33020, 'Play') if not can_resume else T(32317, 'Play from beginning'), False),
         ]
         if can_resume:
-            options.append({'key': 'resume', 'display': T(32429, 'Resume from {0}').format(
-                    util.timeDisplay(mli.dataSource.viewOffset.asInt()).lstrip('0').lstrip(':'))})
+            options.append(('resume', T(32429, 'Resume from {0}').format(
+                util.timeDisplay(mli.dataSource.viewOffset.asInt()).lstrip('0').lstrip(':')), False))
 
-        choice = dropdown.showDropdown(
-            options,
-            pos=(660, 441),
-            close_direction='none',
-            set_dropdown_prop=False,
-            header=T(33021, 'Choose action'),
-            select_index=2 if select_choice == 'resume' else 1 if util.addonSettings.playlistVisitMedia else 0
-        )
+        choice = showOptionsDialog(T(33021, 'Choose action'), options, non_playback=True, menu=True,
+                                   selected_idx=1 if util.addonSettings.playlistVisitMedia else 0)
 
-        if not choice:
-            return
-
-        if choice['key'] == 'visit':
+        if choice == 'visit':
             self.openItem(mli.dataSource)
-        elif choice['key'] == 'play':
+        elif choice == 'play':
             self.playlistListClicked(resume=False, play=True)
-        elif choice['key'] == 'resume':
+        elif choice == 'resume':
             self.playlistListClicked(resume=True, play=True)
 
     def sidebarActiveSection(self, entries):
@@ -299,9 +295,8 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                     opener.open(pq)
             elif self.playlist.playlistType == 'video':
                 if not util.addonSettings.playlistVisitMedia or play:
+                    # resumes; its context menu (plItemPlaybackMenu()) has Play from beginning
                     if resume is None and mli and bool(mli.dataSource.viewOffset.asInt()):
-                        if not util.getSetting('assume_resume'):
-                            return self.plItemPlaybackMenu(select_choice='resume')
                         resume = True
 
                     if self.playlist.leafCount.asInt() <= util.addonSettings.playlistMaxSize:
@@ -464,8 +459,9 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.createEpisodeListItem(mli, episode)
 
     def createMovieListItem(self, mli, movie):
-        mli.setLabel(movie.defaultTitle)
-        mli.setLabel2(movie.year)
+        # the bare title, the edition before the year under it (grid_labels.editionLine())
+        mli.setLabel(movie.title)
+        mli.setLabel2(grid_labels.editionLine(movie))
         if movie.type == 'movie':
             # The poster (on request, 2026-10-07 - was the 16:9 background art), in the row's poster
             # shape; clips keep their 16:9 art.

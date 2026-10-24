@@ -14,6 +14,7 @@ from lib import util
 from lib.util import T
 from . import busy
 from . import dropdown
+from . import grid_labels
 from . import home
 from . import hub_config
 from . import hub_limits
@@ -23,6 +24,7 @@ from . import optionsdialog
 from . import section_ids
 from . import sidebar_model
 from . import navintent
+from .dialog import optionGroup, showOptionsDialog
 
 
 class _CatalogHub(object):
@@ -780,11 +782,13 @@ class HubsMixin(object):
         try:
             dropdown.showDropdown(
                 options,
-                pos=(460, 200),
+                # the panel's left edge (20 before the list) at the content's with the sidebar open: the content
+                # block's 105, slid 220 while the sidebar is open (library_posters.xml.tpl), next to it
+                pos=(345, 200),
                 close_direction='none',
                 set_dropdown_prop=False,
                 with_indicator=True,
-                header=T(34082, "Manage Hubs: {}").format(section_title),
+                header=T(35202, "Manage recommended rows"),
                 align_items="left",
                 close_only_with_back=True,
                 options_callback=self.onHubSettingToggle,
@@ -1499,6 +1503,8 @@ class HubsMixin(object):
         self.blankMetaRow('genres.short', 'unavailable')
 
         self.setProperty('studios', getattr(ds, 'studio', None) or '')
+        # a film's edition ("Director's Cut"), its own pill before the time left
+        self.setProperty('edition', u'{0}'.format(getattr(ds, 'editionTitle', None) or ''))
 
         view_offset = getattr(ds, 'viewOffset', None)
         remaining = ''
@@ -2054,101 +2060,60 @@ class HubsMixin(object):
         hub_is_home = self.section.key is None
         clean_identifier = hub.getCleanHubIdentifier(is_home=hub_is_home)
 
-        select_base = 0
-
-        options = []
-        has_prev = False
+        # In the option picker, headed by the item: playing it, when it's in progress, marking it, where it lives and
+        # its cache; then, under an "All rows" group title, Refresh Hubs. Rows as (key, label).
+        play, marks, places = [], [], []
 
         if ds.TYPE in ('episode', 'season', 'movie', 'show'):
-            if has_prev:
-                options.append(dropdown.SEPARATOR)
-
-            has_mp = False
             if not mli.getProperty('watched'):
-                options.append({'key': 'mark_watched', 'display': T(32319, "Mark Played")})
-                select_base = has_prev and 1 or 0
-                has_mp = True
+                marks.append(('mark_watched', T(32319, "Mark Played")))
 
             if ds.isFullyWatched or ds.isWatched or ds.viewedLeafCount.asInt() > 0:
-                options.append({'key': 'mark_unwatched', 'display': T(32318, "Mark Unplayed")})
-                select_base = has_prev and 1 or has_mp and 0
-                has_mp = True
+                marks.append(('mark_unwatched', T(32318, "Mark Unplayed")))
 
             if ds.TYPE in ('episode', 'movie'):
                 if (hub.hubIdentifier == "continueWatching" or
                         clean_identifier in ("tv.inprogress", "movie.inprogress")):
                     # allow removing items from CW / On Deck
-                    options.append(dropdown.SEPARATOR)
-                    options.append({'key': 'remove_cw', 'display': T(33662, "Remove from Continue Watching")})
-                    if not has_mp:
-                        select_base = 1
+                    marks.append(('remove_cw', T(33662, "Remove from Continue Watching")))
                 if util.getSetting('home_inprogress_resume') and ds.in_progress:
                     # this is an in progress item that would be auto resumed; add specific entry to visit media instead
-                    options.insert(0, dropdown.SEPARATOR)
-                    options.insert(1, {'key': 'start_over', 'display': T(32317, 'Play from beginning')})
-                    options.insert(2, {'key': 'to_item', 'display': T(33019, "Visit media item")})
-                    select_base = 1
+                    play = [('start_over', T(32317, 'Play from beginning')),
+                            ('to_item', T(33019, "Visit media item"))]
                 elif ds.in_progress:
-                    options.insert(0, dropdown.SEPARATOR)
-                    options.insert(1, {'key': 'start_over', 'display': T(32317, 'Play from beginning')})
-                    options.insert(2, {'key': 'resume', 'display': T(32429, "Resume from {}").format(util.timeDisplay(ds.viewOffset.asInt()).lstrip('0').lstrip(':'))})
+                    play = [('start_over', T(32317, 'Play from beginning')),
+                            ('resume', T(32429, "Resume from {}").format(
+                                util.timeDisplay(ds.viewOffset.asInt()).lstrip('0').lstrip(':')))]
 
             if ds.TYPE in ('episode', 'season'):
-                options.append(dropdown.SEPARATOR)
-                options.append({'key': 'to_show', 'display': T(32323, "Go To Show")})
+                places.append(('to_show', T(32323, "Go To Show")))
 
             if 'items' in util.getSetting('cache_requests'):
-                options.append({'key': 'cache_reset', 'display': T(33728, "Clear cache for item")})
+                places.append(('cache_reset', T(33728, "Clear cache for item")))
 
         # Last, for every item: the rows fetched again, in place (refreshHubsInPlace())
-        if options:
-            options.append(dropdown.SEPARATOR)
-        options.append({'key': 'refresh_hubs', 'display': T(34096, "Refresh Hubs")})
+        options = play + marks + places + [optionGroup(T(35201, 'All rows')),
+                                           ('refresh_hubs', T(34096, "Refresh Hubs"))]
 
-        choice = dropdown.showDropdown(
-            options,
-            pos=(660, 441),
-            close_direction='none',
-            set_dropdown_prop=False,
-            header=T(33030, 'Choose action for: {}').format(hub.title),
-            select_index=select_base,
-            align_items="left",
-            dialog_props=getattr(self, 'carriedProps', None)
-        )
+        choice = showOptionsDialog(grid_labels.menuHeading(ds), options, non_playback=True, menu=True,
+                                   dialog_props=getattr(self, 'carriedProps', None))
 
         if not choice:
             return
 
-        elif choice["key"] in ("mark_watched", "mark_unwatched"):
-            if util.getSetting('home_confirm_actions'):
-                button = optionsdialog.show(
-                    T(32319, "Mark Played") if choice["key"] == "mark_watched" else T(32318, "Mark Unplayed"),
-                    u"{} {}".format(mli.label, mli.label2),
-                    T(32328, 'Yes'),
-                    T(32329, 'No'),
-                    dialog_props=getattr(self, 'carriedProps', None)
-                )
-
-                if button != 0:
-                    return
-
-            if choice["key"] == "mark_watched":
-                self.toggleWatched(mli)
-
-            elif choice["key"] == "mark_unwatched":
-                mli.dataSource.markUnwatched()
-                self.updateUnwatchedAndProgress(mli)
+        if choice in ("mark_watched", "mark_unwatched"):
+            # asks in toggleWatched() (CommonMixin), as everywhere else; None is a "No" there
+            if self.toggleWatched(mli, state=choice == "mark_watched") is None:
+                return
 
             # The tile's ticks are updated above; the rows themselves are fetched again, in place:
-            # a film marked played leaves Continue Watching, an episode moves On Deck along. (A
-            # show or season's "No" at toggleWatched()'s confirm only refetches the rows unchanged.)
-            self.refreshHubsInPlace(choice["key"].replace('_', ' '), manual=True)
+            # a film marked played leaves Continue Watching, an episode moves On Deck along.
+            self.refreshHubsInPlace(choice.replace('_', ' '), manual=True)
 
-        elif choice["key"] == "remove_cw":
+        elif choice == "remove_cw":
             if util.getSetting('home_confirm_actions'):
                 button = optionsdialog.show(
-                    T(33662, "Remove from Continue Watching"),
-                    u"{} {}".format(mli.label, mli.label2),
+                    u'{0}?'.format(T(33662, "Remove from Continue Watching")), '',
                     T(32328, 'Yes'),
                     T(32329, 'No'),
                     dialog_props=getattr(self, 'carriedProps', None)
@@ -2163,7 +2128,7 @@ class HubsMixin(object):
             ds.removeFromContinueWatching()
             self.refreshHubsInPlace('removed from continue watching', manual=True)
 
-        elif choice["key"] == "to_show":
+        elif choice == "to_show":
             try:
                 command = opener.open(ds.show(), context=self, dialog_props=getattr(self, 'carriedProps', None))
                 if navintent.isNoData(command):
@@ -2174,7 +2139,7 @@ class HubsMixin(object):
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
                 return
 
-        elif choice["key"] == "to_item":
+        elif choice == "to_item":
             try:
                 command = opener.open(ds, context=self, dialog_props=getattr(self, 'carriedProps', None))
                 if navintent.isNoData(command):
@@ -2183,7 +2148,7 @@ class HubsMixin(object):
                 util.ERROR("No data - deleted or server disconnected?", notify=True, time_ms=5000)
                 return
 
-        elif choice["key"] == "start_over":
+        elif choice == "start_over":
             self._refreshRowsOnReturn = True
             try:
                 command = opener.open(ds, auto_play=True, start_over=True, dialog_props=getattr(self, 'carriedProps', None))
@@ -2194,7 +2159,7 @@ class HubsMixin(object):
                 return
             return
 
-        elif choice["key"] == "resume":
+        elif choice == "resume":
             self._refreshRowsOnReturn = True
             try:
                 command = opener.open(ds, auto_play=True, dialog_props=getattr(self, 'carriedProps', None))
@@ -2205,14 +2170,14 @@ class HubsMixin(object):
                 return
             return
 
-        elif choice["key"] == "cache_reset":
+        elif choice == "cache_reset":
             try:
                 util.DEBUG_LOG('Clearing requests cache for {}...', ds)
                 ds.clearCache()
             except Exception as e:
                 util.DEBUG_LOG("Couldn't clear cache: {}", e)
 
-        elif choice["key"] == "refresh_hubs":
+        elif choice == "refresh_hubs":
             self.refreshHubsInPlace('refresh hubs', manual=True)
 
     @staticmethod

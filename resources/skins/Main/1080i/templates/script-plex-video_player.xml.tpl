@@ -614,7 +614,7 @@
                                         <label>$INFO[ListItem.Label]</label>
                                     </control>
                                     <control type="label">
-                                        <scroll>false</scroll>
+                                        <scroll>true</scroll>
                                         <posx>0</posx>
                                         <posy>{{ vscale(329) }}</posy>
                                         <width>512</width>
@@ -891,7 +891,7 @@
                                     </control>
                                     <control type="label">
                                         <visible>!String.IsEmpty(ListItem.Property(subtitle))</visible>
-                                        <scroll>false</scroll>
+                                        <scroll>true</scroll>
                                         <posx>0</posx>
                                         <posy>{{ vscale(401) }}</posy>
                                         <width>240</width>

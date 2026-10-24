@@ -19,16 +19,9 @@ from __future__ import absolute_import
 from kodienv import ENV
 
 ENV.abort_requested = True
-from lib import util  # noqa: E402
 from lib.windows import windowutils  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
-
-# What BoolSetting('assume_resume', ...) registers at runtime (settings.py) - getSetting() coerces
-# a stored string to bool only when it has a typed default to coerce against, and nothing here
-# imports the settings tree that would normally register it.
-ASSUME_RESUME_DEFAULT = True
-
 
 class FakeValue(object):
     """Mimics a plexnet PlexValue: usable as the value, with asInt() on top."""
@@ -86,30 +79,12 @@ class FakeShowWindow(windowutils.UtilMixin):
 class GetNextShowEpTest(KodiTestCase):
     def setUp(self):
         KodiTestCase.setUp(self)
-        util.DEFAULT_SETTINGS['assume_resume'] = ASSUME_RESUME_DEFAULT
         self.window = FakeShowWindow()
         self.pl = FakePlaylist()
-        self.prompts = []
-        self.choice = None
-        self._realDropdown = windowutils.dropdown.showDropdown
-        windowutils.dropdown.showDropdown = self._fakeDropdown
 
-    def tearDown(self):
-        windowutils.dropdown.showDropdown = self._realDropdown
-        util.DEFAULT_SETTINGS.pop('assume_resume', None)
-        KodiTestCase.tearDown(self)
-
-    def _fakeDropdown(self, *args, **kwargs):
-        self.prompts.append(kwargs.get('header'))
-        return self.choice
-
-    def alwaysAsk(self):
-        """'Always resume media' off, i.e. the resume/restart prompt is in play."""
-        ENV.settings['assume_resume'] = 'false'
-
-    def run_(self, items, on_deck=None, specials_mode='default'):
-        return self.window.getNextShowEp(self.pl, items, 'A Show', on_deck=on_deck,
-                                         specials_mode=specials_mode)
+    def run_(self, items, on_deck=None, specials_mode='default', start_over=False):
+        return self.window.getNextShowEp(self.pl, items, on_deck=on_deck, specials_mode=specials_mode,
+                                         start_over=start_over)
 
     # -- the server's pick ----------------------------------------------------------------
     def test_an_on_deck_pick_with_progress_wins_over_the_local_scan(self):
@@ -121,14 +96,12 @@ class GetNextShowEpTest(KodiTestCase):
         # not s1e5, which is what the local scan's own reversed order would have picked
         self.assertEqual(s1e2, self.pl.current)
 
-    def test_an_on_deck_pick_without_progress_starts_without_asking(self):
-        self.alwaysAsk()
+    def test_an_on_deck_pick_without_progress_starts_from_its_beginning(self):
         s1e3 = FakeEpisode('3', index=3)
         items = [FakeEpisode('1', view_count=1), FakeEpisode('2', view_count=1), s1e3]
 
         self.assertFalse(self.run_(items, on_deck=[FakeEpisode('3', index=3)]))
         self.assertEqual(s1e3, self.pl.current)
-        self.assertEqual([], self.prompts)
 
     def test_an_on_deck_pick_missing_from_the_playlist_falls_back_to_the_scan(self):
         s1e4 = FakeEpisode('4', index=4, view_offset=700)
@@ -227,27 +200,18 @@ class GetNextShowEpTest(KodiTestCase):
         self.assertFalse(self.run_(items))
         self.assertEqual(first, self.pl.current)
 
-    # -- the resume prompt ----------------------------------------------------------------
-    def test_the_prompt_is_shown_for_a_started_pick_when_the_setting_is_off(self):
-        self.alwaysAsk()
-        self.choice = {'key': 'resume'}
-        items = [FakeEpisode('1', view_offset=600)]
-
-        self.assertTrue(self.run_(items, on_deck=[FakeEpisode('1', view_offset=600)]))
-        self.assertEqual(1, len(self.prompts))
-
-    def test_choosing_play_from_beginning_starts_the_same_episode_unresumed(self):
-        self.alwaysAsk()
-        self.choice = {'key': 'play'}
+    # -- Restart (start_over) ----------------------------------------------------------------
+    def test_restart_starts_the_same_started_episode_unresumed(self):
         started = FakeEpisode('1', view_offset=600)
 
-        self.assertFalse(self.run_([started], on_deck=[FakeEpisode('1', view_offset=600)]))
+        self.assertFalse(self.run_([started], on_deck=[FakeEpisode('1', view_offset=600)], start_over=True))
         self.assertEqual(started, self.pl.current)
 
-    def test_backing_out_of_the_prompt_plays_nothing(self):
-        self.alwaysAsk()
-        self.choice = None
-        items = [FakeEpisode('1', view_offset=600)]
+    def test_restart_picks_the_same_episode_resume_would(self):
+        s1e2 = FakeEpisode('2', index=2, view_offset=500)
+        items = [FakeEpisode('1'), s1e2, FakeEpisode('3', index=3, view_offset=900)]
 
-        # None, not False: playButtonClicked() (subitems.py) returns without playing on this
-        self.assertIsNone(self.run_(items, on_deck=[FakeEpisode('1', view_offset=600)]))
+        self.assertTrue(self.run_(items, on_deck=[FakeEpisode('2', index=2, view_offset=500)]))
+        resumed = self.pl.current
+        self.assertFalse(self.run_(items, on_deck=[FakeEpisode('2', index=2, view_offset=500)], start_over=True))
+        self.assertEqual(resumed, self.pl.current)

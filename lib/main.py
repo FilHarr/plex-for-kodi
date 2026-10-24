@@ -25,6 +25,7 @@ from . import plex
 from . import localmode
 
 from plexnet import plexapp
+from plexnet.exceptions import UserSwitchUnreachableException
 from plexnet.util import cleanToken
 from .templating import render_templates
 from .windows import background, userselect, home, library, windowutils, kodigui, busy
@@ -32,6 +33,7 @@ from . import player
 from . import backgroundthread
 from . import skin_check
 from . import util
+from .util import T
 from .logging import KodiLogProxyHandler
 from .data_cache import dcm
 
@@ -266,8 +268,20 @@ def main(force_render=False):
             util.setGlobalProperty('ignore_spinner', '')
             util.setGlobalProperty('is_active', '')
             util.setGlobalProperty('osd_active', '')
+            clearSessionProperties()
         except:
             pass
+
+
+def clearSessionProperties():
+    """Global properties this session's screens keep, cleared at its start and end: they're Kodi's Home window's, so
+    they outlive the addon, and the code that writes them starts out assuming they're empty. sidebar_focus
+    (SidebarMixin.trackSidebarFocus()) is written only when it changes from what it last wrote - left at "other" by
+    Exit from the user menu (the user button had focus), the next session never cleared it, and every picker
+    showed the sidebar's labels (2026-10-23). dialog_dim (kodigui.holdDialogDim()) likewise: a held dim is only
+    released by the session that holds it."""
+    util.setGlobalProperty('sidebar_focus', '')
+    util.setGlobalProperty('dialog_dim', '')
 
 
 def updateLastUsedAddon():
@@ -305,6 +319,8 @@ def _main():
     util.DEBUG_LOG('Aspect ratio: {:.2f} (default: {:.2f}), needs scaling: {}', util.CURRENT_AR, 1920 / 1080,
                    util.NEEDS_SCALING)
     background.setSplash()
+    # what an addon run that ended badly left behind
+    clearSessionProperties()
     util.setGlobalProperty('is_active', '1')
 
     try:
@@ -428,6 +444,10 @@ def _main():
                                     with busy.BusySignalContext(plexapp.util.APP, "account:response", wait_max=10):
                                         if plexapp.ACCOUNT.switchHomeUser(uid, silent=True) and plexapp.ACCOUNT.switchUser:
                                             util.DEBUG_LOG('Waiting for user change...')
+                                except UserSwitchUnreachableException:
+                                    util.LOG('Main: Fast user switch: no answer from plex.tv')
+                                    util.showNotification(T(32449, "Can't connect to plex.tv[CR]Check your internet "
+                                                                   "connection and try again."))
                                 except Exception:
                                     util.ERROR('Fast user switch failed')
 

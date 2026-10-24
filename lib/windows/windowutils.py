@@ -5,7 +5,6 @@ import weakref
 from lib import util
 from lib.path_mapping import pmm
 from lib.util import T
-from . import dropdown
 from . import home
 from . import kodigui
 from . import mapping_probe
@@ -128,6 +127,8 @@ class GoHomeMixin():
         A section may be a bare key (a str, or plexobjects.PlexValue, from getLibrarySectionId():
         the music player's / Album screen's / photo directory's "Go to <section>"): Home resolves
         it to the sidebar's own section object (LibraryWindow.resolveSection())."""
+        # a More settings action navigating: its dim comes off as it starts, not once the next screen's up
+        kodigui.releaseDialogDim()
         host = self._liveChainHost()
         if host is not None and host is not self:
             util.DEBUG_LOG('Navigate: {0} from hosted {1}, to its host', intent, type(self).__name__)
@@ -157,9 +158,13 @@ class GoHomeMixin():
         HOME.returnHere(intent)
 
 
+# script.plex.sidebar_focus as last written (SidebarMixin.trackSidebarFocus()): one global property, so one value
+_SIDEBAR_FOCUS = ['']
+
+
 class SidebarMixin():
-    """Control ids for the persistent vertical nav rail (includes/sidebar.xml.tpl)
-    and its user dropdown (includes/sidebar_dropdowns.xml.tpl) and Libraries button. Any window
+    """Control ids for the persistent vertical nav rail (includes/sidebar.xml.tpl),
+    its user button and Libraries button. Any window
     that includes header_sidebar (see default.xml.tpl) can mix this in to reuse the
     same ids instead of redeclaring them.
     """
@@ -168,42 +173,6 @@ class SidebarMixin():
 
     SERVER_BUTTON_ID = 201
     USER_BUTTON_ID = 202
-
-    USER_LIST_ID = 250
-
-    USER_MENU_BG_ID = 801
-    USER_MENU_GROUP_ID = 901
-
-    def dismissSidebarPopupOnBack(self, target=None):
-        """Call first, before any other NAV_BACK/PREVIOUS_MENU handling, in every SidebarMixin
-        window's own onAction() - not just LibraryWindow's (a real hosted shell's onAction goes
-        through the host first, kodigui.BaseWindow.routeActionToHost(), but an *unhosted* real
-        shell still runs its own onAction, so this has to be reachable from both). The user dropdown
-        (includes/sidebar_dropdowns.xml.tpl) is visible off Control.HasFocus(250) - remote/keyboard
-        navigation onto the list - OR the show.options Window property (the mouse-click path, which
-        doesn't move focus). Live-confirmed bug otherwise: pressing back while it was open fell through to
-        this window's normal back-handling instead - popping the descendant chain a step
-        (library.py's own _backStack check) or closing the window outright (doClose(), in every
-        real shell's own onAction) - rather than just dismissing the popup, like every other
-        "back closes the topmost overlay first" control in this addon already does (e.g.
-        EpisodesWindow.onAction()'s own OPTIONS_GROUP_ID redirect). Returns True if it dismissed a
-        popup (caller should return immediately, doing no further back-handling), False otherwise.
-
-        target: LibraryWindow._sidebarTarget() from a LibraryWindow caller - setFocusId() (unlike
-        the show.options property write just below, and unlike getFocusId() itself)
-        is a real control write, and must never land on self while self is a LibraryWindow
-        currently hosting a real shell (see _sidebarTarget()'s own comment for the native crash
-        that's confirmed to cause). Omitted (defaults to self) from a real shell's own onAction(),
-        which - per the note above - only ever runs this while genuinely unhosted, where self's
-        own native window is always the live one."""
-        if target is None:
-            target = self
-        controlID = self.getFocusId()
-        if controlID == self.USER_LIST_ID or self.getProperty('show.options'):
-            self.setBoolProperty('show.options', False)
-            target.setFocusId(self.USER_BUTTON_ID)
-            return True
-        return False
 
     def buildSectionList(self):
         """Fill self.sectionList with the sidebar's entries (sidebar_model.sections()), marking the
@@ -341,6 +310,24 @@ class SidebarMixin():
 
         self._selectActiveSection()
 
+    def trackSidebarFocus(self, controlID):
+        """script.plex.sidebar_focus, which the section list's rows read (includes/sidebar.xml.tpl): "list" while
+        the list has focus, "other" while the user or Libraries button has, empty elsewhere. Kodi gives a list
+        row's controls no window, so ControlGroup(9000).HasFocus there read the dialog on top - under a picker the
+        rows dropped to icons while the sidebar stayed expanded (2026-10-23). A global property names its window.
+        Written only when it changes. Called first in every sidebar window's onFocus(), live or not: a new
+        window's first focus event can come before it's live (ignoresInput()), and a stale "list" from the
+        screen before would show the labels on a collapsed sidebar."""
+        if controlID == self.SECTION_LIST_ID:
+            value = 'list'
+        elif controlID in (self.SIDEBAR_GROUP_ID, self.USER_BUTTON_ID, self.SERVER_BUTTON_ID):
+            value = 'other'
+        else:
+            value = ''
+        if value != _SIDEBAR_FOCUS[0]:
+            _SIDEBAR_FOCUS[0] = value
+            util.setGlobalProperty('sidebar_focus', value)
+
     def _dispatchSectionOpen(self, section):
         """Open the clicked sidebar section fresh - or Search (SEARCH_ENTRY). A click always acts,
         even on the section already showing: that resets it to its root (from a descendant,
@@ -392,6 +379,8 @@ class UtilMixin(GoHomeMixin):
         self.processCommand(opener.open(obj, context=self, **kwargs))
 
     def openWindow(self, window_class, **kwargs):
+        # a More settings action navigating: its dim comes off as it starts, not once the next screen's up
+        kodigui.releaseDialogDim()
         # A prior attempt hosted chains via a separate DescendantContainer class
         # (descendant_container.py, since deleted) - genesis-open of that class was reverted
         # after a real, session-breaking native window-stack desync was found live
@@ -441,11 +430,9 @@ class UtilMixin(GoHomeMixin):
         from . import musicplayer
         self.processCommand(opener.handleOpen(musicplayer.MusicPlayerWindow, **kwargs))
 
-    def getNextShowEp(self, pl, items, title, on_deck=None, specials_mode='default'):
-        """Pick which episode `pl` should start on, and return whether to resume it.
-
-        True/False = start on the item just set as current, resuming or not; None = the user backed
-        out of the resume prompt and nothing should play at all.
+    def getNextShowEp(self, pl, items, on_deck=None, specials_mode='default', start_over=False):
+        """Pick which episode `pl` should start on, and return whether to resume it: always, when
+        it has a resume point, unless `start_over` (the Restart button's) asks for its beginning.
 
         `on_deck` is the show's own OnDeck list (Show.onDeck, populated by the includeOnDeck=1
         reload its window already does). Plex's on-deck pick is a whole-show "continue watching"
@@ -460,41 +447,14 @@ class UtilMixin(GoHomeMixin):
         order and this pick can't disagree about it. Under 'interleave' that ordering has already
         decided where each special belongs by air date, so the scan below stops skipping them.
 
-        The pick itself is pickShowEp() below - this only adds the playlist and the prompt.
+        The pick itself is pickShowEp() below - this only adds the playlist.
         """
         n = self.pickShowEp(items, on_deck=on_deck, specials_mode=specials_mode)
         if n is None:
             return False
 
         pl.setCurrent(n)
-
-        # Nothing to resume - an on-deck pick is usually just the next unwatched episode, and
-        # there's no question to ask about starting one of those from the beginning.
-        if not n.get('viewOffset').asInt():
-            return False
-
-        if not util.getSetting('assume_resume'):
-            choice = dropdown.showDropdown(
-                options=[
-                    {'key': 'resume', 'display': T(32429, 'Resume from {0}').format(
-                        util.timeDisplay(n.viewOffset.asInt()).lstrip('0').lstrip(':'))},
-                    {'key': 'play', 'display': T(32317, 'Play from beginning')}
-                ],
-                pos=(660, 441),
-                set_dropdown_prop=False,
-                header=u'{0} - {1} \u2022 {2}'.format(title,
-                                                      T(32310, 'S').format(n.parentIndex),
-                                                      T(32311, 'E').format(n.index))
-            )
-
-            if not choice:
-                return None
-
-            if choice['key'] == 'resume':
-                return True
-        else:
-            return True
-        return False
+        return not start_over and bool(n.get('viewOffset').asInt())
 
     def pickShowEp(self, items, on_deck=None, specials_mode='default'):
         """Which episode a show-level Play would start on, or None for an empty queue.

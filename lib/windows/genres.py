@@ -130,6 +130,8 @@ class GenreBrowserWindow(kodigui.ControlledWindow, windowutils.UtilMixin, window
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # first, whether or not this is live yet: the sidebar rows read it (SidebarMixin)
+        self.trackSidebarFocus(controlID)
         if self.ignoresInput():
             return
         self.reselectActiveSection(controlID, self.lastFocusID)

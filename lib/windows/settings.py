@@ -962,12 +962,6 @@ class Settings(object):
         ),
         'playback_advanced': (
             T(35178, 'Playback (advanced)'), (
-                BoolSetting(
-                    'assume_resume', T(33711, 'Always resume media'), True
-                ).description(
-                    T(33712, 'When playback of an in-progress media is requested, resume it by default instead'
-                             ' of asking whether to resume or start from the beginning.')
-                ),
                 OptionsSetting(
                     'resume_offset', T(34075, "Resume offset adjustment"), -3500,
                     [(0, T(32481))] + [
@@ -1517,109 +1511,6 @@ class SchnorchelDialog(xbmcgui.WindowXMLDialog):
             self.key = -1
         self.close()
         return
-
-
-class SelectDialog(kodigui.BaseDialog, util.CronReceiver):
-    xmlFile = 'script-plex-settings_select_dialog.xml'
-    path = util.ADDON.getAddonInfo('path')
-    theme = 'Main'
-    res = '1080i'
-    width = 1920
-    height = 1080
-
-    OPTIONS_LIST_ID = 100
-
-    def __init__(self, *args, **kwargs):
-        kodigui.BaseDialog.__init__(self, *args, **kwargs)
-        self.heading = kwargs.get('heading')
-        self.options = kwargs.get('options')
-        self.choice = None
-
-    def onFirstInit(self):
-        self.optionsList = kodigui.ManagedControlList(self, self.OPTIONS_LIST_ID, 8)
-        self.setProperty('heading', self.heading)
-        self.showOptions()
-        util.CRON.registerReceiver(self)
-
-    def onAction(self, action):
-        try:
-            if not xbmc.getCondVisibility('Player.HasMedia'):
-                self.doClose()
-                return
-        except:
-            util.ERROR()
-
-        kodigui.BaseDialog.onAction(self, action)
-
-    def onClick(self, controlID):
-        if controlID == self.OPTIONS_LIST_ID:
-            self.setChoice()
-
-    def onClosed(self):
-        util.CRON.cancelReceiver(self)
-
-    def tick(self):
-        if not xbmc.getCondVisibility('Player.HasMedia'):
-            self.doClose()
-            return
-
-    def setChoice(self):
-        mli = self.optionsList.getSelectedItem()
-        if not mli:
-            return
-
-        self.choice = self.options[self.optionsList.getSelectedPosition()][0]
-        self.doClose()
-
-    def showOptions(self):
-        items = []
-        for o in self.options:
-            item = kodigui.ManagedListItem(o[1], data_source=o[0])
-            items.append(item)
-
-        self.optionsList.reset()
-        self.optionsList.addItems(items)
-
-        self.setFocusId(self.OPTIONS_LIST_ID)
-
-
-def showOptionsDialog(heading, options):
-    w = SelectDialog.open(heading=heading, options=options)
-    choice = w.choice
-    del w
-    return choice
-
-
-def showAudioDialog(video):
-    options = [(s, s.getTitle()) for s in video.audioStreams]
-    choice = showOptionsDialog(T(32048, 'Audio'), options)
-    if choice is None:
-        return
-
-    video.selectStream(choice)
-
-
-def showSubtitlesDialog(video):
-    options = [(s, s.getTitle()) for s in video.subtitleStreams]
-    options.insert(0, (plexnet.plexstream.NoneStream(), 'None'))
-    choice = showOptionsDialog(T(32396, 'Subtitles'), options)
-    if choice is None:
-        return
-
-    video.selectStream(choice)
-
-
-def showQualityDialog(video):
-    options = [(16 - i, T(l)) for (i, l) in enumerate((32001, 32017, 32002, 32016, 32003, 32004, 32005, 32015, 32006,
-                                                       32007, 32008, 32009, 32010, 32011))]
-
-    choice = showOptionsDialog(T(32397, 'Quality'), options)
-    if choice is None:
-        return
-
-    video.settings.setPrefOverride('local_quality2', choice)
-    video.settings.setPrefOverride('remote_quality2', choice)
-    video.settings.setPrefOverride('online_quality2', choice)
 
 
 def openWindow():

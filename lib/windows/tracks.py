@@ -8,10 +8,11 @@ from lib import util
 from lib.util import T
 from lib import player
 from . import busy
-from . import dropdown
 from . import info
 from . import kodigui
+from . import panel_colors
 from . import opener
+from . import playersettings
 from . import sidebar_model
 from . import windowutils
 
@@ -90,6 +91,8 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # first, whether or not this is live yet: the sidebar rows read it (SidebarMixin)
+        self.trackSidebarFocus(controlID)
         if self.ignoresInput():
             return
         self.reselectActiveSection(controlID, self.lastFocusID)
@@ -162,13 +165,13 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
             if controlID == self.TRACKS_LIST_ID:
                 self.checkForHeaderFocus(action)
             if action == xbmcgui.ACTION_CONTEXT_MENU:
-                # Swallowed: this screen has no per-item context menu, and the jump into
-                # OPTIONS_GROUP_ID (the header, group 200) that used to live here is the same one
-                # Episodes/Seasons/Artist/Pre-play just lost - script-plex-album.xml blanks
-                # header_topleft in favour of the sidebar, leaving group 200 with only the audio
-                # widget (204, focusable just while Player.HasAudio), so with nothing playing Kodi
-                # drops focus entirely and the screen goes dead to everything but Back. See
-                # episodes.py's own copy of this branch for the full story.
+                # Swallowed: a track has no menu - music isn't marked played or unplayed, here or in Plex's own
+                # apps (plexnet's Audio items have no markWatched()) - and the jump into OPTIONS_GROUP_ID (the
+                # header, group 200) that used to live here is the same one Episodes/Seasons/Artist/Pre-play just
+                # lost - script-plex-album.xml blanks header_topleft in favour of the sidebar, leaving group 200
+                # with only the audio widget (204, focusable just while Player.HasAudio), so with nothing playing
+                # Kodi drops focus entirely and the screen goes dead to everything but Back. See episodes.py's own
+                # copy of this branch for the full story.
                 return
         except:
             util.ERROR()
@@ -275,51 +278,21 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
     def shuffleButtonClicked(self):
         self.playButtonClicked(shuffle=True)
 
-    def optionsButtonClicked(self, item=None):
-        options = []
+    @kodigui.releasesDialogDim
+    def optionsButtonClicked(self):
+        """The album's More menu. Its tracks have none: music isn't marked played or unplayed (Mark Played/Unplayed
+        on a track - its only rows - errored, plexnet's Audio items having no markWatched())."""
+        # if xbmc.getCondVisibility('Player.HasAudio') and self.section.TYPE == 'artist':
+        #     options.append({'key': 'add_to_queue', 'display': 'Add To Queue'})
+        options = [{'key': 'to_artist', 'display': T(32301, 'Go to Artist')},
+                   {'key': 'to_section', 'display': T(32302, u'Go to {0}').format(self.album.getLibrarySectionTitle())}]
 
-        if item:
-            if item.dataSource.isWatched:
-                options.append({'key': 'mark_unwatched', 'display': T(32318, 'Mark Unplayed')})
-            else:
-                options.append({'key': 'mark_watched', 'display': T(32319, 'Mark Played')})
-
-            # if False:
-            #     options.append({'key': 'add_to_playlist', 'display': '[COLOR FF808080]Add To Playlist[/COLOR]'})
-        else:
-            # if xbmc.getCondVisibility('Player.HasAudio') and self.section.TYPE == 'artist':
-            #     options.append({'key': 'add_to_queue', 'display': 'Add To Queue'})
-
-            options.append({'key': 'to_artist', 'display': T(32301, 'Go to Artist')})
-            options.append({'key': 'to_section', 'display': T(32302, u'Go to {0}').format(self.album.getLibrarySectionTitle())})
-
-        pos = (460, 1106)
-        bottom = True
-        setDropdownProp = False
-        if item:
-            viewPos = self.trackListControl.getViewPosition()
-            if viewPos > 6:
-                pos = (1490, 312 + (viewPos * 100))
-                bottom = True
-            else:
-                pos = (1490, 167 + (viewPos * 100))
-                bottom = False
-            setDropdownProp = True
-        choice = dropdown.showDropdown(options, pos, pos_is_bottom=bottom, close_direction='right', set_dropdown_prop=setDropdownProp)
+        # the More settings dialog, these alone (as the Episodes season card's)
+        choice = playersettings.showMoreDialog(options)
         if not choice:
             return
 
-        if choice['key'] == 'mark_watched':
-            media = item and item.dataSource or self.album
-            media.markWatched()
-            self.updateItems(item)
-            util.MONITOR.watchStatusChanged()
-        elif choice['key'] == 'mark_unwatched':
-            media = item and item.dataSource or self.album
-            media.markUnwatched()
-            self.updateItems(item)
-            util.MONITOR.watchStatusChanged()
-        elif choice['key'] == 'to_artist':
+        if choice['key'] == 'to_artist':
             self.artistButtonClicked()
         elif choice['key'] == 'to_section':
             # force: the section's start, as a sidebar click - it's usually the section showing.
@@ -396,6 +369,9 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
         # grandparentArt, so an album with no art of its own now shows the artist's rather than
         # nothing. Honours the dynamic-backgrounds setting too, again like those screens - with it
         # off, the background stays whatever the default is instead of being set from the album.
+        # Its colours from its cover (panel_colors.py): one request, if the rows it was opened from
+        # haven't already asked.
+        panel_colors.warmCovers([self.album])
         self.updateBackgroundFrom(self.album)
         self.setProperty('album.thumb', self.album.thumb.asTranscodedImageURL(*self.THUMB_SQUARE_DIM))
         self.setProperty('artist.title', self.album.parentTitle or '')

@@ -17,21 +17,23 @@
     <!-- Unavailable replaces the whole row (on request, 2026-09-25): with it set, the text and the
          time-left pill are hidden and the red pill shows alone, flush left (posx 0, not the 23px gap it
          keeps from the text otherwise). Everything together overflowed the row's 708px - the
-         unavailable pill was cut in half - and the rest isn't much use for an item that can't play. -->
+         unavailable pill was cut in half - and the rest isn't much use for an item that can't play.
+         900 wide now (on request, 2026-10-23, with the edition pill), so a long edition leaves room
+         for the time-left pill. -->
     <control type="grouplist">
         <!-- 61, not the old 60: reaches absolute x=113 (host group's own posx=52 + this 61), matching
              the shared baseline every includer (Seasons/Pre-play/Recommended) and Episodes' own inline
              copy of this row now use - see script-plex-episodes.xml.tpl's header block comment. -->
         <posx>61</posx>
         <posy>{{ vscale(175) }}</posy>
-        <width>708</width>
+        <width>900</width>
         <height>{{ vscale(30) }}</height>
         <align>left</align>
         <itemgap>0</itemgap>
         <orientation>horizontal</orientation>
         <usecontrolcoords>true</usecontrolcoords>
         <control type="grouplist">
-            <width>708</width>
+            <width>900</width>
             <height>{{ vscale(30) }}</height>
             <itemgap>23</itemgap>
             <orientation>horizontal</orientation>
@@ -47,6 +49,25 @@
                 <label>$INFO[Window.Property({{ prop }})]</label>
             </control>
             {% endfor %}
+        </control>
+        <!-- The item's edition (its editionTitle: a film's "Director's Cut"; a show's, which Plex gives its seasons
+             and episodes too - checked live 2026-10-23), before the time-left pill (on request, 2026-10-23): that
+             pill's dark box and size, the fields' text colour - shown only when the item has one, as wide as its
+             text. -->
+        <control type="button">
+            <visible>!String.IsEmpty(Window.Property(edition)) + String.IsEmpty(Window.Property(unavailable))</visible>
+            <posx>23</posx>
+            <width>auto</width>
+            <height>{{ vscale(30) }}</height>
+            <font>font20</font>
+            <align>center</align>
+            <aligny>top</aligny>
+            <focusedcolor>FFD2CCCE</focusedcolor>
+            <textcolor>FFD2CCCE</textcolor>
+            <textoffsetx>10</textoffsetx>
+            <texturefocus colordiffuse="40000000" border="8">script.plex/white-square-rounded.png</texturefocus>
+            <texturenofocus colordiffuse="40000000" border="8">script.plex/white-square-rounded.png</texturenofocus>
+            <label>$INFO[Window.Property(edition)]</label>
         </control>
         <control type="button">
             <visible>!String.IsEmpty(Window.Property(remainingTime)) + String.IsEmpty(Window.Property(unavailable))</visible>

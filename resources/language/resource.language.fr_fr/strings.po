@@ -3511,7 +3511,7 @@ msgstr ""
 
 #: 
 msgctxt "#34036"
-msgid "DOVI"
+msgid "DoVi"
 msgstr ""
 
 #: 

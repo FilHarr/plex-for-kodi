@@ -8,9 +8,10 @@ from lib import player
 from lib import util
 from lib.util import T
 from . import busy
-from . import dropdown
 from . import kodigui
+from . import panel_colors
 from . import opener
+from . import playersettings
 from . import sidebar_model
 from . import windowutils
 
@@ -247,10 +248,8 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
 
     COVER_FALLBACK = 'script.plex/thumb_fallbacks/music.png'
 
-    # The 4 background corner tints, ids as declared in both windows' templates - see the
-    # BACKGROUND comment in either for why these are driven from here rather than from window
-    # properties like every other screen's panel.
-    PANEL_CORNER_CONTROLS = ((301, 'topLeft'), (302, 'topRight'), (303, 'bottomLeft'), (304, 'bottomRight'))
+    # the colour panel's static form (includes/background_panel.xml.tpl): here it's the whole background
+    PANEL_CROSSFADE = False
 
     def updateFromTrack(self, track=None):
         """The cover and the background panel, from the track. Called with the track about to
@@ -270,14 +269,15 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         fallback for a track with no art is chosen here for the same reason - a fallback layer
         in the template would flash on during the gap.
 
-        Panel: the 4-corner panel (includes/default_background.xml.tpl) from the track's album -
-        its ultraBlurColors, the same source the Album screen's panel uses, so the two agree -
-        falling back to the track's own when it has no album (or the album carries none), and
+        Panel: the 4-corner panel (includes/background_panel.xml.tpl) from the track's album -
+        its cover's colours, else its own ultraBlurColors (panel_colors.coloursFor()), the same
+        source the Album screen's panel uses, so the two agree - falling back to the track's own
+        when it has no album (or the album carries none), and
         then to the seeded stand-in every other screen ends up with (util.backgroundPanelCorners),
         seeded on the album so a whole album shares it. updateBackgroundFrom() (kodigui.py) isn't
         used because these windows show the cover itself and never want the hero-art box that
-        also drives; crossfade=False because on these two screens the panel is the whole
-        background and its crossfade flickered - see _setPanelCorners()."""
+        also drives; no crossfade (PANEL_CROSSFADE) because on these two screens the panel is the
+        whole background - see the include."""
         track = track or player.PLAYER.currentTrack()
         if not track:
             return
@@ -286,21 +286,14 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
 
         if not util.addonSettings.dynamicBackgrounds:
             return
+        # its album's cover's colours (panel_colors.py): one request per album, kept
+        panel_colors.warmCovers([track])
         album = self._albumForPanel(track)
-        colors = album is not None and getattr(album, 'ultraBlurColors', None) or None
+        colors = panel_colors.coloursFor(album) if album is not None else None
         if not colors:
-            colors = getattr(track, 'ultraBlurColors', None)
+            colors = panel_colors.coloursFor(track)
         seed = track.get('parentRatingKey') or track.get('ratingKey') or track.get('title')
-        self.setPanelCorners(util.backgroundPanelCorners(colors, seed=seed))
-
-    def setPanelCorners(self, corners):
-        """The 4 corner tints, straight onto the controls. A corner with no color is set fully
-        transparent rather than hidden - a <visible> condition is one more thing that can flap."""
-        for cid, corner in self.PANEL_CORNER_CONTROLS:
-            try:
-                self.getControl(cid).setColorDiffuse(corners.get(corner) or '00000000')
-            except (RuntimeError, AttributeError):
-                util.DEBUG_LOG('{}: no background corner control {}', self.__class__.__name__, cid)
+        self._setPanelCorners(util.backgroundPanelCorners(colors, seed=seed))
 
     def _albumForPanel(self, track):
         """The track's album, fetched once and reused for the tracks that follow on it - a
@@ -442,7 +435,8 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         self.onAudioStarting()
         self.playerSkip('Next')
 
-    def optionsButtonClicked(self, pos=(670, 1060)):
+    @kodigui.releasesDialogDim
+    def optionsButtonClicked(self):
         track = player.PLAYER.currentTrack()
         if not track:
             return
@@ -453,7 +447,8 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         options.append({'key': 'to_artist', 'display': T(32301, 'Go to Artist')})
         options.append({'key': 'to_section', 'display': T(32302, u'Go to {0}').format(track.getLibrarySectionTitle())})
 
-        choice = dropdown.showDropdown(options, pos, pos_is_bottom=True, close_on_playback_ended=True)
+        # the More settings dialog, these alone (as the Episodes season card's); closing when playback ends
+        choice = playersettings.showMoreDialog(options, non_playback=False)
         if not choice:
             return
 

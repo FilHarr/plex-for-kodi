@@ -8,10 +8,6 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
-    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
-         of this include for the full reasoning (this window is one of the seven real hosted-shell
-         types too, same _sidebarTarget()-aware Python side, same onClick forwarding). -->
-    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 {% block content %}
 <control type="group" id="50">
@@ -303,6 +299,9 @@
                 <onup>200</onup>
                 <ondown>400</ondown>
                 <onleft>9000</onleft>
+                <!-- Right stops at the last button: a grouplist without an onright of its own links its
+                     last control's Right back to its first (Kodi's CGUIControlGroupList::AddControl). -->
+                <onright>noop</onright>
                 <itemgap>{{ theme.seasons.buttongroup.itemgap }}</itemgap>
                 <orientation>horizontal</orientation>
                 <scrolltime tween="quadratic" easing="out">200</scrolltime>
@@ -356,7 +355,19 @@
                         label_suffix_wprop="resume.timeleft" &
                         label_width=347 & pill_width=409 & group_width=365 &
                         pill_id=399 & label_id=307 &
-                        onleft=301 & onright=308
+                        onleft=301 & onright=306
+                    %}
+                    <!-- Restart, beside Resume: the same episode from its start (playButtonClicked(start_over=True)),
+                         named as Resume names it. Worst case "Restart S12E345" = 188 measured (font10),
+                         shrunk to the real string by sizePlayButtonLabel() like the pair above. -->
+                    {% include template with name="restart" & id=306 & overlay=True &
+                        visible="String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(play.in.progress))"
+                    %}
+                    {% include ol with id=380 & visible="Control.HasFocus(306)" & name="restart" &
+                        label="$ADDON[script.plexmod 35061] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
+                        label_width=192 & pill_width=254 & group_width=210 &
+                        pill_id=381 & label_id=382 &
+                        onleft=306 & onright=308
                     %}
                     {% include "includes/wl_dynamic_buttons.xml.tpl" %}
                     {% include "includes/wl_add_remove_buttons.xml.tpl" %}

@@ -166,6 +166,37 @@ def setNavHidden(hidden):
     util.setGlobalProperty('nav_hidden', hidden and '1' or '')
 
 
+DIALOG_DIM_HELD = False
+
+
+def holdDialogDim():
+    """Keep the settings and pickers' dim on the screen (includes/dialog_gap_dim.xml.tpl) while a dialog closes
+    for another to follow: More settings, for an action its screen runs once it's gone, which may confirm first.
+    Released by the next window or dialog's init, and by releaseDialogDim() once the action's done."""
+    global DIALOG_DIM_HELD
+    DIALOG_DIM_HELD = True
+    util.setGlobalProperty('dialog_dim', '1')
+
+
+def releaseDialogDim():
+    global DIALOG_DIM_HELD
+    if DIALOG_DIM_HELD:
+        DIALOG_DIM_HELD = False
+        util.setGlobalProperty('dialog_dim', '')
+
+
+def releasesDialogDim(method):
+    """For a screen's More button: opens More settings and runs the action chosen from it, after which the dim
+    holdDialogDim() kept on comes off, whatever the action did."""
+    @functools.wraps(method)
+    def wrapper(*args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        finally:
+            releaseDialogDim()
+    return wrapper
+
+
 # A remote button mapped to a builtin (the power key's ShutDown(), say) reaches the top window as
 # this action before Kodi runs the builtin itself, on its main thread (CApplication::OnAction()).
 ACTION_BUILT_IN_FUNCTION = getattr(xbmcgui, 'ACTION_BUILT_IN_FUNCTION', 122)
@@ -297,6 +328,10 @@ class XMLBase(object, metaclass=_WindowType):
                     return
                 raise
             self._markControls()
+            # the colour panel's corners, now there are controls to paint (BaseWindow._paintPanelLayer())
+            repaint = getattr(self, 'repaintPanel', None)
+            if repaint:
+                repaint()
         self._onInit()
 
     def _markControls(self):
@@ -337,7 +372,8 @@ class XMLBase(object, metaclass=_WindowType):
 
 class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
     __slots__ = ("_closing", "_winID", "started", "finishedInit", "dialogProps", "isOpen", "_errored",
-                 "_closeSignalled", "_bgURL", "_panelLayer", "_panelColors")
+                 "_closeSignalled", "_bgURL", "_panelLayer", "_panelColors", "_panelLayerColors",
+                 "_absentPanelCopies")
     supportsAutoPlay = False
 
     def __init__(self, *args, **kwargs):
@@ -352,6 +388,11 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self._bgURL = None
         self._panelLayer = 'a'
         self._panelColors = ('', '', '', '')
+        # each colour-panel layer's 4 corner colours as painted (_paintPanelLayer()), repainted at first init
+        self._panelLayerColors = {'a': ('', '', '', ''), 'b': ('', '', '', '')}
+        # the panel copies (PANEL_CORNER_CONTROLS) this window's template hasn't got, found once it's loaded:
+        # never asked for again, as Kodi logs every miss
+        self._absentPanelCopies = set()
         self.dialogProps = kwargs.get("dialog_props", None)
         # opener.py's handleOpen() reads w.exitCommand unconditionally on every window it opens
         # this way (win.open(**kwargs) then `return w.exitCommand or ''`) - a BaseWindow subclass
@@ -515,6 +556,8 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
                 # the screen replacing post-play's starting screen is showing: see setNavHidden()
                 if NAV_HIDDEN:
                     setNavHidden(False)
+                # an action from More settings opened this: see holdDialogDim()
+                releaseDialogDim()
 
                 if hasattr(self, "onFirstInit"):
                     self.onFirstInit()
@@ -703,8 +746,18 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         if util.addonSettings.dynamicBackgrounds:
             self._setPanelCorners(self.NEUTRAL_PANEL_CORNERS)
 
-    PANEL_CORNER_PROPS =(('background_panel_tl', 'topLeft'), ('background_panel_tr', 'topRight'),
-                           ('background_panel_bl', 'bottomLeft'), ('background_panel_br', 'bottomRight'))
+    PANEL_CORNERS = ('topLeft', 'topRight', 'bottomLeft', 'bottomRight')
+    # False: the panel's static form (includes/background_panel.xml.tpl), layer a alone and always shown - the music
+    # screens', where it's the whole background
+    PANEL_CROSSFADE = True
+    # each layer's 4 corner controls (includes/background_panel.xml.tpl), in PANEL_CORNERS order: the panel's
+    # own. The Recommended view adds its cover copy over its hub rows (PANEL_COVER_CONTROLS) - only there: Kodi logs
+    # an error for every getControl() of a control a window hasn't got, once per screen opened.
+    PANEL_CORNER_CONTROLS = {'a': ((2101, 2102, 2103, 2104),),
+                             'b': ((2105, 2106, 2107, 2108),)}
+    # the Recommended view's cover copy (panel_cover, script-plex-recommended), 10 on
+    PANEL_COVER_CONTROLS = {'a': ((2101, 2102, 2103, 2104), (2111, 2112, 2113, 2114)),
+                            'b': ((2105, 2106, 2107, 2108), (2115, 2116, 2117, 2118))}
 
     def _setPanelCorners(self, corners):
         """Cross-fades the 4-corner background color panel (default_background.xml.tpl) between
@@ -712,30 +765,61 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         Kodi - unlike the hero art layers windowSetBackground drives, which crossfade because their
         *texture* changes, only a control's own <visible> transition can be animated (via an
         explicit <animation effect="fade">VisibleChange</animation>). So default_background.xml.tpl
-        duplicates the 4 corners into two layers (_a/_b, each a group gated on
-        background_panel_layer); this writes the new colors into whichever layer is currently
+        duplicates the 4 corners into two layers (a/b, each a group gated on
+        background_panel_layer); this paints the new colors onto whichever layer is currently
         hidden, then flips background_panel_layer so the now-hidden old layer fades out while the
         newly-shown one fades in.
         """
-        values = tuple(corners.get(corner, '') for _, corner in self.PANEL_CORNER_PROPS)
+        values = tuple(corners.get(corner, '') for corner in self.PANEL_CORNERS)
         if values == self._panelColors:
             return
         self._panelColors = values
 
+        if not self.PANEL_CROSSFADE:
+            # the static panel: no layer to show, nothing that reads background_panel_layer
+            self._paintPanelLayer('a', values)
+            return
+
         if not util.addonSettings.dbgCrossfade:
-            for prop, corner in self.PANEL_CORNER_PROPS:
-                # always set, even to '' - established hide-via-empty-property idiom this skin
-                # already uses, needed so a title with no ultraBlurColors clears colors left by a
-                # prior title.
-                self.setProperty('{}_a'.format(prop), corners.get(corner, ''))
+            self._paintPanelLayer('a', values)
             self.setProperty('background_panel_layer', 'a')
             return
 
         target = 'b' if self._panelLayer == 'a' else 'a'
-        for prop, corner in self.PANEL_CORNER_PROPS:
-            self.setProperty('{}_{}'.format(prop, target), corners.get(corner, ''))
+        self._paintPanelLayer(target, values)
         self.setProperty('background_panel_layer', target)
         self._panelLayer = target
+
+    def _paintPanelLayer(self, layer, values=None):
+        """A colour-panel layer's 4 corners, straight onto its controls with setColorDiffuse(): a constant
+        colour, where $INFO[Window.Property(...)] is resolved against the topmost modal dialog while one is
+        open (Kodi's CGUIInfoColor) - every picker or dialog turned the panel dark. A corner with no colour
+        goes fully transparent, showing the base fill. values: the layer's colours, remembered for the
+        repaint at first init (repaintPanel()); None repaints the remembered ones."""
+        if values is not None:
+            self._panelLayerColors[layer] = values
+        elif not any(self._panelLayerColors[layer]):
+            # a repaint of nothing: the template's corners start transparent. Not asked for either - a window
+            # without the panel (user select) logged an error for each layer
+            return
+        for copy in self.PANEL_CORNER_CONTROLS[layer]:
+            if copy[0] in self._absentPanelCopies:
+                continue
+            try:
+                for cid, colour in zip(copy, self._panelLayerColors[layer]):
+                    self.getControl(cid).setColorDiffuse(colour or '00000000')
+            except (RuntimeError, TypeError):
+                # Not loaded yet (painted again at first init), or a window without the panel or this copy of it -
+                # which, once it's loaded, it never will have
+                if self.started:
+                    self._absentPanelCopies.add(copy[0])
+                return
+
+    def repaintPanel(self):
+        """Both colour-panel layers again, once the window's controls exist: colours set before its first
+        init (a clicked item's painted early) couldn't reach them."""
+        for layer in ('a', 'b'):
+            self._paintPanelLayer(layer)
 
     def windowSetBackground(self, value):
         """Writes the hero art, or clears it when value is empty (an item with no art shows none,
@@ -879,6 +963,8 @@ class BaseDialog(XMLBase, xbmcgui.WindowXMLDialog, BaseFunctions):
         else:
             self.started = True
             plexapp.util.APP.on('close.dialogs', self.onCloseSignal)
+            # this one's own dim, if it has one, has taken over: see holdDialogDim()
+            releaseDialogDim()
             self.onFirstInit()
 
     def onAction(self, action):
@@ -1683,6 +1769,10 @@ class MultiWindowView(object):
             self.viewClick(controlID)
 
     def onFocus(self, controlID):
+        # first, whether or not this is live yet: the host's sidebar rows read it (SidebarMixin)
+        track = getattr(self.hostedBy(), 'trackSidebarFocus', None)
+        if track is not None:
+            track(controlID)
         if self.ignoresInput():
             return
         if not self.hostedBy().routeFocus(controlID):

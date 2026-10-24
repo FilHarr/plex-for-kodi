@@ -180,6 +180,18 @@ class VersionsTest(KodiTestCase):
         self.assertEqual(['201469', '225648'], [media.get('id') for media in elem.findall('Media')])
         self.assertEqual(1, len(elem.findall('Genre')))
 
+    def test_an_item_listed_once_per_credit_is_kept_once(self):
+        # Ryan Reynolds is actor, writer and producer on Animal's Films copies of Deadpool 2: asked by his Discover
+        # id, each came three times (live, 2026-10-24) - the card read "Animal + 3"
+        listing = [ET.fromstring('<Video ratingKey="74636"><Media id="201261"/></Video>'),
+                   ET.fromstring('<Video ratingKey="93822"><Media id="226505"/></Video>'),
+                   ET.fromstring('<Video ratingKey="74636"><Media id="201261"/><Media id="225703"/></Video>'),
+                   ET.fromstring('<Video ratingKey="74636"><Media id="225703"/></Video>')]
+        kept = person._dropRepeatedItems(listing)
+        self.assertEqual(['74636', '93822'], [elem.get('ratingKey') for elem in kept])
+        # a version only a repeat had is kept, once
+        self.assertEqual(['201261', '225703'], [media.get('id') for media in kept[0].findall('Media')])
+
     def test_films_from_library_all_get_their_versions_from_their_own_library(self):
         logan = ET.Element('Video', type='movie', ratingKey='76679', guid='plex://movie/logan', librarySectionID='22')
         blade = ET.Element('Video', type='movie', ratingKey='74145', guid='plex://movie/blade', librarySectionID='22')

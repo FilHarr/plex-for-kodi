@@ -12,12 +12,13 @@ from lib import util
 from lib.util import T
 from plexnet import plexapp
 from . import busy
-from . import dropdown
+from . import grid_labels
 from . import kodigui
 from . import opener
 from . import windowutils
 from . import sidebar_model
 from . import copies
+from .dialog import showOptionsDialog
 from .mixins.row_restore import RowRestoreMixin
 
 class PersonDetailsTask(backgroundthread.Task):
@@ -75,10 +76,32 @@ def libraryFilmography(server, key):
     data = server.query('/library/people/{0}/media'.format(key))
     if data is None:
         return []
-    elems = list(data.findall('Video')) + list(data.findall('Metadata')) + list(data.findall('Directory'))
+    elems = _dropRepeatedItems(list(data.findall('Video')) + list(data.findall('Metadata')) +
+                               list(data.findall('Directory')))
     for elem in elems:
         _dropRepeatedVersions(elem)
     return libraryItems(server, elems, '/library/people')
+
+
+def _dropRepeatedItems(elems):
+    """Asked by the person's Discover id, /library/people/{key}/media lists an item once for each credit the person
+    has on it: Ryan Reynolds is actor, writer and producer on Animal's Films copies of Deadpool 2, each of which came
+    three times - the card read "Animal + 3" and Open from offered each version three times (live, 2026-10-24). One
+    element per item (ratingKey), with any version a repeat has that the first hadn't."""
+    kept, byKey = [], {}
+    for elem in elems:
+        key = elem.get('ratingKey')
+        first = byKey.get(key) if key else None
+        if first is None:
+            if key:
+                byKey[key] = elem
+            kept.append(elem)
+            continue
+        have = set(media.get('id') for media in first.findall('Media'))
+        for media in elem.findall('Media'):
+            if media.get('id') not in have:
+                first.append(media)
+    return kept
 
 
 def _dropRepeatedVersions(elem):
@@ -481,6 +504,8 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # first, whether or not this is live yet: the sidebar rows read it (SidebarMixin)
+        self.trackSidebarFocus(controlID)
         if self.ignoresInput():
             return
         self.reselectActiveSection(controlID, self.lastFocusID)
@@ -628,8 +653,9 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             thumb = item.defaultThumb.asTranscodedImageURL(*self.POSTER_DIM)
 
         mli = kodigui.ManagedListItem(title, thumbnailImage=thumb, data_source=item)
-        # under the card in the movie grid's way, as its 'year' (script-plex-person.xml.tpl)
-        mli.setProperty('year', year)
+        # under the card in the movie grid's way, as its 'year' (script-plex-person.xml.tpl): after the
+        # edition, if it has one (grid_labels.editionLine())
+        mli.setProperty('year', grid_labels.editionLine(item, year) if hasattr(item, 'get') else year)
 
         item_type = item.type if hasattr(item, 'type') else item.TYPE if hasattr(item, 'TYPE') else ''
         mli.setProperty('media.type', item_type)
@@ -689,30 +715,18 @@ class PersonWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
         return T(32345, 'All')
 
     def filterButtonClicked(self):
-        choice = dropdown.showDropdown(
-            options=self.filterOptions(),
-            pos=self.filterDropdownPos(),
-            close_direction='none',
-            set_dropdown_prop=False,
-            align_items='left'
-        )
+        """The filmography's filter (All, Movies, Shows): the option picker (dialog.SelectDialog), as the library
+        grid's Filter - the one showing ticked. It was a dropdown beside the button."""
+        options = self.filterOptions()
+        current = next((i for i, o in enumerate(options) if o['key'] == self.filmographyFilter), 0)
+        choice = showOptionsDialog(T(35212, 'Filter'), [(i, o['display']) for i, o in enumerate(options)],
+                                   non_playback=True, menu=True, selected_idx=current,
+                                   dialog_props=getattr(self, 'carriedProps', None))
         if choice is None:
             return
-        self.filmographyFilter = choice['key']
-        self.setProperty('filmography.filter', choice['display'])
+        self.filmographyFilter = options[choice]['key']
+        self.setProperty('filmography.filter', options[choice]['display'])
         self.applyFilmographyFilter()
-
-    def filterDropdownPos(self):
-        """The filter dropdown's top-left: 10 right of the filter button, level with its top (on
-        request, 2026-10-08). The button follows the row's heading (script-plex-person.xml.tpl), so
-        where it ends is measured: x 120 (group 50's 60 and the heading grouplist's 60), the
-        heading's text in font30_title (Inter Bold 30), the grouplist's 30 gap, then the button -
-        its label in font12 and 15 either side. Its top is the row's 730 plus its own 15, less the
-        225 the screen slides up while the row has focus, as it does when the button is clicked."""
-        from .mixins.text_metrics import measureTextWidth, FONT12_POINT_SIZE
-        heading = measureTextWidth(T(32476, 'Movies & Shows in Media Libraries'), 30, bold=True)
-        button = measureTextWidth(self.getProperty('filmography.filter'), FONT12_POINT_SIZE) + 2 * 15
-        return int(round(120 + heading + 30 + button + 10)), util.vscalei(730 + 15 - 225)
 
     def applyFilmographyFilter(self):
         """The filmography as the filter has it (All, Movies, Shows): from what's loaded, one entry

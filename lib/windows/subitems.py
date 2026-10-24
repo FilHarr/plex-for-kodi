@@ -15,9 +15,11 @@ from . import dropdown
 from . import episodes
 from . import info
 from . import kodigui
+from . import panel_colors
 from . import opener
 from . import pagination
 from . import playbacksettings
+from . import playersettings
 from . import tracks
 from . import videoplayer
 from . import windowutils
@@ -110,6 +112,11 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     RESUME_LABEL_GROUP_ID = 398
     RESUME_LABEL_PILL_ID = 399
     RESUME_LABEL_TEXT_ID = 307
+    # Restart, shown beside Resume: the same episode from its start. Its overlay is sized with Resume's.
+    RESTART_BUTTON_ID = 306
+    RESTART_LABEL_GROUP_ID = 380
+    RESTART_LABEL_PILL_ID = 381
+    RESTART_LABEL_TEXT_ID = 382
     SHUFFLE_BUTTON_ID = 303
     OPTIONS_BUTTON_ID = 304
     # Click/focus target laid over this screen's own summary textbox (script-plex-seasons.xml.tpl/
@@ -381,7 +388,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.sizePlayButtonLabel()
             # onFirstInit() focuses Play before any of this is known, so the button it focused may
             # be the one that just went invisible.
-            if self.initialized and self.getFocusId() in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
+            if self.initialized and self.playButtonFocusMayBeLost():
                 self.focusPlayButton(wait_visible=True)
         else:
             self.applyPlayButtonEpisode(pick)
@@ -429,7 +436,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             time=util.remainingTimeToShortText(duration - view_offset)) or '')
         self.sizePlayButtonLabel()
         # Not during onFirstInit()'s setup(), which focuses once it's done (see there).
-        if self.initialized and self.getFocusId() in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
+        if self.initialized and self.playButtonFocusMayBeLost():
             self.focusPlayButton(wait_visible=True)
 
     def sizePlayButtonLabel(self):
@@ -446,22 +453,24 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             timeleft = self.getProperty('resume.timeleft')
             if timeleft:
                 text = u'{0} \u2022 {1}'.format(text, timeleft)
-            ids = (self.RESUME_LABEL_GROUP_ID, self.RESUME_LABEL_PILL_ID, self.RESUME_LABEL_TEXT_ID)
+            labels = [(text, (self.RESUME_LABEL_GROUP_ID, self.RESUME_LABEL_PILL_ID, self.RESUME_LABEL_TEXT_ID)),
+                      (u'{0} {1}'.format(T(35061, 'Restart'), episode).rstrip(),
+                       (self.RESTART_LABEL_GROUP_ID, self.RESTART_LABEL_PILL_ID, self.RESTART_LABEL_TEXT_ID))]
         else:
-            text = u'{0} {1}'.format(T(33020, 'Play'), episode).rstrip()
-            ids = (self.PLAY_LABEL_GROUP_ID, self.PLAY_LABEL_PILL_ID, self.PLAY_LABEL_TEXT_ID)
+            labels = [(u'{0} {1}'.format(T(33020, 'Play'), episode).rstrip(),
+                       (self.PLAY_LABEL_GROUP_ID, self.PLAY_LABEL_PILL_ID, self.PLAY_LABEL_TEXT_ID))]
 
-        label_width = int(round(measureTextWidth(text, FONT10_POINT_SIZE))) + 4
-        group_id, pill_id, text_id = ids
-        try:
-            self.getControl(text_id).setWidth(label_width)
-            self.getControl(pill_id).setWidth(label_width + 62)
-            self.getControl(group_id).setWidth(label_width + 18)
-        except (SystemError, RuntimeError):
-            # Artist inherits this class and has no controls at these ids; so does any state where
-            # the row hasn't rendered yet. The build-time widths are the worst case either way, so
-            # a miss here just leaves a slightly roomy pill rather than a broken one.
-            util.DEBUG_LOG('ShowWindow: no Play/Resume label controls to resize')
+        for text, (group_id, pill_id, text_id) in labels:
+            label_width = int(round(measureTextWidth(text, FONT10_POINT_SIZE))) + 4
+            try:
+                self.getControl(text_id).setWidth(label_width)
+                self.getControl(pill_id).setWidth(label_width + 62)
+                self.getControl(group_id).setWidth(label_width + 18)
+            except (SystemError, RuntimeError):
+                # Artist inherits this class and has no controls at these ids; so does any state where
+                # the row hasn't rendered yet. The build-time widths are the worst case either way, so
+                # a miss here just leaves a slightly roomy pill rather than a broken one.
+                util.DEBUG_LOG('ShowWindow: no Play/Resume/Restart label controls to resize')
 
     def updateProperties(self):
         self.setProperty('title', self.mediaItem.title)
@@ -503,6 +512,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         self.setProperty('genres.short', genres and u', '.join([g.tag for g in genres][:2]) or '')
         # The rest of the shared meta row (CommonMixin.META_ROW_PROPERTIES) this screen has no
         # value for.
+        # a show's edition (none for an artist)
+        self.setProperty('edition', u'{0}'.format(getattr(self.mediaItem, 'editionTitle', None) or ''))
         self.blankMetaRow('episode.code', 'remainingTime', 'unavailable')
 
         if self.fromWatchlist and not self.wl_availability:
@@ -518,6 +529,15 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             forced_subtitles_override=util.getSetting("forced_subtitles_override") and pnUtil.ACCOUNT.subtitlesForced == 0,
             deselect_subtitles=getNativeLanguages(util.getSetting("disable_subtitle_languages") or []))
         self.setProperty('subtitles', sss and sss.getTitle() or 'None')
+
+    def playButtonFocusMayBeLost(self):
+        """Whether focus is on a Play-row button that a play.in.progress change may just have hidden:
+        Play or Resume (focusPlayButton() picks whichever is showing), or Restart once Resume's gone
+        with it. Restart while still in progress keeps its focus."""
+        focused = self.getFocusId()
+        if focused == self.RESTART_BUTTON_ID:
+            return not self.getProperty('play.in.progress')
+        return focused in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID)
 
     def focusPlayButton(self, extended=False, wait_visible=False):
         if extended:
@@ -593,8 +613,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             elif action == xbmcgui.ACTION_NAV_BACK:
                 # Was `in (NAV_BACK, CONTEXT_MENU)`, but menu already returns from its own branch
                 # above and never reached here.
-                if self.dismissSidebarPopupOnBack():
-                    return
                 if self.handleBack():
                     return
 
@@ -612,7 +630,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 self.toggleWatched(self.mediaItem)
                 return
 
-            if action == xbmcgui.ACTION_MOVE_UP and (controlID == self.SUB_ITEM_LIST_ID or
+            if action == xbmcgui.ACTION_MOVE_UP and (controlID in (self.SUB_ITEM_LIST_ID, self.RESTART_BUTTON_ID) or
                     self.RESUME_BUTTON_ID <= controlID <= self.OPTIONS_BUTTON_ID):
                 self.updateBackgroundFrom(self.mediaItem)
 
@@ -676,6 +694,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.summaryButtonClicked()
         elif controlID in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID):
             self.playButtonClicked()
+        elif controlID == self.RESTART_BUTTON_ID:
+            self.playButtonClicked(start_over=True)
         elif controlID in self.WL_RELEVANT_BTNS and self.fromWatchlist and self.wl_availability:
             self.wl_item_opener(self.mediaItem, self.openItem)
         elif controlID in self.WL_BTN_STATE_BTNS:
@@ -688,6 +708,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # first, whether or not this is live yet: the sidebar rows read it (SidebarMixin)
+        self.trackSidebarFocus(controlID)
         if self.ignoresInput():
             return
         self.reselectActiveSection(controlID, self.lastFocusID)
@@ -952,7 +974,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         # their own title/summary, nothing type-specific.
         info.showSummary(self.mediaItem.title, self.mediaItem.summary)
 
-    def playButtonClicked(self, shuffle=False):
+    def playButtonClicked(self, shuffle=False, start_over=False):
+        """start_over: the Restart button's - the same episode Play/Resume would start, from its beginning."""
         if self.playBtnClicked:
             return
 
@@ -980,11 +1003,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             # taken as authoritative when there is one - see that method's own docstring, and
             # EpisodesWindow._defaultEpisode() (episodes.py) for why the season-level screen
             # deliberately does the opposite.
-            resume = self.getNextShowEp(pl, items, self.mediaItem.title,
-                                        on_deck=[on_deck_pick] if on_deck_pick else None,
-                                        specials_mode=specials_mode)
-            if resume is None:
-                return
+            resume = self.getNextShowEp(pl, items, on_deck=[on_deck_pick] if on_deck_pick else None,
+                                        specials_mode=specials_mode, start_over=start_over)
 
         self.playBtnClicked = True
         pl.shuffle(shuffle, first=True)
@@ -993,6 +1013,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     def shuffleButtonClicked(self):
         self.playButtonClicked(shuffle=True)
 
+    @kodigui.releasesDialogDim
     def optionsButtonClicked(self, from_item=None):
         options = []
 
@@ -1005,7 +1026,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         if not item:
             return
 
-        if item.type != 'artist':
+        # marking: a show or a season - not music (the Artist screen's albums), which isn't marked, here or in
+        # Plex's own apps
+        if item.type in ('show', 'season'):
             if item.isWatched:
                 options.append({'key': 'mark_unwatched', 'display': T(32318, 'Mark Unplayed')})
             else:
@@ -1015,18 +1038,20 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 if options:
                     options.append(dropdown.SEPARATOR)
 
-                options.append({'key': 'playback_settings', 'display': T(32925, 'Playback Settings')})
+                # over More settings, which Back returns to
+                options.append({'key': 'playback_settings', 'display': T(32925, 'Playback Settings'),
+                                'run': lambda: self.playbackSettings(self.mediaItem)})
                 if plexapp.ACCOUNT.isAdmin and item.server.allowsMediaDeletion:
                     options.append(dropdown.SEPARATOR)
                     if plexapp.ACCOUNT.isAdmin:
                         options.append({'key': 'refresh', 'display': T(33719, 'Refresh metadata')})
-                    options.append({'key': 'delete', 'display': T(32322, 'Delete')})
+                    options.append({'key': 'delete', 'display': u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32322, 'Delete'))})
             elif item.type == "season":
                 if plexapp.ACCOUNT.isAdmin and item.server.allowsMediaDeletion:
                     options.append(dropdown.SEPARATOR)
                     if plexapp.ACCOUNT.isAdmin:
                         options.append({'key': 'refresh', 'display': T(33719, 'Refresh metadata')})
-                    options.append({'key': 'delete', 'display': T(32975, 'Delete Season')})
+                    options.append({'key': 'delete', 'display': u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32975, 'Delete Season'))})
 
         # if xbmc.getCondVisibility('Player.HasAudio') and self.section.TYPE == 'artist':
         #     options.append({'key': 'add_to_queue', 'display': 'Add To Queue'})
@@ -1041,28 +1066,10 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         if 'items' in util.getSetting('cache_requests'):
             options.append({'key': 'cache_reset', 'display': T(33728, "Clear cache for item")})
 
-        # 518, not the old 880: stale after this session's Seasons button row rework
-        # (script-plex-seasons.xml.tpl) - same class of bug as episodes.py's own copy of this static
-        # fallback (from_item=False, opened via the More button itself, so there's no per-focus
-        # position to compute from the way the from_item branch below does). Old row was posx=22,
-        # 152-wide boxes, -20 itemgap (132px/button); new is posx=63, 70-wide, 0 itemgap (70px/
-        # button) - scaled the old value's offset from its own row start by that same 70/132 ratio
-        # (858 old offset * 70/132 = ~455) rather than recomputing a fixed button index, since the
-        # watchlist button cluster ahead of More (wl_dynamic_buttons.xml.tpl/
-        # wl_add_remove_buttons.xml.tpl) can show a different number of buttons depending on
-        # availability/watchlist state, same ambiguity the old value already carried. Y (618) left
-        # alone - same reasoning as episodes.py's own fix attempt: the button row's own absolute
-        # glyph position was deliberately preserved through the resize (posy 0 -> vscale(25), see
-        # that control's own comment), so it shouldn't have moved vertically either - unconfirmed
-        # live though.
-        pos = (518, 618)
-        if from_item:
-            viewPos = self.subItemListControl.getViewPosition()
-            optsLen = len(list(filter(None, options)))
-            # dropDown handles any overlap with the right window boundary so we don't need to care here
-            pos = ((((viewPos + 1) * 218) - 100), 460 if optsLen < 7 else 460 - 66 * (optsLen - 6))
-
-        choice = dropdown.showDropdown(options, pos, close_direction='left')
+        # Delete last, wherever it was added (sorted() keeps the rest in order; the dialog drops separators)
+        options = sorted((o for o in options if o), key=lambda o: o['key'] == 'delete')
+        # the More settings dialog, these alone (as the Episodes season card's)
+        choice = playersettings.showMoreDialog(options)
         if not choice:
             return
 
@@ -1076,8 +1083,6 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             self.processCommand(opener.sectionClicked(section, context=self,
                                                       came_from=self.mediaItem.ratingKey)
                                 )
-        elif choice['key'] == 'playback_settings':
-            self.playbackSettings(self.mediaItem, pos, False)
         elif choice['key'] == 'delete':
             if self.delete(item):
                 # cheap way of requesting a home hub refresh because of major deletion
@@ -1354,6 +1359,8 @@ class ArtistWindow(ShowWindow):
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # first, whether or not this is live yet: the sidebar rows read it (SidebarMixin)
+        self.trackSidebarFocus(controlID)
         if self.ignoresInput():
             return
         # Full override, not ShowWindow.onFocus()'s shared version - that one exempts
@@ -1395,6 +1402,10 @@ class ArtistWindow(ShowWindow):
         self.fillPopularTracks()
         self.updatePopularPlayingHere()
         self.fillAlbumTypeRows()
+        # the albums' covers' colours (panel_colors.py), ready for the Album screens they open
+        panel_colors.warmLater([mli.dataSource for control in [self.subItemListControl] +
+                                list(self.albumTypeListControls.values())
+                                for mli in control if mli.dataSource is not None])
 
     def playButtonClicked(self, shuffle=False):
         # The artist itself - a server play queue of their material, the way a Plex client plays an

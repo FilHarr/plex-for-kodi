@@ -17,11 +17,15 @@ def sameTitleKey(item):
     (?lang=en - an older agent's, so the same film in libraries of two languages matches). None -
     a title of its own - for one with no guid or a server-only one: local:// and a library with no
     agent's (tv.plex.agents.none://98691, checked live) are just the item's number on its server,
-    and the same number on another server is another video."""
+    and the same number on another server is another video. An edition is a title of its own (the user,
+    2026-10-23): Plex gives it its film's guid - Deadpool 2's Super Duper Cut shares the plain film's, checked
+    live - so its editionTitle goes in the key, and Search shows the two apart."""
     guid = u'{0}'.format(item.get('guid') or '')
     if not guid or guid.startswith('local://') or '.agents.none://' in guid:
         return None
-    return guid.split('?', 1)[0]
+    key = guid.split('?', 1)[0]
+    edition = u'{0}'.format(item.get('editionTitle') or '')
+    return u'{0}#edition={1}'.format(key, edition) if edition else key
 
 
 def _versions(item):
@@ -125,18 +129,14 @@ def copyLabel(copy, multiServer, media=None):
 def chooseFrom(entries, multiServer):
     """The Open from list for entries (versionEntries()): the (copy, version) picked, its version
     chosen on it (chooseVersion()); None if dismissed."""
-    from . import dropdown
-    choice = dropdown.showDropdown(
-        options=[{'key': i, 'display': copyLabel(copy, multiServer, media)} for i, (copy, media) in enumerate(entries)],
-        pos=(660, 441),
-        close_direction='none',
-        set_dropdown_prop=False,
-        header=T(35151, 'Open from'),
-        align_items='left'
-    )
+    # in the option picker; its rows keyed by their place in entries (0 is a choice: tested against None)
+    from .dialog import showOptionsDialog
+    choice = showOptionsDialog(T(35151, 'Open from'),
+                               [(i, copyLabel(copy, multiServer, media)) for i, (copy, media) in enumerate(entries)],
+                               non_playback=True, menu=True)
     if choice is None:
         return None
-    copy, media = entries[choice['key']]
+    copy, media = entries[choice]
     if media is not None:
         chooseVersion(copy, media)
     return copy, media

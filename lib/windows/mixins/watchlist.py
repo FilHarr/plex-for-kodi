@@ -4,7 +4,8 @@ import traceback
 from lib import backgroundthread, util
 from lib.i18n import T
 from lib.windows import kodigui
-from lib.windows import dropdown
+from lib.windows import optionsdialog
+from lib.windows.dialog import showOptionsDialog
 from plexnet import plexapp, plexobjects, util as pnUtil, exceptions
 
 
@@ -208,28 +209,19 @@ class WatchlistUtilsMixin(object):
     def wl_item_opener(self, ref, item_open_callback, selected_item=None):
         if len(self.wl_availability) > 1 and not selected_item:
             # choose
+            # in the option picker: the server and library, then (dimmer, under it) the copy's resolution or
+            # seasons
             options = []
             for idx, tup in enumerate(self.wl_availability):
                 server, meta = tup
-                verbose = self.wl_item_verbose(meta)
-                options.append({'key': idx,
-                                'display': '{0}/{2}, {1} '.format(server, verbose, meta["library_title"])
-                              })
+                options.append((idx, (u'{0} / {1}'.format(server, meta["library_title"]), self.wl_item_verbose(meta))))
 
-            choice = dropdown.showDropdown(
-                options=options,
-                pos=(660, 441),
-                close_direction='none',
-                set_dropdown_prop=False,
-                header=T(34004, 'Choose server'),
-                dialog_props=self.dialogProps,
-                align_items="left"
-            )
-
-            if not choice:
+            choice = showOptionsDialog(T(34004, 'Choose server'), options, non_playback=True,
+                                       dialog_props=self.dialogProps, menu=True)
+            if choice is None:
                 return
 
-            return self.wl_item_opener(ref, item_open_callback, selected_item=self.wl_availability[choice['key']][1])
+            return self.wl_item_opener(ref, item_open_callback, selected_item=self.wl_availability[choice][1])
 
         item_meta = selected_item or self.wl_availability[0][1]
         rk = item_meta.get("rating_key", None)
@@ -384,4 +376,12 @@ class WatchlistUtilsMixin(object):
 
     @wl_wrap
     def toggleWatchlist(self, item):
+        """The watchlist button (pre-play, Seasons): the new watchlisted state. Removing asks first when Confirm item
+        actions is on, as the library grid's Remove from watchlist does; a "No" leaves it watchlisted."""
+        if self.is_watchlisted and util.getSetting('home_confirm_actions'):
+            button = optionsdialog.show(u'{0}?'.format(T(34011, "Remove from watchlist")), '',
+                                        T(32328, 'Yes'), T(32329, 'No'),
+                                        dialog_props=getattr(self, "carriedProps", getattr(self, "dialogProps", None)))
+            if button != 0:
+                return True
         return self._modifyWatchlist(item, method="removeFromWatchlist" if self.is_watchlisted else "addToWatchlist")

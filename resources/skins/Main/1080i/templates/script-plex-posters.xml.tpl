@@ -242,7 +242,7 @@
                             </control>
                             <control type="label">
                                 <visible>!String.IsEmpty(ListItem.Property(subtitle))</visible>
-                                <scroll>false</scroll>
+                                <scroll>true</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(401) }}</posy>
                                 <width>240</width>
@@ -254,7 +254,7 @@
                             </control>
                             <control type="label">
                                 <visible>!String.IsEmpty(ListItem.Property(year)) + String.IsEmpty(ListItem.Property(subtitle))</visible>
-                                <scroll>false</scroll>
+                                <scroll>true</scroll>
                                 <posx>0</posx>
                                 <posy>{{ vscale(401) }}</posy>
                                 <width>240</width>

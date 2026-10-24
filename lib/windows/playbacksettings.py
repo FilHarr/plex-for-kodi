@@ -1,60 +1,40 @@
 # coding=utf-8
 from plexnet.util import INTERFACE
 
-from lib import util
 from lib.util import T
-from . import dropdown
+from .dialog import showOptionsDialog
 
 
 class PlaybackSettingsMixin(object):
-    def playbackSettings(self, show, pos, bottom):
+    def playbackSettings(self, show):
+        """
+        A show's own playback switches (binge mode, auto-skips...) in the option picker: each named, ticked while
+        it's on. Choosing one flips it and the picker stays open; Back closes it and saves any change. Binge mode
+        switches the others off (auto-sync aside), and switching another on switches binge mode off.
+        """
         pbs = INTERFACE.playbackManager(show)
-        pbOpts = []
-        transEnabled = T(33507)
-        transDisabled = T(33508)
-
-        currentSettings = {}
-        for key, transID in INTERFACE.playbackManager.transMap.items():
-            state = getattr(pbs, key)
-            stateTrans = state and transEnabled or transDisabled
-            pbOpts.append({'key': key, 'display': "{}: {}".format(stateTrans, T(transID))})
-            currentSettings[key] = state
-
-        # create a new dict which we can freely change while the dropdown is open
+        transMap = INTERFACE.playbackManager.transMap
+        currentSettings = dict((key, getattr(pbs, key)) for key in transMap)
+        # changed freely while the picker is open, written once it's closed
         newSettings = currentSettings.copy()
 
-        # fixme: not sure if garbage collection is necessary here
+        def options():
+            return [(key, T(transID), bool(newSettings[key])) for key, transID in transMap.items()]
 
-        def callback(opts, mli, force_off=False):
-            choice = mli.dataSource
-            oc = newSettings[choice["key"]]
-            ic = (not oc) if not force_off else False
+        def toggle(key):
+            on = not newSettings[key]
+            if key == "binge_mode" and on:
+                for other in newSettings:
+                    if other not in ("binge_mode", "auto_sync"):
+                        newSettings[other] = False
+            elif key not in ("binge_mode", "auto_sync") and on:
+                newSettings["binge_mode"] = False
+            newSettings[key] = on
+            # stay open, on the row just flipped
+            return options(), list(transMap).index(key)
 
-            # invalidate any other setting if bingemode enabled
-            if choice["key"] == "binge_mode" and ic:
-                for m in opts.items:
-                    if m.dataSource["key"] not in ("binge_mode", "auto_sync"):
-                        callback(opts, m, force_off=True)
-                del m
-
-            # disable bingeMode if any other setting is enabled
-            elif choice["key"] not in ("binge_mode", "auto_sync") and newSettings["binge_mode"]:
-                m = opts.getListItem(0)
-                callback(opts, m, force_off=True)
-                del m
-
-            newSettings[choice["key"]] = ic
-            label = choice["display"].replace("{}: ".format(oc and transEnabled or transDisabled),
-                                              "{}: ".format(ic and transEnabled or transDisabled))
-            mli.setLabel(label)
-            mli.dataSource["display"] = label
-            del mli
-
-        pbChoice = dropdown.showDropdown(pbOpts, pos, pos_is_bottom=bottom, close_direction='left',
-                                         set_dropdown_prop=True,
-                                         header="{}: {}".format(T(32925, 'Playback Settings'), show.defaultTitle),
-                                         close_only_with_back=True, align_items='left',
-                                         options_callback=callback)
+        showOptionsDialog(u"{}: {}".format(T(32925, 'Playback Settings'), show.defaultTitle), options(),
+                          non_playback=True, on_choice=toggle)
 
         # write new settings for item if necessary
         if newSettings != currentSettings:

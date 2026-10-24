@@ -12,7 +12,7 @@ from . import asyncadapter
 
 from . import util
 
-from .exceptions import UserSwitchForbiddenException
+from .exceptions import UserSwitchForbiddenException, UserSwitchUnreachableException
 
 ACCOUNT = None
 
@@ -660,6 +660,8 @@ class MyPlexAccount(object):
             path = '/api/home/users/{0}/switch'.format(userId)
             req = myplexrequest.MyPlexRequest(path)
             res = req.postToStringWithTimeout({'pin': pin}, timeout=util.PLEXTV_TIMEOUT, return_on_status_code=True)
+            if res is None:
+                raise UserSwitchUnreachableException()
             if not silent and type(res) == int and res == 401:
                 raise UserSwitchForbiddenException()
             try:

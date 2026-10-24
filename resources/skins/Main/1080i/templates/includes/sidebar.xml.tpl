@@ -1,6 +1,6 @@
 <!-- ========== SIDEBAR RAIL ========== -->
 <!-- Persistent vertical nav rail: icons-only when unfocused, icons+labels while any
-     descendant (section list, server/user buttons or their dropdowns) has focus.
+     descendant (section list, server/user buttons) has focus.
      Declared last so it z-orders above everything else, including hub content and the
      overlays above - Kodi gives controls no independent z-index, only paint order, and
      there's no way to make that conditional on the rail's expand state. Posters clip
@@ -33,7 +33,6 @@
         <texturefocus colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texturefocus>
         <texturenofocus>-</texturenofocus>
         <label> </label>
-        <onunfocus condition="!String.IsEmpty(Window.Property(show.options))">SetFocus(250)</onunfocus>
     </control>
     <!-- User avatar area at top (visual overlay, not focusable) -->
     <control type="group">
@@ -92,6 +91,15 @@
     </control>
 
     <!-- Section list (sidebar items) -->
+    <!-- The rows' focus conditions (sidebar_open, sidebar_list): Kodi's own, ControlGroup(9000)/Control.HasFocus(9001),
+         or - while a dialog that opens over the sidebar is up - script.plex.sidebar_focus ("list" while this list
+         had focus, "other" while the user or Libraries button had; SidebarMixin.trackSidebarFocus()). Kodi gives a
+         list row's controls no window (GUIListItemLayout creates them with parent 0), so its own conditions read
+         the dialog on top: under a picker the rows dropped to icons while the sidebar stayed expanded. With no
+         dialog they read the screen, at once - the property, set by focus events that come a few frames late,
+         alone showed the labels over a new screen's content as it opened (2026-10-23). Not the busy spinner: it
+         shows while a screen opens, just when the property is stale. -->
+    {% with sidebar_open = "[ControlGroup(9000).HasFocus(0) | [!String.IsEmpty(Window(10000).Property(script.plex.sidebar_focus)) + [Window.IsVisible(script-plex-settings_select_dialog.xml) | Window.IsVisible(script-plex-card_list.xml) | Window.IsVisible(script-plex-options_dialog.xml) | Window.IsVisible(script-plex-user_menu.xml) | Window.IsVisible(filebrowser)]]]" & sidebar_list = "[Control.HasFocus(9001) | [String.IsEqual(Window(10000).Property(script.plex.sidebar_focus),list) + [Window.IsVisible(script-plex-settings_select_dialog.xml) | Window.IsVisible(script-plex-card_list.xml) | Window.IsVisible(script-plex-options_dialog.xml) | Window.IsVisible(script-plex-user_menu.xml) | Window.IsVisible(filebrowser)]]]" %}
     <control type="fixedlist" id="9001">
         <posx>0</posx>
         <!-- posy=118, barely changed from 120: with the 88-tall rows below (was 72), row 1's center
@@ -145,7 +153,7 @@
                 </control>
                 <!-- Section icon - dimmer while sidebar is collapsed, or while its server isn't answering -->
                 <control type="image">
-                    <visible>[!ControlGroup(9000).HasFocus(0) | !String.IsEmpty(ListItem.Property(is.offline))]</visible>
+                    <visible>[!{{ sidebar_open }} | !String.IsEmpty(ListItem.Property(is.offline))]</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
@@ -155,7 +163,7 @@
                 </control>
                 <!-- Section icon - normal while sidebar is expanded -->
                 <control type="image">
-                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <visible>{{ sidebar_open }} + String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
@@ -197,7 +205,7 @@
                      its server's name. Kodi labels only centre vertically, so each line's box is
                      placed: together they centre on the row like the single line (y=44). -->
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <visible>{{ sidebar_open }} + String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
@@ -209,7 +217,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <visible>{{ sidebar_open }} + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(19) }}</posy>
                     <width>220</width>
@@ -221,7 +229,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <visible>{{ sidebar_open }} + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(48) }}</posy>
                     <width>220</width>
@@ -235,7 +243,7 @@
                 <!-- The same, dimmed: a library whose server isn't answering, or is no longer
                      on the account (ListItem.Property(is.offline)) -->
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <visible>{{ sidebar_open }} + String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
@@ -247,7 +255,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <visible>{{ sidebar_open }} + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(19) }}</posy>
                     <width>220</width>
@@ -259,7 +267,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <visible>{{ sidebar_open }} + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(48) }}</posy>
                     <width>220</width>
@@ -282,7 +290,7 @@
                 <height>{{ vscale(88) }}</height>
                 <!-- Focus highlight background (only when list itself has focus) -->
                 <control type="image">
-                    <visible>Control.HasFocus(9001)</visible>
+                    <visible>{{ sidebar_list }}</visible>
                     <posx>8</posx>
                     <posy>{{ vscale(14) }}</posy>
                     <width>284</width>
@@ -302,7 +310,7 @@
                 </control>
                 <!-- Section icon - orange when focused or active -->
                 <control type="image">
-                    <visible>Control.HasFocus(9001) | !String.IsEmpty(ListItem.Property(is.active))</visible>
+                    <visible>{{ sidebar_list }} | !String.IsEmpty(ListItem.Property(is.active))</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
@@ -312,7 +320,7 @@
                 </control>
                 <!-- Section icon - normal when not focused and not active, dimmer while sidebar is collapsed -->
                 <control type="image">
-                    <visible>[!ControlGroup(9000).HasFocus(0) | !String.IsEmpty(ListItem.Property(is.offline))] + !Control.HasFocus(9001) + String.IsEmpty(ListItem.Property(is.active))</visible>
+                    <visible>[!{{ sidebar_open }} | !String.IsEmpty(ListItem.Property(is.offline))] + !{{ sidebar_list }} + String.IsEmpty(ListItem.Property(is.active))</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
@@ -322,7 +330,7 @@
                 </control>
                 <!-- Section icon - normal when not focused and not active, and sidebar is expanded -->
                 <control type="image">
-                    <visible>ControlGroup(9000).HasFocus(0) + !Control.HasFocus(9001) + String.IsEmpty(ListItem.Property(is.active)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
+                    <visible>{{ sidebar_open }} + !{{ sidebar_list }} + String.IsEmpty(ListItem.Property(is.active)) + String.IsEmpty(ListItem.Property(is.offline))</visible>
                     <posx>26</posx>
                     <posy>{{ vscale(30) }}</posy>
                     <width>28</width>
@@ -354,7 +362,7 @@
                      its server's name. Kodi labels only centre vertically, so each line's box is
                      placed: together they centre on the row like the single line (y=44). -->
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + Control.HasFocus(9001)</visible>
+                    <visible>{{ sidebar_open }} + String.IsEmpty(ListItem.Property(server.name)) + {{ sidebar_list }}</visible>
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
@@ -367,7 +375,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + Control.HasFocus(9001)</visible>
+                    <visible>{{ sidebar_open }} + !String.IsEmpty(ListItem.Property(server.name)) + {{ sidebar_list }}</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(19) }}</posy>
                     <width>220</width>
@@ -380,7 +388,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + Control.HasFocus(9001)</visible>
+                    <visible>{{ sidebar_open }} + !String.IsEmpty(ListItem.Property(server.name)) + {{ sidebar_list }}</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(48) }}</posy>
                     <width>220</width>
@@ -395,7 +403,7 @@
                      Libraries button under the list): Kodi still draws the selected row with this
                      layout then -->
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <visible>{{ sidebar_open }} + String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline)) + !{{ sidebar_list }}</visible>
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
@@ -407,7 +415,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <visible>{{ sidebar_open }} + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline)) + !{{ sidebar_list }}</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(19) }}</posy>
                     <width>220</width>
@@ -419,7 +427,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <visible>{{ sidebar_open }} + !String.IsEmpty(ListItem.Property(server.name)) + String.IsEmpty(ListItem.Property(is.offline)) + !{{ sidebar_list }}</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(48) }}</posy>
                     <width>220</width>
@@ -433,7 +441,7 @@
                 <!-- The same, dimmed: a library whose server isn't answering, or is no longer
                      on the account (ListItem.Property(is.offline)) -->
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <visible>{{ sidebar_open }} + String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline)) + !{{ sidebar_list }}</visible>
                     <posx>68</posx>
                     <posy>0</posy>
                     <width>220</width>
@@ -446,7 +454,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <visible>{{ sidebar_open }} + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline)) + !{{ sidebar_list }}</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(19) }}</posy>
                     <width>220</width>
@@ -459,7 +467,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>ControlGroup(9000).HasFocus(0) + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline)) + !Control.HasFocus(9001)</visible>
+                    <visible>{{ sidebar_open }} + !String.IsEmpty(ListItem.Property(server.name)) + !String.IsEmpty(ListItem.Property(is.offline)) + !{{ sidebar_list }}</visible>
                     <posx>68</posx>
                     <posy>{{ vscale(48) }}</posy>
                     <width>220</width>
@@ -475,6 +483,7 @@
     </control>
 
     <!-- Server button at bottom of sidebar -->
+    {% endwith %}
     <control type="button" id="201">
         <posx>8</posx>
         <!-- posy=1009, not 990: measured against official Plex, the bottom gear icon's center sits at

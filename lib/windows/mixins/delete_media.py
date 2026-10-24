@@ -7,14 +7,7 @@ from lib.windows import optionsdialog, busy
 class DeleteMediaMixin(object):
     def delete(self, item=None):
         item = item or self.mediaItem
-        button = optionsdialog.show(
-            T(32326, 'Really delete?'),
-            T(33035, "Delete {}: {}?").format(type(item).__name__, item.defaultTitle),
-            T(32328, 'Yes'),
-            T(32329, 'No')
-        )
-
-        if button != 0:
+        if not optionsdialog.confirmDelete(item):
             return
 
         if not self._delete(item=item):

@@ -3,10 +3,6 @@
 {% block header %}
     {{ super() }}
     {% include "includes/sidebar.xml.tpl" %}
-    <!-- Declared last so groups 802/901 draw on top - see script-plex-pre_play.xml.tpl's own copy
-         of this include for the full reasoning (this window is one of the seven real hosted-shell
-         types too, same _sidebarTarget()-aware Python side, same onClick forwarding). -->
-    {% include "includes/sidebar_dropdowns.xml.tpl" %}
 {% endblock header %}
 {% block content %}
 {# Restyled on the Album screen (script-plex-album.xml.tpl), on request 2026-10-07: the same cover,
@@ -142,6 +138,9 @@
         <onup>200</onup>
         <ondown>101</ondown>
         <onleft>9000</onleft>
+        <!-- Right stops at the last button: a grouplist without an onright of its own links its
+             last control's Right back to its first (Kodi's CGUIControlGroupList::AddControl). -->
+        <onright>noop</onright>
         <itemgap>{{ theme.artist.buttongroup.itemgap }}</itemgap>
         <orientation>horizontal</orientation>
         <scrolltime tween="quadratic" easing="out">200</scrolltime>

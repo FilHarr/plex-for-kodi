@@ -12,13 +12,13 @@ from plexnet import plexapp, plexobjects
 from lib import util
 from lib.util import T
 from lib.kodijsonrpc import rpc
-from . import dropdown
 from . import kodigui
 from . import opener
 from . import optionsdialog
 from . import section_ids
 from . import sidebar_model
 from . import windowutils
+from .dialog import showOptionsDialog
 from .mixins.spoilers import SpoilersMixin
 from .copies import (sameTitleKey as _sameKey, _versions, _int, _quality, VERSIONED_TYPES,  # noqa: F401
                      pickCopy, versionEntries, chooseVersion, copyLabel, chooseFrom)
@@ -47,8 +47,7 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
     height = 1080
 
     LETTERS = 'abcdefghijklmnopqrstuvwxyz0123456789 '
-    # The type buttons: 911-916, clear of the sidebar's user menu group (901, SidebarMixin.
-    # USER_MENU_GROUP_ID), which the user menu resizes by id
+    # The type buttons: 911-916
     SECTION_BUTTONS = {
         911: 'all',
         912: 'movie',
@@ -241,6 +240,8 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
 
     def onFocus(self, controlID):
         # Not live on its host yet, or any more (kodigui.BaseWindow.ignoresInput()).
+        # first, whether or not this is live yet: the sidebar rows read it (SidebarMixin)
+        self.trackSidebarFocus(controlID)
         if self.ignoresInput():
             return
         self.reselectActiveSection(controlID, self.lastFocusID)
@@ -437,56 +438,40 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
             self.setFocusId(self.RESULTS_ID)
             self.resultsList.selectItem(pos)
 
-    # a server's row in chooseServers(): searched, or not
-    SERVER_ON = 'script.plex/indicators/visible.png'
-    SERVER_OFF = 'script.plex/indicators/hidden.png'
-
     def chooseServers(self):
-        """Which of the account's servers a search asks (the user, 2026-10-05): a card per server,
-        its toggle on the right. At least one stays on. Saved for the account; the search runs
+        """Which of the account's servers a search asks (the user, 2026-10-05): the pickers' style
+        (dialog.SelectDialog), a row per server, ticked while it's searched. Select turns one on or off
+        and the picker stays, until Back. At least one stays on. Saved for the account; the search runs
         again with the new choice."""
         self._serversChanged = False
-        dropdown.showDropdown(
-            self._serverOptions(),
-            pos=(660, 200),
-            close_direction='none',
-            set_dropdown_prop=False,
-            with_indicator=True,
-            header=T(35140, 'Servers to search'),
-            align_items='left',
-            close_only_with_back=True,
-            options_callback=self._onServerToggle,
-            dialog_class=dropdown.CardListDialog,
-            columns=(dropdown.CardListDialog.PIN,),
-        )
+        showOptionsDialog(T(35140, 'Servers to search'), self._serverOptions(), non_playback=True, menu=True,
+                          selected_idx=0, on_choice=self._onServerToggle,
+                          dialog_props=getattr(self, 'carriedProps', None))
         if self._serversChanged and self.edit.getText():
             self.updateResults(delay=0)
 
     def _serverOptions(self):
+        """A row per server: its name - over "isn't responding" when it isn't - ticked while it's searched."""
         chosen = set(s.uuid for s in searchedServers())
         options = []
         for server in accountServers():
-            on = server.uuid in chosen
             note = (server.offline or server.gone) and T(35129, "{0} isn't responding").format(server.name) or ''
-            options.append({'key': 'server', 'uuid': server.uuid, 'display': server.name,
-                            'indicator': self.SERVER_ON if on else self.SERVER_OFF, 'indicator_dim': not on,
-                            'properties': {'buttons': '1', 'single': '1', 'subtitle': note}})
+            options.append((server.uuid, (server.name, note) if note else server.name, server.uuid in chosen))
         return options
 
-    def _onServerToggle(self, optionsList, mli):
-        choice = mli.dataSource
-        if not choice or choice.get('key') != 'server':
-            return
+    def _onServerToggle(self, uuid):
+        """A server's row chosen: on or off, the picker kept open on it (dialog.SelectDialog's on_choice)."""
         chosen = [s.uuid for s in searchedServers()]
-        if choice['uuid'] in chosen:
-            if len(chosen) == 1:
-                return  # one at least
-            chosen.remove(choice['uuid'])
+        if uuid in chosen:
+            if len(chosen) > 1:  # one at least
+                chosen.remove(uuid)
+                self._serversChanged = True
         else:
-            chosen.append(choice['uuid'])
+            chosen.append(uuid)
+            self._serversChanged = True
         saveSearchedServers(chosen)
-        self._serversChanged = True
-        return ('rebuild', self._serverOptions(), optionsList.getSelectedPos())
+        options = self._serverOptions()
+        return options, next((i for i, o in enumerate(options) if o[0] == uuid), 0)
 
     def typeClicked(self, controlID):
         """A type button (All, Movies, Shows, Music, Photos). Not sectionClicked(), which is the
@@ -705,8 +690,13 @@ class SearchWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.
                                         self.COUNT_KINDS.get(u'{0}'.format(hubItem.get('librarySectionType')), ''))
 
     def subtitle(self, hubItem):
-        """The line under an episode's title: its show. Nothing for anything else."""
-        return hubItem.get('grandparentTitle', '') if hubItem.TYPE == 'episode' else ''
+        """The line under a result's title: an episode's show; a film's or show's edition (the user,
+        2026-10-23 - an edition is a result of its own, copies.sameTitleKey()). Nothing for anything else."""
+        if hubItem.TYPE == 'episode':
+            return hubItem.get('grandparentTitle', '')
+        if hubItem.TYPE in ('movie', 'show'):
+            return u'{0}'.format(hubItem.get('editionTitle') or '')
+        return ''
 
     def createListItem(self, hubItem, artType):
         """A result's grid item: its art drawn as artType (HUBMAP), its title, an episode's show,

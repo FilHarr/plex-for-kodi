@@ -163,9 +163,11 @@ class ChosenServersTest(KodiTestCase):
             self.addCleanup(patch.stop)
 
     def toggle(self, dlg, uuid):
-        options = dlg._serverOptions()
-        mli = mock.Mock(dataSource=[o for o in options if o['uuid'] == uuid][0])
-        return dlg._onServerToggle(mock.Mock(getSelectedPos=lambda: 0), mli)
+        # the picker's on_choice (dialog.SelectDialog): the rows again, and the one to focus
+        return dlg._onServerToggle(uuid)
+
+    def ticked(self, dlg):
+        return dict((o[0], o[2]) for o in dlg._serverOptions())
 
     def test_the_list_is_every_server_the_sidebars_first(self):
         self.assertEqual([self.oscar, self.animal, self.other], search.accountServers())
@@ -173,18 +175,24 @@ class ChosenServersTest(KodiTestCase):
     def test_a_choice_is_saved_and_searched(self):
         dlg = search.SearchWindow.__new__(search.SearchWindow)
         self.assertEqual([self.oscar, self.animal], search.searchedServers())
-        result = self.toggle(dlg, 'x')
-        self.assertEqual('rebuild', result[0])
+        dlg._serversChanged = False
+        options, focus = self.toggle(dlg, 'x')
+        self.assertEqual('x', options[focus][0])
+        self.assertTrue(dlg._serversChanged)
         self.assertEqual(['o', 'a', 'x'], json.loads(self.settings['search.servers.7']))
         self.toggle(dlg, 'o')
         self.assertEqual([self.animal, self.other], search.searchedServers())
-        on = dict((o['uuid'], not o['indicator_dim']) for o in dlg._serverOptions())
-        self.assertEqual({'o': False, 'a': True, 'x': True}, on)
+        self.assertEqual({'o': False, 'a': True, 'x': True}, self.ticked(dlg))
 
     def test_the_last_chosen_server_stays(self):
         dlg = search.SearchWindow.__new__(search.SearchWindow)
+        dlg._serversChanged = False
         self.toggle(dlg, 'o')
-        self.assertIsNone(self.toggle(dlg, 'a'))
+        dlg._serversChanged = False
+        # the picker stays, Animal still ticked, nothing changed
+        options, focus = self.toggle(dlg, 'a')
+        self.assertEqual(('a', True), (options[focus][0], options[focus][2]))
+        self.assertFalse(dlg._serversChanged)
         self.assertEqual([self.animal], search.searchedServers())
 
     def test_a_choice_of_servers_all_gone_falls_back_to_the_sidebars(self):

@@ -173,7 +173,7 @@
                             <label>$INFO[ListItem.Label]</label>
                         </control>
                         <control type="label">
-                            <scroll>false</scroll>
+                            <scroll>Control.HasFocus({{ id }})</scroll>
                             <posx>0</posx>
                             <posy>{{ vscale(279) }}</posy>
                             <width>240</width>
