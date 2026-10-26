@@ -8,7 +8,7 @@
         <texture background="true">script.plex/home/background-fallback_black.png</texture>
     </control>
     {% include "includes/background_panel.xml.tpl" %}
-    {# Whole top-right hero-art box (both art layers plus the scrim over them). Dropped at render
+    {# Whole top-right hero-art box (the art plus the scrim over it). Dropped at render
        time for the screens that never want it, rather than hidden at runtime via the no_hero_art
        window property below: library grids, list views and Genres are structurally incapable of
        wanting it, and driving that from Python proved unreliable - the property is only ever
@@ -20,7 +20,7 @@
        other caller of this include keeps the box with no change. #}
     {% if not suppress_hero_art %}
     {# Zoom of the item art inside the hero box, done purely in the skin and anchored at the
-       screen's top-right corner: the two art controls below are made hero_zoom_pad wider than the
+       screen's top-right corner: the art control below is made hero_zoom_pad wider than the
        1229x691 box, all of it added on the *left*, so the art's right edge stays on the screen's
        right edge; under <aspectratio>scale</aspectratio> the 16:9 texture then overflows the
        control's height, Kodi clips that overflow to the control rect (GUITexture.cpp sets a clip
@@ -53,48 +53,35 @@
              panel alone. Empty/unset for every other window.
              hero.no_art (LibraryWindow.setHeroInfo, HERO_NO_ART_TYPES; also
              CollectionWindow.setup() for a collection with no art): keeps the info overlay on
-             the left but not this art box. Same condition on both art layers below.
+             the left but not this art box.
              nav_hidden (global): post-play's hand-over to an item it opens - see default.xml.tpl. -->
         <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art)) + String.IsEmpty(Window.Property(hero.no_art)) + String.IsEmpty(Window(10000).Property(script.plex.nav_hidden))</visible>
         <posx>{{ 691 - hero_zoom_pad }}</posx>
         <posy>0</posy>
         <width>{{ 1229 + hero_zoom_pad }}</width>
         <height>691</height>
-        <!-- 250ms, not instant: this layer sits statically behind the crossfading one below for most
-             of its life, but BaseWindow._scheduleBackgroundStaticSync() (kodigui.py) catches it up to
-             match roughly 0.25s after every change, once that crossfade settles - see that method's own
-             comment for why, and keep it in sync with that timer if this ever changes again. Without a
-             fadetime here, that catch-up was itself an abrupt, visible texture-reload pop despite the
-             top layer already showing the same art by then; fading it folds the catch-up into something
-             that reads as a continuation of the original crossfade rather than a second, separate flash.
-             Shortened from an original 500ms/0.5s pairing on request - shorter reads as less of the
-             previous item's art visibly lingering/blending under the new one during the transition. -->
+        <!-- One layer: Kodi's own <fadetime> crossfade fades the old art out and the new in, the colour
+             panel showing through the shared transparent moments. Upstream held the previous art solid
+             on a second layer (background_static) under this one; the previous item's art should be gone
+             the instant focus moves off it (on request), which left that layer drawing the same art twice
+             (2026-10-26). 250ms: shorter reads as less of the previous item's art lingering. -->
         <fadetime>250</fadetime>
-        <texture background="true" diffuse="script.plex/masks/background-vignette-zoom.png">$INFO[Window.Property(background_static)]</texture>
+        <texture background="true" diffuse="script.plex/masks/background-vignette-zoom.png">{{ background_source|default("$INFO[Window.Property(background)]") }}</texture>
         <!-- lets the 4-corner tinted panel bleed through the art uniformly, not just at the
              vignette's own edge falloff - same sibling-<colordiffuse>-plus-diffuse-mask pattern
              as the scrim control below (colordiffuse as an attribute on <texture> alongside
              diffuse= silently does nothing, this sibling-element form is the one that works).
-             White RGB, alpha only, so this is a pure opacity trim - no colour shift of its own. -->
-        <colordiffuse>66FFFFFF</colordiffuse>
+             White RGB, alpha only, so this is a pure opacity trim - no colour shift of its own.
+             85 (52%): between the two stacked 40% layers' 64% and one's 40%, chosen side by side
+             (2026-10-26). -->
+        <colordiffuse>85FFFFFF</colordiffuse>
         <!-- unconditional (not the needs_scaling-gated scale_background include): "scale" is
              what makes the 16:9 texture cover this deliberately wider-than-16:9 control and overflow
              vertically for the zoom (the default "stretch" would just squash it wider), aligny="top"
              keeps the art's top edge on the screen's top edge (the overflow is cut off the bottom),
              and scalediffuse="false" pins the (padded) vignette mask to this control's rect - the
              default true maps it onto the enlarged texture rect instead, so it would be clipped
-             along with the art. Same tag on the layer below. -->
-        <aspectratio align="center" aligny="top" scalediffuse="false">scale</aspectratio>
-    </control>
-    <control type="image">
-        <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art)) + String.IsEmpty(Window.Property(hero.no_art)) + String.IsEmpty(Window(10000).Property(script.plex.nav_hidden))</visible>
-        <posx>{{ 691 - hero_zoom_pad }}</posx>
-        <posy>0</posy>
-        <width>{{ 1229 + hero_zoom_pad }}</width>
-        <height>691</height>
-        <fadetime>250</fadetime>
-        <texture background="true" diffuse="script.plex/masks/background-vignette-zoom.png">{{ background_source|default("$INFO[Window.Property(background)]") }}</texture>
-        <colordiffuse>66FFFFFF</colordiffuse>
+             along with the art. -->
         <aspectratio align="center" aligny="top" scalediffuse="false">scale</aspectratio>
     </control>
     {% endwith %}

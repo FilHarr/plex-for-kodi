@@ -235,7 +235,7 @@ This category is a grab-bag. It mixes diagnostics, kiosk, subtitle titles, a vid
 |---|---|---|---|---|
 | `fast_back` | Back leaves instead of first jumping to item 0 | `library_grid.py:432`, `mixins/common.py:85` (hub rows now always reset first via `backResetRows`) | Partly; it now only affects grids and extras | 🔧 Reword it to say what it covers now. Could move in-add-on. |
 | `dynamic_backgrounds` | Art backgrounds; now also the hero-art box and colour panel | `util.py:131` (startup), `kodigui.py`, `library_grid.py`, `videoplayer.py`, `currentplaylist.py` | Yes, and central to Uno | 🔧 Relabel or describe (§1.4). Keep outside, because `useSolidBackground` is computed at import. |
-| `dbg_crossfade` | Crossfade hero art and panel | `kodigui.py:472/709/733` | Yes | ✅ |
+| `dbg_crossfade` | Crossfade the colour panel; transparent window clear (the hero art fades on its own, one layer) | `kodigui.py:531/783` | Yes | ✅ |
 | `background_colour` | Solid colour when dynamic backgrounds are off | `util.py:131`, `kodigui.py:451` | Yes | ✅ |
 | `custom_background_colour` | Custom AARRGGBB | `kodigui.py:454` | Yes | ✅ |
 | `background_art_blur_amount2` | Server-side blur of background art | `util.py:1019` (now blurs the hero-art box) | Questionable: a blurred focal box next to a sharp colour panel works against the new design | 🔧 Decide whether the hero box should take it. If not, pass `blur=0` as with opacity and drop the setting. |

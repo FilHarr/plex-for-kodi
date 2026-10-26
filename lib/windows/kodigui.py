@@ -650,13 +650,12 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         showed the right art only because the grid wrote art it never shows on every press (step
         12 stage C in the navigation review).
 
-        No art is written as empty properties, not left alone: Kodi can hand a new window a
-        reused id's old ones (PrePlayWindow.doClose())."""
+        No art is written as an empty property, not left alone: Kodi can hand a new window a
+        reused id's old one (PrePlayWindow.doClose())."""
         url = self.initialBackgroundURL() if util.addonSettings.dynamicBackgrounds else None
         if url:
             self.windowSetBackground(url)
         else:
-            self.setProperty('background_static', '')
             self.setProperty('background', '')
 
     def backgroundURLFor(self, ds):
@@ -762,7 +761,7 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
     def _setPanelCorners(self, corners):
         """Cross-fades the 4-corner background color panel (default_background.xml.tpl) between
         items instead of popping instantly. A control's <colordiffuse> has no fade of its own in
-        Kodi - unlike the hero art layers windowSetBackground drives, which crossfade because their
+        Kodi - unlike the hero art windowSetBackground drives, which crossfades because its
         *texture* changes, only a control's own <visible> transition can be animated (via an
         explicit <animation effect="fade">VisibleChange</animation>). So default_background.xml.tpl
         duplicates the 4 corners into two layers (a/b, each a group gated on
@@ -829,30 +828,14 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         show. Skips a URL this window already shows: compared with this window's own last write
         (_bgURL), not a global of the last art shown anywhere, which could match while this window
         showed something else and skip a write it needed (step 12 stage C in the navigation
-        review)."""
-        if not util.addonSettings.dbgCrossfade:
-            self.setProperty("background_static", value or '')
-            return value
+        review).
 
-        if not value:
-            if self._bgURL != '':
-                self.setProperty("background_static", '')
-                self.setProperty("background", '')
-                self._bgURL = ''
-            return ''
-
+        One property, whatever dbgCrossfade says: the art box is a single layer that fades with
+        its own <fadetime> (default_background.xml.tpl). Upstream's second layer,
+        background_static, held the previous art solid under the fade; once the old art had to go
+        the instant focus left it (on request), both layers showed the same art (2026-10-26)."""
+        value = value or ''
         if self._bgURL != value:
-            # Both layers move together now, on request: the previous item's art should be gone
-            # the instant focus moves off it, not held solid as a backdrop for the crossfading
-            # layer above to blend against (the original reason for staggering these - see git
-            # history for the old two-stage version and its now-removed _scheduleBackgroundStaticSync()
-            # catch-up timer). What's actually behind default_background.xml.tpl's hero-art box
-            # isn't black, it's the already-crossfading 4-corner tinted color panel (same file,
-            # above this box) - so setting background_static here loses its own held-old-art
-            # backdrop and the two layers' <fadetime> crossfades now run in lockstep, but neither
-            # exposes a blank/black gap; the tinted panel shows through the shared transparent
-            # moments instead.
-            self.setProperty("background_static", value)
             self.setProperty("background", value)
             self._bgURL = value
 

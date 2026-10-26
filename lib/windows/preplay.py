@@ -222,15 +222,14 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         # mechanism reconstructs a fresh PrePlayWindow far more often/tightly than the old
         # real-nested-window-per-click design did. Live-confirmed: without this, the *next*
         # PrePlayWindow to reuse this window ID briefly shows this movie's hero art (the
-        # window-level background/background_static properties, which persist independently of
-        # this Python object) until its own onFirstInit() gets far enough to overwrite them.
-        # Clearing them here, on the way out - while self._winID is still correctly this
+        # window-level background property, which persists independently of
+        # this Python object) until its own onFirstInit() gets far enough to overwrite it.
+        # Clearing it here, on the way out - while self._winID is still correctly this
         # instance's own (must run before kodigui.ControlledWindow.doClose() below sets
         # self._closing, which makes setProperty() a no-op) - can't fully eliminate the gap (the
         # next instance still needs to load its own art), but replaces "briefly shows the wrong
         # movie" with "briefly shows nothing," which is what actually needs verifying live.
         self.setProperty('background', '')
-        self.setProperty('background_static', '')
         TasksMixin.doClose(self)
         kodigui.ControlledWindow.doClose(self)
 

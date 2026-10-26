@@ -73,17 +73,17 @@ class FirstPaintTest(SettingsCase):
     def test_a_window_that_knows_its_item_paints_its_art(self):
         window = OwnItemWindow(FakeItem('album'))
         window.paintInitialBackground()
-        self.assertEqual([('background_static', 'art:album'), ('background', 'art:album')], window.writes)
+        self.assertEqual([('background', 'art:album')], window.writes)
 
     def test_a_window_without_an_item_clears_the_art(self):
         window = FakeWindow()
         window.paintInitialBackground()
-        self.assertEqual([('background_static', ''), ('background', '')], window.writes)
+        self.assertEqual([('background', '')], window.writes)
 
     def test_an_item_without_art_clears_it_too(self):
         window = OwnItemWindow(FakeItem(''))
         window.paintInitialBackground()
-        self.assertEqual([('background_static', ''), ('background', '')], window.writes)
+        self.assertEqual([('background', '')], window.writes)
 
     def test_the_previous_screens_art_is_never_painted(self):
         OwnItemWindow(FakeItem('before')).paintInitialBackground()
@@ -104,22 +104,22 @@ class PerWindowSkipTest(SettingsCase):
         first, second = FakeWindow(), FakeWindow()
         first.windowSetBackground('art:x')
         second.windowSetBackground('art:x')
-        self.assertEqual([('background_static', 'art:x'), ('background', 'art:x')], second.writes)
+        self.assertEqual([('background', 'art:x')], second.writes)
 
     def test_the_same_url_again_on_one_window_is_skipped(self):
         window = FakeWindow()
         window.windowSetBackground('art:x')
         window.windowSetBackground('art:x')
-        self.assertEqual(2, len(window.writes))
+        self.assertEqual(1, len(window.writes))
 
-    def test_no_art_clears_both_layers(self):
+    def test_no_art_clears_it(self):
         # Cleared, not a placeholder image: the hero box then draws nothing and the colour panel
         # shows through.
         window = FakeWindow()
         window.windowSetBackground('art:x')
         del window.writes[:]
         window.windowSetBackground(None)
-        self.assertEqual([('background_static', ''), ('background', '')], window.writes)
+        self.assertEqual([('background', '')], window.writes)
 
 
 class GridPanelOnlyTest(SettingsCase):
