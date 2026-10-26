@@ -247,8 +247,8 @@ def update_loop():
                     except:
                         pass
 
-        # tick every two seconds if home or settings windows are active, otherwise every 10
-        interval = getGlobalProperty('active_window') in ("LibraryWindow", "SettingsWindow") and 2.0 or 10.0
+        # tick every two seconds if the library window is active (Settings' pickers are dialogs over it), otherwise every 10
+        interval = getGlobalProperty('active_window') == "LibraryWindow" and 2.0 or 10.0
         if MONITOR.waitForAbort(interval):
             break
 

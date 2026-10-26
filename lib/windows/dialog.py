@@ -170,6 +170,22 @@ class SelectDialog(kodigui.BaseDialog, util.CronReceiver):
         self.doClose()
 
     def showOptions(self):
+        self.optionsList.reset()
+        self.optionsList.addItems(self.optionItems())
+        self.fitFrame(len(self.options))
+        self.selectOption()
+
+    def selectOption(self):
+        """Focus on the current option (selectedIdx), else the first that isn't a group row."""
+        if self.selectedIdx is not None:
+            self.optionsList.selectItem(self.selectedIdx)
+        elif self.isGroup(0):
+            self.optionsList.selectItem(self.firstOption())
+        self.lastSelectedItem = self.selectedIdx if self.selectedIdx is not None else self.firstOption()
+
+        self.setFocusId(self.OPTIONS_LIST_ID)
+
+    def optionItems(self):
         items = []
         for option in self.options:
             ds, title1 = option[0], option[1]
@@ -195,18 +211,7 @@ class SelectDialog(kodigui.BaseDialog, util.CronReceiver):
             for key, value in (option[3] if len(option) > 3 else {}).items():
                 item.setProperty(key, value)
             items.append(item)
-
-        self.optionsList.reset()
-        self.optionsList.addItems(items)
-        self.fitFrame(len(items))
-
-        if self.selectedIdx is not None:
-            self.optionsList.selectItem(self.selectedIdx)
-        elif self.isGroup(0):
-            self.optionsList.selectItem(self.firstOption())
-        self.lastSelectedItem = self.selectedIdx if self.selectedIdx is not None else self.firstOption()
-
-        self.setFocusId(self.OPTIONS_LIST_ID)
+        return items
 
     def fitFrame(self, rows):
         """The list as many rows high as there are, up to the template's 13 (then it scrolls), in the fixed frame."""
@@ -245,7 +250,8 @@ _openPickers = [0]
 
 
 def showOptionsDialog(heading, options, non_playback=False, selected_idx=None, trim=True, on_choice=None,
-                      dialog_props=None, menu=False, beside_sidebar=False, hold_dim=False, user_menu=False):
+                      dialog_props=None, menu=False, beside_sidebar=False, hold_dim=False, user_menu=False, cls=None,
+                      **kwargs):
     """
     selected_idx: the current option, focused and ticked (an option with its own tick flag, a third element, is
     only focused). A fourth element, a dict, is the row's own properties: {'more': '1'} for one that opens more
@@ -255,14 +261,16 @@ def showOptionsDialog(heading, options, non_playback=False, selected_idx=None, t
     hold_dim: a choice may open another dialog (a confirm, Manage recommended rows) - the dim held over the gap
     (kodigui.holdDialogDim()), released by the next dialog or by the caller (kodigui.releasesDialogDim()).
     user_menu: the sidebar's user menu's own frame (UserMenuDialog), under the user button, heading or not.
+    cls: a SelectDialog subclass to open instead (the add-on's Settings: settings.SettingsPickerDialog), kwargs
+    any more of its own.
     """
     nested = _openPickers[0] > 0
     _openPickers[0] += 1
     try:
-        cls = UserMenuDialog if user_menu else SelectDialog
+        cls = cls or (UserMenuDialog if user_menu else SelectDialog)
         w = cls.open(heading=heading, options=options, non_playback=non_playback, selected_idx=selected_idx,
                               trim=trim, on_choice=on_choice, dialog_props=dialog_props, nested=nested, menu=menu,
-                              beside_sidebar=beside_sidebar, hold_dim=hold_dim)
+                              beside_sidebar=beside_sidebar, hold_dim=hold_dim, **kwargs)
     finally:
         _openPickers[0] -= 1
     choice = w.choice

@@ -20,8 +20,8 @@ from lib import genres
 from lib import actions
 from lib import skin_check
 from lib.util import T
-from . import kodigui
-from . import windowutils
+from . import dialog
+from .optionsdialog import messageLines
 
 
 UNDEF = "__UNDEF__"
@@ -220,8 +220,8 @@ class OptionsSetting(BasicSetting):
         self.optionDescs = {}
 
     def optionDescriptions(self, descs):
-        """Help for single options, {option ID: text}: shown in the description's place while that option has
-        focus in the options list (script-plex-settings.xml.tpl), the setting's own otherwise."""
+        """Help for single options, {option ID: text}: shown in the description panel while that option has focus
+        in the setting's picker of values (SettingsPickers.valueProps()); an option without its own shows none."""
         self.optionDescs = descs
         return self
 
@@ -1193,270 +1193,6 @@ class Settings(object):
         return self.SETTINGS[key]
 
 
-class SettingsWindow(kodigui.BaseWindow, windowutils.UtilMixin):
-    xmlFile = 'script-plex-settings.xml'
-    path = util.ADDON.getAddonInfo('path')
-    theme = 'Main'
-    res = '1080i'
-    width = 1920
-    height = 1080
-
-    SECTION_LIST_ID = 75
-    SETTINGS_LIST_ID = 100
-    OPTIONS_LIST_ID = 125
-    TOP_GROUP_ID = 200
-
-    CLOSE_BUTTON_ID = 201
-
-    def onFirstInit(self):
-        self.settings = Settings()
-        self.sectionList = kodigui.ManagedControlList(self, self.SECTION_LIST_ID, 6)
-        self.settingsList = kodigui.ManagedControlList(self, self.SETTINGS_LIST_ID, 6)
-        self.optionsList = kodigui.ManagedControlList(self, self.OPTIONS_LIST_ID, 6)
-
-        self.setProperty('heading', T(32343, 'Settings'))
-        self.showSections()
-        self.setFocusId(75)
-        self.lastSection = None
-        self.lastFocusID = None
-        self.checkSection()
-
-    def onAction(self, action):
-        try:
-            self.checkSection()
-            controlID = self.getFocusId()
-            if action in (xbmcgui.ACTION_STOP, xbmcgui.ACTION_CONTEXT_MENU):
-                self.editSetting(clear=True)
-                return
-            elif action in (xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_PREVIOUS_MENU):
-                if controlID == self.OPTIONS_LIST_ID:
-                    self.setFocusId(self.SETTINGS_LIST_ID)
-                    return
-                elif controlID == self.SETTINGS_LIST_ID:
-                    self.setFocusId(self.SECTION_LIST_ID)
-                    return
-                # elif not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.TOP_GROUP_ID)):
-                #     self.setFocusId(self.TOP_GROUP_ID)
-                #     return
-            elif action == xbmcgui.ACTION_MOVE_RIGHT:
-                if self.lastFocusID == self.SECTION_LIST_ID:
-                    if self.lastSection != 'about':
-                        self.setFocusId(self.SETTINGS_LIST_ID)
-                    return
-                elif self.lastFocusID == self.SETTINGS_LIST_ID:
-                    self.editSetting(from_right=True)
-                    return
-        except:
-            util.ERROR()
-
-        kodigui.BaseWindow.onAction(self, action)
-
-    def onClick(self, controlID):
-        if controlID == self.SECTION_LIST_ID:
-            if self.lastSection != 'about':
-                self.setFocusId(self.SETTINGS_LIST_ID)
-        elif controlID == self.SETTINGS_LIST_ID:
-            self.editSetting()
-        elif controlID == self.OPTIONS_LIST_ID:
-            self.changeSetting()
-        elif controlID == self.CLOSE_BUTTON_ID:
-            self.doClose()
-
-    def onFocus(self, controlID):
-        self.lastFocusID = controlID
-
-    def checkSection(self):
-        mli = self.sectionList.getSelectedItem()
-        if not mli:
-            return
-
-        if mli.dataSource == self.lastSection:
-            return
-
-        self.lastSection = mli.dataSource
-        self.showSettings(self.lastSection)
-        self.setProperty('section.about', self.lastSection == 'about' and '1' or '')
-        util.DEBUG_LOG('Settings: Changed section ({0})', self.lastSection)
-
-    def showSections(self):
-        items = []
-        for sectionID in self.settings.SECTION_IDS:
-            label = self.settings[sectionID][0]
-            item = kodigui.ManagedListItem(label, data_source=sectionID)
-            items.append(item)
-        items[-1].setProperty('is.last', '1')
-
-        self.sectionList.addItems(items)
-
-    def showSettings(self, section):
-        settings = self.settings[section][1]
-        if not settings:
-            return self.settingsList.reset()
-
-        # Settings kept per Plex Home user are marked (a person icon, and a line in the description)
-        # only when there's more than one user to keep them for.
-        account = plexnet.plexapp.ACCOUNT
-        multiUser = bool(account and len(account.homeUsers or ()) > 1)
-        userNote = multiUser and T(35179, 'Saved for this user ({0}) only.').format(account.title or account.username) or ''
-
-        items = []
-        for setting in settings:
-            if setting is None or not setting.should_show():
-                continue
-
-            item = kodigui.ManagedListItem(setting.label, setting.type != 'BOOL' and setting.valueLabel() or '',
-                                           data_source=setting)
-            desc = setting.desc
-            if setting.userAware and multiUser:
-                item.setProperty('useraware', '1')
-                desc = u'{0}\n{1}'.format(userNote, desc) if desc else userNote
-            item.setProperty('description', desc)
-            if setting.type == 'BOOL':
-                item.setProperty('checkbox', '1')
-                item.setProperty('checkbox.checked', setting.get() and '1' or '')
-            elif setting.type == 'BUTTON':
-                item.setProperty('button', '1')
-
-            items.append(item)
-
-        self.settingsList.replaceItems(items)
-
-    def editSetting(self, from_right=False, clear=False):
-        mli = self.settingsList.getSelectedItem()
-        if not mli:
-            return
-
-        setting = mli.dataSource
-
-        if clear and setting.type != 'STRING':
-            return
-
-        if setting.type in ('LIST', 'OPTIONS', 'MULTI'):
-            self.fillList(setting)
-        elif setting.type == 'BOOL' and not from_right:
-            self.toggleBool(mli, setting)
-        elif setting.type == 'IP' and not from_right:
-            self.editIP(mli, setting)
-        elif setting.type == 'INTEGER' and not from_right:
-            self.editInteger(mli, setting)
-        elif setting.type == 'STRING' and not from_right:
-            self.editString(mli, setting, clear=clear)
-        elif setting.type == 'BUTTON':
-            self.buttonDialog(mli, setting)
-
-    def changeSetting(self):
-        optionItem = self.optionsList.getSelectedItem()
-        if not optionItem:
-            return
-
-        mli = self.settingsList.getSelectedItem()
-        if not mli:
-            return
-
-        setting = mli.dataSource
-
-        if setting.type == 'LIST':
-            setting.set(optionItem.pos())
-            mli.setLabel2(setting.valueLabel())
-        elif setting.type == 'OPTIONS':
-            setting.set(optionItem.dataSource)
-            mli.setLabel2(setting.valueLabel())
-        elif setting.type == 'MULTI':
-            values = setting.get()
-            if optionItem.dataSource in values:
-                values.remove(optionItem.dataSource)
-                optionItem.setProperty('checkbox.checked', '')
-            else:
-                values.append(optionItem.dataSource)
-                optionItem.setProperty('checkbox.checked', '1')
-            setting.set(values)
-            mli.setLabel2(setting.valueLabel(values=values))
-
-        if setting.type != 'MULTI':
-            self.setFocusId(self.SETTINGS_LIST_ID)
-
-    def fillList(self, setting):
-        mli = self.settingsList.getSelectedItem()
-        if not mli:
-            return
-
-        items = []
-        if setting.type == 'LIST':
-            for label in setting.optionLabels():
-                items.append(kodigui.ManagedListItem(label))
-        elif setting.type in ('OPTIONS', 'MULTI'):
-            for ID, label in setting.options:
-                items.append(kodigui.ManagedListItem(label, data_source=ID,
-                                                     properties={'description': setting.optionDescs.get(ID, '')}))
-
-        self.optionsList.reset()
-        self.optionsList.addItems(items)
-        idx = setting.optionIndex()
-        if isinstance(idx, int):
-            idx = [idx]
-        for _idx in idx:
-            if setting.type == 'MULTI':
-                self.optionsList[_idx].setProperty('checkbox.checked', '1')
-        if idx:
-            self.optionsList.selectItem(idx[-1])
-        self.setFocusId(self.OPTIONS_LIST_ID)
-
-    def toggleBool(self, mli, setting):
-        setting.set(not setting.get())
-        mli.setProperty('checkbox.checked', setting.get() and '1' or '')
-        self.showSettings(self.lastSection)
-
-    def editIP(self, mli, setting):
-        current = setting.get()
-        edit = True
-        if current:
-            edit = xbmcgui.Dialog().yesno(
-                T(32412, 'Edit Or Clear'),
-                T(32413, 'Edit IP address or clear the current setting?'),
-                nolabel=T(32414, 'Clear'),
-                yeslabel=T(32415, 'Edit')
-            )
-
-        if edit:
-            result = xbmcgui.Dialog().input(T(32416, 'Enter IP Address'), current, xbmcgui.INPUT_IPADDRESS)
-            if not result:
-                return
-        else:
-            result = ''
-
-        setting.set(result)
-        mli.setLabel2(result)
-
-    def editInteger(self, mli, setting):
-        result = xbmcgui.Dialog().input(setting.label, str(setting.get()), xbmcgui.INPUT_NUMERIC)
-        if not result:
-            return
-        setting.set(int(result))
-        mli.setLabel2(result)
-
-    def editString(self, mli, setting, clear=False):
-        if clear:
-            setting.set(None)
-            mli.setLabel2(T(32447, "None"))
-            return
-        if hasattr(setting, "value_setter"):
-            result = setting.value_setter()
-            if result is not None:
-                setting.set(result.code)
-                mli.setLabel2(str(result))
-            return
-        else:
-            result = xbmcgui.Dialog().input(T(32417, 'Enter Port Number'), str(setting.get()), xbmcgui.INPUT_STRING)
-        if result is None:
-            return
-        elif result == -1:
-            setting.set(None)
-            return
-
-        setting.set(result)
-        mli.setLabel2(str(result))
-
-
 class SchnorchelDialog(xbmcgui.WindowXMLDialog):
     """
     inspired by https://github.com/pkscout/script.keymap/blob/main/editor.py
@@ -1513,6 +1249,275 @@ class SchnorchelDialog(xbmcgui.WindowXMLDialog):
         return
 
 
+class SettingsPickerDialog(dialog.SelectDialog):
+    """
+    The add-on's Settings, as pickers (script-plex-settings_picker.xml.tpl): the option picker beside the sidebar, as
+    the Libraries picker - the sections, a section's settings over them and a setting's values over those
+    (SettingsPickers) - with the focused row's description (its 'description' property) in a panel to the right,
+    as tall as its text. on_context: called with the focused row's choice on Stop or the context menu (a key
+    setting's clear), returning (options, selected_idx) to show, or None.
+    """
+    xmlFile = 'script-plex-settings_picker.xml'
+
+    DESC_BACKDROP_ID = 301
+    DESC_SHADOW_ID = 302
+    DESC_TEXT_ID = 303
+    # The confirm box's message's (optionsdialog.OptionsDialog): font10's 28 lines, and 4 past the last for its
+    # descenders. 20 above and below; at most the frame's 876, then it scrolls.
+    LINE_HEIGHT = 28
+    DESCENDER_ROOM = 4
+    PAD = 20
+    MAX_LINES = 29
+
+    # the pickers open now, the topmost last: each hides the panel of the one under it, whose place its own takes
+    _open = []
+
+    def __init__(self, *args, **kwargs):
+        dialog.SelectDialog.__init__(self, *args, **kwargs)
+        self.onContext = kwargs.get('on_context')
+        self._desc = ''
+        self._descHeight = None
+        self._descLines = {}
+
+    def onFirstInit(self):
+        if self._open:
+            self._open[-1].setProperty('covered', '1')
+        self._open.append(self)
+        dialog.SelectDialog.onFirstInit(self)
+
+    def onClosed(self):
+        if self in self._open:
+            self._open.remove(self)
+        if self._open:
+            self._open[-1].setProperty('covered', '')
+        dialog.SelectDialog.onClosed(self)
+
+    def onAction(self, action):
+        if action in (xbmcgui.ACTION_STOP, xbmcgui.ACTION_CONTEXT_MENU):
+            if self.onContext and self.getFocusId() == self.OPTIONS_LIST_ID:
+                refreshed = self.onContext(self.options[self.optionsList.getSelectedPosition()][0])
+                if refreshed is not None:
+                    self.options, self.selectedIdx = refreshed
+                    self.showOptions()
+            return
+
+        dialog.SelectDialog.onAction(self, action)
+        self.fitDescription()
+
+    def showOptions(self):
+        if not self.optionsList.size():
+            dialog.SelectDialog.showOptions(self)
+        else:
+            # A refresh (a change, or back from a value picker): the rows updated in place, so the list keeps its
+            # scroll and the row stays where it was. Emptied and refilled, the list scrolled from the top just
+            # far enough to show it, at the bottom.
+            self.optionsList.replaceItems(self.optionItems())
+            self.fitFrame(len(self.options))
+            self.selectOption()
+        self.fitDescription()
+
+    def fitDescription(self):
+        """The panel for the row focus is on, its description (the option's 'description' property): the box sized to
+        it first, then the text (the template's 'description'), so the textbox lays its lines out in the new size.
+        The row is the one SelectDialog has focus going to (lastSelectedItem), not the list's: a selectItem() of
+        its own - a refresh, a wrap round - is queued, so the list still reports the row before. None, the panel
+        hides (the template), its size kept while it fades. Nothing changed, no GUI calls: this runs on every move."""
+        if self._closing:
+            return
+        pos = self.lastSelectedItem
+        option = self.options[pos] if 0 <= pos < len(self.options) else ()
+        desc = len(option) > 3 and option[3].get('description') or ''
+        if desc == self._desc:
+            return
+        self._desc = desc
+        if desc:
+            lines = self._descLines.get(desc)
+            if lines is None:
+                lines = self._descLines[desc] = max(1, min(messageLines(desc), self.MAX_LINES))
+            height = lines * self.LINE_HEIGHT + 2 * self.PAD
+            if height != self._descHeight:
+                self._descHeight = height
+                try:
+                    self.getControl(self.DESC_TEXT_ID).setHeight(
+                        util.vscalei(lines * self.LINE_HEIGHT + self.DESCENDER_ROOM))
+                    self.getControl(self.DESC_BACKDROP_ID).setHeight(util.vscalei(height))
+                    self.getControl(self.DESC_SHADOW_ID).setHeight(util.vscalei(height + 80))
+                except (RuntimeError, SystemError) as e:
+                    util.LOG('SettingsPickerDialog: no description panel to fit: {}', e)
+        self.setProperty('description', desc)
+
+
+class SettingsPickers(object):
+    """
+    The add-on's Settings (openWindow()): a picker of the sections, a section's settings over it, and a setting's
+    values over that, each Back to the one under it. A setting's row: its name over its value, ticked when it's a
+    switch that's on, a chevron when it opens a picker of values. A change is saved as it's made, and each picker
+    under it shows it on return (show_cb's rows, there or not, too).
+    """
+    def __init__(self):
+        self.settings = Settings()
+        # Settings kept per Plex Home user are marked (a line heading the description, settingRow()) only when
+        # there's more than one user to keep them for.
+        account = plexnet.plexapp.ACCOUNT
+        multiUser = bool(account and len(account.homeUsers or ()) > 1)
+        self.userNote = multiUser and T(35179, 'Saved for this user ({0}) only.').format(
+            account.title or account.username) or ''
+
+    @staticmethod
+    def picker(heading, options, **kwargs):
+        # no wrap round from one end to the other
+        return dialog.showOptionsDialog(heading, options, non_playback=True, trim=False, beside_sidebar=True,
+                                        cls=SettingsPickerDialog, round_robin=False, **kwargs)
+
+    def show(self):
+        sections = [(sectionID, self.settings[sectionID][0], False, {'more': '1'})
+                    for sectionID in self.settings.SECTION_IDS]
+
+        def onSection(sectionID):
+            self.showSection(sectionID)
+            return sections, self.settings.SECTION_IDS.index(sectionID)
+
+        self.picker(T(32343, 'Settings'), sections, on_choice=onSection, menu=True)
+
+    def showSection(self, sectionID):
+        label, settings = self.settings[sectionID]
+
+        def rows():
+            return [self.settingRow(s) for s in settings if s is not None and s.should_show()]
+
+        def refreshed(setting):
+            options = rows()
+            return options, next((i for i, o in enumerate(options) if o[0] is setting), 0)
+
+        def onSetting(setting):
+            self.editSetting(setting)
+            return refreshed(setting)
+
+        def onContext(setting):
+            if setting.type != 'STRING':
+                return None
+            self.editString(setting, clear=True)
+            return refreshed(setting)
+
+        self.picker(label, rows(), on_choice=onSetting, on_context=onContext, menu=True)
+
+    def settingRow(self, setting):
+        props = {}
+        desc = setting.desc or ''
+        if setting.userAware and self.userNote:
+            # the note first, on its own line, in bold white over the description's grey
+            note = u'[B][COLOR FFFFFFFF]{0}[/COLOR][/B]'.format(self.userNote)
+            desc = u'{0}\n{1}'.format(note, desc) if desc else note
+        if desc:
+            props['description'] = desc
+        if setting.type in ('LIST', 'OPTIONS', 'MULTI'):
+            props['more'] = '1'
+
+        value = ''
+        if setting.type != 'BOOL':
+            value = setting.valueLabel()
+            value = u'{0}'.format(value) if value not in (None, '') else ''
+        return (setting, (setting.label, value) if value else setting.label,
+                setting.type == 'BOOL' and bool(setting.get()), props)
+
+    @staticmethod
+    def valueProps(setting, value):
+        """A value's row's properties: its own description, if it has one (OptionsSetting.optionDescriptions()) -
+        none of the setting's, which the picker under it had."""
+        desc = getattr(setting, 'optionDescs', {}).get(value)
+        return desc and {'description': desc} or {}
+
+    def editSetting(self, setting):
+        if setting.type == 'BOOL':
+            setting.set(not setting.get())
+        elif setting.type in ('LIST', 'OPTIONS'):
+            self.chooseValue(setting)
+        elif setting.type == 'MULTI':
+            self.chooseValues(setting)
+        elif setting.type == 'IP':
+            self.editIP(setting)
+        elif setting.type == 'INTEGER':
+            self.editInteger(setting)
+        elif setting.type == 'STRING':
+            self.editString(setting)
+        # INFO (About's): nothing to change
+
+    def chooseValue(self, setting):
+        if setting.type == 'LIST':
+            values = list(enumerate(setting.optionLabels()))
+        else:
+            values = list(setting.options)
+        idx = setting.optionIndex()
+        options = [(value, label, i == idx, self.valueProps(setting, value))
+                   for i, (value, label) in enumerate(values)]
+        choice = self.picker(setting.label, options, selected_idx=idx)
+        if choice is not None:
+            setting.set(choice)
+
+    def chooseValues(self, setting):
+        """A multiple choice: Select ticks and unticks a value, saved as it's made; Back is done."""
+        def options():
+            current = setting.get()
+            return [(value, label, value in current, self.valueProps(setting, value))
+                    for value, label in setting.options]
+
+        def onToggle(value):
+            values = list(setting.get())
+            if value in values:
+                values.remove(value)
+            else:
+                values.append(value)
+            setting.set(values)
+            refreshed = options()
+            return refreshed, next((i for i, o in enumerate(refreshed) if o[0] == value), 0)
+
+        ticked = setting.optionIndex()
+        self.picker(setting.label, options(), on_choice=onToggle, selected_idx=ticked[-1] if ticked else None)
+
+    def editIP(self, setting):
+        current = setting.get()
+        edit = True
+        if current:
+            edit = xbmcgui.Dialog().yesno(
+                T(32412, 'Edit Or Clear'),
+                T(32413, 'Edit IP address or clear the current setting?'),
+                nolabel=T(32414, 'Clear'),
+                yeslabel=T(32415, 'Edit')
+            )
+
+        if edit:
+            result = xbmcgui.Dialog().input(T(32416, 'Enter IP Address'), current, xbmcgui.INPUT_IPADDRESS)
+            if not result:
+                return
+        else:
+            result = ''
+
+        setting.set(result)
+
+    def editInteger(self, setting):
+        result = xbmcgui.Dialog().input(setting.label, str(setting.get()), xbmcgui.INPUT_NUMERIC)
+        if not result:
+            return
+        setting.set(int(result))
+
+    def editString(self, setting, clear=False):
+        if clear:
+            setting.set(None)
+            return
+        if hasattr(setting, "value_setter"):
+            # a key setting's: the key pressed (SchnorchelDialog), None for none in time or Back, -1 for Select
+            result = setting.value_setter()
+            if result is not None and result != -1:
+                setting.set(result.code)
+            return
+        result = xbmcgui.Dialog().input(T(32417, 'Enter Port Number'), str(setting.get()), xbmcgui.INPUT_STRING)
+        if result is None:
+            return
+        elif result == -1:
+            setting.set(None)
+            return
+        setting.set(result)
+
+
 def openWindow():
-    w = SettingsWindow.open()
-    del w
+    SettingsPickers().show()

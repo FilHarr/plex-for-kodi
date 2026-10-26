@@ -103,7 +103,7 @@ class BaseFunctions(object):
         xbmc.executebuiltin('ReplaceWindow({0})'.format(self._winID))
 
     def forceDismiss(self):
-        # Default no-op: BaseWindow-only subclasses (e.g. SettingsWindow) and dialogs never override
+        # Default no-op: BaseWindow-only subclasses and dialogs never override
         # close() to be flag-only in the first place, so their own doClose() already does a real
         # dismiss - nothing extra needed. ControlledWindow/MultiWindow (whose close() only flips
         # self._closing, see ControlledBase.close()) override this with a real dismiss.
