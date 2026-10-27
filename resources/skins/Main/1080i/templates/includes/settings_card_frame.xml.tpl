@@ -8,12 +8,14 @@
      less 6: 3 clear above and below): 61 rows (55 cards), 13 of them (793). frame_x/frame_y place group 200 (the
      list's top left), backdrop_height and shadow_height size the frame, its own, so it opens in place - placed
      only from Python, a slower box (a Shield) showed it centred first, then jumping to the right. -->
-<!-- out of the way of what its rows open: an option picker (in this frame's place, so its shadow and backdrop
-     don't double up over this one's) and Kodi's own windows -->
+<!-- out of the way of Kodi's own windows its rows open. Not of an option picker: that opens over this, in its
+     place, as the add-on's Settings stack theirs, nested (dialog.pickerOpen() - its dim this one's), so the
+     picker's fade out (includes/dialog_close_fade.xml.tpl) shows this still under it. Hidden while one was up,
+     this came back only once the picker had faded away. -->
 <!-- The full-screen dim behind it: 30% black, the screens' own row-scroll dim's (default_background.xml.tpl),
-     shown with the frame below - so a picker opened over this swaps it for its own, the same, in one frame. -->
+     shown with the frame below. -->
 <control type="image">
-    <visible>!Window.IsVisible(script-plex-settings_select_dialog.xml) + !Window.IsVisible(sliderdialog) +!Window.IsVisible(osdvideosettings) + !Window.IsVisible(osdaudiosettings) + !Window.IsVisible(osdsubtitlesettings) + !Window.IsVisible(subtitlesearch) + !Window.IsActive(selectdialog) + !Window.IsVisible(osdcmssettings)</visible>
+    <visible>!Window.IsVisible(sliderdialog) +!Window.IsVisible(osdvideosettings) + !Window.IsVisible(osdaudiosettings) + !Window.IsVisible(osdsubtitlesettings) + !Window.IsVisible(subtitlesearch) + !Window.IsActive(selectdialog) + !Window.IsVisible(osdcmssettings)</visible>
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
@@ -22,7 +24,7 @@
     <colordiffuse>4D000000</colordiffuse>
 </control>
 <control type="group" id="200">
-    <visible>!Window.IsVisible(script-plex-settings_select_dialog.xml) + !Window.IsVisible(sliderdialog) +!Window.IsVisible(osdvideosettings) + !Window.IsVisible(osdaudiosettings) + !Window.IsVisible(osdsubtitlesettings) + !Window.IsVisible(subtitlesearch) + !Window.IsActive(selectdialog) + !Window.IsVisible(osdcmssettings)</visible>
+    <visible>!Window.IsVisible(sliderdialog) +!Window.IsVisible(osdvideosettings) + !Window.IsVisible(osdaudiosettings) + !Window.IsVisible(osdsubtitlesettings) + !Window.IsVisible(subtitlesearch) + !Window.IsActive(selectdialog) + !Window.IsVisible(osdcmssettings)</visible>
     <posx>{{ frame_x }}</posx>
     <posy>{{ frame_y|vscale }}</posy>
     <control type="image" id="202">

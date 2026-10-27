@@ -535,14 +535,15 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         info.showSummary(self.video.title, self.video.summary)
 
     def moreActions(self):
-        """This screen's actions for the More settings dialog, [(key, label)] (runMoreAction() runs them)."""
+        """This screen's actions for the More settings dialog, [(key, label)] (runMoreAction() runs them). Marking
+        and Delete ask over it, (key, label, question): Yes closes it on the action, run already confirmed."""
         options = []
 
         inProgress = self.video.viewOffset.asInt()
         if not self.video.isWatched or inProgress:
-            options.append(('mark_watched', T(32319, 'Mark Played')))
+            options.append(('mark_watched', T(32319, 'Mark Played'), lambda: self.confirmWatched(True)))
         if self.video.isWatched or inProgress:
-            options.append(('mark_unwatched', T(32318, 'Mark Unplayed')))
+            options.append(('mark_unwatched', T(32318, 'Mark Unplayed'), lambda: self.confirmWatched(False)))
 
         if self.video.type == 'episode':
             options.append(('to_season', T(32400, 'Go to Season')))
@@ -556,7 +557,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
             if self.video.server.allowsMediaDeletion:
                 # in a muted red, set apart from the rest as the one that can't be undone
-                options.append(('delete', u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32322, 'Delete'))))
+                options.append(('delete', u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32322, 'Delete')),
+                                lambda: optionsdialog.confirmDelete(self.video)))
 
         if 'items' in util.getSetting('cache_requests'):
             options.append(('cache_reset', T(33728, "Clear cache for item")))
@@ -565,9 +567,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
 
     def runMoreAction(self, key):
         if key == 'mark_watched':
-            self.toggleWatched(self.video, state=True, **VIDEO_RELOAD_KW)
+            self.toggleWatched(self.video, state=True, confirmed=True, **VIDEO_RELOAD_KW)
         elif key == 'mark_unwatched':
-            self.toggleWatched(self.video, state=False, **VIDEO_RELOAD_KW)
+            self.toggleWatched(self.video, state=False, confirmed=True, **VIDEO_RELOAD_KW)
         elif key == 'to_season':
             self.processCommand(opener.open(self.video.parentRatingKey, context=self, server=self.video.server,
                                             entry_section_id=self.entrySectionId,
@@ -583,7 +585,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
                                                       came_from=self.video.ratingKey)
                                 )
         elif key == 'delete':
-            self.delete()
+            self.delete(confirmed=True)
         elif key == 'refresh':
             self.video.refresh()
             self.video.reload(checkFiles=1, **VIDEO_RELOAD_KW)
@@ -597,8 +599,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             except Exception as e:
                 util.DEBUG_LOG("Couldn't clear cache: {}", e)
 
-    def delete(self):
-        if not optionsdialog.confirmDelete(self.video):
+    def delete(self, confirmed=False):
+        """confirmed: asked already (More settings asks over itself, then runs this once it's closed)."""
+        if not confirmed and not optionsdialog.confirmDelete(self.video):
             return
 
         if self._delete():

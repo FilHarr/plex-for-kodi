@@ -254,18 +254,20 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
         rows = itemmenu.options(mli)
         if not rows:
             return
-        choice = itemmenu.choose(mli, rows)
+        # marking asks over the menu (itemmenu.choose()): chosen, it's confirmed
+        choice = itemmenu.choose(mli, rows, self)
         if choice in ('mark_watched', 'mark_unwatched'):
-            self.markWatched(mli, state=choice == 'mark_watched')
+            self.markWatched(mli, state=choice == 'mark_watched', confirmed=True)
         elif choice:
             itemmenu.run(self, mli, choice, entry_section_id=self.entrySectionId,
                          entry_from_watchlist=self.entryFromWatchlist)
 
-    def markWatched(self, mli, state=None):
-        """Marked (asked first in CommonMixin.toggleWatched(), when the setting's on; flipped when state is None),
+    def markWatched(self, mli, state=None, confirmed=False):
+        """Marked (asked first in CommonMixin.toggleWatched(), when the setting's on and it isn't confirmed already,
+        over the item menu; flipped when state is None),
         then its tile redrawn - and off the Watchlist once fully watched, as the library grid's (GridMixin.toggleWatched())."""
         data = mli.dataSource
-        watched = self.toggleWatched(data, state=state)
+        watched = self.toggleWatched(data, state=state, confirmed=confirmed)
         if watched is None:
             return
         if watched:

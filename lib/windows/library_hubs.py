@@ -24,7 +24,7 @@ from . import optionsdialog
 from . import section_ids
 from . import sidebar_model
 from . import navintent
-from .dialog import optionGroup, showOptionsDialog
+from .dialog import askingOver, optionGroup, showOptionsDialog
 
 
 class _CatalogHub(object):
@@ -2095,15 +2095,23 @@ class HubsMixin(object):
         options = play + marks + places + [optionGroup(T(35201, 'All rows')),
                                            ('refresh_hubs', T(34096, "Refresh Hubs"))]
 
+        # Marking and Remove from Continue Watching ask over the menu (dialog.askingOver()): chosen, they're confirmed
+        dialogProps = getattr(self, 'carriedProps', None)
+        options, onChoice = askingOver(options, {
+            'mark_watched': lambda: self.confirmWatched(True),
+            'mark_unwatched': lambda: self.confirmWatched(False),
+            'remove_cw': lambda: not util.getSetting('home_confirm_actions') or optionsdialog.show(
+                u'{0}?'.format(T(33662, "Remove from Continue Watching")), '', T(32328, 'Yes'), T(32329, 'No'),
+                dialog_props=dialogProps) == 0,
+        })
         choice = showOptionsDialog(grid_labels.menuHeading(ds), options, non_playback=True, menu=True,
-                                   dialog_props=getattr(self, 'carriedProps', None))
+                                   on_choice=onChoice, dialog_props=dialogProps)
 
         if not choice:
             return
 
         if choice in ("mark_watched", "mark_unwatched"):
-            # asks in toggleWatched() (CommonMixin), as everywhere else; None is a "No" there
-            if self.toggleWatched(mli, state=choice == "mark_watched") is None:
+            if self.toggleWatched(mli, state=choice == "mark_watched", confirmed=True) is None:
                 return
 
             # The tile's ticks are updated above; the rows themselves are fetched again, in place:
@@ -2111,17 +2119,6 @@ class HubsMixin(object):
             self.refreshHubsInPlace(choice.replace('_', ' '), manual=True)
 
         elif choice == "remove_cw":
-            if util.getSetting('home_confirm_actions'):
-                button = optionsdialog.show(
-                    u'{0}?'.format(T(33662, "Remove from Continue Watching")), '',
-                    T(32328, 'Yes'),
-                    T(32329, 'No'),
-                    dialog_props=getattr(self, 'carriedProps', None)
-                )
-
-                if button != 0:
-                    return
-
             # The server has dropped it by the time this returns (the PUT is waited for), so the rows
             # fetched again, in place, are without it: the row lands on the item that was next
             # (_reselectIndex()). Was a reopen of the section, back on its first row.

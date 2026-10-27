@@ -5,9 +5,10 @@ from lib.windows import optionsdialog, busy
 
 
 class DeleteMediaMixin(object):
-    def delete(self, item=None):
+    def delete(self, item=None, confirmed=False):
+        """confirmed: asked already (More settings asks over itself, then runs this once it's closed)."""
         item = item or self.mediaItem
-        if not optionsdialog.confirmDelete(item):
+        if not confirmed and not optionsdialog.confirmDelete(item):
             return
 
         if not self._delete(item=item):

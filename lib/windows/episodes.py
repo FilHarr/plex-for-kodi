@@ -1762,12 +1762,13 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         elif xbmc.getCondVisibility('ControlGroup(50).HasFocus(0) + !ControlGroup(300).HasFocus(0)'):
             self.setProperty('on.extras', '1')
 
-    def toggleWatched(self, mli=None, item=None, state=None, heading=None, **kw):
+    def toggleWatched(self, mli=None, item=None, state=None, heading=None, confirmed=False, **kw):
         if not mli and not item:
             return
 
         item = item or mli.dataSource
-        watched = super(EpisodesWindow, self).toggleWatched(item, state=state, heading=heading, **VIDEO_RELOAD_KW)
+        watched = super(EpisodesWindow, self).toggleWatched(item, state=state, heading=heading, confirmed=confirmed,
+                                                            **VIDEO_RELOAD_KW)
         if watched is None:
             return
 
@@ -2146,7 +2147,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
     def moreActions(self, mli, isSeasonCard):
         """The More settings dialog's actions, [(key, label)], for an episode card or the season card (runMoreAction()
-        runs them)."""
+        runs them). Marking and Delete ask over it, (key, label, question): Yes closes it on the action, run already
+        confirmed."""
         options = []
         # the season card's target (see runMoreAction()), for its server below
         seasonCardItem = self.season or self.show_
@@ -2155,9 +2157,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             inProgress = mli.dataSource.viewOffset.asInt()
 
             if not mli.dataSource.isWatched or inProgress:
-                options.append(('mark_watched', T(32319, 'Mark Played')))
+                options.append(('mark_watched', T(32319, 'Mark Played'), lambda: self.confirmWatched(True)))
             if mli.dataSource.isWatched or inProgress:
-                options.append(('mark_unwatched', T(32318, 'Mark Unplayed')))
+                options.append(('mark_unwatched', T(32318, 'Mark Unplayed'), lambda: self.confirmWatched(False)))
 
             # if True:
             #     options.append(('add_to_playlist', '[COLOR FF808080]Add To Playlist[/COLOR]'))
@@ -2167,9 +2169,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         # Mark Played/Unplayed above - on request).
         if isSeasonCard and self.season:
             if self.season.isWatched:
-                options.append(('mark_season_unwatched', T(32320, 'Mark Season Unplayed')))
+                options.append(('mark_season_unwatched', T(32320, 'Mark Season Unplayed'),
+                                lambda: self.confirmWatched(False, heading=T(32320, 'Mark Season Unplayed'))))
             else:
-                options.append(('mark_season_watched', T(32321, 'Mark Season Played')))
+                options.append(('mark_season_watched', T(32321, 'Mark Season Played'),
+                                lambda: self.confirmWatched(True, heading=T(32321, 'Mark Season Played'))))
 
         if self.show_:
             # over More settings, which Back returns to
@@ -2187,7 +2191,8 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             # confirmation text by accident.
             if not isSeasonCard and mli.dataSource.server.allowsMediaDeletion:
                 # in a muted red, set apart from the rest as the one that can't be undone
-                options.append(('delete', u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32322, 'Delete'))))
+                options.append(('delete', u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32322, 'Delete')),
+                                lambda: optionsdialog.confirmDelete(mli.dataSource)))
 
         # if xbmc.getCondVisibility('Player.HasAudio') and self.section.TYPE == 'artist':
         #     options.append(('add_to_queue', 'Add To Queue'))
@@ -2207,19 +2212,19 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         seasonCardItem = self.season or self.show_
 
         if key == 'mark_watched':
-            self.toggleWatched(mli, state=True)
+            self.toggleWatched(mli, state=True, confirmed=True)
         elif key == 'mark_unwatched':
-            self.toggleWatched(mli, state=False)
+            self.toggleWatched(mli, state=False, confirmed=True)
         elif key == 'mark_season_watched':
-            self.toggleWatched(item=self.season, state=True, heading=T(32321, 'Mark Season Played'))
+            self.toggleWatched(item=self.season, state=True, heading=T(32321, 'Mark Season Played'), confirmed=True)
         elif key == 'mark_season_unwatched':
-            self.toggleWatched(item=self.season, state=False, heading=T(32320, 'Mark Season Unplayed'))
+            self.toggleWatched(item=self.season, state=False, heading=T(32320, 'Mark Season Unplayed'), confirmed=True)
         elif key == 'to_show':
             self._goToShow()
         elif key == 'delete':
             # rebuilt only once deleted (not on a No), and season card and all (_rebuildEpisodeList()),
             # on the episode _delete() left selected in its place
-            if self.delete(mli.dataSource) and not self.closing:
+            if self.delete(mli.dataSource, confirmed=True) and not self.closing:
                 count = int(self.season.leafCount) if self.season else 0
                 self._rebuildEpisodeList(count, keep_selection=True)
         elif key == 'refresh':
@@ -2245,8 +2250,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             except Exception as e:
                 util.DEBUG_LOG("Couldn't clear cache: {}", e)
 
-    def delete(self, item):
-        if not optionsdialog.confirmDelete(item):
+    def delete(self, item, confirmed=False):
+        """confirmed: asked already (More settings asks over itself, then runs this once it's closed)."""
+        if not confirmed and not optionsdialog.confirmDelete(item):
             return
 
         if not self._delete():

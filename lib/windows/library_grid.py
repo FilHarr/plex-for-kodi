@@ -30,7 +30,6 @@ from . import playersettings
 from . import kodigui
 from . import opener
 from . import videoplayer
-from . import optionsdialog
 from . import panel_colors
 from . import preplay
 from . import subitems
@@ -496,11 +495,11 @@ class GridMixin(object):
 
         self.showPhotoItemProperties(mli.dataSource)
 
-    def toggleWatched(self, mli, state=None, **kw):
+    def toggleWatched(self, mli, state=None, confirmed=False, **kw):
         """state: played (True) or unplayed (False); flipped when None. The new state, or None if it was
-        declined at the confirmation (CommonMixin.toggleWatched())."""
+        declined at the confirmation (CommonMixin.toggleWatched()). confirmed: asked already, over the item menu."""
         item = mli.dataSource
-        watched = super(GridMixin, self).toggleWatched(item, state=state)
+        watched = super(GridMixin, self).toggleWatched(item, state=state, confirmed=confirmed)
         if watched is None:
             return
 
@@ -524,22 +523,16 @@ class GridMixin(object):
         rows = itemmenu.options(mli, watchlist=self.section.TYPE == "movies_shows")
         if not rows:
             return True
-        choice = itemmenu.choose(mli, rows)
+        # Marking and Remove from watchlist ask over the menu (itemmenu.choose()): chosen, they're confirmed
+        choice = itemmenu.choose(mli, rows, self)
 
-        # Mark Played/Unplayed ask in toggleWatched() (CommonMixin), as everywhere else
         if choice == "mark_watched":
-            self.toggleWatched(mli, state=True)
+            self.toggleWatched(mli, state=True, confirmed=True)
 
         elif choice == "mark_unwatched":
-            self.toggleWatched(mli, state=False)
+            self.toggleWatched(mli, state=False, confirmed=True)
 
         elif choice == "remove_from_watchlist":
-            if util.getSetting('home_confirm_actions'):
-                button = optionsdialog.show(u'{0}?'.format(T(34011, "Remove from watchlist")), '',
-                                            T(32328, 'Yes'), T(32329, 'No'))
-                if button != 0:
-                    return True
-
             wl_ref = ds.show() if ds.TYPE in ('episode', 'season') else ds
             removeFromWatchlistBlind(wl_ref.guid, wl_ref)
             self.doRefill()

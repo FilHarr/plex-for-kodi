@@ -20,6 +20,23 @@ def optionGroup(title=''):
     return (GROUP, title)
 
 
+def askingOver(options, questions):
+    """A menu whose actions ask first (Confirm item actions: Mark Played?, Remove from watchlist?) asks over itself, as
+    More settings does: a confirm box opening as the menu closed showed the screen bare between the two. questions:
+    {key: ask}, ask() True for a Yes (or when there's nothing to ask). Returns options as the menu shows them, never
+    ticked - a row is focused again on the way back, not ticked as a value - and its on_choice: a No comes back to
+    the menu on that row, a Yes closes it on the choice, for the caller to run without asking again."""
+    shown = [o if o[0] is GROUP else (o[0], o[1], False) + tuple(o[3:]) for o in options]
+
+    def onChoice(choice):
+        ask = questions.get(choice)
+        if ask is None or ask():
+            return None
+        return shown, next((i for i, o in enumerate(shown) if o[0] == choice), 0)
+
+    return shown, onChoice
+
+
 def groupedOptions(*groups):
     """options from groups of them, a blank optionGroup() between those with any in."""
     options = []
@@ -263,6 +280,16 @@ def pickerOpen():
     """Whether a picker is open now: a dialog opened over it (a sidebar menu's Empty Trash confirm or Manage
     recommended rows) is nested, the picker's dim already behind it (option_card_frame.xml.tpl)."""
     return _openPickers[0] > 0
+
+
+class openAsPicker(object):
+    """A dialog the option pickers open over, counted as an open picker while it is (More settings,
+    playersettings.showDialog()): what it opens is nested, as over a picker."""
+    def __enter__(self):
+        _openPickers[0] += 1
+
+    def __exit__(self, *exc):
+        _openPickers[0] -= 1
 
 
 def showOptionsDialog(heading, options, non_playback=False, selected_idx=None, trim=True, on_choice=None,

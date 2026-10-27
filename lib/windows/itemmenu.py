@@ -17,7 +17,8 @@ from lib import util
 from lib.util import T
 from . import grid_labels
 from . import opener
-from .dialog import showOptionsDialog
+from . import optionsdialog
+from .dialog import askingOver, showOptionsDialog
 
 VIDEO_TYPES = ('episode', 'season', 'movie', 'show')
 # played as a whole, a server play queue of it: Play/Shuffle
@@ -79,9 +80,25 @@ def options(mli, watchlist=False):
     return rows
 
 
-def choose(mli, rows, **kwargs):
-    """The picker for rows, headed by mli's item: the key chosen, or None."""
-    return showOptionsDialog(grid_labels.menuHeading(mli.dataSource), rows, non_playback=True, menu=True, **kwargs)
+def confirmRemoveFromWatchlist(dialog_props=None):
+    """Confirm item actions' question for Remove from watchlist: True for a Yes, or when the setting's off."""
+    if not util.getSetting('home_confirm_actions'):
+        return True
+    return optionsdialog.show(u'{0}?'.format(T(34011, "Remove from watchlist")), '',
+                              T(32328, 'Yes'), T(32329, 'No'), dialog_props=dialog_props) == 0
+
+
+def choose(mli, rows, window, **kwargs):
+    """The picker for rows, headed by mli's item: the key chosen, or None. Marking and Remove from watchlist ask over
+    it (dialog.askingOver(), window's confirmWatched()): what's chosen has been confirmed, and is run without asking
+    again (toggleWatched(confirmed=True))."""
+    rows, onChoice = askingOver(rows, {
+        'mark_watched': lambda: window.confirmWatched(True),
+        'mark_unwatched': lambda: window.confirmWatched(False),
+        'remove_from_watchlist': confirmRemoveFromWatchlist,
+    })
+    return showOptionsDialog(grid_labels.menuHeading(mli.dataSource), rows, non_playback=True, menu=True,
+                             on_choice=onChoice, **kwargs)
 
 
 # the rating key each "Go to" opens, from the item the menu's for

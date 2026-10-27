@@ -86,12 +86,29 @@ class CommonMixin(object):
             return self.retractFromExtras()
         return False
 
-    def toggleWatched(self, item, state=None, heading=None, **kw):
+    def confirmWatched(self, state, heading=None):
+        """Confirm item actions' question for marking played (state True) or unplayed: True for a Yes, or when the
+        setting's off. heading: the option chosen, without its "?" ("Mark Season Played"); by default Mark Played or
+        Mark Unplayed, as the watched key and most menus have it. The heading alone: the item's the one just chosen,
+        in view behind the box."""
+        if not util.getSetting('home_confirm_actions'):
+            return True
+        if not heading:
+            heading = T(32319, "Mark Played") if state else T(32318, "Mark Unplayed")
+        button = optionsdialog.show(
+            u'{0}?'.format(heading), '',
+            T(32328, 'Yes'),
+            T(32329, 'No'),
+            dialog_props=getattr(self, "carriedProps", getattr(self, "dialogProps", None))
+        )
+        return button == 0
+
+    def toggleWatched(self, item, state=None, heading=None, confirmed=False, **kw):
         """
         :param item:
         :param state: the state we want to set watched to
-        :param heading: the confirm's, without its "?" - the option chosen ("Mark Season Played"); by default Mark
-            Played or Mark Unplayed, as the watched key and most menus have it
+        :param heading: the confirm's (confirmWatched())
+        :param confirmed: asked already (More settings asks over itself, then runs this once it's closed)
         :param kw:
         :return:
         """
@@ -104,20 +121,9 @@ class CommonMixin(object):
             state = not item.isFullyWatched
 
         # Confirm item actions: every item, whichever screen or menu marks it (the hub and grid menus leave the
-        # asking to this) - was shows and seasons only. The heading alone: the item's the one just chosen, in
-        # view behind the box.
-        if util.getSetting('home_confirm_actions'):
-            if not heading:
-                heading = T(32319, "Mark Played") if state else T(32318, "Mark Unplayed")
-            button = optionsdialog.show(
-                u'{0}?'.format(heading), '',
-                T(32328, 'Yes'),
-                T(32329, 'No'),
-                dialog_props=getattr(self, "carriedProps", getattr(self, "dialogProps", None))
-            )
-
-            if button != 0:
-                return
+        # asking to this) - was shows and seasons only.
+        if not confirmed and not self.confirmWatched(state, heading=heading):
+            return
 
         util.DEBUG_LOG("Toggling watched for {} to: {}", item, state)
 

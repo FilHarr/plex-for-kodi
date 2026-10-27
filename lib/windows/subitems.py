@@ -17,6 +17,7 @@ from . import info
 from . import kodigui
 from . import panel_colors
 from . import opener
+from . import optionsdialog
 from . import pagination
 from . import playbacksettings
 from . import playersettings
@@ -1031,9 +1032,11 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         # Plex's own apps
         if item.type in ('show', 'season'):
             if item.isWatched:
-                options.append({'key': 'mark_unwatched', 'display': T(32318, 'Mark Unplayed')})
+                options.append({'key': 'mark_unwatched', 'display': T(32318, 'Mark Unplayed'),
+                                'run': lambda: self.confirmWatched(False)})
             else:
-                options.append({'key': 'mark_watched', 'display': T(32319, 'Mark Played')})
+                options.append({'key': 'mark_watched', 'display': T(32319, 'Mark Played'),
+                                'run': lambda: self.confirmWatched(True)})
 
             if item.type == "show":
                 if options:
@@ -1046,13 +1049,15 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                     options.append(dropdown.SEPARATOR)
                     if plexapp.ACCOUNT.isAdmin:
                         options.append({'key': 'refresh', 'display': T(33719, 'Refresh metadata')})
-                    options.append({'key': 'delete', 'display': u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32322, 'Delete'))})
+                    options.append({'key': 'delete', 'display': u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32322, 'Delete')),
+                                    'run': lambda: optionsdialog.confirmDelete(item)})
             elif item.type == "season":
                 if plexapp.ACCOUNT.isAdmin and item.server.allowsMediaDeletion:
                     options.append(dropdown.SEPARATOR)
                     if plexapp.ACCOUNT.isAdmin:
                         options.append({'key': 'refresh', 'display': T(33719, 'Refresh metadata')})
-                    options.append({'key': 'delete', 'display': u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32975, 'Delete Season'))})
+                    options.append({'key': 'delete', 'display': u'[COLOR FFD45B55]{0}[/COLOR]'.format(T(32975, 'Delete Season')),
+                                    'run': lambda: optionsdialog.confirmDelete(item)})
 
         # if xbmc.getCondVisibility('Player.HasAudio') and self.section.TYPE == 'artist':
         #     options.append({'key': 'add_to_queue', 'display': 'Add To Queue'})
@@ -1075,9 +1080,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
             return
 
         if choice['key'] == 'mark_watched':
-            self.toggleWatched(item, state=True)
+            self.toggleWatched(item, state=True, confirmed=True)
         elif choice['key'] == 'mark_unwatched':
-            self.toggleWatched(item, state=False)
+            self.toggleWatched(item, state=False, confirmed=True)
         elif choice['key'] == 'to_section':
             self.cameFrom = "library"
             section = plexlibrary.LibrarySection.fromFilter(self.mediaItem)
@@ -1085,7 +1090,7 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                                                       came_from=self.mediaItem.ratingKey)
                                 )
         elif choice['key'] == 'delete':
-            if self.delete(item):
+            if self.delete(item, confirmed=True):
                 # cheap way of requesting a home hub refresh because of major deletion
                 util.MONITOR.watchStatusChanged()
                 self.initialized = False

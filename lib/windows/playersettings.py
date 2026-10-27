@@ -9,7 +9,7 @@ from lib import util
 from lib.util import T
 from lib.language_util import getNativeLanguages
 from . import kodigui
-from .dialog import showOptionsDialog
+from .dialog import showOptionsDialog, openAsPicker
 from .mixins.subtitledl import PlexSubtitleDownloadMixin
 
 
@@ -55,7 +55,8 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
         # settings): choosing one closes this and leaves its key in self.choice for the caller to run. With no
         # video (the episodes' season card) they're all there is. One given as (key, label, run) runs here
         # instead, this left open: run() opens its own picker over it, as the settings' rows do, and Back
-        # comes back here (Playback Settings).
+        # comes back here (Playback Settings). A run() that returns True closes this on its key, for the caller to
+        # run: Mark Played's and Delete's confirm boxes, asked over this rather than once it's gone.
         self.heading = kwargs.get('heading') or T(32343, 'Settings')
         self.actions = kwargs.get('actions') or []
         self.actionRunners = dict((a[0], a[2]) for a in self.actions if len(a) > 2 and a[2])
@@ -271,7 +272,11 @@ class VideoSettingsDialog(kodigui.BaseDialog, util.CronReceiver, PlexSubtitleDow
         result = mli.dataSource
 
         if isinstance(result, tuple) and result[0] == 'action' and result[1] in self.actionRunners:
-            self.actionRunners[result[1]]()
+            if self.actionRunners[result[1]]():
+                # a question asked over this (a confirm box) and answered Yes: closed on the action, which the
+                # caller runs, as the actions without a runner - this still here under the box, not fading as it opens
+                self.choice = result[1]
+                self.doClose()
             return
 
         if isinstance(result, tuple) and result[0] == 'action':
@@ -561,8 +566,10 @@ def showDialog(video, non_playback=False, via_osd=False, parent=None, heading=No
     heading: the window's title, Settings by default. actions: [(key, label)] listed under the settings (pre-play's
     More settings); returns the key of the one chosen, or None.
     """
-    w = VideoSettingsDialog.open(video=video, non_playback=non_playback, via_osd=via_osd, parent=parent,
-                                 heading=heading, actions=actions)
+    # its pickers open over it, nested (settings_card_frame.xml.tpl)
+    with openAsPicker():
+        w = VideoSettingsDialog.open(video=video, non_playback=non_playback, via_osd=via_osd, parent=parent,
+                                     heading=heading, actions=actions)
     choice = w.choice
     ref = util.windowRef(w)
     del w
