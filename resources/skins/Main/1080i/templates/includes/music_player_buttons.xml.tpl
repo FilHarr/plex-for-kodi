@@ -7,7 +7,8 @@
    togglebuttons, an onclick) and are written out to its box/hitrect/texture recipe instead.
    Prev/next keep their disabled twins (424/419, 25% alpha, enable=false) in place of hiding, so
    the row never reflows on a track change; the twins can't take focus, so they get no overlays.
-   Overlay ids are 451-464; the row's own ids are unchanged, so the Python side (musicplayer.py /
+   Overlay ids are each button's id x 10, +3/+4 for another state's label (repeat all/one, shuffle on,
+   play) - the button rows' label numbering (ShowWindow's constants, subitems.py); the row's own ids are unchanged, so the Python side (musicplayer.py /
    currentplaylist.py) needs nothing.
 
    Overlay nav follows the recipe (onleft = own button, onright = the next one); where the next
@@ -77,19 +78,19 @@
     </control>
 </control>
 {# off -> "Repeat all" #}
-{% include ol with id=451 & visible="Control.HasFocus(401) + !Playlist.IsRepeatOne + !Playlist.IsRepeat + String.IsEmpty(Window.Property(pq.repeat))" & name="repeat" &
+{% include ol with id=4010 & visible="Control.HasFocus(401) + !Playlist.IsRepeatOne + !Playlist.IsRepeat + String.IsEmpty(Window.Property(pq.repeat))" & name="repeat" &
     label="$ADDON[script.plexmod 35082]" & label_suffix_info="" &
     label_width=111 & pill_width=173 & group_width=129 &
     onleft=401 & onright_cond="String.IsEmpty(Window.Property(pq.isremote))" & onright=402 & onright_else=422
 %}
 {# all -> "Repeat one" #}
-{% include ol with id=452 & visible="Control.HasFocus(401) + !Playlist.IsRepeatOne + [Playlist.IsRepeat | !String.IsEmpty(Window.Property(pq.repeat))]" & name="repeat" &
+{% include ol with id=4013 & visible="Control.HasFocus(401) + !Playlist.IsRepeatOne + [Playlist.IsRepeat | !String.IsEmpty(Window.Property(pq.repeat))]" & name="repeat" &
     label="$ADDON[script.plexmod 35083]" & label_suffix_info="" &
     label_width=127 & pill_width=189 & group_width=145 &
     onleft=401 & onright_cond="String.IsEmpty(Window.Property(pq.isremote))" & onright=402 & onright_else=422
 %}
 {# one -> "Repeat off" #}
-{% include ol with id=462 & visible="Control.HasFocus(401) + Playlist.IsRepeatOne" & name="repeat-one" &
+{% include ol with id=4014 & visible="Control.HasFocus(401) + Playlist.IsRepeatOne" & name="repeat-one" &
     label="$ADDON[script.plexmod 35084]" & label_suffix_info="" &
     label_width=118 & pill_width=180 & group_width=136 &
     onleft=401 & onright_cond="String.IsEmpty(Window.Property(pq.isremote))" & onright=402 & onright_else=422
@@ -114,12 +115,12 @@
     <altclick>PlayerControl(RandomOff)</altclick>
     <label> </label>
 </control>
-{% include ol with id=453 & visible="Control.HasFocus(402) + !Playlist.IsRandom" & name="shuffle" &
+{% include ol with id=4020 & visible="Control.HasFocus(402) + !Playlist.IsRandom" & name="shuffle" &
     label="$ADDON[script.plexmod 35080]" & label_suffix_info="" &
     label_width=118 & pill_width=180 & group_width=136 &
     onleft=402 & onright_cond="MusicPlayer.HasPrevious | !String.IsEmpty(Window.Property(pq.hasprev))" & onright=404 & onright_else=406
 %}
-{% include ol with id=463 & visible="Control.HasFocus(402) + Playlist.IsRandom" & name="shuffle" &
+{% include ol with id=4023 & visible="Control.HasFocus(402) + Playlist.IsRandom" & name="shuffle" &
     label="$ADDON[script.plexmod 35081]" & label_suffix_info="" &
     label_width=122 & pill_width=184 & group_width=140 &
     onleft=402 & onright_cond="MusicPlayer.HasPrevious | !String.IsEmpty(Window.Property(pq.hasprev))" & onright=404 & onright_else=406
@@ -169,12 +170,12 @@
         </control>
     </control>
 </control>
-{% include ol with id=454 & visible="Control.HasFocus(422) + String.IsEmpty(Window.Property(pq.shuffled))" & name="shuffle" &
+{% include ol with id=4220 & visible="Control.HasFocus(422) + String.IsEmpty(Window.Property(pq.shuffled))" & name="shuffle" &
     label="$ADDON[script.plexmod 35080]" & label_suffix_info="" &
     label_width=118 & pill_width=180 & group_width=136 &
     onleft=422 & onright_cond="MusicPlayer.HasPrevious | !String.IsEmpty(Window.Property(pq.hasprev))" & onright=404 & onright_else=406
 %}
-{% include ol with id=464 & visible="Control.HasFocus(422) + !String.IsEmpty(Window.Property(pq.shuffled))" & name="shuffle" &
+{% include ol with id=4223 & visible="Control.HasFocus(422) + !String.IsEmpty(Window.Property(pq.shuffled))" & name="shuffle" &
     label="$ADDON[script.plexmod 35081]" & label_suffix_info="" &
     label_width=122 & pill_width=184 & group_width=140 &
     onleft=422 & onright_cond="MusicPlayer.HasPrevious | !String.IsEmpty(Window.Property(pq.hasprev))" & onright=404 & onright_else=406
@@ -184,7 +185,7 @@
    restyle, modern set only) - the row used to flipx next.png here, but the overlay redraws its
    icon by name, unflipped, so the flipped-at-render form can't be used by the pill. #}
 {% include template with name="previous" & id=404 & overlay=True & visible="MusicPlayer.HasPrevious | !String.IsEmpty(Window.Property(pq.hasprev))" %}
-{% include ol with id=455 & visible="Control.HasFocus(404)" & name="previous" &
+{% include ol with id=4040 & visible="Control.HasFocus(404)" & name="previous" &
     label="$ADDON[script.plexmod 32438]" & label_suffix_info="" &
     label_width=100 & pill_width=162 & group_width=118 &
     onleft=404 & onright=406
@@ -220,12 +221,12 @@
     <onclick>PlayerControl(Play)</onclick>
     <label> </label>
 </control>
-{% include ol with id=456 & visible="Control.HasFocus(406) + !Player.Paused + !Player.Forwarding + !Player.Rewinding" & name="pause" &
+{% include ol with id=4060 & visible="Control.HasFocus(406) + !Player.Paused + !Player.Forwarding + !Player.Rewinding" & name="pause" &
     label="$ADDON[script.plexmod 35076]" & label_suffix_info="" &
     label_width=71 & pill_width=133 & group_width=89 &
     onleft=406 & onright=407
 %}
-{% include ol with id=457 & visible="Control.HasFocus(406) + [Player.Paused | Player.Forwarding | Player.Rewinding]" & name="play" &
+{% include ol with id=4063 & visible="Control.HasFocus(406) + [Player.Paused | Player.Forwarding | Player.Rewinding]" & name="play" &
     label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
     label_width=51 & pill_width=113 & group_width=69 &
     onleft=406 & onright=407
@@ -242,7 +243,7 @@
     <onclick>PlayerControl(Stop)</onclick>
     <label> </label>
 </control>
-{% include ol with id=458 & visible="Control.HasFocus(407)" & name="stop" &
+{% include ol with id=4070 & visible="Control.HasFocus(407)" & name="stop" &
     label="$ADDON[script.plexmod 35077]" & label_suffix_info="" &
     label_width=55 & pill_width=117 & group_width=73 &
     onleft=407 & onright_cond="MusicPlayer.HasNext | !String.IsEmpty(Window.Property(pq.hasnext))" & onright=409 & onright_else=410
@@ -250,7 +251,7 @@
 
 {# NEXT, and its disabled twin. #}
 {% include template with name="next" & id=409 & overlay=True & visible="MusicPlayer.HasNext | !String.IsEmpty(Window.Property(pq.hasnext))" %}
-{% include ol with id=459 & visible="Control.HasFocus(409)" & name="next" &
+{% include ol with id=4090 & visible="Control.HasFocus(409)" & name="next" &
     label="$ADDON[script.plexmod 35078]" & label_suffix_info="" &
     label_width=55 & pill_width=117 & group_width=73 &
     onleft=409 & onright=410
@@ -283,7 +284,7 @@
     <label> </label>
     {% if not music_player %}<onclick>Close</onclick>{% endif %}
 </control>
-{% include ol with id=460 & visible="Control.HasFocus(410)" & name="pqueue" &
+{% include ol with id=4100 & visible="Control.HasFocus(410)" & name="pqueue" &
     label="$ADDON[script.plexmod 35079]" & label_suffix_info="" &
     label_width=125 & pill_width=187 & group_width=143 &
     onleft=410 & onright=411
@@ -291,7 +292,7 @@
 
 {# MORE - last in the row, so no onright on its overlay. #}
 {% include template with name="more" & id=411 & overlay=True %}
-{% include ol with id=461 & visible="Control.HasFocus(411)" & name="more" &
+{% include ol with id=4110 & visible="Control.HasFocus(411)" & name="more" &
     label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
     label_width=61 & pill_width=123 & group_width=79 &
     onleft=411

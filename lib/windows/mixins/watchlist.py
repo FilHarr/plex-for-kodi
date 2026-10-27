@@ -255,9 +255,14 @@ class WatchlistUtilsMixin(object):
     WL_BTN_STATE_NOT_WATCHLISTED = 308
     WL_BTN_STATE_WATCHLISTED = 309
 
-    WL_RELEVANT_BTNS = (302, WL_BTN_WAIT, WL_BTN_MULTIPLE, WL_BTN_SINGLE, WL_BTN_UPCOMING)
+    WL_DYNAMIC_BTNS = (WL_BTN_WAIT, WL_BTN_MULTIPLE, WL_BTN_SINGLE, WL_BTN_UPCOMING)
 
     WL_BTN_STATE_BTNS = (WL_BTN_STATE_NOT_WATCHLISTED, WL_BTN_STATE_WATCHLISTED)
+
+    @property
+    def WL_RELEVANT_BTNS(self):
+        """The screen's Play button and the availability states shown in its place."""
+        return (self.PLAY_BUTTON_ID,) + self.WL_DYNAMIC_BTNS
 
     wl_availability = None
 

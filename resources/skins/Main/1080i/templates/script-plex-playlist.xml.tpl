@@ -97,7 +97,7 @@
     <!-- Click target over the summary, opening the summary popup (summaryButtonClicked(),
          playlist.py). Gone with no summary, as on the Album screen. Up goes to the header group, as
          the Album screen's artist line (the next stop up there) does. -->
-    <control type="button" id="305">
+    <control type="button" id="350">
         <visible>!String.IsEmpty(Window.Property(summary))</visible>
         <posx>471</posx>
         <posy>{{ vscale(174) }}</posy>
@@ -111,7 +111,7 @@
         <texturefocus>-</texturefocus>
     </control>
     <control type="image">
-        <visible>Control.HasFocus(305)</visible>
+        <visible>Control.HasFocus(350)</visible>
         <posx>466</posx>
         <posy>{{ vscale(169) }}</posy>
         <width>823</width>
@@ -134,7 +134,7 @@
         <width>1000</width>
         <height>{{ vscale(70) }}</height>
         <align>left</align>
-        <onup condition="!String.IsEmpty(Window.Property(summary))">305</onup>
+        <onup condition="!String.IsEmpty(Window.Property(summary))">350</onup>
         <onup>200</onup>
         <ondown>101</ondown>
         <onleft>9000</onleft>
@@ -148,13 +148,13 @@
 
         {% with attr = theme.artist.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.artist.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
             {% include template with name="play" & id=301 & overlay=True %}
-            {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
+            {% include ol with id=3010 & visible="Control.HasFocus(301)" & name="play" &
                 label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                 label_width=51 & pill_width=113 & group_width=69 &
                 onleft=301 & onright=302
             %}
             {% include template with name="shuffle" & id=302 & overlay=True %}
-            {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
+            {% include ol with id=3020 & visible="Control.HasFocus(302)" & name="shuffle" &
                 label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
                 label_width=84 & pill_width=146 & group_width=102 &
                 onleft=302

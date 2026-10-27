@@ -128,18 +128,17 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     OPTIONS_GROUP_ID = 200
 
     MAIN_BUTTON_GROUP_ID = 300
+    # The button rows' shared numbering (ShowWindow's constants, subitems.py), Trailer this screen's own 330
+    PLAY_BUTTON_ID = 301
+    OPTIONS_BUTTON_ID = 303
     INFO_BUTTON_ID = 304
-    PLAY_BUTTON_ID = 302
-    TRAILER_BUTTON_ID = 303
-    OPTIONS_BUTTON_ID = 306
+    TRAILER_BUTTON_ID = 330
     # Play splits into these two once the video has a view offset (in.progress - setInfo() below),
-    # matching Episodes' own button row. 301/307, the only ids left free in this screen's 300-block,
-    # so they don't read in row order the way Episodes' 308/309 do - see the button row's own
-    # comment (script-plex-pre_play.xml.tpl).
-    RESUME_BUTTON_ID = 301
+    # matching Episodes' own button row.
+    RESUME_BUTTON_ID = 305
     RESTART_BUTTON_ID = 307
-    # Click/focus target laid over the summary textbox (script-plex-pre_play.xml.tpl) - 350, not
-    # something in the 300-306 button cluster (all already taken here) or 310-322
+    # Click/focus target laid over the summary textbox (script-plex-pre_play.xml.tpl) - 350, as on
+    # every screen, not something in the 300-309 button cluster or 310-322
     # (includes/media_info_pills.xml.tpl's own ids, also live in this window - 310 specifically
     # collided with that include's video-pill background image, live-reported as "the background
     # does not extend the full length of the label": Control.setWidth() calls meant for that pill
@@ -302,11 +301,11 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     def refreshInfo(self, from_reinit=False):
         oldFocusId = self.getFocusId()
 
-        # skip setting background when coming from reinit (other window) if we've focused something other than main
-        # 301-307, not the old 302-306: Resume/Restart (301/307) bracket the rest of the button
-        # row's ids, so the range has to widen with them rather than leave those two reading as
-        # "focus is somewhere else entirely".
-        self.setInfo(skip_bg=from_reinit and not (self.RESUME_BUTTON_ID <= oldFocusId <= self.RESTART_BUTTON_ID))
+        # skip setting background when coming from reinit (other window) if we've focused something other than
+        # the button row's Play/Resume/Restart/Trailer/Info/More
+        self.setInfo(skip_bg=from_reinit and oldFocusId not in (
+            self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID, self.RESTART_BUTTON_ID, self.TRAILER_BUTTON_ID,
+            self.INFO_BUTTON_ID, self.OPTIONS_BUTTON_ID))
 
         if not from_reinit:
             show_reviews = util.getSetting('show_reviews1')
@@ -317,7 +316,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             self.fillRelated()
         xbmc.sleep(100)
 
-        # Any of the three play states, not just 302: which one was focused before the reload isn't
+        # Any of the three play states, not just Play: which one was focused before the reload isn't
         # necessarily the one that should be focused after it (a resumed-then-finished video flips
         # from Resume/Restart back to Play), so focusPlayButton() re-picks by the current state.
         if oldFocusId in (self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID, self.RESTART_BUTTON_ID):
@@ -763,7 +762,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         if extended:
             self.setFocusId(self.wl_play_button_id)
             return
-        # Resume, not Play, for a part-watched video: 302 is hidden in that state (in.progress -
+        # Resume, not Play, for a part-watched video: Play is hidden in that state (in.progress -
         # setInfo()), and focusing a hidden control would just fall through to whatever Kodi picks
         # next, exactly what the wait below exists to prevent.
         button_id = self.RESUME_BUTTON_ID if self.getProperty('in.progress') else self.PLAY_BUTTON_ID
@@ -816,9 +815,9 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
         self.setInfo()
         self.setBoolProperty("initialized", True)
         kodigui.markStep(timing, 'setInfo')
-        # For watchlist items, PLAY_BUTTON_ID (302) is permanently hidden behind disable_playback
+        # For watchlist items, PLAY_BUTTON_ID is permanently hidden behind disable_playback
         # - watchlistItemAvailable() above already owns focusing the dynamic wl button (2302-2305)
-        # once its availability check resolves, so waiting on 302 here would just block on a
+        # once its availability check resolves, so waiting on Play here would just block on a
         # control that's never going to show up.
         if not self.fromWatchlist:
             self.focusPlayButton()

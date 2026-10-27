@@ -106,7 +106,7 @@
             <label>$INFO[Window.Property(collection.summary)]</label>
         </control>
         <!-- Invisible click/focus target laid over the summary textbox, and its focus highlight -
-             script-plex-artist.xml.tpl's own 305 pair verbatim (see its comments for why it's a
+             script-plex-artist.xml.tpl's own 350 pair verbatim (see its comments for why it's a
              separate button, why both textures are "-", and why the highlight is its own image):
              a textbox has no click or focus of its own, so this is how the summary popup
              (CollectionWindow.summaryButtonClicked(), SUMMARY_BUTTON_ID) is reached. Only there
@@ -114,7 +114,7 @@
              condition so the chain closes up instead of dead-ending on a control that isn't
              there. Up from the button row (or the grid, when there's no row) lands here; up from
              here is the header. -->
-        <control type="button" id="305">
+        <control type="button" id="350">
             <visible>!String.IsEmpty(Window.Property(collection.summary))</visible>
             <posx>61</posx>
             <posy>{{ vscale(239) }}</posy>
@@ -129,7 +129,7 @@
             <texturefocus>-</texturefocus>
         </control>
         <control type="image">
-            <visible>Control.HasFocus(305)</visible>
+            <visible>Control.HasFocus(350)</visible>
             <posx>56</posx>
             <posy>{{ vscale(234) }}</posy>
             <width>823</width>
@@ -152,7 +152,7 @@
             <width>1000</width>
             <height>{{ vscale(70) }}</height>
             <align>left</align>
-            <onup condition="!String.IsEmpty(Window.Property(collection.summary))">305</onup>
+            <onup condition="!String.IsEmpty(Window.Property(collection.summary))">350</onup>
             <onup>200</onup>
             <ondown>101</ondown>
             <onleft>9000</onleft>
@@ -166,13 +166,13 @@
 
             {% with attr = theme.artist.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.artist.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
                 {% include template with name="play" & id=301 & overlay=True %}
-                {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
+                {% include ol with id=3010 & visible="Control.HasFocus(301)" & name="play" &
                     label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                     label_width=51 & pill_width=113 & group_width=69 &
                     onleft=301 & onright=302
                 %}
                 {% include template with name="shuffle" & id=302 & overlay=True %}
-                {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
+                {% include ol with id=3020 & visible="Control.HasFocus(302)" & name="shuffle" &
                     label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
                     label_width=84 & pill_width=146 & group_width=102 &
                     onleft=302
@@ -226,9 +226,9 @@
                  anywhere" (includes/sidebar.xml.tpl:322, the server button's own ondown). -->
             <ondown>noop</ondown>
             <!-- Up from the grid's first row reaches the Play/Shuffle row (300), or the summary's
-                 click target (305) when there's no row; otherwise consumed, as before. -->
+                 click target (350) when there's no row; otherwise consumed, as before. -->
             <onup condition="Control.IsVisible(300)">300</onup>
-            <onup condition="!String.IsEmpty(Window.Property(collection.summary))">305</onup>
+            <onup condition="!String.IsEmpty(Window.Property(collection.summary))">350</onup>
             <onup>noop</onup>
             <scrolltime>200</scrolltime>
             <orientation>vertical</orientation>

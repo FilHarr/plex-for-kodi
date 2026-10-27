@@ -80,13 +80,13 @@
          name. font30_title's 42.9px line centred in the 51px box starts 4px down, at 52 - the
          +69 below the name Recommended's artist line sits at. 5px in from the left puts the text
          at x=471 with the rest. max=710 caps it; a longer name marquees while focused. -->
-    <control type="button" id="306">
+    <control type="button" id="332">
         <posx>466</posx>
         <posy>{{ vscale(48) }}</posy>
         <width max="710">auto</width>
         <height>{{ vscale(51) }}</height>
         <onup>200</onup>
-        <ondown condition="!String.IsEmpty(Window.Property(summary))">305</ondown>
+        <ondown condition="!String.IsEmpty(Window.Property(summary))">350</ondown>
         <ondown>300</ondown>
         <onleft>9000</onleft>
         <font>font30_title</font>
@@ -130,17 +130,17 @@
     </control>
     <!-- Click target over the summary, opening the same popup the Artist and Seasons screens'
          own summaries do (summaryButtonClicked(), tracks.py). -->
-    <control type="button" id="305">
+    <control type="button" id="350">
         <!-- Gone entirely when the album has no summary: an enabled target over empty space gave a
              focusable stop in the middle of the header that opened a blank popup. The two nav tags
              that route through it carry the same condition, so the chain closes up rather than
-             dead-ending on a control that isn't there (306's ondown and 300's onup below). -->
+             dead-ending on a control that isn't there (332's ondown and 300's onup below). -->
         <visible>!String.IsEmpty(Window.Property(summary))</visible>
         <posx>471</posx>
         <posy>{{ vscale(174) }}</posy>
         <width>813</width>
         <height>{{ vscale(90) }}</height>
-        <onup>306</onup>
+        <onup>332</onup>
         <ondown>300</ondown>
         <onleft>9000</onleft>
         <label> </label>
@@ -148,7 +148,7 @@
         <texturefocus>-</texturefocus>
     </control>
     <control type="image">
-        <visible>Control.HasFocus(305)</visible>
+        <visible>Control.HasFocus(350)</visible>
         <posx>466</posx>
         <posy>{{ vscale(169) }}</posy>
         <width>823</width>
@@ -169,12 +169,12 @@
         <width>1000</width>
         <height>{{ vscale(70) }}</height>
         <align>left</align>
-        <!-- 305 (the summary's click target), not 200: the Artist screen's own button row routes up
+        <!-- 350 (the summary's click target), not 200: the Artist screen's own button row routes up
              the same way, and 200 is the header GROUP - a bare container, so pressing up here was a
-             dead press. The chain above this row is 305 -> 306 (the artist line) -> 200, which is
+             dead press. The chain above this row is 350 -> 332 (the artist line) -> 200, which is
              where that screen's own summary target hands off too. -->
-        <onup condition="!String.IsEmpty(Window.Property(summary))">305</onup>
-        <onup>306</onup>
+        <onup condition="!String.IsEmpty(Window.Property(summary))">350</onup>
+        <onup>332</onup>
         <ondown>101</ondown>
         <onleft>9000</onleft>
         <!-- Right stops at the last button: a grouplist without an onright of its own links its
@@ -187,19 +187,19 @@
 
         {% with attr = theme.artist.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.artist.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
             {% include template with name="play" & id=301 & overlay=True %}
-            {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
+            {% include ol with id=3010 & visible="Control.HasFocus(301)" & name="play" &
                 label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                 label_width=51 & pill_width=113 & group_width=69 &
                 onleft=301 & onright=302
             %}
             {% include template with name="shuffle" & id=302 & overlay=True %}
-            {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
+            {% include ol with id=3020 & visible="Control.HasFocus(302)" & name="shuffle" &
                 label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
                 label_width=84 & pill_width=146 & group_width=102 &
                 onleft=302 & onright=303
             %}
             {% include template with name="more" & id=303 & overlay=True %}
-            {% include ol with id=393 & visible="Control.HasFocus(303)" & name="more" &
+            {% include ol with id=3030 & visible="Control.HasFocus(303)" & name="more" &
                 label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
                 label_width=61 & pill_width=123 & group_width=79 &
                 onleft=303

@@ -94,19 +94,19 @@
             <height>{{ vscale(200) }}</height>
             <control type="grouplist" id="300">
                 <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
-                <!-- 302 (Play), not the old 301 (Info) - the Info button itself is gone from this
+                <!-- 301 (Play) - the Info button itself is gone from this
                      row now (on request): the summary textbox is its own click/focus target for the
-                     same action (SUMMARY_BUTTON_ID, id 305, subitems.py), so the explicit button was
+                     same action (SUMMARY_BUTTON_ID, id 350, subitems.py), so the explicit button was
                      redundant. -->
-                <defaultcontrol>302</defaultcontrol>
+                <defaultcontrol>301</defaultcontrol>
                 <posx>63</posx>
                 <posy>{{ vscale(25) }}</posy>
                 <width>1000</width>
                 <height>{{ vscale(145) }}</height>
-                <!-- 305 (the summary click-target), not straight to 200: keeps that new focus stop
+                <!-- 350 (the summary click-target), not straight to 200: keeps that new focus stop
                      reachable from the button row via remote/keyboard, not just mouse/touch. -->
-                <onup condition="!String.IsEmpty(Window.Property(summary))">305</onup>
-                <!-- Fallback is exactly where 305's own onup goes, so the row behaves as if the
+                <onup condition="!String.IsEmpty(Window.Property(summary))">350</onup>
+                <!-- Fallback is exactly where 350's own onup goes, so the row behaves as if the
                      target simply weren't there. 200 is the header group, which has no focusable
                      children on this screen (the default header has no left-hand buttons),
                      so in practice this consumes the press. -->
@@ -122,28 +122,28 @@
                 <scrolltime tween="quadratic" easing="out">200</scrolltime>
                 <usecontrolcoords>true</usecontrolcoords>
 
-                <!-- Label-on-focus pill overlays (392-394): same recipe as every other button row
+                <!-- Label-on-focus pill overlays (3010/3020/3030, each its button's id x 10): same recipe as every other button row
                      (episode_button_label.xml.tpl - see button-label-overlay-recipe). Play/More
                      reuse Pre-play's/Seasons' own $ADDON strings and measured widths, since it's the
                      same label text; Shuffle reuses Seasons' own. -->
                 {% with attr = theme.artist.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.artist.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
-                    {% include template with name="play" & id=302 & overlay=True %}
-                    {% include ol with id=392 & visible="Control.HasFocus(302)" & name="play" &
+                    {% include template with name="play" & id=301 & overlay=True %}
+                    {% include ol with id=3010 & visible="Control.HasFocus(301)" & name="play" &
                         label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                         label_width=51 & pill_width=113 & group_width=69 &
-                        onleft=302 & onright=303
+                        onleft=301 & onright=302
                     %}
-                    {% include template with name="shuffle" & id=303 & overlay=True %}
-                    {% include ol with id=393 & visible="Control.HasFocus(303)" & name="shuffle" &
+                    {% include template with name="shuffle" & id=302 & overlay=True %}
+                    {% include ol with id=3020 & visible="Control.HasFocus(302)" & name="shuffle" &
                         label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
                         label_width=84 & pill_width=146 & group_width=102 &
-                        onleft=303 & onright=304
+                        onleft=302 & onright=303
                     %}
-                    {% include template with name="more" & id=304 & overlay=True %}
-                    {% include ol with id=394 & visible="Control.HasFocus(304)" & name="more" &
+                    {% include template with name="more" & id=303 & overlay=True %}
+                    {% include ol with id=3030 & visible="Control.HasFocus(303)" & name="more" &
                         label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
                         label_width=61 & pill_width=123 & group_width=79 &
-                        onleft=304 & onright=""
+                        onleft=303 & onright=""
                     %}
                 {% endwith %}
 
@@ -221,14 +221,14 @@
              have no click or focus of their own in Kodi, so this is a separate button control sized
              and positioned to match it exactly, wired to infoButtonClicked() (SUMMARY_BUTTON_ID,
              subitems.py) - the only way left to reach it now that the button row's own explicit
-             Info button (301) has been dropped entirely (on request, this became redundant with it).
+             Info button has been dropped entirely (on request, this became redundant with it).
              Blank label (matches themed_button.xml.tpl's own convention) so nothing draws over the
              textbox's real text.
              texturenofocus/texturefocus both "-" (explicit none, not just omitted - Kodi otherwise
              falls back to its own default button look, seen live as a dark box over the textbox) -
              the focus highlight itself is the separate image below instead, not this control's own
              texture, so it can be sized bigger than the actual hit area. -->
-        <control type="button" id="305">
+        <control type="button" id="350">
             <!-- No target when there's no summary to open: an enabled button over empty space
                  is a focus stop in the middle of the header that opens a blank popup. Every nav tag
                  routing through it carries the same condition, so the chain closes up instead of
@@ -245,11 +245,11 @@
             <texturenofocus>-</texturenofocus>
             <texturefocus>-</texturefocus>
         </control>
-        <!-- Focus highlight for 305 above, kept as its own image rather than that button's own
+        <!-- Focus highlight for 350 above, kept as its own image rather than that button's own
              texturefocus so it can extend 5px past the button's own hit area on every side (on
              request) without changing what's actually clickable/focusable. -->
         <control type="image">
-            <visible>Control.HasFocus(305)</visible>
+            <visible>Control.HasFocus(350)</visible>
             <posx>56</posx>
             <posy>{{ vscale(272) }}</posy>
             <width>823</width>

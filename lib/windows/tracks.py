@@ -40,10 +40,10 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
 
     # Invisible click targets laid over the header's summary textbox and artist line - textboxes
     # and labels have no click or focus of their own in Kodi, so each needs a real button control
-    # sized to match it (script-plex-album.xml.tpl). Same 305 the Seasons/Artist screens use for
-    # their own summary (subitems.py).
-    SUMMARY_BUTTON_ID = 305
-    ARTIST_BUTTON_ID = 306
+    # sized to match it (script-plex-album.xml.tpl). 350 as every screen's summary, and the artist line
+    # its own 332 (the button rows' numbering - ShowWindow's constants, subitems.py).
+    SUMMARY_BUTTON_ID = 350
+    ARTIST_BUTTON_ID = 332
 
     def backgroundItem(self):
         # The album's own art from the first frame (kodigui's paintInitialBackground()), the same

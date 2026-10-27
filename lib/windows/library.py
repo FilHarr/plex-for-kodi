@@ -3875,7 +3875,8 @@ class PostersWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windowuti
     PLAY_BUTTON_ID = 301
     SHUFFLE_BUTTON_ID = 302
     OPTIONS_BUTTON_ID = 303
-    VIEWTYPE_BUTTON_ID = 304
+    # View: the grids' own button, 331 (the button rows' numbering - ShowWindow's constants, subitems.py)
+    VIEWTYPE_BUTTON_ID = 331
 
     VIEWTYPE = 'panel'
     MULTI_WINDOW_ID = 0

@@ -528,7 +528,7 @@
            view got, so the two match as you switch between them. #}
         {% with attr = theme.library.buttons & template = "includes/themed_button.xml.tpl" & hitrect = theme.library.buttons_hitrect & ol = "includes/episode_button_label.xml.tpl" %}
             {% include template with name="play" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-            {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
+            {% include ol with id=3010 & visible="Control.HasFocus(301)" & name="play" &
                 label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                 label_width=51 & pill_width=113 & group_width=69 &
                 onleft=301 & onright=302
@@ -536,7 +536,7 @@
             {% include template with name="shuffle" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
             {# Falls back to the scrubber when More isn't on screen - in a music section neither
                More nor View shows, leaving Shuffle as the row's last button. #}
-            {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
+            {% include ol with id=3020 & visible="Control.HasFocus(302)" & name="shuffle" &
                 label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
                 label_width=84 & pill_width=146 & group_width=102 &
                 onleft=302 & onright=303 & onright_cond="Control.IsVisible(303)" & onright_else=151
@@ -551,7 +551,7 @@
                there is nothing here to toggle. Window.Property(media) is the section type, not the
                item type - the pin covers every item type in the section, so the section-level test is
                the right one. Photos and Playlists keep the button. #}
-            {% include template with name="view" & id=304 & visible="String.IsEmpty(Window.Property(hide.filteroptions)) + !String.IsEqual(Window.Property(media),artist)" %}
+            {% include template with name="view" & id=331 & visible="String.IsEmpty(Window.Property(hide.filteroptions)) + !String.IsEqual(Window.Property(media),artist)" %}
         {% endwith %}
 
     </control>

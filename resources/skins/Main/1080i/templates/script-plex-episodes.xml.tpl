@@ -460,7 +460,7 @@
                  comment, still below) broke the non-in-progress case entirely (landed on Info
                  always, not just when in-progress) - so it silently doesn't support multiple
                  tags the way onup/onright demonstrably do elsewhere in this exact file. -->
-            <ondown condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">308</ondown>
+            <ondown condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">305</ondown>
             <ondown condition="Control.IsVisible(300)">301</ondown>
             <ondown>402</ondown>
             <onleft condition="!String.IsEmpty(Container(400).ListItem.Property(left.boundary))">noop</onleft>
@@ -494,7 +494,7 @@
                 <onup condition="Control.IsVisible(205)">205</onup>
                 <onup>200</onup>
                 <!-- Same fix as this row's own copy above - see its comment. -->
-                <ondown condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">308</ondown>
+                <ondown condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">305</ondown>
                 <ondown condition="Control.IsVisible(300)">301</ondown>
                 <ondown>402</ondown>
                 <onleft condition="!String.IsEmpty(Container(400).ListItem.Property(left.boundary))">noop</onleft>
@@ -1075,7 +1075,7 @@
                     <visible>!String.IsEmpty(Window.Property(initialized)) + String.IsEmpty(Window.Property(disable_playback))</visible>
                     <!-- Plain single static target, matching every other defaultcontrol in this whole
                          codebase (none of them condition/duplicate this tag) - a conditioned pair here
-                         (308 in-progress / 301 otherwise) was tried and live-confirmed broken: it made
+                         (305 in-progress / 301 otherwise) was tried and live-confirmed broken: it made
                          every case land on 304/Info instead, not just the in-progress one, meaning this
                          tag doesn't actually support multiple/conditioned entries the way onup/onright
                          do elsewhere in this file. The in-progress-aware routing now happens one level
@@ -1117,7 +1117,7 @@
                              computed neighbour), same as any other hidden-item skip elsewhere in this row -
                              not live-confirmed for this specific case though, worth an explicit check. -->
                         {% include template with name="info" & id=304 & overlay=True & visible="!Container(400).ListItem.Property(is.season.card)" %}
-                        {% include ol with id=391 & visible="Control.HasFocus(304)" & name="info" &
+                        {% include ol with id=3040 & visible="Control.HasFocus(304)" & name="info" &
                             label="$ADDON[script.plexmod 35059]" & label_suffix_info="" &
                             label_width=92 & pill_width=154 & group_width=110 &
                             onleft=304 & onright=301
@@ -1147,18 +1147,18 @@
                              and sizeSeasonCardPlayLabel() (episodes.py), which measures the real
                              string and shrinks these three ids to fit. play.episode is a window
                              property, not a ListItem one: it's resolved per season, not per row. -->
-                        {% include ol with id=390 & visible="[Control.HasFocus(301) | Control.HasFocus(306)] + String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="play" &
+                        {% include ol with id=3010 & visible="[Control.HasFocus(301) | Control.HasFocus(306)] + String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="play" &
                             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                             label_width=51 & pill_width=113 & group_width=69 &
                             onleft=301 & onright=303
                         %}
-                        {% include ol with id=398 & visible="[Control.HasFocus(301) | Control.HasFocus(306)] + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="play" &
+                        {% include ol with id=3016 & visible="[Control.HasFocus(301) | Control.HasFocus(306)] + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="play" &
                             label="$ADDON[script.plexmod 33020] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
                             label_width=161 & pill_width=223 & group_width=179 &
-                            pill_id=384 & label_id=385 &
+                            pill_id=3017 & label_id=3018 &
                             onleft=301 & onright=303
                         %}
-                        {% include template with name="resume" & id=308 & overlay=True & onleft=304 & onright=303 &
+                        {% include template with name="resume" & id=305 & overlay=True & onleft=304 & onright=303 &
                             visible="!String.IsEmpty(Window.Property(current_item.loaded)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
                         %}
                         <!-- Two variants, not one width covering both: remainingTimeToShortText() (util.py)
@@ -1167,15 +1167,15 @@
                              shorter than "XhYm left" on average, so one shared width would either waste
                              a lot of space for the common short case or clip the long one - first-pass
                              estimates below, needs the same precise measurement the other buttons got. -->
-                        {% include ol with id=392 & visible="Control.HasFocus(308) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + !String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
+                        {% include ol with id=3050 & visible="Control.HasFocus(305) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + !String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
                             label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
                             label_width=208 & pill_width=270 & group_width=226 &
-                            onleft=308 & onright=303
+                            onleft=305 & onright=303
                         %}
-                        {% include ol with id=397 & visible="Control.HasFocus(308) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
+                        {% include ol with id=3053 & visible="Control.HasFocus(305) + String.IsEmpty(Container(400).ListItem.Property(is.season.card)) + String.Contains(Container(400).ListItem.Property(resume.timeleft),h)" & name="resume" &
                             label="$ADDON[script.plexmod 32316]" & label_suffix_info="resume.timeleft" &
                             label_width=237 & pill_width=299 & group_width=255 &
-                            onleft=308 & onright=303
+                            onleft=305 & onright=303
                         %}
                         <!-- One control for the season card, not the short/long pair above: its
                              width is measured and applied at runtime anyway (sizeSeasonCardPlayLabel(),
@@ -1185,35 +1185,35 @@
                              "Resume S12E345 <bullet> 1h31m left" = 347 measured (Inter-Regular.ttf
                              at font10; 346 in InterUI.ttf) - the same string ShowWindow's own Resume overlay shows
                              (script-plex-seasons.xml.tpl), where it's now sized to match. -->
-                        {% include ol with id=399 & visible="Control.HasFocus(308) + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="resume" &
+                        {% include ol with id=3056 & visible="Control.HasFocus(305) + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="resume" &
                             label="$ADDON[script.plexmod 32316] $INFO[Window.Property(play.episode)]" & label_suffix_info="resume.timeleft" &
                             label_width=347 & pill_width=409 & group_width=365 &
-                            pill_id=386 & label_id=387 &
-                            onleft=308 & onright=303
+                            pill_id=3057 & label_id=3058 &
+                            onleft=305 & onright=303
                         %}
                         <!-- On the season card too, its label naming the episode it restarts (the card
                              doesn't name one, and it's that episode, not the season, that starts over):
                              "Restart S1E4", sized like its Resume (sizeSeasonCardPlayLabel(),
                              episodes.py). Worst case "Restart S12E345" = 188 measured (font10). -->
-                        {% include template with name="restart" & id=309 & overlay=True & onleft=308 & onright=303 &
+                        {% include template with name="restart" & id=307 & overlay=True & onleft=305 & onright=303 &
                             visible="!String.IsEmpty(Window.Property(current_item.loaded)) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))"
                         %}
-                        {% include ol with id=393 & visible="Control.HasFocus(309) + String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="restart" &
+                        {% include ol with id=3070 & visible="Control.HasFocus(307) + String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="restart" &
                             label="$ADDON[script.plexmod 35061]" & label_suffix_info="" &
                             label_width=82 & pill_width=144 & group_width=100 &
-                            onleft=309 & onright=303
+                            onleft=307 & onright=303
                         %}
-                        {% include ol with id=380 & visible="Control.HasFocus(309) + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="restart" &
+                        {% include ol with id=3076 & visible="Control.HasFocus(307) + !String.IsEmpty(Container(400).ListItem.Property(is.season.card))" & name="restart" &
                             label="$ADDON[script.plexmod 35061] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
                             label_width=192 & pill_width=254 & group_width=210 &
-                            pill_id=381 & label_id=382 &
-                            onleft=309 & onright=303
+                            pill_id=3077 & label_id=3078 &
+                            onleft=307 & onright=303
                         %}
                         <!-- More: the More settings dialog (moreButtonClicked(), episodes.py) - the episode's
                              media settings with its actions at the bottom, or the season card's actions;
                              there's no separate Settings button. -->
                         {% include template with name="more" & id=303 & overlay=True %}
-                        {% include ol with id=395 & visible="Control.HasFocus(303)" & name="more" &
+                        {% include ol with id=3030 & visible="Control.HasFocus(303)" & name="more" &
                             label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
                             label_width=61 & pill_width=123 & group_width=79 &
                             onleft=303 & onright=""
@@ -1224,7 +1224,7 @@
                         {% include template with name="shuffle" & id=302 & overlay=True & onleft=303 &
                             visible="Container(400).ListItem.Property(is.season.card)"
                         %}
-                        {% include ol with id=396 & visible="Control.HasFocus(302)" & name="shuffle" &
+                        {% include ol with id=3020 & visible="Control.HasFocus(302)" & name="shuffle" &
                             label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
                             label_width=84 & pill_width=146 & group_width=102 &
                             onleft=302 & onright=""
@@ -1326,7 +1326,7 @@
                 <!-- Same fix as Container(400)'s own copy of this (script-plex-episodes.xml.tpl's own
                      button row comment) - routes straight to the actual button (Resume/Play), not the
                      grouplist id relying on its unreliable defaultcontrol. -->
-                <onup condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">308</onup>
+                <onup condition="Control.IsVisible(300) + !String.IsEmpty(Container(400).ListItem.Property(in.progress))">305</onup>
                 <onup condition="Control.IsVisible(300)">301</onup>
                 <onup>400</onup>
                 <!-- Related (404) is a skipChildren show's season card only, and can be there without Extras -->

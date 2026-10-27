@@ -510,26 +510,26 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     SHUFFLE_BUTTON_ID = 302
     OPTIONS_BUTTON_ID = 303
     INFO_BUTTON_ID = 304
-    RESUME_BUTTON_ID = 308
-    RESTART_BUTTON_ID = 309
+    # 305/307, leaving 308/309 to the watchlist pair (WatchlistUtilsMixin.WL_BTN_STATE_*), as on Seasons and Pre-play
+    RESUME_BUTTON_ID = 305
+    RESTART_BUTTON_ID = 307
     # The season card's own Play/Resume/Restart focus-pill overlays (script-plex-episodes.xml.tpl) and
     # the pill/label inside each - the only overlays on this screen whose text isn't fixed at build
     # time, since they name the episode the card is about. sizeSeasonCardPlayLabel() resizes the
-    # three ids of whichever are live. 380-387, not the 390s the other overlays use: those are
-    # full, and 398/399 were the only ids left there.
-    SEASON_CARD_PLAY_LABEL_GROUP_ID = 398
-    SEASON_CARD_PLAY_LABEL_PILL_ID = 384
-    SEASON_CARD_PLAY_LABEL_TEXT_ID = 385
-    SEASON_CARD_RESUME_LABEL_GROUP_ID = 399
-    SEASON_CARD_RESUME_LABEL_PILL_ID = 386
-    SEASON_CARD_RESUME_LABEL_TEXT_ID = 387
-    SEASON_CARD_RESTART_LABEL_GROUP_ID = 380
-    SEASON_CARD_RESTART_LABEL_PILL_ID = 381
-    SEASON_CARD_RESTART_LABEL_TEXT_ID = 382
-    # Click/focus target laid over the summary textbox (script-plex-episodes.xml.tpl) - 350, not
-    # something in the 300-309 button cluster (all already taken here, unlike Seasons'/Artist's own
-    # copy of this control, which reuses 305 since neither of them has a button at that id any
-    # more) or 310-322 (includes/media_info_pills.xml.tpl's own ids, also live in this window -
+    # three ids of whichever are live. Each its button's id x 10, +6 for the season card's version and
+    # +7/+8 its pill and text (the button rows' label numbering - ShowWindow's constants, subitems.py).
+    SEASON_CARD_PLAY_LABEL_GROUP_ID = 3016
+    SEASON_CARD_PLAY_LABEL_PILL_ID = 3017
+    SEASON_CARD_PLAY_LABEL_TEXT_ID = 3018
+    SEASON_CARD_RESUME_LABEL_GROUP_ID = 3056
+    SEASON_CARD_RESUME_LABEL_PILL_ID = 3057
+    SEASON_CARD_RESUME_LABEL_TEXT_ID = 3058
+    SEASON_CARD_RESTART_LABEL_GROUP_ID = 3076
+    SEASON_CARD_RESTART_LABEL_PILL_ID = 3077
+    SEASON_CARD_RESTART_LABEL_TEXT_ID = 3078
+    # Click/focus target laid over the summary textbox (script-plex-episodes.xml.tpl) - 350, as on
+    # every screen, not something in the 300-309 button cluster or 310-322
+    # (includes/media_info_pills.xml.tpl's own ids, also live in this window -
     # 310 specifically collided with that include's video-pill background image, live-reported as
     # "the background does not extend the full length of the label": Control.setWidth() calls
     # meant for that pill (MediaInfoPillsMixin.resizeMediaInfoPills()) were hitting this button

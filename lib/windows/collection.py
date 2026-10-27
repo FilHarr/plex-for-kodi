@@ -133,7 +133,7 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
     # Click/focus target over the info panel's summary textbox (script-plex-collection.xml.tpl) -
     # same id/role as ShowWindow's/ArtistWindow's own (subitems.py). Only CollectionWindow's
     # template declares it; SubDirWindow has no info panel.
-    SUMMARY_BUTTON_ID = 305
+    SUMMARY_BUTTON_ID = 350
     # Play/Shuffle under the summary - again only CollectionWindow's template declares them.
     PLAY_BUTTON_ID = 301
     SHUFFLE_BUTTON_ID = 302

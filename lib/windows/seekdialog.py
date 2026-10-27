@@ -126,7 +126,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
     ROW_FADE_OUT = 0.3
 
     SETTINGS_BUTTON_ID = 403
-    OPTIONS_BUTTON_ID = 411
     SUBTITLE_BUTTON_ID = 412
     VS10_BUTTON_ID = 413
 
@@ -1109,8 +1108,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                         self.doSeek()
         elif controlID == self.SETTINGS_BUTTON_ID:
             self.handleDialog(self.showSettings)
-        elif controlID == self.OPTIONS_BUTTON_ID:
-            self.handleDialog(self.optionsButtonClicked)
         elif controlID == self.SUBTITLE_BUTTON_ID:
             self.handleDialog(self.subtitleButtonClicked)
         elif controlID == self.VS10_BUTTON_ID:
@@ -1693,23 +1690,6 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         shuffle = not self.isShuffled()
         self.handler.playlist.setShuffle(shuffle)
         return shuffle
-
-    def optionsButtonClicked(self):  # Button currently commented out.
-        pass
-        # options = []
-
-        # options.append({'key': 'kodi_video', 'display': 'Video Options'})
-        # options.append({'key': 'kodi_audio', 'display': 'Audio Options'})
-
-        # choice = dropdown.showDropdown(options, (1360, 1060), close_direction='down', pos_is_bottom=True, close_on_playback_ended=True)
-
-        # if not choice:
-        #     return
-
-        # if choice['key'] == 'kodi_video':
-        #     xbmc.executebuiltin('ActivateWindow(OSDVideoSettings)')
-        # elif choice['key'] == 'kodi_audio':
-        #     xbmc.executebuiltin('ActivateWindow(OSDAudioSettings)')
 
     def subtitleButtonClicked(self):
         """

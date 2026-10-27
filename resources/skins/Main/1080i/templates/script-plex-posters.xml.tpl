@@ -308,16 +308,16 @@
     <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),{% block first_row_end %}5{% endblock %})">Conditional</animation>
     <defaultcontrol>301</defaultcontrol>
     <!-- 184, not the old 120: moves the whole row left so the view button's new label-pill
-         (overlay 393 below) ends flush with the grid's own right edge when focused, instead of
+         (overlay 3310 below) ends flush with the grid's own right edge when focused, instead of
          dangling in the margin past it. Grid math: panel(101) left=60 (group 50's own posx; 100/
          101 contribute 0 on top of it) + item cell's own 55 offset + 5*272 (item pitch) for the
          6th/last column (CHUNK_SIZE's own comment above confirms 6 columns for this grid) =
          1475 shadow-left; poster art sits 3px further in (inner group posx=3) and is 240 wide, so
          art's right edge = 1475+3+240 = 1718 (absolute).
-         Overlay 393's pill sits 18px short of its own group's right edge by construction
+         Overlay 3310's pill sits 18px short of its own group's right edge by construction
          (group_width = label_width+18, pill's own local right edge = -62+pill_width =
          label_width - see button-label-overlay-recipe) - and group_width is what actually
-         right-justifies against this row's own <right> anchor, since 393 becomes the last flowed
+         right-justifies against this row's own <right> anchor, since 3310 becomes the last flowed
          item once visible. So solving for the row's box-right edge that puts the pill's right
          edge at 1718: box_right = 1718+18 = 1736, and <right> = 1920-1736 = 184. -->
     <right>184</right>
@@ -368,13 +368,13 @@
              button's neighbours (needed so Kodi's usecontrolcoords nav doesn't pick the overlay
              itself once it reflows into the list - see episode_button_label.xml.tpl). -->
         {% include template with name="play" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-        {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
+        {% include ol with id=3010 & visible="Control.HasFocus(301)" & name="play" &
             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
             label_width=51 & pill_width=113 & group_width=69 &
             onleft=301 & onright=302
         %}
         {% include template with name="shuffle" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-        {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
+        {% include ol with id=3020 & visible="Control.HasFocus(302)" & name="shuffle" &
             label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
             label_width=84 & pill_width=146 & group_width=102 &
             onleft=302 & onright=303
@@ -385,17 +385,17 @@
            skipped the track; dropped, the header's now-playing popout covers that now. #}
         {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(no.options))" %}
         {% block view_button %}
-        {% include template with name="view" & id=304 & overlay=True %}
+        {% include template with name="view" & id=331 & overlay=True %}
         <!-- label_width=146: "Change view" measured at font10/23px via Inter-Regular.ttf (PIL
              font.getlength, 142px; 140 in the old InterUI.ttf) + the +2px clipping-safety buffer every other call site here
              uses, +2px more (2026-09-04 pass, applied to every label_width in this file/
              episodes/seasons - see button-label-overlay-recipe) - pill_width/group_width follow
-             the recipe's own +62/+18 formula. No onright: 393 is the last item in this row once
-             visible (nothing follows it to route around), same as 304's own bare include above. -->
-        {% include ol with id=393 & visible="Control.HasFocus(304)" & name="view" &
+             the recipe's own +62/+18 formula. No onright: 3310 is the last item in this row once
+             visible (nothing follows it to route around), same as 331's own bare include above. -->
+        {% include ol with id=3310 & visible="Control.HasFocus(331)" & name="view" &
             label="$ADDON[script.plexmod 35063]" & label_suffix_info="" &
             label_width=146 & pill_width=208 & group_width=164 &
-            onleft=304
+            onleft=331
         %}
         {% endblock view_button %}
     {% endwith %}
@@ -428,13 +428,13 @@
         <width>34</width>
         <height>1050</height>
         <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
-        <!-- 304 (View), not 300: entering the button row from the right has to land on its
+        <!-- 331 (View), not 300: entering the button row from the right has to land on its
              RIGHTMOST button rather than restoring the row's own remembered child. Targeting the
              grouplist by id gives you whatever was focused last, which is right for up/down entry
              but wrong from the side. View is the last real button in the row and carries no
              visibility condition here, so no fallback chain is needed in this direction (unlike
              the leftmost, see library_posters.xml.tpl). -->
-        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">{% block rightmost_button %}304{% endblock %}</onleft>
+        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %}) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">{% block rightmost_button %}331{% endblock %}</onleft>
         <onright>152</onright>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
@@ -473,6 +473,6 @@
          itself isn't in the chain to make that hop for us then. -->
     <onleft condition="!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">151</onleft>
     <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %})">100</onleft>
-    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %})">{% block rightmost_button %}304{% endblock %}</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),{% block first_row_end %}5{% endblock %})">{% block rightmost_button %}331{% endblock %}</onleft>
 </control>
 {% endblock content %}

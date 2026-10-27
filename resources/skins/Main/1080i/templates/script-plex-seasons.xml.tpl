@@ -81,10 +81,10 @@
          (the season-row-+-buttons group, grouplist 60) has had its own posy bumped by the same 20px so
          their absolute positions stay exactly where they were - only the header content itself moved. -->
     <posy>{{ vscale(125) }}</posy>
-    <!-- 302 (the play button), not the stale 101 or the old 400 (season row) - matches Python's own
+    <!-- 301 (the play button), not the stale 101 or the old 400 (season row) - matches Python's own
          onFirstInit(), which now stays on the play button rather than moving focus to the season row
          once it's populated - see ShowWindow.onFirstInit(). -->
-    <defaultcontrol>302</defaultcontrol>
+    <defaultcontrol>301</defaultcontrol>
 
     <control type="group">
         <posx>0</posx>
@@ -208,7 +208,7 @@
              not just omitted - Kodi otherwise falls back to its own default button look) - the focus
              highlight itself is the separate image below instead, not this control's own texture, so
              it can be sized bigger than the actual hit area. -->
-        <control type="button" id="305">
+        <control type="button" id="350">
             <!-- No target when there's no summary to open: an enabled button over empty space
                  is a focus stop in the middle of the header that opens a blank popup. Every nav tag
                  routing through it carries the same condition, so the chain closes up instead of
@@ -228,11 +228,11 @@
             <texturenofocus>-</texturenofocus>
             <texturefocus>-</texturefocus>
         </control>
-        <!-- Focus highlight for 305 above, kept as its own image rather than that button's own
+        <!-- Focus highlight for 350 above, kept as its own image rather than that button's own
              texturefocus so it can extend 5px past the button's own hit area on every side, matching
              Artist's own copy. -->
         <control type="image">
-            <visible>Control.HasFocus(305)</visible>
+            <visible>Control.HasFocus(350)</visible>
             <posx>56</posx>
             <posy>{{ vscale(272) }}</posy>
             <width>823</width>
@@ -260,7 +260,7 @@
             <control type="grouplist" id="300">
                 <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
                 <visible>!String.IsEmpty(Window.Property(initialized))</visible>
-                <defaultcontrol>302</defaultcontrol>
+                <defaultcontrol>301</defaultcontrol>
                 <!-- Sits above the season row on request, not below (matching Episodes' original
                      button-row-under-carousel order, which this used to share).
                      63, not the old 22: the button icons were re-cropped from an 180x145 padded canvas
@@ -287,13 +287,13 @@
                 <posy>{{ vscale(25) }}</posy>
                 <width>1000</width>
                 <height>{{ vscale(145) }}</height>
-                <!-- 305 (the summary click-target), not straight to 205/200: keeps that focus
+                <!-- 350 (the summary click-target), not straight to 205/200: keeps that focus
                      stop reachable from the button row via remote/keyboard, not just mouse/touch -
                      same reasoning as Artist's own copy. The season-tab row fallback (205/200)
-                     this used to carry directly has moved up onto 305's own onup instead, one level
+                     this used to carry directly has moved up onto 350's own onup instead, one level
                      further up the chain. -->
-                <onup condition="!String.IsEmpty(Window.Property(summary))">305</onup>
-                <!-- Fallback replicates 305's own onup chain, so the row behaves as if the target
+                <onup condition="!String.IsEmpty(Window.Property(summary))">350</onup>
+                <!-- Fallback replicates 350's own onup chain, so the row behaves as if the target
                      simply weren't there. -->
                 <onup condition="Control.IsVisible(205)">205</onup>
                 <onup>200</onup>
@@ -338,64 +338,64 @@
                          typical string ("Resume S5E14 &#8226; 41m left"), not a worst case. Only
                          ever visible if the resize doesn't land (its own except path), but a
                          too-small start clips where a too-large one just reads roomy. -->
-                    {% include template with name="play" & id=302 & overlay=True &
+                    {% include template with name="play" & id=301 & overlay=True &
                         visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(play.in.progress))"
                     %}
-                    {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
+                    {% include ol with id=3010 & visible="Control.HasFocus(301)" & name="play" &
                         label="$ADDON[script.plexmod 33020] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
                         label_width=161 & pill_width=223 & group_width=179 &
-                        pill_id=396 & label_id=397 &
-                        onleft=302 & onright=308
+                        pill_id=3011 & label_id=3012 &
+                        onleft=301 & onright=308
                     %}
-                    {% include template with name="resume" & id=301 & overlay=True &
+                    {% include template with name="resume" & id=305 & overlay=True &
                         visible="String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(play.in.progress))"
                     %}
-                    {% include ol with id=398 & visible="Control.HasFocus(301)" & name="resume" &
+                    {% include ol with id=3050 & visible="Control.HasFocus(305)" & name="resume" &
                         label="$ADDON[script.plexmod 32316] $INFO[Window.Property(play.episode)]" &
                         label_suffix_wprop="resume.timeleft" &
                         label_width=347 & pill_width=409 & group_width=365 &
-                        pill_id=399 & label_id=307 &
-                        onleft=301 & onright=306
+                        pill_id=3051 & label_id=3052 &
+                        onleft=305 & onright=307
                     %}
                     <!-- Restart, beside Resume: the same episode from its start (playButtonClicked(start_over=True)),
                          named as Resume names it. Worst case "Restart S12E345" = 188 measured (font10),
                          shrunk to the real string by sizePlayButtonLabel() like the pair above. -->
-                    {% include template with name="restart" & id=306 & overlay=True &
+                    {% include template with name="restart" & id=307 & overlay=True &
                         visible="String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(play.in.progress))"
                     %}
-                    {% include ol with id=380 & visible="Control.HasFocus(306)" & name="restart" &
+                    {% include ol with id=3070 & visible="Control.HasFocus(307)" & name="restart" &
                         label="$ADDON[script.plexmod 35061] $INFO[Window.Property(play.episode)]" & label_suffix_info="" &
                         label_width=192 & pill_width=254 & group_width=210 &
-                        pill_id=381 & label_id=382 &
-                        onleft=306 & onright=308
+                        pill_id=3071 & label_id=3072 &
+                        onleft=307 & onright=308
                     %}
                     {% include "includes/wl_dynamic_buttons.xml.tpl" %}
                     {% include "includes/wl_add_remove_buttons.xml.tpl" %}
-                    {% include ol with id=392 & visible="Control.HasFocus(308)" & name="watchlist" &
+                    {% include ol with id=3080 & visible="Control.HasFocus(308)" & name="watchlist" &
                         label="$ADDON[script.plexmod 35062]" & label_suffix_info="" &
                         label_width=181 & pill_width=243 & group_width=199 &
                         onleft=308 & onright=309
                     %}
-                    {% include ol with id=393 & visible="Control.HasFocus(309)" & name="watchlisted" &
+                    {% include ol with id=3090 & visible="Control.HasFocus(309)" & name="watchlisted" &
                         label="$ADDON[script.plexmod 34011]" & label_suffix_info="" &
                         label_width=255 & pill_width=317 & group_width=273 &
-                        onleft=309 & onright=303
+                        onleft=309 & onright=302
                     %}
-                    {% include template with name="shuffle" & id=303 & overlay=True &
+                    {% include template with name="shuffle" & id=302 & overlay=True &
                         visible="String.IsEmpty(Window.Property(disable_playback))"
                     %}
-                    {% include ol with id=394 & visible="Control.HasFocus(303)" & name="shuffle" &
+                    {% include ol with id=3020 & visible="Control.HasFocus(302)" & name="shuffle" &
                         label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
                         label_width=84 & pill_width=146 & group_width=102 &
-                        onleft=303 & onright=304
+                        onleft=302 & onright=303
                     %}
-                    {% include template with name="more" & id=304 & overlay=True &
+                    {% include template with name="more" & id=303 & overlay=True &
                         visible="String.IsEmpty(Window.Property(disable_playback))"
                     %}
-                    {% include ol with id=395 & visible="Control.HasFocus(304)" & name="more" &
+                    {% include ol with id=3030 & visible="Control.HasFocus(303)" & name="more" &
                         label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
                         label_width=61 & pill_width=123 & group_width=79 &
-                        onleft=304 & onright=""
+                        onleft=303 & onright=""
                     %}
                 {% endwith %}
 
@@ -450,7 +450,7 @@
                      real tallest element, not either of those. -->
                 <height>{{ vscale(465) }}</height>
                 <!-- the button row empty (a Discover show, the Watchlist off): the summary, or above -->
-                <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled)) + !String.IsEmpty(Window.Property(summary))">305</onup>
+                <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled)) + !String.IsEmpty(Window.Property(summary))">350</onup>
                 <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled)) + Control.IsVisible(205)">205</onup>
                 <onup condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled))">200</onup>
                 <onup>300</onup>
@@ -1326,10 +1326,10 @@
          header, not dead-end at noop - previously missing here (Episodes' own copy already had it). -->
     <onright condition="Control.IsVisible(204)">204</onright>
     <onright>noop</onright>
-    <!-- 305 (the summary click-target), not straight to 300: visits it in top-to-bottom order on
-         the way down, matching 305's own onup back up to here. -->
-    <ondown condition="!String.IsEmpty(Window.Property(summary))">305</ondown>
-    <!-- Fallback is 305's own ondown, skipping the stop when there's no summary. -->
+    <!-- 350 (the summary click-target), not straight to 300: visits it in top-to-bottom order on
+         the way down, matching 350's own onup back up to here. -->
+    <ondown condition="!String.IsEmpty(Window.Property(summary))">350</ondown>
+    <!-- Fallback is 350's own ondown, skipping the stop when there's no summary. -->
     <ondown condition="!String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(watchlist_enabled))">400</ondown>
     <ondown>300</ondown>
     <orientation>horizontal</orientation>

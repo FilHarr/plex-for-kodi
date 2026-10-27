@@ -76,8 +76,8 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
     SHUFFLE_BUTTON_ID = 302
 
     # The invisible click target over the header's summary textbox (script-plex-playlist.xml.tpl),
-    # the same 305 the Album screen uses.
-    SUMMARY_BUTTON_ID = 305
+    # 350, as every screen's (ShowWindow's constants, subitems.py).
+    SUMMARY_BUTTON_ID = 350
 
     # Each row's art box (includes/playlist_row.xml.tpl).
     LI_AR16X9_THUMB_DIM = util.scaleResolution(142, 80)

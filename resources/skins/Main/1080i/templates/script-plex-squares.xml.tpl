@@ -532,7 +532,7 @@
     <!-- 132, by the poster grid's own formula, re-solved for this grid's wider cell: panel(101)
          left 60 + 5*282 (6 columns, this template's own itemlayout pitch) + the item's own 55 =
          1525 card-left, art sits 5 further in and is 240 wide, so the last column's art ends at
-         1770 absolute. Overlay 391/392's pill finishes 18px short of its own group's right edge
+         1770 absolute. Overlay 3010/3020's pill finishes 18px short of its own group's right edge
          (button-label-overlay-recipe), and that group is what right-justifies against this
          anchor, so box_right = 1770 + 18 = 1788 and <right> = 1920 - 1788 = 132. -->
     <right>132</right>
@@ -568,7 +568,7 @@
     {# theme.library.buttons (70x70) and its hitrect, not the hardcoded 126x100/20,20,86,60 this
        used to carry - the same box the poster grid's own Play/Shuffle row uses, and through it
        the same box as Seasons/Episodes/Pre-play. Play and Shuffle also gain the label-on-focus
-       pill overlay those rows have (391/392), reusing their measured widths since it's the same
+       pill overlay those rows have (3010/3020), reusing their measured widths since it's the same
        text at the same font. More has never carried one anywhere; View doesn't get one here
        because it's hidden outright in music sections (forcedViewWindow(), library.py) and the
        music grid is what this was asked for. #}
@@ -577,7 +577,7 @@
            itself (its own context menu), there's no single "the section" to play here the way
            a movie/show library has. #}
         {% include template with name="play" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + !String.IsEqual(Window.Property(media),playlists) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-        {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
+        {% include ol with id=3010 & visible="Control.HasFocus(301)" & name="play" &
             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
             label_width=51 & pill_width=113 & group_width=69 &
             onleft=301 & onright=302
@@ -586,7 +586,7 @@
         {# onright falls back to the scrubber (151, this row's own boundary target) when More
            isn't on screen: in a music section neither More nor View shows any more, so Shuffle is
            the last button in the row and a bare onright=303 would point at a hidden control. #}
-        {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
+        {% include ol with id=3020 & visible="Control.HasFocus(302)" & name="shuffle" &
             label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
             label_width=84 & pill_width=146 & group_width=102 &
             onleft=302 & onright=303 & onright_cond="Control.IsVisible(303)" & onright_else=151
@@ -596,7 +596,7 @@
            It used to also show on any section while music played, for a "Play Next" entry that
            skipped the track; dropped, the header's now-playing popout covers that now. #}
         {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(no.options))" %}
-        {# id 304 doubles as VIEWTYPE_BUTTON_ID (library.py) regardless of what this template
+        {# id 331 doubles as VIEWTYPE_BUTTON_ID (library.py) regardless of what this template
            labels it - a genuine view-type switch (poster/list layout) makes sense for a grid of
            playlists same as any other section, but "chapters" as a label/icon here never did
            (chapters are a video pre-play concept). Hidden for playlists on that mislabeling
@@ -606,7 +606,7 @@
            there is nothing here to toggle. Window.Property(media) is the section type, not the
            item type - the pin covers every item type in the section, so the section-level test is
            the right one. Photos and Playlists keep the button. #}
-        {% include template with name="view" & id=304 & visible="String.IsEmpty(Window.Property(hide.filteroptions)) + !String.IsEqual(Window.Property(media),playlists) + !String.IsEqual(Window.Property(media),artist)" %}
+        {% include template with name="view" & id=331 & visible="String.IsEmpty(Window.Property(hide.filteroptions)) + !String.IsEqual(Window.Property(media),playlists) + !String.IsEqual(Window.Property(media),artist)" %}
     {% endwith %}
 
 </control>
@@ -639,7 +639,7 @@
         <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
         <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),5) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">300</onleft>
         <!-- The scrollbar is now a real neighbour to the right, so it needs reaching. (The poster
-             grid's own copy of this routes left to 304/View specifically; this one stays on the
+             grid's own copy of this routes left to 331/View specifically; this one stays on the
              grouplist 300, because View is hidden outright in music sections and More can be
              hidden too - there's no button here that's guaranteed to be the rightmost.) -->
         <onright>152</onright>

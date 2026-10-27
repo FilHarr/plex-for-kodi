@@ -79,7 +79,7 @@
         <control type="grouplist" id="300">
             <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
             <visible>!String.IsEmpty(Window.Property(initialized))</visible>
-            <defaultcontrol>302</defaultcontrol>
+            <defaultcontrol>301</defaultcontrol>
             <!-- 63, not the old 22: the button icons were re-cropped from an 180x145 padded canvas down
                  to a tight 80x80 one (see context.py's own comment on the 70x70/itemgap-0 box re-tune),
                  shrinking the box from 152x121 to 70x70 - old absolute glyph center-x was
@@ -116,7 +116,7 @@
             <scrolltime tween="quadratic" easing="out">200</scrolltime>
             <usecontrolcoords>true</usecontrolcoords>
 
-            <!-- Label-on-focus pill overlays (390-399) below: same treatment/recipe Episodes'/
+            <!-- Label-on-focus pill overlays (each its button's id x 10) below: same treatment/recipe Episodes'/
                  Seasons'/library-posters' own button rows already have (episode_button_label.xml.tpl -
                  see button-label-overlay-recipe). Info/Play/Add-remove-watchlist/More
                  reuse those rows' own $ADDON strings/measured widths since it's the same label text;
@@ -129,10 +129,10 @@
                  buttons below pass explicit onleft/onright of their own to literally copy. -->
             {% with attr = theme.pre_play.buttons & hitrect = theme.pre_play.buttons_hitrect & template = "includes/themed_button.xml.tpl" & ol = "includes/episode_button_label.xml.tpl" %}
                 {% include template with name="info" & id=304 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback))" %}
-                {% include ol with id=390 & visible="Control.HasFocus(304)" & name="info" &
+                {% include ol with id=3040 & visible="Control.HasFocus(304)" & name="info" &
                     label="$ADDON[script.plexmod 35059]" & label_suffix_info="" &
                     label_width=92 & pill_width=154 & group_width=110 &
-                    onleft=304 & onright=302
+                    onleft=304 & onright=301
                 %}
                 <!-- Play / Resume+Restart are mutually exclusive by state, the same split Episodes'
                      own button row uses (script-plex-episodes.xml.tpl): a single Play until the video
@@ -140,62 +140,60 @@
                      The state comes from Window.Property(in.progress) here rather than Episodes'
                      Container(400).ListItem.Property of the same name - this screen's subject is the
                      window's own single video (setInfo(), preplay.py), not a row's selected item.
-                     Ids 301/307, the only two left free in this screen's 300-block (302-306 are
-                     Play/Trailer/Info/Settings (since removed)/More, 308/309 the watchlist pair, 310-322 the media
-                     info pills) - so they don't read in row order, unlike Episodes' own 308/309. -->
-                {% include template with name="play" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(in.progress))" %}
-                {% include ol with id=391 & visible="Control.HasFocus(302)" & name="play" &
+                     Ids as every button row's: Play 301, Resume 305, Restart 307 (PrePlayWindow, preplay.py). -->
+                {% include template with name="play" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(in.progress))" %}
+                {% include ol with id=3010 & visible="Control.HasFocus(301)" & name="play" &
                     label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
                     label_width=51 & pill_width=113 & group_width=69 &
-                    onleft=302 & onright=303
+                    onleft=301 & onright=330
                 %}
-                {% include template with name="resume" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(in.progress))" %}
+                {% include template with name="resume" & id=305 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(in.progress))" %}
                 <!-- Two width variants, not one covering both - straight copy of Episodes' own pair,
                      same label text, same font, same suffix: remainingTimeToShortText() (util.py) only
                      ever emits "Xm" (<=90 min) or "XhYm", and String.Contains(...,h) tells them apart
                      without another property. label_suffix_wprop, not label_suffix_info: the time-left
                      text is a window property on this screen (see the block comment above). -->
-                {% include ol with id=397 & visible="Control.HasFocus(301) + !String.Contains(Window.Property(resume.timeleft),h)" & name="resume" &
+                {% include ol with id=3050 & visible="Control.HasFocus(305) + !String.Contains(Window.Property(resume.timeleft),h)" & name="resume" &
                     label="$ADDON[script.plexmod 32316]" & label_suffix_wprop="resume.timeleft" &
                     label_width=208 & pill_width=270 & group_width=226 &
-                    onleft=301 & onright=307
+                    onleft=305 & onright=307
                 %}
-                {% include ol with id=399 & visible="Control.HasFocus(301) + String.Contains(Window.Property(resume.timeleft),h)" & name="resume" &
+                {% include ol with id=3053 & visible="Control.HasFocus(305) + String.Contains(Window.Property(resume.timeleft),h)" & name="resume" &
                     label="$ADDON[script.plexmod 32316]" & label_suffix_wprop="resume.timeleft" &
                     label_width=237 & pill_width=299 & group_width=255 &
-                    onleft=301 & onright=307
+                    onleft=305 & onright=307
                 %}
                 {% include template with name="restart" & id=307 & overlay=True & visible="String.IsEmpty(Window.Property(unavailable)) + String.IsEmpty(Window.Property(disable_playback)) + !String.IsEmpty(Window.Property(in.progress))" %}
-                {% include ol with id=398 & visible="Control.HasFocus(307)" & name="restart" &
+                {% include ol with id=3070 & visible="Control.HasFocus(307)" & name="restart" &
                     label="$ADDON[script.plexmod 35061]" & label_suffix_info="" &
                     label_width=82 & pill_width=144 & group_width=100 &
-                    onleft=307 & onright=303
+                    onleft=307 & onright=330
                 %}
                 {% include "includes/wl_dynamic_buttons.xml.tpl" %}
-                {% include template with name="trailer" & id=303 & overlay=True & visible="!String.IsEmpty(Window.Property(trailer.button))" %}
-                {% include ol with id=392 & visible="Control.HasFocus(303)" & name="trailer" &
+                {% include template with name="trailer" & id=330 & overlay=True & visible="!String.IsEmpty(Window.Property(trailer.button))" %}
+                {% include ol with id=3300 & visible="Control.HasFocus(330)" & name="trailer" &
                     label="$ADDON[script.plexmod 35064]" & label_suffix_info="" &
                     label_width=145 & pill_width=207 & group_width=163 &
-                    onleft=303 & onright=308
+                    onleft=330 & onright=308
                 %}
                 {% include "includes/wl_add_remove_buttons.xml.tpl" %}
-                {% include ol with id=393 & visible="Control.HasFocus(308)" & name="watchlist" &
+                {% include ol with id=3080 & visible="Control.HasFocus(308)" & name="watchlist" &
                     label="$ADDON[script.plexmod 35062]" & label_suffix_info="" &
                     label_width=181 & pill_width=243 & group_width=199 &
                     onleft=308 & onright=309
                 %}
-                {% include ol with id=394 & visible="Control.HasFocus(309)" & name="watchlisted" &
+                {% include ol with id=3090 & visible="Control.HasFocus(309)" & name="watchlisted" &
                     label="$ADDON[script.plexmod 34011]" & label_suffix_info="" &
                     label_width=255 & pill_width=317 & group_width=273 &
-                    onleft=309 & onright=306
+                    onleft=309 & onright=303
                 %}
                 <!-- More: the More settings dialog (moreButtonClicked(), preplay.py) - the media settings
                      with this screen's own actions at the bottom; there's no separate Settings button. -->
-                {% include template with name="more" & id=306 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback))" %}
-                {% include ol with id=396 & visible="Control.HasFocus(306)" & name="more" &
+                {% include template with name="more" & id=303 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback))" %}
+                {% include ol with id=3030 & visible="Control.HasFocus(303)" & name="more" &
                     label="$ADDON[script.plexmod 32307]" & label_suffix_info="" &
                     label_width=61 & pill_width=123 & group_width=79 &
-                    onleft=306 & onright=""
+                    onleft=303 & onright=""
                 %}
             {% endwith %}
 

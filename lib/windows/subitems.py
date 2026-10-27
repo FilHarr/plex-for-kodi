@@ -97,35 +97,35 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
     # Play and Resume are the same action - the show-level pick resumes by itself when it lands on
     # an in-progress episode (getNextShowEp(), windowutils.py) - but a button can't swap its own
     # textures on a condition, so the row carries two mutually-exclusive ones and
-    # setPlayButtonState() below decides which is showing. 301 was INFO_BUTTON_ID, a constant left
-    # over from the Info button both this screen and Artist dropped; nothing rendered there and its
-    # only remaining use was as the lower bound of the button row's own range check in onAction().
-    PLAY_BUTTON_ID = 302
-    RESUME_BUTTON_ID = 301
+    # setPlayButtonState() below decides which is showing. The button rows' shared numbering: Play 301,
+    # Shuffle 302, More 303, Info 304, Resume 305, Restart 307, the watchlist pair 308/309
+    # (WatchlistUtilsMixin), Trailer 330, View 331, Album's artist line 332, the summary's click target
+    # 350 - and each button's labels at its id x 10 (+1/+2 a resized label's pill and text, +3/+4 another
+    # version - a longer one, or another state's - +6 a season card's). The music player's row
+    # (includes/music_player_buttons.xml.tpl) keeps the player controls' own 4xx ids, its labels the same x 10.
+    PLAY_BUTTON_ID = 301
+    RESUME_BUTTON_ID = 305
     # The two Play/Resume focus-pill overlays (includes/episode_button_label.xml.tpl). Their label
     # text isn't fixed at build time - the episode number's digit count moves it by ~45px - so
     # setPlayButtonState() measures the real string and resizes all three controls of whichever
-    # one is live. Seasons-only ids: Artist inherits this class but has its own button row.
-    PLAY_LABEL_GROUP_ID = 391
-    PLAY_LABEL_PILL_ID = 396
-    PLAY_LABEL_TEXT_ID = 397
-    RESUME_LABEL_GROUP_ID = 398
-    RESUME_LABEL_PILL_ID = 399
-    RESUME_LABEL_TEXT_ID = 307
+    # one is live. Seasons-only: Artist inherits this class, and its Play label shares the group id but
+    # has no pill or text at these ids, so sizePlayButtonLabel() stops at the text's lookup there.
+    PLAY_LABEL_GROUP_ID = 3010
+    PLAY_LABEL_PILL_ID = 3011
+    PLAY_LABEL_TEXT_ID = 3012
+    RESUME_LABEL_GROUP_ID = 3050
+    RESUME_LABEL_PILL_ID = 3051
+    RESUME_LABEL_TEXT_ID = 3052
     # Restart, shown beside Resume: the same episode from its start. Its overlay is sized with Resume's.
-    RESTART_BUTTON_ID = 306
-    RESTART_LABEL_GROUP_ID = 380
-    RESTART_LABEL_PILL_ID = 381
-    RESTART_LABEL_TEXT_ID = 382
-    SHUFFLE_BUTTON_ID = 303
-    OPTIONS_BUTTON_ID = 304
+    RESTART_BUTTON_ID = 307
+    RESTART_LABEL_GROUP_ID = 3070
+    RESTART_LABEL_PILL_ID = 3071
+    RESTART_LABEL_TEXT_ID = 3072
+    SHUFFLE_BUTTON_ID = 302
+    OPTIONS_BUTTON_ID = 303
     # Click/focus target laid over this screen's own summary textbox (script-plex-seasons.xml.tpl/
-    # script-plex-artist.xml.tpl both use id 305 for it) - wired to summaryButtonClicked() below.
-    # 305, not the old INFO_BUTTON_ID (301): neither screen has a real rendered control at 301 any
-    # more (Seasons dropped its Info button first; Artist's own copy was dropped once this became
-    # the only way to reach the same popup) - INFO_BUTTON_ID above is now just OPTIONS_BUTTON_ID's
-    # own range-check boundary (see onAction()).
-    SUMMARY_BUTTON_ID = 305
+    # script-plex-artist.xml.tpl) - wired to summaryButtonClicked() below.
+    SUMMARY_BUTTON_ID = 350
 
     def __init__(self, *args, **kwargs):
         kodigui.ControlledWindow.__init__(self, *args, **kwargs)
@@ -630,8 +630,9 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
                 self.toggleWatched(self.mediaItem)
                 return
 
-            if action == xbmcgui.ACTION_MOVE_UP and (controlID in (self.SUB_ITEM_LIST_ID, self.RESTART_BUTTON_ID) or
-                    self.RESUME_BUTTON_ID <= controlID <= self.OPTIONS_BUTTON_ID):
+            if action == xbmcgui.ACTION_MOVE_UP and controlID in (
+                    self.SUB_ITEM_LIST_ID, self.PLAY_BUTTON_ID, self.RESUME_BUTTON_ID, self.RESTART_BUTTON_ID,
+                    self.SHUFFLE_BUTTON_ID, self.OPTIONS_BUTTON_ID):
                 self.updateBackgroundFrom(self.mediaItem)
 
             if controlID == self.RELATED_LIST_ID:

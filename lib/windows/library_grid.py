@@ -1030,7 +1030,7 @@ class GridMixin(object):
         self.sortShowPanel(choice, True, keep_focus=True)
 
     def viewTypeButtonClicked(self):
-        # Button 304 is hidden for music sections (script-plex-squares.xml.tpl/
+        # The View button is hidden for music sections (script-plex-squares.xml.tpl/
         # script-plex-listview-square.xml.tpl), so this is unreachable there by click - the guard
         # is for any other route in, and to make sure nothing writes a viewtype setting that
         # reset() would then ignore.

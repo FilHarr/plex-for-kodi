@@ -331,15 +331,15 @@
     <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),9) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),9)">Conditional</animation>
     <defaultcontrol>301</defaultcontrol>
     <!-- 164, not the old 120: moves the whole row left so the view button's new label-pill
-         (overlay 393 below) ends flush with the grid's own right edge when focused, instead of
+         (overlay 3310 below) ends flush with the grid's own right edge when focused, instead of
          dangling in the margin past it. Same derivation as script-plex-posters.xml.tpl's own
          184, re-solved for this grid: panel(101) left=60 (group 50's own posx) + the cell's own
          55 offset + 9*164 (item pitch) for the 10th/last column = 1591 shadow-left; poster art
          sits 3px further in (inner group posx=3) and is 144 wide, so art's right edge =
-         1591+3+144 = 1738 (absolute). Overlay 393's pill sits 18px short of its own group's
+         1591+3+144 = 1738 (absolute). Overlay 3310's pill sits 18px short of its own group's
          right edge by construction (group_width = label_width+18 - see
          button-label-overlay-recipe), and group_width is what actually right-justifies against
-         this row's own <right> anchor since 393 becomes the last flowed item once visible. So
+         this row's own <right> anchor since 3310 becomes the last flowed item once visible. So
          box_right = 1738+18 = 1756, and <right> = 1920-1756 = 164. -->
     <right>164</right>
     <!-- 132.5, not the old 110: re-centers the icon glyph now that its box shrank from 126x100 to
@@ -379,13 +379,13 @@
              only the overlays get explicit nav, so Kodi's usecontrolcoords nav doesn't pick the
              overlay itself once it reflows into the list - see episode_button_label.xml.tpl. -->
         {% include template with name="play" & id=301 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-        {% include ol with id=391 & visible="Control.HasFocus(301)" & name="play" &
+        {% include ol with id=3010 & visible="Control.HasFocus(301)" & name="play" &
             label="$ADDON[script.plexmod 33020]" & label_suffix_info="" &
             label_width=51 & pill_width=113 & group_width=69 &
             onleft=301 & onright=302
         %}
         {% include template with name="shuffle" & id=302 & overlay=True & visible="String.IsEmpty(Window.Property(disable_playback)) + [!String.IsEqual(Window(10000).Property(script.plex.item.type),collection) | String.IsEqual(Window.Property(media),collection)]" %}
-        {% include ol with id=392 & visible="Control.HasFocus(302)" & name="shuffle" &
+        {% include ol with id=3020 & visible="Control.HasFocus(302)" & name="shuffle" &
             label="$ADDON[script.plexmod 32935]" & label_suffix_info="" &
             label_width=84 & pill_width=146 & group_width=102 &
             onleft=302 & onright=303
@@ -395,13 +395,13 @@
            It used to also show on any section while music played, for a "Play Next" entry that
            skipped the track; dropped, the header's now-playing popout covers that now. #}
         {% include template with name="more" & id=303 & visible="String.IsEmpty(Window.Property(disable_playback)) + String.IsEmpty(Window.Property(no.options))" %}
-        {% include template with name="view" & id=304 & overlay=True %}
-        <!-- No onright: 393 is the last item in this row once visible (nothing follows it to
-             route around), same as 304's own bare include above. -->
-        {% include ol with id=393 & visible="Control.HasFocus(304)" & name="view" &
+        {% include template with name="view" & id=331 & overlay=True %}
+        <!-- No onright: 3310 is the last item in this row once visible (nothing follows it to
+             route around), same as 331's own bare include above. -->
+        {% include ol with id=3310 & visible="Control.HasFocus(331)" & name="view" &
             label="$ADDON[script.plexmod 35063]" & label_suffix_info="" &
             label_width=146 & pill_width=208 & group_width=164 &
-            onleft=304
+            onleft=331
         %}
     {% endwith %}
 
@@ -434,10 +434,10 @@
         <width>34</width>
         <height>1050</height>
         <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),9) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
-        <!-- 304 (View), not 300: entering the button row from the right has to land on its
+        <!-- 331 (View), not 300: entering the button row from the right has to land on its
              RIGHTMOST button rather than restoring the row's own remembered child - see
              script-plex-posters.xml.tpl's own copy of this control for the full reasoning. -->
-        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),9) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">304</onleft>
+        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),9) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">331</onleft>
         <onright>152</onright>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
@@ -469,6 +469,6 @@
          onleft to 151 sent focus into a hidden scrubber for every non-alphabetical sort. -->
     <onleft condition="!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">151</onleft>
     <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).ListItem.Property(index),9)">100</onleft>
-    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),9)">304</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),9)">331</onleft>
 </control>
 {% endblock content %}
