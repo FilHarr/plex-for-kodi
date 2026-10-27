@@ -1,3 +1,13 @@
+[-0.4.1-]
+- Fixed: on CoreELEC p3i builds (the AM6B), a pop-up closed with Back stayed on screen until something else on the screen changed. Pop-ups now fade out as they close
+- Sidebar menu: Manage recommended rows, a folder's Map path and Empty Trash's confirm open over the menu, and Back comes back to it
+- More settings: Video, Audio, Subtitles and Quality open over it, and Mark Played and Delete ask over it, on pre-play, Episodes and Seasons
+- Item menus on hub rows, library grids and collections ask Mark Played?, Remove from watchlist? and Remove from Continue Watching? over the menu
+- A confirm box or Manage recommended rows opened over a menu no longer darkens the screen further
+- Fixed: a menu's rows changed font when a confirm box opened over it
+- Fixed: the sidebar's labels went to icons under Settings, the sidebar menu and Kodi's number pad
+- Fixed: Manage recommended rows for a library other than the one showing reopened the screen
+
 [-0.4.0-]
 - Settings: no longer a screen of its own. From the user menu its sections open in the option picker beside the sidebar, a section's settings over them and a setting's values over those; Back steps down one at a time
 - Settings: changes save as they're made, and each row's help shows beside the picker; a setting saved for one Plex Home user says so in its help
