@@ -87,7 +87,7 @@
                 </control>
                 <!-- font8: one line, or the option over its detail, told apart by brightness, centred on the card -->
                 <control type="label">
-                    <visible>String.IsEmpty(ListItem.Label2) + String.IsEmpty(Window.Property(menu))</visible>
+                    <visible>String.IsEmpty(ListItem.Label2) + String.IsEmpty(ListItem.Property(menu))</visible>
                     <posx>20</posx>
                     <posy>0</posy>
                     <width>{{ text_width }}</width>
@@ -101,7 +101,7 @@
                 <!-- a menu (showOptionsDialog(menu=True): a screen's first pop-up, its rows actions): the
                      option as the More settings rows have theirs, font20_title -->
                 <control type="label">
-                    <visible>String.IsEmpty(ListItem.Label2) + !String.IsEmpty(Window.Property(menu))</visible>
+                    <visible>String.IsEmpty(ListItem.Label2) + !String.IsEmpty(ListItem.Property(menu))</visible>
                     <posx>20</posx>
                     <posy>0</posy>
                     <width>{{ text_width }}</width>
@@ -113,7 +113,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>!String.IsEmpty(ListItem.Label2) + String.IsEmpty(Window.Property(menu))</visible>
+                    <visible>!String.IsEmpty(ListItem.Label2) + String.IsEmpty(ListItem.Property(menu))</visible>
                     <posx>20</posx>
                     <posy>{{ line1_y|vscale }}</posy>
                     <width>{{ text_width }}</width>
@@ -127,7 +127,7 @@
                 <!-- a menu (showOptionsDialog(menu=True): a screen's first pop-up, its rows actions): the
                      option as the More settings rows have theirs, font20_title -->
                 <control type="label">
-                    <visible>!String.IsEmpty(ListItem.Label2) + !String.IsEmpty(Window.Property(menu))</visible>
+                    <visible>!String.IsEmpty(ListItem.Label2) + !String.IsEmpty(ListItem.Property(menu))</visible>
                     <posx>20</posx>
                     <posy>{{ line1_y|vscale }}</posy>
                     <width>{{ text_width }}</width>
@@ -208,7 +208,7 @@
                     <texture colordiffuse="33FFFFFF" border="10">script.plex/white-square-rounded.png</texture>
                 </control>
                 <control type="label">
-                    <visible>String.IsEmpty(ListItem.Label2) + String.IsEmpty(Window.Property(menu))</visible>
+                    <visible>String.IsEmpty(ListItem.Label2) + String.IsEmpty(ListItem.Property(menu))</visible>
                     <posx>20</posx>
                     <posy>0</posy>
                     <width>{{ text_width }}</width>
@@ -224,7 +224,7 @@
                 <!-- a menu (showOptionsDialog(menu=True): a screen's first pop-up, its rows actions): the
                      option as the More settings rows have theirs, font20_title -->
                 <control type="label">
-                    <visible>String.IsEmpty(ListItem.Label2) + !String.IsEmpty(Window.Property(menu))</visible>
+                    <visible>String.IsEmpty(ListItem.Label2) + !String.IsEmpty(ListItem.Property(menu))</visible>
                     <posx>20</posx>
                     <posy>0</posy>
                     <width>{{ text_width }}</width>
@@ -238,7 +238,7 @@
                     <label>$INFO[ListItem.Label]</label>
                 </control>
                 <control type="label">
-                    <visible>!String.IsEmpty(ListItem.Label2) + String.IsEmpty(Window.Property(menu))</visible>
+                    <visible>!String.IsEmpty(ListItem.Label2) + String.IsEmpty(ListItem.Property(menu))</visible>
                     <posx>20</posx>
                     <posy>{{ line1_y|vscale }}</posy>
                     <width>{{ text_width }}</width>
@@ -254,7 +254,7 @@
                 <!-- a menu (showOptionsDialog(menu=True): a screen's first pop-up, its rows actions): the
                      option as the More settings rows have theirs, font20_title -->
                 <control type="label">
-                    <visible>!String.IsEmpty(ListItem.Label2) + !String.IsEmpty(Window.Property(menu))</visible>
+                    <visible>!String.IsEmpty(ListItem.Label2) + !String.IsEmpty(ListItem.Property(menu))</visible>
                     <posx>20</posx>
                     <posy>{{ line1_y|vscale }}</posy>
                     <width>{{ text_width }}</width>

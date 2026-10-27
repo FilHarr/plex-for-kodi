@@ -72,9 +72,10 @@ class SelectDialog(kodigui.BaseDialog, util.CronReceiver):
         if kwargs.get('nested'):
             self.setProperty('nested', '1')
         # A screen's first pop-up, its rows actions (an item's menu, Choose action): the options in the More settings
-        # rows' font (option_card_frame.xml.tpl), as the first pop-up on pre-play, Episodes and Seasons is
-        if kwargs.get('menu'):
-            self.setProperty('menu', '1')
+        # rows' font (option_card_frame.xml.tpl), as the first pop-up on pre-play, Episodes and Seasons is. Each row's
+        # property (optionItems()), not the window's: a row's layout reads Window.Property() from the topmost dialog,
+        # so a confirm box or the card list opened over this turned all its rows to the values' font8.
+        self.menu = bool(kwargs.get('menu'))
         # A sidebar section's menu: next to the sidebar (option_card_frame.xml.tpl)
         if kwargs.get('beside_sidebar'):
             self.setProperty('beside_sidebar', '1')
@@ -207,6 +208,8 @@ class SelectDialog(kodigui.BaseDialog, util.CronReceiver):
                 # the current option, ticked (the template), when there's a choice of more than one
                 ticked = len(self.options) > 1 and len(items) == self.selectedIdx
             item.setProperty('current', '1' if ticked else '')
+            if self.menu:
+                item.setProperty('menu', '1')
             # a row's own properties (option_card_frame.xml.tpl): 'more', for one that opens more choices
             for key, value in (option[3] if len(option) > 3 else {}).items():
                 item.setProperty(key, value)
