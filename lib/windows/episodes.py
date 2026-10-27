@@ -1179,6 +1179,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
         if not self.directlyFromWatchlist:
             self.checkIsWatchlisted(self.show_)
+        else:
+            # what the season card's watchlist button shows, as ShowWindow's (subitems.py)
+            self.setBoolProperty("is_watchlisted", self.is_watchlisted)
 
     @close_safe
     def selectEpisode(self, from_reinit=False):
@@ -1672,6 +1675,9 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.episodeListClicked()
         elif controlID == self.RESTART_BUTTON_ID:
             self.episodeListClicked(start_over=True)
+        elif controlID in self.WL_BTN_STATE_BTNS:
+            is_watchlisted = self.toggleWatchlist(self.show_)
+            self.waitAndSetFocus(self.WL_BTN_STATE_WATCHLISTED if is_watchlisted else self.WL_BTN_STATE_NOT_WATCHLISTED)
         elif controlID == self.SHUFFLE_BUTTON_ID:
             self.shuffleButtonClicked()
         elif controlID == self.OPTIONS_BUTTON_ID:

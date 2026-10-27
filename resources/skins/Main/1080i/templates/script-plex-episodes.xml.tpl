@@ -1209,6 +1209,21 @@
                             pill_id=3077 & label_id=3078 &
                             onleft=307 & onright=303
                         %}
+                        <!-- Add to / Remove from watchlist (308/309, as on Seasons and Pre-play), a skipChildren
+                             show's card only: that show never opens its own screen (opener.showClicked()), where the
+                             pair sits after Play/Resume/Restart as here (script-plex-seasons.xml.tpl). Labels as
+                             Seasons'. -->
+                        {% include "includes/wl_add_remove_buttons.xml.tpl" with skip_children_card=True %}
+                        {% include ol with id=3080 & visible="Control.HasFocus(308)" & name="watchlist" &
+                            label="$ADDON[script.plexmod 35062]" & label_suffix_info="" &
+                            label_width=181 & pill_width=243 & group_width=199 &
+                            onleft=308 & onright=303
+                        %}
+                        {% include ol with id=3090 & visible="Control.HasFocus(309)" & name="watchlisted" &
+                            label="$ADDON[script.plexmod 34011]" & label_suffix_info="" &
+                            label_width=255 & pill_width=317 & group_width=273 &
+                            onleft=309 & onright=303
+                        %}
                         <!-- More: the More settings dialog (moreButtonClicked(), episodes.py) - the episode's
                              media settings with its actions at the bottom, or the season card's actions;
                              there's no separate Settings button. -->
