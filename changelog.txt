@@ -1,3 +1,25 @@
+[-0.4.0-]
+- Settings: no longer a screen of its own. From the user menu its sections open in the option picker beside the sidebar, a section's settings over them and a setting's values over those; Back steps down one at a time
+- Settings: changes save as they're made, and each row's help shows beside the picker; a setting saved for one Plex Home user says so in its help
+- Pop-ups: menus, pickers and confirmations share one style. Item menus are headed by the item, their rows in groups
+- Pop-ups: the library grid's Type, Sort by, Filter and Shuffle Mode, the person filter and Search's servers are pickers; a filter with values opens them over the filter list
+- Pop-ups: the user menu opens under the user button without collapsing the sidebar, and a library's menu opens beside the sidebar
+- Pop-ups: confirmations ask with a short heading ("Mark Played?", "Remove from watchlist?") and fit their message
+- Editions: a film's or show's edition shows as a pill on the details line and leads the year under a tile ("The Final Cut • 1982"); in search results each edition is a title of its own
+- A person's page lists each title once
+- Library: Scan Library Files and Empty Trash no longer reopen the screen; the rows refresh when the scan finishes
+- Music: no Mark Played/Unplayed on music, as in Plex's own apps
+- Album and track colours come from the cover
+- Captions too long to fit scroll on the focused item
+- Hero art: the same brightness with "Crossfade dynamic background art" on or off (on, it showed two layers)
+- Video player: preview thumbnails and chapter images keep the film's shape, letterboxed, instead of being stretched or cropped; a chapter without an image shows a film-strip icon
+- Playback: on CoreELEC p3i builds, black-border detection is skipped for a Direct Stream or transcode, which held playback on its first frame for minutes
+- Watchlist: a show comes off automatically only once it has ended and every episode is watched; a show still airing, or with episodes missing from your server, stays on
+- Watchlist: marking an episode or season played in a library grid or collection no longer removes its show, and "Watchlist auto-remove" turned off is respected everywhere
+- Watchlist: a single-season show's card on Episodes has Add to/Remove from watchlist
+- Fixed: the season card disappeared after Mark Season Played/Unplayed, Refresh, Clear cache or deleting an episode
+- Fixed: a Plex Home user switch that plex.tv doesn't answer says so, instead of an error or a wrong PIN message
+
 [-0.3.0-]
 - Video player: a redesigned OSD. A two-line title, the seek bar below the buttons and focused when the OSD opens, and only Settings, Subtitles and VS10 as buttons; Repeat and Shuffle are rows in Settings
 - Video player: chapters and the play queue are card rows below the seek bar, in place of the play queue pop-up
