@@ -1,4 +1,5 @@
 {% extends "base.xml.tpl" %}
+{% block window_animation %}{% include "includes/dialog_close_fade.xml.tpl" %}{% endblock %}
 {% block backgroundcolor %}{% endblock %}
 {% block controls %}
 <!-- The sidebar's user menu (dialog.UserMenuDialog, from its user button): the option pickers' frame and cards

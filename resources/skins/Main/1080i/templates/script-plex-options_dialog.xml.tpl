@@ -1,4 +1,5 @@
 {% extends "base.xml.tpl" %}
+{% block window_animation %}{% include "includes/dialog_close_fade.xml.tpl" %}{% endblock %}
 {% block headers %}<!-- over the option pickers (101), which a choice can leave open beneath this, and the video player's
      OSD (100) -->
 <zorder>102</zorder><defaultcontrol>1001</defaultcontrol>{% endblock %}

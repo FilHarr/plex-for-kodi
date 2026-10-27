@@ -1,4 +1,5 @@
 {% extends "base.xml.tpl" %}
+{% block window_animation %}{% include "includes/dialog_close_fade.xml.tpl" %}{% endblock %}
 {% block backgroundcolor %}{% endblock %}
 {% block headers %}
 <onload>SetProperty(dropdown,1)</onload>

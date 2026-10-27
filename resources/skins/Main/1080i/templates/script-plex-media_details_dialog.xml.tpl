@@ -1,4 +1,5 @@
 {% extends "base.xml.tpl" %}
+{% block window_animation %}{% include "includes/dialog_close_fade.xml.tpl" %}{% endblock %}
 {% block backgroundcolor %}{% endblock %}
 {% block controls %}
 <!-- Compact popup shell copied from script-plex-video_settings_dialog.xml.tpl (playersettings.py's

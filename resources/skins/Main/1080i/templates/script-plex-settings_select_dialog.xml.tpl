@@ -1,4 +1,5 @@
 {% extends "base.xml.tpl" %}
+{% block window_animation %}{% include "includes/dialog_close_fade.xml.tpl" %}{% endblock %}
 {% block backgroundcolor %}{% endblock %}
 {% block headers %}
 <!-- above the video player's OSD (script-plex-seek_dialog's 100): a dialog without a zorder draws

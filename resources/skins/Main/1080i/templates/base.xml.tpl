@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <window>{# this is the basic window/dialog structure #}
     {% block headers %}{% endblock %}
+    {% block window_animation %}{% endblock %}
     {% block coordinates %}
     <coordinates>
         <system>1</system>

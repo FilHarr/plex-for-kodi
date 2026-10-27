@@ -1,4 +1,5 @@
 {% extends "base.xml.tpl" %}
+{% block window_animation %}{% include "includes/dialog_close_fade.xml.tpl" %}{% endblock %}
 {% block backgroundcolor %}{% endblock %}
 {% block controls %}
 <!-- SummaryDialog's own popup (info.py) - originally ArtistWindow's Info popup, now shared by

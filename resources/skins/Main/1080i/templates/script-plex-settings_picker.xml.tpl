@@ -1,4 +1,5 @@
 {% extends "base.xml.tpl" %}
+{% block window_animation %}{% include "includes/dialog_close_fade.xml.tpl" %}{% endblock %}
 {% block backgroundcolor %}{% endblock %}
 {% block controls %}
 <!-- The add-on's Settings (settings.SettingsPickerDialog): the option picker (script-plex-settings_select_dialog's
