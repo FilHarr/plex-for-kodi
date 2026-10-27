@@ -32,7 +32,7 @@ from .mixins.spoilers import SpoilersMixin
 from .mixins.media_info_pills import MediaInfoPillsMixin
 from .mixins.playbackbtn import PlaybackBtnMixin
 from .mixins.thememusic import ThemeMusicMixin
-from .mixins.watchlist import WatchlistUtilsMixin, removeFromWatchlistBlind
+from .mixins.watchlist import WatchlistUtilsMixin, autoRemoveFromWatchlistBlind
 from .mixins.ratings import RatingsMixin
 from .mixins.roles import RolesMixin
 from .mixins.common import CommonMixin
@@ -940,8 +940,7 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
 
             if vp:
                 self.show_.reload(checkFiles=1, **VIDEO_RELOAD_KW)
-                if self.show_.isFullyWatched:
-                    removeFromWatchlistBlind(self.show_.guid, self.show_)
+                autoRemoveFromWatchlistBlind(self.show_)
 
     @busy.dialog(delay_time=2.5)
     def _onFirstInit(self):

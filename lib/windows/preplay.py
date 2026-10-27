@@ -24,7 +24,7 @@ from .mixins.ratings import RatingsMixin
 from .mixins.media_info_pills import MediaInfoPillsMixin
 from .mixins.playbackbtn import PlaybackBtnMixin
 from .mixins.thememusic import ThemeMusicMixin
-from .mixins.watchlist import WatchlistUtilsMixin, removeFromWatchlistBlind
+from .mixins.watchlist import WatchlistUtilsMixin, autoRemoveFromWatchlistBlind
 from .mixins.roles import RolesMixin
 from .mixins.common import CommonMixin
 from .mixins.tasks import TasksMixin
@@ -297,8 +297,7 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
     def onBlindClose(self):
         if self.fromPlayback and self.openedWithAutoPlay and not self.started:
             self.video.reload(checkFiles=1, fromMediaChoice=self.video.mediaChoice is not None, **VIDEO_RELOAD_KW)
-            if self.video.isFullyWatched:
-                removeFromWatchlistBlind(self.video.guid, self.video)
+            autoRemoveFromWatchlistBlind(self.video)
 
     def refreshInfo(self, from_reinit=False):
         oldFocusId = self.getFocusId()

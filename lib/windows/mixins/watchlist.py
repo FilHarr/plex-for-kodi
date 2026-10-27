@@ -111,6 +111,70 @@ def is_watchlisted(guid, server):
         return False
 
 
+def is_continuing_series(guid, server):
+    """
+    Is a show still being made? Discover's isContinuingSeries="1"; an ended show has no such attribute. True when
+    Discover couldn't be asked - a show stays on the watchlist rather than coming off on a guess.
+    """
+    try:
+        res = server.query("/library/metadata/{}".format(guid))
+    except Exception as e:
+        util.LOG("Watchlist: series status check for {} failed: {}", guid, repr(e))
+        return True
+
+    if res is not None:
+        for child in res:
+            return child.get("isContinuingSeries") == "1"
+    return True
+
+
+def regular_episode_count(guid, server):
+    """
+    A show's episodes outside the specials (season 0), by Discover's seasons - its show-level leafCount counts the
+    specials too. None when Discover couldn't be asked.
+    """
+    try:
+        res = server.query("/library/metadata/{}/children".format(guid))
+    except Exception as e:
+        util.LOG("Watchlist: season check for {} failed: {}", guid, repr(e))
+        return None
+
+    if res is None:
+        return None
+    return sum(int(child.get("leafCount") or 0) for child in res if child.get("index") != "0")
+
+
+def shouldAutoRemove(ref):
+    """
+    Watchlist auto-remove's rule: the setting on and ref fully watched - for a show, every episode on the server
+    played, the show ended, and the server holding at least the episodes Discover lists outside the specials. One
+    still being made, or with episodes the server hasn't got, stays watchlisted for those still to watch.
+    """
+    if not util.getUserSetting('watchlist_auto_remove', True):
+        util.DEBUG_LOG("Watchlist: auto-remove is off, keeping {} on the watchlist", ref.ratingKey)
+        return False
+    if not getattr(ref, 'isFullyWatched', False):
+        return False
+    if ref.TYPE == 'show' and ref.guid and ref.guid.startswith("plex://"):
+        server = pnUtil.SERVERMANAGER.getDiscoverServer()
+        g = GUIDToRatingKey(ref.guid)
+        if is_continuing_series(g, server):
+            util.LOG("Watchlist: Show {} is still running, keeping it on the watchlist", ref.ratingKey)
+            return False
+
+        expected = regular_episode_count(g, server)
+        try:
+            have = sum(s.leafCount.asInt() for s in ref.seasons() if s.index.asInt() != 0)
+        except Exception as e:
+            util.LOG("Watchlist: Couldn't count the episodes of show {}: {}", ref.ratingKey, repr(e))
+            have = None
+        if expected is None or have is None or have < expected:
+            util.LOG("Watchlist: Show {} has {} of {} episodes here, keeping it on the watchlist",
+                     ref.ratingKey, have, expected)
+            return False
+    return True
+
+
 def wl_wrap(f):
     def wrapper(cls, item, *args, **kwargs):
         if not cls.wl_enabled:
@@ -164,6 +228,22 @@ def removeFromWatchlistBlind(guid, ref):
         util.DEBUG_LOG("Watchlist: Possibly Removed {}", guid)
         util.showNotification(T(34077, "{} successfully removed from Watchlist").format(ref.defaultTitle),
                               time_ms=3000, header=T(34000, "Watchlist"))
+
+
+def watchlistRef(item):
+    """What stands on the watchlist for an item: an episode's or season's show - fetched again, so its watched counts
+    include what was just marked - otherwise the item itself."""
+    if item.TYPE in ('episode', 'season'):
+        return item.show().reload(skip_cache=True)
+    return item
+
+
+def autoRemoveFromWatchlistBlind(ref):
+    """Watchlist auto-remove where the screen keeps no watchlist state of its own (a grid, a collection, a screen
+    closing behind auto-play): ref off the watchlist when shouldAutoRemove() says so. removeFromWatchlistBlind()
+    alone is the explicit Remove from watchlist."""
+    if shouldAutoRemove(ref):
+        removeFromWatchlistBlind(ref.guid, ref)
 
 
 class WatchlistUtilsMixin(object):
@@ -237,7 +317,7 @@ class WatchlistUtilsMixin(object):
     @wl_wrap
     def wl_auto_remove(self, ref):
         util.LOG("Watchlist: DEBUG: %s, %s, %s %s" % (ref.ratingKey, self.is_watchlisted, ref.isFullyWatched, util.getUserSetting('watchlist_auto_remove', True)))
-        if self.is_watchlisted and ref.isFullyWatched and util.getUserSetting('watchlist_auto_remove', True):
+        if self.is_watchlisted and shouldAutoRemove(ref):
             # _modifyWatchlist returns the new watchlisted state; anything other than False means
             # the removal couldn't be verified (e.g. gateway timeout)
             if self.removeFromWatchlist(ref) is not False:

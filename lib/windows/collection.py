@@ -16,7 +16,7 @@ from . import preplay
 from . import windowutils
 from .mixins.common import CommonMixin
 from .mixins.tasks import TasksMixin
-from .mixins.watchlist import removeFromWatchlistBlind
+from .mixins.watchlist import autoRemoveFromWatchlistBlind, watchlistRef
 
 # Movement actions that can land the grid selection on a paginator boundary sentinel - same set
 # library.py's MOVE_SET (library.py:47-58) covers, just not imported from there (BoundedGridWindow
@@ -263,14 +263,13 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
 
     def markWatched(self, mli, state=None):
         """Marked (asked first in CommonMixin.toggleWatched(), when the setting's on; flipped when state is None),
-        then its tile redrawn - and off the Watchlist once played, as the library grid's (GridMixin.toggleWatched())."""
+        then its tile redrawn - and off the Watchlist once fully watched, as the library grid's (GridMixin.toggleWatched())."""
         data = mli.dataSource
         watched = self.toggleWatched(data, state=state)
         if watched is None:
             return
         if watched:
-            wl_ref = data.show() if data.TYPE in ('episode', 'season') else data
-            removeFromWatchlistBlind(wl_ref.guid, wl_ref)
+            autoRemoveFromWatchlistBlind(watchlistRef(data))
         # markWatched()/markUnwatched() reloaded it; setWatchedInfo() only sets, so what it no longer sets goes first
         mli.setProperty('watched', '')
         mli.setProperty('unwatched.count', '')

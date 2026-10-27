@@ -36,7 +36,7 @@ from . import preplay
 from . import subitems
 from . import sidebar_model
 from .dialog import showOptionsDialog
-from .mixins.watchlist import removeFromWatchlistBlind
+from .mixins.watchlist import removeFromWatchlistBlind, autoRemoveFromWatchlistBlind, watchlistRef
 
 
 KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -500,13 +500,12 @@ class GridMixin(object):
         """state: played (True) or unplayed (False); flipped when None. The new state, or None if it was
         declined at the confirmation (CommonMixin.toggleWatched())."""
         item = mli.dataSource
-        wl_ref = item.show() if item.TYPE in ('episode', 'season') else item
         watched = super(GridMixin, self).toggleWatched(item, state=state)
         if watched is None:
             return
 
         if watched:
-            removeFromWatchlistBlind(wl_ref.guid, wl_ref)
+            autoRemoveFromWatchlistBlind(watchlistRef(item))
         self.updateUnwatchedAndProgress(mli)
         return watched
         util.MONITOR.watchStatusChanged()
