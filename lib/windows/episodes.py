@@ -1594,6 +1594,15 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         else:
             return False
 
+        self._rebuildEpisodeList(count, center=center, keep_selection=keep_selection)
+        return True
+
+    def _rebuildEpisodeList(self, count, center=None, keep_selection=False):
+        """The episode list built again from scratch for count episodes, season card and all - the
+        paginator reset first, or its initial page replaces the list without the card (populate()
+        adds that once per reset). Centred on center, else on the episode selected (from the start
+        on the season card); keep_selection selects that episode again (or the card)."""
+        paginator = self.episodesPaginator
         selected = self.episodeListControl.getSelectedItem()
         selectedEpisode = selected.dataSource if selected is not None else None
         onCard = bool(selected is not None and selected.getProperty('is.season.card'))
@@ -1611,7 +1620,6 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                     self.episodeListControl.selectItem(pos)
                     self.lastItem = mli
                     break
-        return True
 
     def _nextIsLoaded(self, episode):
         """Whether the list holds the episode after episode, or episode is the season's last: not
@@ -2203,9 +2211,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         elif key == 'to_show':
             self._goToShow()
         elif key == 'delete':
-            self.delete(mli.dataSource)
-            self.episodesPaginator.leafCount = int(self.season.leafCount) if self.season else 0
-            self.fillEpisodes()
+            # rebuilt only once deleted (not on a No), and season card and all (_rebuildEpisodeList()),
+            # on the episode _delete() left selected in its place
+            if self.delete(mli.dataSource) and not self.closing:
+                count = int(self.season.leafCount) if self.season else 0
+                self._rebuildEpisodeList(count, keep_selection=True)
         elif key == 'refresh':
             # updateItems() with no item, not updateItems(mli): the per-item branch reads
             # item.dataSource, which is None for the season card - the no-arg branch just
@@ -2456,7 +2466,11 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
                 self.populateRatings(item.dataSource, item, hide_ratings=self.hideSpoilers(item.dataSource))
             self.setUserItemInfo(item)
         else:
-            self.fillEpisodes(update=True)
+            # the whole list, rebuilt (_rebuildEpisodeList()): fillEpisodes() alone replaced it
+            # without the season card, which this branch's callers (Mark Season Played/Unplayed,
+            # Refresh, Clear cache - all from the card) were on
+            count = int(self.season.leafCount) if self.season else self.episodesPaginator.leafCount
+            self._rebuildEpisodeList(count, keep_selection=True)
             if not self.cameFrom:
                 VIDEO_PROGRESS.clear()
 
