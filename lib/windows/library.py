@@ -24,7 +24,7 @@ from lib import util
 from lib.util import T
 from . import background
 from . import busy
-from .dialog import optionGroup, showOptionsDialog
+from .dialog import optionGroup, showOptionsDialog, SidebarMenuDialog
 from . import collection
 from . import dropdown
 from . import home
@@ -2285,7 +2285,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             self._reloadAfterReturn()
 
     def serverRefresh(self, section=None):
-        """After a section or hub menu changed the libraries' settings (sectionMenu(), hubMenu()):
+        """After a hub item's menu changed the libraries' settings (hubMenu()):
         refresh the sidebar avatar and labels, rebuild the section list, and open section (Home by
         default) afresh. Once also the refresh after a server switch, hence the name.
 
@@ -2978,10 +2978,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 if action == xbmcgui.ACTION_CONTEXT_MENU:
                     # Section-item context menu - ported from HomeWindow's identical routing
                     # (home.py's onAction()).
-                    show_section = self.sectionMenu()
-                    if not show_section:
-                        return True
-                    self.serverRefresh(section=show_section)
+                    self.sectionMenu()
                     return True
             elif controlID == self.SERVER_BUTTON_ID:
                 # The Libraries button below the sidebar: the picker (showLibraryPicker()). This
@@ -3407,7 +3404,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.librarySettings (home.py's per-section show/hide/pin/order dict) -> self.navSettings
         (see __init__'s comment for the name-collision reason), self.saveLibrarySettings() ->
         self.saveNavSettings(). Triggered from routeAction()'s SECTION_LIST_ID/ACTION_CONTEXT_MENU
-        branch, which also owns the return-value -> serverRefresh() handoff.
+        branch. Never reopens the screen: what it changes is refreshed in place (the sidebar, the rows).
         """
         item = self.sectionList.getSelectedItem()
         if not item or not item.getProperty('item') or item.getProperty('is.search'):
@@ -3418,7 +3415,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # under a "Map path(s)" group title. Rows as (key, label); a folder's key ('map', its path, mapped). A
         # menu with nothing in it isn't opened - the key does nothing (Watchlist, a library whose server
         # isn't answering).
-        actions, maps = [], []
+        actions, mappable = [], []
         if not section.key:
             # home section
             if util.getSetting('cache_requests'):
@@ -3451,42 +3448,92 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 actions.append(('manage_hubs', T(35202, "Manage recommended rows")))
 
             if not placeholder and section.locations and util.getSetting('path_mapping'):
-                for loc in section.locations:
-                    source, target = section.getMappedPath(loc)
-                    mapped = bool(source and target)
-                    maps.append((('map', loc, mapped),
-                                 T(35206, "Remove: {}").format(target) if mapped else T(35205, "Add: {}").format(loc)))
+                mappable = list(section.locations)
             heading = T(33030, 'Choose action for: {}').format(section.title)
 
-        options = list(actions)
-        if maps:
-            options.append(optionGroup(T(35204, "Map paths") if len(maps) > 1 else T(35203, "Map path")))
-            options += maps
+        def menuOptions():
+            """The actions, then each folder as it's mapped now: Add: or Remove:. Each row's tick its own (never): the
+            row chosen is focused again on the way back to the menu (backToMenu()), not ticked as a value."""
+            maps = []
+            for loc in mappable:
+                source, target = section.getMappedPath(loc)
+                mapped = bool(source and target)
+                maps.append((('map', loc, mapped),
+                             T(35206, "Remove: {}").format(target) if mapped else T(35205, "Add: {}").format(loc),
+                             False))
+            options = [(key, label, False) for key, label in actions]
+            if maps:
+                options.append(optionGroup(T(35204, "Map paths") if len(maps) > 1 else T(35203, "Map path")))
+                options += maps
+            return options
+
+        def backToMenu(choice):
+            """The menu again, its rows as they are now, on the row chosen (a folder's by its path: mapping it
+            turns its Add: into Remove:)."""
+            options = menuOptions()
+            same = (lambda key: isinstance(key, tuple) and key[:2] == choice[:2]) if isinstance(choice, tuple) \
+                else (lambda key: key == choice)
+            return options, next((i for i, o in enumerate(options) if same(o[0])), 0)
+
+        # Done once the menu has closed, not under it: the sidebar redrawn (its mapped marker) and the rows refreshed
+        # (Manage recommended rows changed them)
+        after = {'sidebar': False, 'rows': False}
+
+        def onChoice(choice):
+            """What opens something of its own opens it over the menu, as the add-on's Settings does, and Back
+            comes back to it: Manage recommended rows and a folder's mapping. Empty Trash's confirm too, whose Yes
+            empties it and closes the menu. The rest close the menu and run below."""
+            if isinstance(choice, tuple) and choice[0] == 'map':
+                _map, path, is_mapped = choice
+                if is_mapped:
+                    source, target = section.getMappedPath(path)
+                    section.deleteMapping(target)
+                else:
+                    d = xbmcgui.Dialog().browse(0, T(33031, "Select Kodi source for {}").format(path), "files")
+                    if not d:
+                        return backToMenu(choice)
+                    section.addMapping(d, path)
+                after['sidebar'] = True
+                return backToMenu(choice)
+            if choice == 'manage_hubs':
+                self.showHubSettingsDialog(section)
+                after['rows'] = after['rows'] or self._hubsSettingsChanged
+                return backToMenu(choice)
+            if choice == 'emptyTrash':
+                button = optionsdialog.show(
+                    T(33083, 'Empty Trash'),
+                    section.title,
+                    optionsdialog.destructive(T(32328, 'Yes')),
+                    T(32329, 'No'),
+                    dialog_props=getattr(self, 'carriedProps', None)
+                )
+                if button != 0:
+                    return backToMenu(choice)
+                # Not reopened: Plex doesn't say when it's done
+                with busy.BusyContext(delay=True, delay_time=0.2):
+                    section.emptyTrash()
+                util.showNotification(T(35208, "Emptying trash: {}").format(section.title))
+            return None
+
+        options = menuOptions()
         if not options:
             return
 
-        # hold_dim: Manage recommended rows and Empty Trash's confirm open as it closes
         choice = showOptionsDialog(heading, options, non_playback=True, menu=True, beside_sidebar=True,
-                                   hold_dim=True, dialog_props=getattr(self, 'carriedProps', None))
-        if not choice:
-            return
+                                   on_choice=onChoice, cls=SidebarMenuDialog,
+                                   dialog_props=getattr(self, 'carriedProps', None))
 
-        if isinstance(choice, tuple) and choice[0] == "map":
-            _map, path, is_mapped = choice
-            # The sidebar row's mapped marker is all that shows it: the sidebar rebuilt, not the screen reopened
-            if is_mapped:
-                # show deletion
-                source, target = section.getMappedPath(path)
-                section.deleteMapping(target)
-            else:
-                # show fb - select loc to map
-                d = xbmcgui.Dialog().browse(0, T(33031, "Select Kodi source for {}").format(path), "files")
-                if not d:
-                    return
-                section.addMapping(d, path)
+        if after['sidebar']:
             self._rebuildSidebar()
-            return
-        elif choice == "refresh":
+        if after['rows'] and self.section is not None \
+                and section_ids.hubSettingsId(section) == section_ids.hubSettingsId(self.section):
+            # The library managed is the one showing: its rows refreshed in place. Nothing for another: a library's
+            # row settings shape only its own rows, and they're fetched afresh whenever they're shown (Back to it,
+            # its Recommended tab, the sidebar), as they are here when an in-place refresh isn't wanted
+            # (refreshHubsInPlace(): the grid showing, a screen over it, a video playing).
+            self.refreshHubsInPlace('hub settings')
+
+        if choice == "refresh":
             # Plex scans in the background and answers at once: the screen isn't reopened (it was - before
             # the scan had found anything, and whichever library was showing). The rows are refreshed in place
             # once the scan's done (_watchScan()).
@@ -3495,20 +3542,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 section.refresh()
             util.showNotification(T(35207, "Scanning {}").format(section.title))
             self._watchScan(section, before)
-            return
-        elif choice == "emptyTrash":
-            button = optionsdialog.show(
-                T(33083, 'Empty Trash'),
-                section.title,
-                optionsdialog.destructive(T(32328, 'Yes')),
-                T(32329, 'No'),
-                dialog_props=getattr(self, 'carriedProps', None)
-            )
-            if button == 0:
-                # Not reopened either: Plex doesn't say when it's done
-                with busy.BusyContext(delay=True, delay_time=0.2):
-                    section.emptyTrash()
-                util.showNotification(T(35208, "Emptying trash: {}").format(section.title))
             return
         elif choice == "analyze":
             with busy.BusyContext(delay=True, delay_time=0.2):
@@ -3527,18 +3560,6 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
                 section.clearCache()
             except Exception as e:
                 util.DEBUG_LOG("Couldn't clear library cache: {}", e)
-
-        elif choice == "manage_hubs":
-            self.showHubSettingsDialog(section)
-            # Something changed (or the dialog found rows the screen doesn't show): the section's
-            # rows refreshed in place if it's the one showing, else reopened via the caller's
-            # serverRefresh(section=...) handoff, as before.
-            if self._hubsSettingsChanged:
-                if (section_ids.hubSettingsId(section) == section_ids.hubSettingsId(self.section)
-                        and self.refreshHubsInPlace('hub settings')):
-                    return
-                return self.section
-            return
 
     # A scan watched for this long at most (_watchScan()), asked about this often
     SCAN_WATCH_SECONDS = 600

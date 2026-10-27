@@ -6,7 +6,7 @@
      action is done (kodigui.holdDialogDim()); hidden while one of those dialogs shows its own, so the two never
      stack. A global property, as nav_hidden: the dialogs above this window are what's visible. -->
 <control type="image">
-    <visible>!String.IsEmpty(Window(10000).Property(script.plex.dialog_dim)) + !Window.IsVisible(script-plex-video_settings_dialog.xml) + !Window.IsVisible(script-plex-settings_select_dialog.xml) + !Window.IsVisible(script-plex-options_dialog.xml) + !Window.IsVisible(script-plex-card_list.xml) + !Window.IsVisible(script-plex-user_menu.xml)</visible>
+    <visible>!String.IsEmpty(Window(10000).Property(script.plex.dialog_dim)) + !Window.IsVisible(script-plex-video_settings_dialog.xml) + !Window.IsVisible(script-plex-settings_select_dialog.xml) + !Window.IsVisible(script-plex-options_dialog.xml) + !Window.IsVisible(script-plex-card_list.xml) + !Window.IsVisible(script-plex-user_menu.xml) + !Window.IsVisible(script-plex-sidebar_menu.xml) + !Window.IsVisible(script-plex-settings_picker.xml)</visible>
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>

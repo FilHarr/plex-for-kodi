@@ -223,6 +223,13 @@ class SelectDialog(kodigui.BaseDialog, util.CronReceiver):
         self.getControl(self.FRAME_GROUP_ID).setPosition(self.FRAME_X, util.vscalei(self.FRAME_TOP) + header)
 
 
+class SidebarMenuDialog(SelectDialog):
+    """A sidebar section's menu (LibraryWindow.sectionMenu()): the option picker beside the sidebar, without the
+    zorder that keeps the others above the video player's OSD, so what its rows open over it opens on top
+    (script-plex-sidebar_menu.xml.tpl)."""
+    xmlFile = 'script-plex-sidebar_menu.xml'
+
+
 class UserMenuDialog(SelectDialog):
     """
     The sidebar's user menu (script-plex-user_menu.xml.tpl): the picker's cards in a frame of their own, with no
@@ -247,6 +254,12 @@ class UserMenuDialog(SelectDialog):
 
 # Pickers open now (showOptionsDialog() blocks while one is): one opened while another is, is over it
 _openPickers = [0]
+
+
+def pickerOpen():
+    """Whether a picker is open now: a dialog opened over it (a sidebar menu's Empty Trash confirm or Manage
+    recommended rows) is nested, the picker's dim already behind it (option_card_frame.xml.tpl)."""
+    return _openPickers[0] > 0
 
 
 def showOptionsDialog(heading, options, non_playback=False, selected_idx=None, trim=True, on_choice=None,

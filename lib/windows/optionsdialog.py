@@ -62,6 +62,7 @@ class OptionsDialog(kodigui.BaseDialog):
     MESSAGE_ID = 300
 
     DEFAULT_ID = 1001
+
     # The frame, in the template's skin pixels: 640 wide; the heading's 66; the message's lines of font10 (Inter at 23:
     # a 27.8 cell, which Kodi's textbox steps by) - up to 12, then it scrolls; 20; the answers' 55; 20.
     FRAME_WIDTH = 640
@@ -111,6 +112,10 @@ class OptionsDialog(kodigui.BaseDialog):
         self.delayButtons = kwargs.get('delay_buttons', False)
         self.closeTimeout = kwargs.get('close_timeout', None)
         self._close_timer = None
+        # Over an open picker its dim is already behind this: none of its own, set before it's shown (dialog.pickerOpen())
+        from .dialog import pickerOpen
+        if pickerOpen():
+            self.setProperty('nested', '1')
 
     def onFirstInit(self):
         self.setProperty('header', self.header)

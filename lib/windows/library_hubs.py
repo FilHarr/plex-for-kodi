@@ -1710,8 +1710,8 @@ class HubsMixin(object):
         elif action == xbmcgui.ACTION_CONTEXT_MENU:
             # Hub-item context menu - ported from HomeWindow's identical routing
             # (home.py's onAction(), `elif action == xbmcgui.ACTION_CONTEXT_MENU:`
-            # inside its own `elif 399 < controlID < 500:` branch). Same return-value
-            # -> serverRefresh() handoff as sectionMenu()'s trigger in the host's routeAction().
+            # inside its own `elif 399 < controlID < 500:` branch), with its return-value
+            # -> serverRefresh() handoff.
             show_section = self.hubMenu(controlID)
             if not show_section:
                 return True
@@ -2026,7 +2026,7 @@ class HubsMixin(object):
         """Context menu (ACTION_CONTEXT_MENU) for whichever item is focused in a hub row - ported
         from HomeWindow.hubMenu() (home.py), adapted to this window's own state. Triggered from
         hubAction() on a hub row (399 < controlID < 500), which owns the return-value ->
-        serverRefresh() handoff, same shape as sectionMenu()'s own trigger.
+        serverRefresh() handoff.
 
         Two adaptations from the original, both deliberate scope-narrowing rather than a straight
         port:

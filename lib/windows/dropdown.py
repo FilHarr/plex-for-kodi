@@ -579,6 +579,10 @@ class CardListDialog(DropdownHeaderDialog):
         self.optionHeight = util.vscalei(rowHeight)
         # before it's shown, so the other list never shows
         self.setProperty('tall', tall and '1' or '')
+        # Over an open picker (a sidebar menu's Manage recommended rows) its dim is already behind this: none of its own
+        from .dialog import pickerOpen
+        if pickerOpen():
+            self.setProperty('nested', '1')
 
     @property
     def y(self):

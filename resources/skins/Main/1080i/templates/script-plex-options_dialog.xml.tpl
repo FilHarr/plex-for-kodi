@@ -12,6 +12,8 @@
      Centred on the screen. OptionsDialog.fitFrame() sizes the message to its lines and the panel round it,
      and centres it; the sizes here are only a start (a one-line message). -->
 <control type="image">
+    <!-- none over an open picker, whose dim is already behind this (nested: dialog.pickerOpen()) -->
+    <visible>String.IsEmpty(Window.Property(nested))</visible>
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>

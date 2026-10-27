@@ -23,8 +23,10 @@
     <texturefocus>-</texturefocus>
     <texturenofocus>-</texturenofocus>
 </control>
-<!-- The full-screen dim behind it: 30% black, the settings and pickers' (option_card_frame.xml.tpl) -->
+<!-- The full-screen dim behind it: 30% black, the settings and pickers' (option_card_frame.xml.tpl). None over an
+     open picker, whose dim is already behind this (nested: dialog.pickerOpen()) -->
 <control type="image">
+    <visible>String.IsEmpty(Window.Property(nested))</visible>
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
