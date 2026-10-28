@@ -33,7 +33,7 @@ from kodi_six import xbmcgui
 from kodienv import ENV
 
 ENV.abort_requested = True
-from lib.windows import collection, library, library_hubs  # noqa: E402
+from lib.windows import collection, library, library_grid, library_hubs  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
 
@@ -1533,18 +1533,63 @@ class GridBackTest(KodiTestCase):
 
     class Host(object):
         POSTERS_PANEL_ID = 101
+        selectFirstItem = library.LibraryWindow.selectFirstItem
 
-        def __init__(self, focus_id, panel):
+        def __init__(self, focus_id, panel, section_type='movie'):
             self.focus_id = focus_id
             self.showPanelControl = panel
+            self.section = type('S', (), {'TYPE': section_type})()
+            self.requested = []
 
         def getFocusId(self):
             return self.focus_id
+
+        def requestChunk(self, start, then=None):
+            self.requested.append(start)
 
     def test_a_scrolled_grid_snaps_to_the_first_item(self):
         panel = self.Panel(37)
         self.assertTrue(gridBack(self.Host(self.POSTERS_PANEL_ID, panel)))
         self.assertEqual([0], panel.selected)
+
+    def test_the_first_items_chunk_is_asked_for(self):
+        """After a Back into a later chunk the first isn't fetched (_fillShows()), and selectItem()
+        is no move to fetch it (the user, 2026-10-28)."""
+        host = self.Host(self.POSTERS_PANEL_ID, self.Panel(300))
+        gridBack(host)
+        self.assertEqual([0], host.requested)
+
+    def test_a_sort_refills_through_fill(self):
+        """fill(), which picks fillPhotos() for Photos: through fillShows() a sorted Photos grid came
+        back built the other way (the user, 2026-10-28)."""
+        class Grid(object):
+            sortShowPanel = library.LibraryWindow.sortShowPanel
+
+            def __init__(self):
+                self.filled = []
+
+            def fill(self, keep_focus=False):
+                self.filled.append(keep_focus)
+
+            def fillShows(self, keep_focus=False):
+                raise AssertionError('fillShows() directly')
+
+        grid = Grid()
+        grid.sortShowPanel('titleSort', True, keep_focus=True)
+        self.assertEqual([True], grid.filled)
+
+    def test_a_photo_grid_asks_for_no_chunk(self):
+        """fillPhotos() fetches the photos whole and marks it (finalChunkPosition -1): a move's
+        request used to fetch them again and write them over the tiles (the user, 2026-10-28)."""
+        class Grid(object):
+            requestChunk = library.LibraryWindow.requestChunk
+            CHUNK_SIZE = library.LibraryWindow.CHUNK_SIZE
+            section = type('S', (), {'TYPE': 'photo'})()
+            finalChunkPosition = -1
+            alreadyFetchedChunkList = set()
+
+        Grid().requestChunk(1)
+        self.assertEqual(set(), Grid.alreadyFetchedChunkList)
 
     def test_on_the_first_item_back_goes_on(self):
         panel = self.Panel(0)
@@ -2241,15 +2286,89 @@ class ChunkCallbackStopsMidChunkTest(KodiTestCase):
         def setBoolProperty(self, *a):
             pass
 
+        def _setFilling(self, filling):
+            pass
+
+    class Panel(list):
+        selected = 0
+
+        def getSelectedPos(self):
+            return self.selected
+
     def test_a_swap_during_a_chunk_stops_the_rest(self):
         host = self.Host()
         first = self.Item(onWrite=lambda: host._retireListItems())
         second = self.Item()
-        host.showPanelControl = [first, second]
+        host.showPanelControl = self.Panel([first, second])
         host.itemType = 'album'
         host._chunkCallback([self.Album(), self.Album()], 0, generation=1)
         self.assertTrue(first.written)
         self.assertFalse(second.written, 'written after the list was retired')
+
+
+class ChunkWriteOrderTest(KodiTestCase):
+    """A chunk is written outward from the focused item (library_grid._writeOrder()), so a grid
+    Back restored deep into a chunk gets the tiles around it first, not after the rest of the
+    chunk (the user's AM6B log, 2026-10-27: 2.5-3.8 s to write a whole chunk)."""
+
+    def test_outward_from_the_anchor_after_before_alternating(self):
+        self.assertEqual([3, 4, 2, 5, 1, 0], library_grid._writeOrder(6, 3))
+
+    def test_the_first_item_anchor_is_plain_order(self):
+        self.assertEqual(list(range(5)), library_grid._writeOrder(5, 0))
+
+    def test_the_last_item_anchor_writes_backwards(self):
+        self.assertEqual([4, 3, 2, 1, 0], library_grid._writeOrder(5, 4))
+
+    def _host(self, panelSize, selected):
+        test = ChunkCallbackStopsMidChunkTest
+        host = test.Host()
+        written = []
+        panel = test.Panel()
+        for x in range(panelSize):
+            panel.append(test.Item(onWrite=lambda x=x: written.append(x)))
+        panel.selected = selected
+        host.showPanelControl = panel
+        host.itemType = 'album'
+        return host, written
+
+    def test_the_focused_item_in_the_chunk_is_written_first(self):
+        host, written = self._host(10, 7)
+        host._chunkCallback([ChunkCallbackStopsMidChunkTest.Album() for _ in range(5)], 5, generation=1)
+        self.assertEqual([7, 8, 6, 9, 5], written)
+
+    def _thenHost(self, onWrite=None):
+        test = ChunkCallbackStopsMidChunkTest
+
+        class Host(test.Host):
+            _chunkCallbackFor = library.LibraryWindow._chunkCallbackFor
+
+        host = Host()
+        panel = test.Panel([test.Item(onWrite=onWrite and (lambda: onWrite(host))), test.Item()])
+        host.showPanelControl = panel
+        host.itemType = 'album'
+        return host, panel
+
+    def test_a_restored_chunks_follow_up_runs_once_it_is_written(self):
+        """_fillShows(): the chunk above a restored position is asked for after the restored one
+        is written, not alongside it."""
+        ran = []
+        host, panel = self._thenHost()
+        callback = host._chunkCallbackFor(1, then=lambda: ran.append([i.written for i in panel]))
+        callback([ChunkCallbackStopsMidChunkTest.Album(), ChunkCallbackStopsMidChunkTest.Album()], 0)
+        self.assertEqual([[True, True]], ran)
+
+    def test_no_follow_up_once_the_list_has_moved_on(self):
+        ran = []
+        host, panel = self._thenHost(onWrite=lambda h: h._retireListItems())
+        callback = host._chunkCallbackFor(1, then=lambda: ran.append(True))
+        callback([ChunkCallbackStopsMidChunkTest.Album(), ChunkCallbackStopsMidChunkTest.Album()], 0)
+        self.assertEqual([], ran)
+
+    def test_a_chunk_before_the_focus_is_written_from_its_end(self):
+        host, written = self._host(10, 8)
+        host._chunkCallback([ChunkCallbackStopsMidChunkTest.Album() for _ in range(5)], 0, generation=1)
+        self.assertEqual([4, 3, 2, 1, 0], written)
 
 
 class SearchDestinationTest(KodiTestCase):
@@ -2488,7 +2607,7 @@ class ThemeMusicStopTest(KodiTestCase):
 
 class RestoreIndexTest(KodiTestCase):
     """Back to a library grid left below its first row: the grid templates take the header,
-    filter row and grid past the first row from restore.index, the position Back returns to, set
+    filter row and grid past the first row from restore.item, the position Back returns to, set
     on the new view before it shows (LibraryWindow._setRestoreIndex()) and cleared with
     content.filling once the fill ends (GridMixin._setFilling()). The focused tile isn't selected
     until the fill has its items, and content.filling held them at the top meanwhile."""
@@ -2499,9 +2618,10 @@ class RestoreIndexTest(KodiTestCase):
             library.LibraryWindow._setRestoreIndex(host, 42)
             library.LibraryWindow._setRestoreIndex(host, 0)
             library.LibraryWindow._setRestoreIndex(host, None)
-        self.assertEqual([mock.call(host._current, 'restore.index', '42'),
-                          mock.call(host._current, 'restore.index', ''),
-                          mock.call(host._current, 'restore.index', '')], setProperty.call_args_list)
+        # counted from 1, as Container(101).CurrentItem, which the templates compare it with
+        self.assertEqual([mock.call(host._current, 'restore.item', '43'),
+                          mock.call(host._current, 'restore.item', ''),
+                          mock.call(host._current, 'restore.item', '')], setProperty.call_args_list)
 
     def test_the_sections_own_view_gets_the_position_back_returns_to(self):
         host = FakeHostWindow()
@@ -2529,14 +2649,14 @@ class RestoreIndexTest(KodiTestCase):
             self.boolProperties.append((key, value))
 
         def restoreIndex(self):
-            return [v for k, v in self._current.setPropertyCalls if k == 'restore.index']
+            return [v for k, v in self._current.setPropertyCalls if k == 'restore.item']
 
     def test_a_fill_starts_with_its_restore_position_and_ends_without_it(self):
         host = self.FillHost(pos=42)
         host._setFilling(True)
         host._setFilling(False)
         self.assertEqual([('content.filling', True), ('content.filling', False)], host.boolProperties)
-        self.assertEqual(['42', ''], host.restoreIndex())
+        self.assertEqual(['43', ''], host.restoreIndex())
 
     def test_a_fill_with_nothing_to_restore_clears_it(self):
         host = self.FillHost(pos=None)

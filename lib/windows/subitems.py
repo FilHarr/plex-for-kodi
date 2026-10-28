@@ -1470,6 +1470,9 @@ class ArtistWindow(ShowWindow):
     @busy.dialog()
     def fill(self):
         self.mediaItem.reload(includeRelated=1, includeRelatedCount=20, includePopularLeaves=1)
+        # Again, from the full artist: one from the Music grid comes without its biography
+        # (plexlibrary.gridListingParams()), so updateProperties() had none to show.
+        self.setProperty('summary', util.summaryForBox(self.mediaItem.summary))
         self.setProperty('artist.title', self.mediaItem.title)
         genres = u' / '.join([g.tag for g in util.removeDups(self.mediaItem.genres())][:6])
         self.setProperty('artist.genre', genres)

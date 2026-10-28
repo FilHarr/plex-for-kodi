@@ -1,10 +1,10 @@
 {% extends "library_posters.xml.tpl" %}
-{% block header_animation %}<animation effect="slide" end="0,{{ vscale(-125) }}" time="200" tween="quadratic" easing="out" condition="[[Integer.IsGreater(Container(101).ListItem.Property(index),9) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),9)] + !ControlGroup(200).HasFocus(0)">Conditional</animation>{% endblock %}
-{% block hide_filter_from_index %}9{% endblock %}
+{% block header_animation %}<animation effect="slide" end="0,{{ vscale(-125) }}" time="200" tween="quadratic" easing="out" condition="[[Integer.IsGreater(Container(101).CurrentItem,10) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.item),10)] + !ControlGroup(200).HasFocus(0)">Conditional</animation>{% endblock %}
+{% block hide_filter_after_item %}10{% endblock %}
 {% block header_bg %}
 <control type="image">
     <animation effect="fade" start="0" end="100" time="200" tween="quadratic" easing="out" reversible="true">VisibleChange</animation>
-    <visible>ControlGroup(200).HasFocus(0) + Integer.IsGreater(Container(101).ListItem.Property(index),9)</visible>
+    <visible>ControlGroup(200).HasFocus(0) + Integer.IsGreater(Container(101).CurrentItem,10)</visible>
     <posx>0</posx>
     <posy>0</posy>
     <width>1920</width>
@@ -15,7 +15,7 @@
 {% endblock %}
 {% block content %}
 <control type="group" id="50">
-    <animation effect="slide" time="200" end="0,-224" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),9) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),9)">Conditional</animation>
+    <animation effect="slide" time="200" end="0,-224" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).CurrentItem,10) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.item),10)">Conditional</animation>
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
     <posx>60</posx>
     <posy>{{ vscale(125) }}</posy>
@@ -35,8 +35,8 @@
             <posy>0</posy>
             <width>1800</width>
             <height>1198</height>
-            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),5)">600</onup>
-            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),10) + Integer.IsGreaterOrEqual(Container(101).ListItem.Property(index),5)">300</onup>
+            <onup condition="Integer.IsLessOrEqual(Container(101).CurrentItem,5)">600</onup>
+            <onup condition="Integer.IsLessOrEqual(Container(101).CurrentItem,10) + Integer.IsGreater(Container(101).CurrentItem,5)">300</onup>
             <onleft>9000</onleft>
             <!-- Right off the grid lands on whichever of the two is actually there to take it:
                  the scrubber for alphabetical orderings, the scrollbar otherwise. A single
@@ -328,7 +328,7 @@
          posy=132.5, so the delta needed to land its bottom edge (posy+height) at 0 is
          -(132.5+145)=-277.5) - same condition group 50 uses for its own header-hide slide, so
          this moves in lockstep with the grid rather than on its own timing. -->
-    <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),9) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),9)">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).CurrentItem,10) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.item),10)">Conditional</animation>
     <defaultcontrol>301</defaultcontrol>
     <!-- 164, not the old 120: moves the whole row left so the view button's new label-pill
          (overlay 3310 below) ends flush with the grid's own right edge when focused, instead of
@@ -423,7 +423,7 @@
          End position centers the scrubber's full 27-key extent (26 letters + '#', 34px each =
          918) in the 1080-tall screen: (1080-918)/2 = 81 top margin, a 150-81=69px move up from
          the resting posy. -->
-    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),9) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),9)">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).CurrentItem,10) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.item),10)">Conditional</animation>
     <posx>1836</posx>
     <posy>{{ vscale(150) }}</posy>
     <width>20</width>
@@ -433,11 +433,11 @@
         <posy>0</posy>
         <width>34</width>
         <height>1050</height>
-        <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),9) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
+        <onleft condition="Integer.IsGreater(Container(101).CurrentItem,10) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
         <!-- 331 (View), not 300: entering the button row from the right has to land on its
              RIGHTMOST button rather than restoring the row's own remembered child - see
              script-plex-posters.xml.tpl's own copy of this control for the full reasoning. -->
-        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),9) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">331</onleft>
+        <onleft condition="!Integer.IsGreater(Container(101).CurrentItem,10) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">331</onleft>
         <onright>152</onright>
         <scrolltime>200</scrolltime>
         <orientation>vertical</orientation>
@@ -460,7 +460,7 @@
     <!-- Slide, not the old zoom-to-fill-the-screen: matches the scrubber's own move (group 150,
          same -69) instead of growing this control's own height into the vacated header space.
          Now that the two show together they have to move together, or they separate on scroll. -->
-    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),9) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),9)">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).CurrentItem,10) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.item),10)">Conditional</animation>
     {% include "includes/scrollbar_style.xml.tpl" %}
     <!-- Back to the scrubber when it's also showing (alpha orderings); straight to the grid/
          filter-row otherwise, mirroring the scrubber's own two-tier index routing (100 once the
@@ -468,7 +468,7 @@
          scrubber itself isn't in the chain to make that hop for us then. A single unconditional
          onleft to 151 sent focus into a hidden scrubber for every non-alphabetical sort. -->
     <onleft condition="!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">151</onleft>
-    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).ListItem.Property(index),9)">100</onleft>
-    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),9)">331</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).CurrentItem,10)">100</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).CurrentItem,10)">331</onleft>
 </control>
 {% endblock content %}

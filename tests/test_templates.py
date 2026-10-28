@@ -370,12 +370,17 @@ class ClearLogoTest(KodiTestCase):
 
 class GridRestoreIndexTest(KodiTestCase):
     """Back to a library grid left below its first row: the header, the filter row and the grid's
-    own slides read restore.index (LibraryWindow._setRestoreIndex(), set before the view shows) as
+    own slides read restore.item (LibraryWindow._setRestoreIndex(), set before the view shows) as
     well as the focused tile, which isn't selected until the fill has its items - content.filling
-    held them at the top meanwhile, so they showed and then slid away."""
+    held them at the top meanwhile, so they showed and then slid away. Both counted from 1: the
+    focused tile is Container(101).CurrentItem, not an index property every placeholder had to
+    carry (2026-10-28: one property write each cost Episodes 4.3 s on the AM6B)."""
 
     WINDOWS = ("posters", "posters-small", "squares", "ar16x9")
-    ROW_END_RE = re.compile(r"Container\(101\)\.ListItem\.Property\(index\),(\d+)\)")
+    ROW_END_RE = re.compile(r"Container\(101\)\.CurrentItem,(\d+)\)")
+    # each view's tiles to a row, and the column its up-press splits at (filter row / tabs)
+    ROW_SIZES = {"posters": 6, "posters-small": 10, "squares": 6, "ar16x9": 3}
+    UP_SPLITS = {"posters": 3, "posters-small": 5, "squares": 3, "ar16x9": 2}
 
     def setUp(self):
         super(GridRestoreIndexTest, self).setUp()
@@ -390,7 +395,7 @@ class GridRestoreIndexTest(KodiTestCase):
                 self.assertTrue(conditions)
                 for condition in conditions:
                     rowEnd = self.ROW_END_RE.search(condition).group(1)
-                    self.assertIn("Integer.IsGreater(Window.Property(restore.index),{0})".format(rowEnd),
+                    self.assertIn("Integer.IsGreater(Window.Property(restore.item),{0})".format(rowEnd),
                                   condition)
 
     def test_the_filter_row_starts_hidden_past_the_first_row(self):
@@ -402,4 +407,23 @@ class GridRestoreIndexTest(KodiTestCase):
                 self.assertEqual(1, len(filterRow))
                 visible = " + ".join(v.text or "" for v in filterRow[0].findall("visible"))
                 rowEnd = self.ROW_END_RE.search(visible).group(1)
-                self.assertIn("!Integer.IsGreater(Window.Property(restore.index),{0})".format(rowEnd), visible)
+                self.assertIn("!Integer.IsGreater(Window.Property(restore.item),{0})".format(rowEnd), visible)
+
+    def test_every_position_condition_is_on_a_row_boundary(self):
+        """Every comparison with the focused tile or the restore position sits at the view's row
+        size or its up-press split: a +1 missed or doubled in the move from the 0-based index to
+        the 1-based CurrentItem shows here, not as an up or left press going astray on one tile."""
+        position = re.compile(r"Integer\.Is\w+\((?:Container\(101\)\.CurrentItem|Window\.Property\(restore\.item\)),"
+                              r"(\d+)\)")
+        restore = re.compile(r"Window\.Property\(restore\.item\),(\d+)\)")
+        for window in self.WINDOWS:
+            text = self.rendered[window]
+            rowSize = str(self.ROW_SIZES[window])
+            with self.subTest(window=window):
+                self.assertNotIn("Container(101).ListItem.Property(index)", text)
+                self.assertNotIn("restore.index", text)
+                found = set(position.findall(text))
+                self.assertTrue(found)
+                self.assertEqual(set(), found - {rowSize, str(self.UP_SPLITS[window])})
+                # the restore position is only ever compared with the end of the first row
+                self.assertEqual({rowSize}, set(restore.findall(text)))

@@ -3,6 +3,7 @@ from __future__ import absolute_import
 
 
 from kodi_six import xbmcgui
+from plexnet import plexlibrary
 
 from lib import util
 from lib.util import T
@@ -92,7 +93,9 @@ class BoundedGridPaginator(pagination.MCLPaginator):
 
 class CollectionPaginator(BoundedGridPaginator):
     def getData(self, offset, amount):
-        items = self.parentWindow.collection.all(offset, amount)
+        # without what its tiles don't read, by what it holds (plexlibrary.gridListingParams())
+        coll = self.parentWindow.collection
+        items = coll.all(offset, amount, params=plexlibrary.gridListingParams(coll.memberType()))
         # a collection can hold episodes: their panels in their season's colours (panel_colors.py);
         # albums in their covers', after (one request each)
         panel_colors.warm(items)

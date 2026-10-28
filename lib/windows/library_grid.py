@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import bisect
 import os
 import random
 import time
@@ -291,12 +292,23 @@ def getQueryItemType(section, item_type, fallback_to_section_type=False, force_i
 CHUNK_SCREENFUL = 30
 
 
+def _writeOrder(count, anchor):
+    """A chunk's offsets 0..count-1 in the order _chunkCallback() writes them: nearest the anchor
+    first - the anchor, the one after, the one before, and so on outward. Each write can wait
+    seconds' worth on the AM6B (about 12 ms an item, 2.5-3.8 s for a full chunk, the user's log
+    2026-10-27), so writing in order left a grid restored deep into a chunk on placeholders until
+    nearly all of it was done."""
+    return sorted(range(count), key=lambda o: (abs(o - anchor), o < anchor))
+
+
 class ChunkRequestTask(backgroundthread.Task):
     def setup(self, section, start, size, callback, filter_=None, sort=None, subDir=False, bool_filters=None,
-              item_type=None):
+              item_type=None, params=None):
         self.section = section
         # Passed in, not read from the window: this runs on a worker (3e in the navigation review).
         self.itemType = item_type
+        # what the tiles don't read, left out (GridMixin._listingParams())
+        self.params = params
         self.start = start
         self.size = size
         self.callback = callback
@@ -322,8 +334,9 @@ class ChunkRequestTask(backgroundthread.Task):
                 # supplying this type kills all results (bug: 2025/10/21)
                 if type_ == plexobjects.SEARCHTYPES["photo"]:
                     type_ = None
+                extra = {'params': self.params} if self.params else {}
                 items = self.section.all(self.start, self.size, self.filter, self.sort, type_=type_,
-                                         bool_filters=self.bool_filters)
+                                         bool_filters=self.bool_filters, **extra)
 
             if self.isCanceled():
                 return
@@ -404,10 +417,10 @@ class GridMixin(object):
 
             # Asks for the focus only when there's something to write, so a press within one
             # letter makes no GUI call here.
-            if mli is not None and self._keyUpdateDue(mli):
+            if mli is not None and self._keyUpdateDue(mli, pos):
                 controlID = self.getFocusId()
                 if controlID == self.POSTERS_PANEL_ID or controlID == self.SCROLLBAR_ID:
-                    self.updateKey(mli)
+                    self.updateKey(mli, pos)
             timing.mark('key')
         elif action == xbmcgui.ACTION_CONTEXT_MENU:
             # The focused item's menu (itemOptions()), from the grid only; anywhere else, or on an item without one,
@@ -426,8 +439,8 @@ class GridMixin(object):
         elif action == xbmcgui.ACTION_NAV_BACK:
             if not xbmc.getCondVisibility('ControlGroup({0}).HasFocus(0)'.format(self.OPTIONS_GROUP_ID)) and \
                     not util.addonSettings.fastBack:
-                if xbmc.getCondVisibility('Integer.IsGreater(Container(101).ListItem.Property(index),5)'):
-                    self.showPanelControl.selectItem(0)
+                if xbmc.getCondVisibility('Integer.IsGreater(Container(101).CurrentItem,6)'):
+                    self.selectFirstItem()
                     return True
 
         if timing is not None:
@@ -482,9 +495,16 @@ class GridMixin(object):
             return False
         mli = self.showPanelControl.getSelectedItem() if self.showPanelControl else None
         if mli and mli.pos():
-            self.showPanelControl.selectItem(0)
+            self.selectFirstItem()
             return True
         return False
+
+    def selectFirstItem(self):
+        """The grid on its first item, with its chunk asked for: after a Back into a later chunk the
+        first isn't fetched until reached (_fillShows()), and selectItem() is no move, so it sat on
+        placeholders until the next one (the user, 2026-10-28). A no-op request when it's in."""
+        self.showPanelControl.selectItem(0)
+        self.requestChunk(0)
 
     def onItemChanged(self, mli):
         if not mli:
@@ -541,15 +561,40 @@ class GridMixin(object):
             itemmenu.run(self, mli, choice, entry_section_id=self.entrySectionId)
         return True
 
-    def _keyUpdateDue(self, mli):
+    def _keyAt(self, mli, pos=None):
+        """mli's letter. For a fill with a letter list (_fillShows()), from its position among the
+        letters' first positions - its placeholder carries no key property, a GUI call saved per
+        title. Otherwise the item's own key property (fillPhotos())."""
+        starts = getattr(self, '_keyStarts', None)
+        if not starts:
+            return mli.getProperty('key')
+        if pos is None:
+            pos = mli.pos()
+        if pos is None:
+            return ''
+        i = bisect.bisect_right(starts, pos) - 1
+        return self._keyNames[i] if i >= 0 else ''
+
+    def _showKeyAt(self, pos):
+        """The letter list on pos's letter: for a fill landing Back on a tile past the first letter,
+        which _fillShows() otherwise leaves on the first one until a move (the user, 2026-10-27)."""
+        key = self._keyAt(None, pos)
+        self._shownKey = key
+        util.setGlobalProperty('key', key)
+        li = self.keyItems.get(key)
+        if li:
+            self.keyListControl.selectItem(li.pos())
+
+    def _keyUpdateDue(self, mli, pos=None):
         """Whether updateKey() has anything to write for mli: its letter isn't the one showing, or
         it's a photo other than the last item, whose details onItemChanged() shows."""
-        if mli.getProperty('key') != self._shownKey:
+        if self._keyAt(mli, pos) != self._shownKey:
             return True
         return self.lastItem != mli and mli.dataSource is not None and mli.dataSource.TYPE == 'photo'
 
-    def updateKey(self, mli=None):
-        mli = mli or self.showPanelControl.getSelectedItem()
+    def updateKey(self, mli=None, pos=None):
+        if mli is None:
+            mli, pos = self.showPanelControl.getSelectedItemAndPos()
         if not mli:
             return
 
@@ -560,21 +605,21 @@ class GridMixin(object):
         # The key property and the letter list's selection only when the letter changes: two GUI
         # calls, each of which can wait a frame for Kodi's lock (step 12 in the navigation
         # review). _shownKey is cleared wherever something else may have moved either.
-        key = mli.getProperty('key')
+        key = self._keyAt(mli, pos)
         if key == self._shownKey:
             return
         self._shownKey = key
         util.setGlobalProperty('key', key)
 
-        self.selectKey(mli)
+        self.selectKey(mli, pos)
 
-    def selectKey(self, mli=None):
+    def selectKey(self, mli=None, pos=None):
         if not mli:
-            mli = self.showPanelControl.getSelectedItem()
+            mli, pos = self.showPanelControl.getSelectedItemAndPos()
             if not mli:
                 return
 
-        li = self.keyItems.get(mli.getProperty('key'))
+        li = self.keyItems.get(self._keyAt(mli, pos))
         if not li or not li.pos():
             return
         self.keyListControl.selectItem(li.pos())
@@ -1033,7 +1078,14 @@ class GridMixin(object):
         for task in self.tasks:
             if task.isValid():
                 task.cancel()
-                self.refill = True
+
+        # Always refilled, never repainted: onFirstInit()'s repaint path (newControl()) rewrote every
+        # item in full - label, label2, art, path and every property any item ever had, 10-14 Kodi calls
+        # each - before the tab row and buttons came back. At a 4K interface on the AM6B that's 0.2-0.7 ms
+        # a call: seconds for a Films grid, minutes for Episodes (the user, 2026-10-28). A fill is bare
+        # placeholders and the focused tiles' chunk.
+        self.refill = True
+        self._viewTypeSwap = True
 
         with self.lock:
             self.showPanelControl.invalidate()
@@ -1046,7 +1098,10 @@ class GridMixin(object):
 
     def sortShowPanel(self, choice, force_refresh=False, keep_focus=False):
         if force_refresh or self.showPanelControl.size() == 0:
-            self.fillShows(keep_focus=keep_focus)
+            # fill(), not fillShows(): a sorted Photos grid used to come back through the chunk
+            # path, without what fillPhotos() gives its tiles (folder marker, date, letter) - the
+            # same grid built two ways (the user, 2026-10-28).
+            self.fill(keep_focus=keep_focus)
             return
 
         # inline sorting is disabled; this code will never be reached
@@ -1480,10 +1535,13 @@ class GridMixin(object):
         self.backgroundSet = False
         # The fill writes the key property and rebuilds the letter list.
         self._shownKey = None
+        # Only _fillShows() keys by position (_keyAt()); photos carry their own key property.
+        self._keyStarts = []
+        self._keyNames = []
 
         if self.section.TYPE in ('photo', 'photodirectory'):
             self.fillPhotos()
-            # never sets content.filling, but its restore.index still has to go
+            # never sets content.filling, but its restore.item still has to go
             self._setFilling(False)
         elif self.section.TYPE == 'playlists':
             self.fillPlaylists(keep_focus=keep_focus)
@@ -1497,13 +1555,14 @@ class GridMixin(object):
 
     def _setFilling(self, filling):
         """content.filling, which holds the grid templates' header, filter row and grid at the
-        top while a fill runs, and restore.index (LibraryWindow._setRestoreIndex()), which takes
+        top while a fill runs, and restore.item (LibraryWindow._setRestoreIndex()), which takes
         them past the first row instead when the fill is landing back on a tile beyond it. Set from
         the fill's own restore position as it starts, for a refill in place too (back from Play on
-        the grid), and cleared with content.filling, once the tiles are there to read."""
+        the grid), and cleared with content.filling, once the tiles are there to read. Counted from
+        1, as Container(101).CurrentItem is."""
         self.setBoolProperty('content.filling', filling)
         pos = self._pendingRestoreItemPos if filling else None
-        self._current.setProperty('restore.index', str(pos) if pos else '')
+        self._current.setProperty('restore.item', str(pos + 1) if pos else '')
 
     def getFilterOpts(self):
         if not self.filter:
@@ -1516,6 +1575,16 @@ class GridMixin(object):
         if isinstance(self.filter['sub']['val'], six.string_types) and self.filter['sub']['val'].startswith("/"):
             return self.filter['type'], self.filter['sub']['val']
         return self.filter['type'], six.moves.urllib.parse.unquote_plus(self.filter['sub']['val'])
+
+    def _listingParams(self):
+        """What this grid's chunks leave out (plexlibrary.gridListingParams()): by the item type
+        shown, keeping the media for a sort whose caption reads it. None for the Watchlist
+        (plex.tv's) and folders."""
+        if self.section.TYPE in ('movies_shows', 'playlists') or self.itemType == 'folder' or self.subDir:
+            return None
+        caption = SORT_KEYS.get(self.section.TYPE, {}).get(self.sort, {}).get('subDisplay')
+        return plexlibrary.gridListingParams(self.itemType or self.section.TYPE,
+                                             keep_media=caption in ('resolutionString', 'mediaBitrate'))
 
     def getSortOpts(self):
         if not self.sort:
@@ -1608,20 +1677,15 @@ class GridMixin(object):
         return None
 
 
-    def _placeholderItems(self, start, count, key=None):
+    def _placeholderItems(self, start, count):
         """Empty grid items for positions start..start+count-1, which the chunk fetches fill in.
-        Three GUI calls each (the thumb fallback, index and, for a title sort, the letter key):
-        every Python ListItem call takes Kodi's GUI lock."""
-        fallback = self.thumb_fallback
-        items = []
-        for x in range(start, start + count):
-            mli = kodigui.ManagedListItem('')
-            mli.setProperty('thumb.fallback', fallback)
-            mli.setProperty('index', str(x))
-            if key:
-                mli.setProperty('key', key)
-            items.append(mli)
-        return items
+        Nothing written to them: a ListItem property write is what costs, 0.2-0.7 ms each on the
+        AM6B against next to nothing for the item itself (measured 2026-10-28) - 7141 Episodes
+        placeholders took 4.3 s with one each. No index: the templates read
+        Container(101).CurrentItem. No thumb fallback: the grid templates draw the same flat card
+        under every tile, and the fallback images are that card (644d31ae). No letter: _keyAt()
+        works it out from the position."""
+        return [kodigui.ManagedListItem('') for _ in range(count)]
 
     @property
     def thumb_fallback(self):
@@ -1654,6 +1718,9 @@ class GridMixin(object):
         jitems = []
         self.keyItems = {}
         self.firstOfKeyItems = {}
+        # each letter's first position, for _keyAt()
+        self._keyStarts = []
+        self._keyNames = []
         totalSize = 0
         self.alreadyFetchedChunkList = set()
         self.finalChunkPosition = 0
@@ -1725,9 +1792,11 @@ class GridMixin(object):
                 jitems.append(mli)
                 totalSize += ji_size
 
-                keyed = self._placeholderItems(idx, ji_size, key=ji.key)
+                keyed = self._placeholderItems(idx, ji_size)
                 if keyed:
                     self.firstOfKeyItems[ji.key] = keyed[0]
+                    self._keyStarts.append(idx)
+                    self._keyNames.append(ji.key)
                 placeholders += keyed
                 idx += ji_size
 
@@ -1773,14 +1842,18 @@ class GridMixin(object):
                 self._noteSectionEmpty(False)
                 placeholders = self._placeholderItems(0, totalSize)
 
+        # the placeholders step in three: building them, emptying the lists, handing them over
+        timing = self.__dict__.get('_gridTiming')
+        kodigui.markStep(timing, 'build')
+
         self.setProperty("items.count", str(totalSize))
 
         self.showPanelControl.reset()
         self.keyListControl.reset()
+        kodigui.markStep(timing, 'clear')
         self.showPanelControl.addItems(placeholders)
-        timing = self.__dict__.get('_gridTiming')
         if timing is not None:
-            timing.mark('placeholders')
+            timing.mark('add')
             timing.add('items', totalSize)
             timing.add('keys', len(jitems))
             # for the first chunk's own timing line (_chunkCallbackFor()): a grid open counts from
@@ -1796,19 +1869,28 @@ class GridMixin(object):
 
         restorePos = self._consumeRestoreItemPos(totalSize)
         self.showPanelControl.selectItem(restorePos)
+        if restorePos and self._keyStarts:
+            self._showKeyAt(restorePos)
         if not keep_focus:
             self.setFocusId(self.POSTERS_PANEL_ID)
 
         generation = self._listGeneration
+        # Back to a tile past the first chunk: that chunk first (requestChunk() below), and the
+        # first only once it's reached. Fetched alongside, whichever answered first was written
+        # first - the first chunk's 240 items took 3 s on the AM6B while the restored tiles waited
+        # (the user's log, 2026-10-27).
+        restoreChunk = (restorePos // self.CHUNK_SIZE) * self.CHUNK_SIZE
+        skipFirst = bool(restoreChunk) and not util.addonSettings.retrieveAllMediaUpFront
         tasks = []
         for startChunkPosition in range(0, totalSize, self.CHUNK_SIZE):
-            tasks.append(
-                ChunkRequestTask().setup(
-                    self.section, startChunkPosition, self.CHUNK_SIZE, self._chunkCallbackFor(generation),
-                    filter_=self.getFilterOpts(), sort=self.getSortOpts(), subDir=self.subDir, bool_filters=bool_filters,
-                    item_type=self.itemType
+            if not skipFirst:
+                tasks.append(
+                    ChunkRequestTask().setup(
+                        self.section, startChunkPosition, self.CHUNK_SIZE, self._chunkCallbackFor(generation),
+                        filter_=self.getFilterOpts(), sort=self.getSortOpts(), subDir=self.subDir,
+                        bool_filters=bool_filters, item_type=self.itemType, params=self._listingParams()
+                    )
                 )
-            )
 
             # If we're retrieving media as we navigate then we just want to request the first
             # chunk of media and stop.  We'll fetch the rest as the user navigates to those items
@@ -1816,7 +1898,8 @@ class GridMixin(object):
                 # Calculate the end chunk's starting position based on the totalSize of items
                 self.finalChunkPosition = (totalSize // self.CHUNK_SIZE) * self.CHUNK_SIZE
                 # Keep track of the chunks we've already fetched by storing the chunk's starting position
-                self.alreadyFetchedChunkList.add(startChunkPosition)
+                if not skipFirst:
+                    self.alreadyFetchedChunkList.add(startChunkPosition)
                 break
 
         self.tasks.add(tasks)
@@ -1825,19 +1908,24 @@ class GridMixin(object):
 
         if restorePos:
             # Real art/metadata only exists for whichever chunk(s) have actually been fetched -
-            # by default (retrieveAllMediaUpFront off) only chunk 0 is requested up front, above;
-            # real chunks are otherwise only ever requested by MOVE_SET arrow-key navigation
-            # (routeAction()) or keyClicked()'s identical jump-and-request pattern, which this
-            # mirrors. selectItem() above is a plain Python-side position set - it never generates
-            # that arrow-key navigation, so a restored position past chunk 0 would otherwise sit on
-            # fallback-thumb placeholders until the user nudges focus. Deliberately placed after
-            # the loop above, not alongside selectItem() - requestChunk() reads
-            # self.finalChunkPosition/self.alreadyFetchedChunkList, both only just set to their
-            # real values by that loop (still 0/empty, their __init__/top-of-method reset, before
-            # it runs). Requests the position's own chunk plus CHUNK_OVERCOMMIT ahead of it, same
-            # as keyClicked(), so the row(s) around it don't show blank/fallback art either.
+            # by default (retrieveAllMediaUpFront off) chunks are otherwise only ever requested by
+            # MOVE_SET arrow-key navigation (routeAction()) or keyClicked()'s identical
+            # jump-and-request pattern, which this mirrors. selectItem() above is a plain
+            # Python-side position set - it never generates that arrow-key navigation, so a
+            # restored position would otherwise sit on placeholders until the user nudges focus.
+            # Deliberately placed after the loop above, not alongside selectItem() -
+            # requestChunk() reads self.finalChunkPosition/self.alreadyFetchedChunkList, both only
+            # just set to their real values by that loop. Requests the position's own chunk plus
+            # CHUNK_OVERCOMMIT ahead of it, same as keyClicked(), so the row(s) around it don't
+            # show placeholders either.
+            # A position within a screenful of its chunk's start has the chunk before it in the
+            # rows above: that one once the restored chunk is written, not alongside it.
+            then = None
+            if skipFirst and restorePos - restoreChunk < CHUNK_SCREENFUL:
+                def then():
+                    self.requestChunk(restoreChunk - self.CHUNK_SIZE)
             chunkOC = getattr(self._current, "CHUNK_OVERCOMMIT", self.CHUNK_OVERCOMMIT)
-            self.requestChunk(restorePos)
+            self.requestChunk(restorePos, then=then)
             self.requestChunk(restorePos + chunkOC)
 
     def showPhotoItemProperties(self, photo):
@@ -1947,7 +2035,6 @@ class GridMixin(object):
         items = []
         for idx, pl in enumerate(playlists):
             mli = self.createPlaylistGridListItem(pl)
-            mli.setProperty('index', str(idx))
             items.append(mli)
 
         if not self.backgroundSet:
@@ -1968,6 +2055,10 @@ class GridMixin(object):
         items = []
         keys = []
         self.firstOfKeyItems = {}
+        # Fetched whole, so no chunk for requestChunk() to ask for: a move's request used to fetch
+        # 240 photos and write them over the tiles (the user's log, 2026-10-28). A sort change
+        # refills through _fillShows(), which sets its own.
+        self.finalChunkPosition = -1
         idx = 0
 
         if self.section.TYPE == 'photodirectory':
@@ -2004,7 +2095,6 @@ class GridMixin(object):
                 mli = kodigui.ManagedListItem(title, label2, thumbnailImage=thumb, data_source=photo)
 
             mli.setProperty('thumb.fallback', fallback)
-            mli.setProperty('index', str(idx))
 
             key = title[0].upper()
             if key not in KEYS:
@@ -2041,8 +2131,11 @@ class GridMixin(object):
         if keys:
             util.setGlobalProperty('key', keys[0])
 
-    def _chunkCallbackFor(self, generation):
-        """Wraps _chunkCallback() with the _listGeneration snapshot taken when the chunk fetch
+    def _chunkCallbackFor(self, generation, then=None):
+        """then: run once the chunk is written, while the list is still the one it was fetched for
+        (_fillShows()'s chunk above a restored position).
+
+        Wraps _chunkCallback() with the _listGeneration snapshot taken when the chunk fetch
         was scheduled, so a chunk that finishes after an openSection()/switchTab() in-place swap
         (bumps _listGeneration immediately, but self.tasks.kill() can't preempt a fetch that's
         already past its own isCanceled() check and mid-callback) gets recognized as stale and
@@ -2053,29 +2146,34 @@ class GridMixin(object):
         swap - this is the missing check for that case specifically.
         """
         def callback(items, start):
+            write(items, start)
+            if then is not None and generation == self._listGeneration and not self.closing:
+                then()
+
+        def write(items, start):
             firstChunk = self.__dict__.get('_firstChunkTiming')
             if not firstChunk or firstChunk[0] != generation:
                 self._chunkCallback(items, start, generation)
                 return
             self._firstChunkTiming = None
-            marks = self._firstChunkMarks = {}
+            # Handed to this chunk's own write only: on the window, the next chunk's write (page 0
+            # after a Back's restored page) wrote its background and anchor marks in too.
+            marks = {}
             started = time.time()
-            try:
-                self._chunkCallback(items, start, generation)
-            finally:
-                self._firstChunkMarks = None
+            self._chunkCallback(items, start, generation, marks=marks)
             requested = firstChunk[2]
 
             def since(key):
                 return int((marks[key] - started) * 1000) if key in marks else '-'
-            util.DEBUG_LOG("Library: first chunk ({0} items) bound in {1} ms (background {2}, first {3} items {4}),"
-                           " {5} ms after the placeholders, {6} ms after the request", len(items),
+            util.DEBUG_LOG("Library: first chunk ({0} items from {1}, written outward from {2}) bound in {3} ms"
+                           " (background {4}, nearest {5} items {6}), {7} ms after the placeholders,"
+                           " {8} ms after the request", len(items), start, marks.get('anchor', '-'),
                            int((time.time() - started) * 1000), since('background'), CHUNK_SCREENFUL,
                            since('screenful'), int((started - firstChunk[1]) * 1000),
                            int((time.time() - requested) * 1000) if requested else '?')
         return callback
 
-    def _chunkCallback(self, items, start, generation=None):
+    def _chunkCallback(self, items, start, generation=None, marks=None):
         if not self.showPanelControl or not items or self.closing:
             return
 
@@ -2086,12 +2184,15 @@ class GridMixin(object):
                                generation, self._listGeneration)
                 return
 
-            pos = start
-            self.setBackground(items, pos, randomize=not util.addonSettings.dynamicBackgrounds)
+            # Written outward from the focused item (_writeOrder()): the one Back restored, or one
+            # past this chunk's end nearest it - read once, so a scroll during the write isn't
+            # followed. A fresh grid's is 0, the order it always had.
+            anchor = min(max((self.showPanelControl.getSelectedPos() or 0) - start, 0), len(items) - 1)
+            self.setBackground(items, start, randomize=not util.addonSettings.dynamicBackgrounds)
             # the first chunk's timing line (_chunkCallbackFor())
-            marks = self.__dict__.get('_firstChunkMarks')
             if marks is not None:
                 marks['background'] = time.time()
+                marks['anchor'] = start + anchor
 
             wide = isOtherVideos(self.section)
             thumbDim = THUMB_AR16X9_DIM if wide else TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['thumb_dim']
@@ -2103,15 +2204,17 @@ class GridMixin(object):
             if not self.showPanelControl:
                 return
 
+            order = _writeOrder(len(items), anchor)
             if self.itemType == 'episode':
-                for offset, obj in enumerate(items):
+                for written, offset in enumerate(order):
                     if generation is not None and generation != self._listGeneration:
                         util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
                         return
+                    obj = items[offset]
+                    pos = start + offset
                     mli = self.showPanelControl[pos]
                     if obj:
                         mli.dataSource = obj
-                        mli.setProperty('index', str(pos))
                         if obj.index:
                             subtitle = u'{0} \u2022 {1}'.format(T(32310, 'S').format(obj.parentIndex),
                                                                 T(32311, 'E').format(obj.index))
@@ -2128,24 +2231,20 @@ class GridMixin(object):
                         mli.setBoolProperty('watched', obj.isPlayed)
                     else:
                         mli.clear()
-                        if obj is False:
-                            mli.setProperty('index', str(pos))
-                        else:
-                            mli.setProperty('index', '')
 
-                    pos += 1
-                    if marks is not None and pos - start == CHUNK_SCREENFUL:
+                    if marks is not None and written + 1 == CHUNK_SCREENFUL:
                         marks['screenful'] = time.time()
 
             elif self.itemType == 'album':
-                for offset, obj in enumerate(items):
+                for written, offset in enumerate(order):
                     if generation is not None and generation != self._listGeneration:
                         util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
                         return
+                    obj = items[offset]
+                    pos = start + offset
                     mli = self.showPanelControl[pos]
                     if obj:
                         mli.dataSource = obj
-                        mli.setProperty('index', str(pos))
                         mli.setLabel(obj.title)
                         mli.setProperty('album.artist', obj.parentTitle)
 
@@ -2154,30 +2253,24 @@ class GridMixin(object):
                         mli.setLabel2(obj.year)
                     else:
                         mli.clear()
-                        if obj is False:
-                            mli.setProperty('index', str(pos))
-                        else:
-                            mli.setProperty('index', '')
 
-                    pos += 1
-                    if marks is not None and pos - start == CHUNK_SCREENFUL:
+                    if marks is not None and written + 1 == CHUNK_SCREENFUL:
                         marks['screenful'] = time.time()
             else:
-                for offset, obj in enumerate(items):
+                for written, offset in enumerate(order):
                     if generation is not None and generation != self._listGeneration:
                         util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
                         return
+                    obj = items[offset]
+                    pos = start + offset
 
                     try:
                         mli = self.showPanelControl[pos]
                     except RuntimeError:
                         util.LOG("Library/ChunkCallback: {} not found", pos)
-                        pos += 1
                         continue
 
                     if obj:
-                        mli.setProperty('index', str(pos))
-
                         if obj.TYPE == 'track':
                             mli.setLabel("{} - {}: {}".format(obj.grandparentTitle, obj.parentTitle, obj.title))
                             # The music section's list view renders a track as three separate
@@ -2249,18 +2342,15 @@ class GridMixin(object):
                         mli.setProperty('progress', util.getProgressImage(obj))
                     else:
                         mli.clear()
-                        if obj is False:
-                            mli.setProperty('index', str(pos))
-                        else:
-                            mli.setProperty('index', '')
 
-                    pos += 1
-                    if marks is not None and pos - start == CHUNK_SCREENFUL:
+                    if marks is not None and written + 1 == CHUNK_SCREENFUL:
                         marks['screenful'] = time.time()
 
         self._setFilling(False)
 
-    def requestChunk(self, start):
+    def requestChunk(self, start, then=None):
+        """Fetches the chunk holding position start unless it's been asked for already. then: run
+        once it's written (_chunkCallbackFor())."""
         if util.addonSettings.retrieveAllMediaUpFront or self.section.TYPE == 'playlists':
             # fillPlaylists() always fetches the whole (small, unpaginated) list synchronously up
             # front - there's never a further chunk to request, and PlaylistsSection has no all()
@@ -2281,9 +2371,10 @@ class GridMixin(object):
             # Keep track of the chunks we've already fetched by storing the chunk's starting position
             self.alreadyFetchedChunkList.add(startChunkPosition)
             task = ChunkRequestTask().setup(self.section, startChunkPosition, self.CHUNK_SIZE,
-                                            self._chunkCallbackFor(self._listGeneration), filter_=self.getFilterOpts(),
+                                            self._chunkCallbackFor(self._listGeneration, then=then),
+                                            filter_=self.getFilterOpts(),
                                             sort=self.getSortOpts(), subDir=self.subDir, bool_filters=self.boolFilters,
-                                            item_type=self.itemType)
+                                            item_type=self.itemType, params=self._listingParams())
 
             self.tasks.add(task)
             backgroundthread.BGThreader.addTasksToFront([task])

@@ -27,8 +27,8 @@
 {% block filteropts_grouplist %}
 <control type="label">
     <visible>String.IsEmpty(Window.Property(hide.filteroptions))</visible>
-    <visible>!Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(no.content)) + !String.IsEmpty(Window.Property(initialized))</visible>
-    <animation effect="slide" time="200" end="0,{{ vscale(-115) }}" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <visible>!Integer.IsGreater(Container(101).CurrentItem,6) + String.IsEmpty(Window.Property(no.content)) + !String.IsEmpty(Window.Property(initialized))</visible>
+    <animation effect="slide" time="200" end="0,{{ vscale(-115) }}" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).CurrentItem,6) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
     <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
     <!-- Slide right while the sidebar rail is expanded, matching group 50's own identical
          animation below - this label sits outside group 50 (it's in library.xml.tpl's header
@@ -59,7 +59,7 @@
          the grid exactly back at the un-adjusted 135 it would sit at without the label to clear,
          so it rises to fill the vacated space instead of leaving it empty like Posters/Squares
          do with their own equivalent slide-up. -->
-    <animation effect="slide" time="200" end="0,{{ vscale(-80, negpos=True) }}" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
+    <animation effect="slide" time="200" end="0,{{ vscale(-80, negpos=True) }}" tween="quadratic" easing="out" condition="Integer.IsGreater(Container(101).CurrentItem,6) + String.IsEmpty(Window.Property(content.filling))">Conditional</animation>
     <!-- Slide right while the sidebar rail is expanded (focused), matching every other ported screen -->
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
     <defaultcontrol>101</defaultcontrol>

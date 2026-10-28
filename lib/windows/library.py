@@ -857,7 +857,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
 
     def _setRestoreIndex(self, pos):
         """Called on a fresh view before it's shown: the grid position Back is returning to
-        (popBack()), as restore.index, which the grid templates read as already scrolled past the
+        (popBack()), as restore.item - counted from 1, like the Container(101).CurrentItem the
+        templates compare it with alongside - which the grid templates read as already scrolled past the
         first row - header, filter row and grid start there, with no slide. Without it they read
         the focused tile, but that isn't selected until the fill has its items, and content.filling
         holds them at the top meanwhile, so they showed and then slid away on every Back to a
@@ -867,7 +868,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         starts with the properties its id last held (_hideStaleHero()). Written with
         xbmcgui.WindowXML.setProperty() directly for the reason given there, and so it isn't in
         the host's replay cache either, which _onFirstInit() would write back over it."""
-        xbmcgui.WindowXML.setProperty(self._current, 'restore.index', str(pos) if pos else '')
+        xbmcgui.WindowXML.setProperty(self._current, 'restore.item', str(pos + 1) if pos else '')
 
     def _retireListItems(self):
         """Mark the list items in-flight work is writing into as stale (_listGeneration), and wait
@@ -2457,7 +2458,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         elif self.showPanelControl and not self.refill:
             self.showPanelControl.newControl(self)
             self.keyListControl.newControl(self)
-            self.showPanelControl.selectItem(0)
+            self.selectFirstItem()
             self.setFocusId(self.VIEWTYPE_BUTTON_ID)
             self.setBoolProperty("initialized", True)
         else:
@@ -2467,6 +2468,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             finally:
                 self._gridTiming = None
             timing.log()
+            if self.__dict__.pop('_viewTypeSwap', False):
+                # the view button kept, as the repaint above kept it, so it can be pressed again
+                self.setFocusId(self.VIEWTYPE_BUTTON_ID)
 
     def _startHubsFetch(self, callback, lateCallback=None, inPlace=False):
         """Fetch the section's rows on a worker for callback(section, hubs): Home's from every

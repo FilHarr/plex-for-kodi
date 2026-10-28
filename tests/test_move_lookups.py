@@ -108,6 +108,8 @@ class FakeGrid(object):
     updateKey = library_grid.GridMixin.updateKey
     selectKey = library_grid.GridMixin.selectKey
     _keyUpdateDue = library_grid.GridMixin._keyUpdateDue
+    _keyAt = library_grid.GridMixin._keyAt
+    _showKeyAt = library_grid.GridMixin._showKeyAt
     onItemChanged = library_grid.GridMixin.onItemChanged
     gridFocus = library_grid.GridMixin.gridFocus
     updateItem = library_grid.GridMixin.updateItem
@@ -161,6 +163,37 @@ class KeyWritesTest(KodiTestCase):
         grid.updateKey(FakeItem('A'))
         grid.gridFocus(grid.KEY_LIST_ID)
         self.assertTrue(grid._keyUpdateDue(FakeItem('A')))
+
+    def _lettered(self):
+        """A grid filled with a letter list: placeholders carry no key, the letters' first
+        positions do (_fillShows())."""
+        grid = FakeGrid()
+        grid._keyStarts = [0, 3, 7]
+        grid._keyNames = ['A', 'B', 'C']
+        return grid
+
+    def test_a_letter_list_fills_letters_come_from_the_position(self):
+        grid = self._lettered()
+        item = FakeItem(key=None)
+        self.assertEqual(['A', 'A', 'B', 'B', 'C', 'C'],
+                         [grid._keyAt(item, pos) for pos in (0, 2, 3, 6, 7, 40)])
+        self.assertEqual(0, item.posCalls, 'the lookup already has the position')
+
+    def test_a_move_writes_the_positions_letter_once(self):
+        grid = self._lettered()
+        for pos in (1, 2, 4, 5):
+            item = FakeItem(key=None)
+            if grid._keyUpdateDue(item, pos):
+                grid.updateKey(item, pos)
+        self.assertEqual([('key', 'A'), ('key', 'B')], self.written)
+        self.assertEqual([1, 2], grid.keyListControl.selected)
+
+    def test_back_to_a_later_letter_shows_that_letter_before_any_move(self):
+        grid = self._lettered()
+        grid._showKeyAt(5)
+        self.assertEqual([('key', 'B')], self.written)
+        self.assertEqual([2], grid.keyListControl.selected)
+        self.assertFalse(grid._keyUpdateDue(FakeItem(key=None), 4), 'already showing')
 
     def test_a_new_photo_is_due_even_within_one_letter(self):
         class Photo(object):

@@ -27,6 +27,40 @@ def sortArg(sort):
     return '{0}:{1}{2}{3}'.format(first, direction, sep, rest)
 
 
+# What a library grid's tiles never read, by item type, left out of its listings (the section
+# grids' chunks, a collection's members). Sized on Animal (2026-10-27, 240-item pages): films
+# 472 -> 311 kB, episodes 610 -> 438 kB, albums 460 -> 193 kB, artists 997 -> 78 kB (their
+# biographies, 6.6 kB each). The server ignores Image in excludeElements, so the logos stay.
+# Summaries stay but for music: pre-play paints the clicked item's before its reload
+# (paintClickedItem()), and the Collection screen reads its own straight off the grid's object -
+# a films page is a quarter collections, with the library hiding their members. The Album screen
+# reloads before it reads one; the Artist screen sets its own again after its reload.
+_GRID_CREW = 'Role,Director,Writer,Producer,Genre,Country,Collection'
+GRID_LISTING_EXCLUDES = {
+    'movie': (_GRID_CREW + ',Media', 'tagline'),
+    'show': (_GRID_CREW, 'tagline'),
+    'episode': ('Role,Director,Writer,Producer,Media', None),
+    'artist': ('Genre,Country,Collection', 'summary'),
+    'album': ('Genre,Collection', 'summary'),
+}
+
+
+def gridListingParams(kind, keep_media=False):
+    """The excludeElements/excludeFields params for a grid listing of kind items, or None for a kind
+    that's sent whole (collections, tracks, photos, folders). keep_media: a sort whose caption reads
+    the media (Resolution, Bitrate)."""
+    rule = GRID_LISTING_EXCLUDES.get(kind)
+    if not rule:
+        return None
+    elements, fields = rule
+    if keep_media:
+        elements = ','.join(e for e in elements.split(',') if e != 'Media')
+    params = {'excludeElements': elements}
+    if fields:
+        params['excludeFields'] = fields
+    return params
+
+
 class Library(plexobjects.PlexObject):
     def __repr__(self):
         return '<Library:{0}>'.format(self.title1.encode('utf8'))
@@ -247,17 +281,19 @@ class LibrarySection(plexobjects.PlexObject):
             else:
                 args[key] = 1
 
-    def all(self, start=None, size=None, filter_=None, sort=None, type_=None, bool_filters=None, collections=True):
+    def all(self, start=None, size=None, filter_=None, sort=None, type_=None, bool_filters=None, collections=True,
+            params=None):
         """collections: the library's collections listed too, as its grid shows them - and with a
         library set to hide what's in a collection, those items not. False: every item, and no
-        collection (582 films on Animal's Films, against 250 films and 81 collections)."""
+        collection (582 films on Animal's Films, against 250 films and 81 collections). params:
+        more query args, gridListingParams()' for a grid's chunks."""
         if self.key.startswith('/'):
             path = '{0}/all'.format(self.key)
         else:
             path = '/library/sections/{0}/all'.format(self.key)
 
         return self.items(path, start, size, filter_, sort, type_, False, bool_filters=bool_filters,
-                          collections=collections)
+                          collections=collections, params=params)
 
     @property
     def settings(self):
@@ -287,11 +323,14 @@ class LibrarySection(plexobjects.PlexObject):
 
         return self.items(path, start, size, None, None, None, True)
 
-    def items(self, path, start, size, filter_, sort, type_, tag_fallback, bool_filters=None, collections=True):
+    def items(self, path, start, size, filter_, sort, type_, tag_fallback, bool_filters=None, collections=True,
+              params=None):
 
         args = {}
         if self.DEFAULT_URL_ARGS:
             args.update(self.DEFAULT_URL_ARGS)
+        if params:
+            args.update(params)
 
         if size is not None:
             args['X-Plex-Container-Start'] = start
@@ -675,8 +714,9 @@ class Collection(media.MediaItem):
         title = self.title.replace(' ', '.')[0:20]
         return '<{0}:{1}:{2}>'.format(self.__class__.__name__, self.key, title)
 
-    def all(self, start=None, size=None, filter_=None, sort=None, unwatched=False, type_=None, **kwargs):
-        items = plexobjects.listItems(self.server, self.key, offset=start, limit=size)
+    def all(self, start=None, size=None, filter_=None, sort=None, unwatched=False, type_=None, params=None, **kwargs):
+        """The members, start..start+size. params: more query args (gridListingParams())."""
+        items = plexobjects.listItems(self.server, self.key, offset=start, limit=size, params=params)
         items.totalSize = items.get("size") if items.get("size").asInt() else items.get("totalSize") if items.get("totalSize").asInt() else 0
         return items
 

@@ -2,8 +2,8 @@
 {% block filteropts_grouplist %}
 <control type="grouplist" id="600">
     <visible>String.IsEmpty(Window.Property(hide.filteroptions))</visible>
-    <visible>!Integer.IsGreater(Container(101).ListItem.Property(index),{% block hide_filter_from_index %}5{% endblock %}) + !Integer.IsGreater(Window.Property(restore.index),{% block hide_filter_from_index %}5{% endblock %}) + String.IsEmpty(Window.Property(no.content)) + !String.IsEmpty(Window.Property(initialized))</visible>
-    <animation effect="slide" time="200" end="0,{{ vscale(-115) }}" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),{% block hide_filter_from_index %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),{% block hide_filter_from_index %}5{% endblock %})">Conditional</animation>
+    <visible>!Integer.IsGreater(Container(101).CurrentItem,{% block hide_filter_after_item %}6{% endblock %}) + !Integer.IsGreater(Window.Property(restore.item),{% block hide_filter_after_item %}6{% endblock %}) + String.IsEmpty(Window.Property(no.content)) + !String.IsEmpty(Window.Property(initialized))</visible>
+    <animation effect="slide" time="200" end="0,{{ vscale(-115) }}" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).CurrentItem,{% block hide_filter_after_item %}6{% endblock %}) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.item),{% block hide_filter_after_item %}6{% endblock %})">Conditional</animation>
     {% block filteropts_animation %}
         <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
     {% endblock %}
@@ -228,8 +228,8 @@
          still slides it further up on top of this. First-pass offset, not pixel-measured against
          a live screenshot - may want retuning after a live look. -->
     <animation effect="slide" time="200" end="0,{{ vscale(-73) }}" condition="String.IsEqual(Window.Property(media),playlists)">Conditional</animation>
-    <animation effect="slide" time="200" end="0,{{ vscale(-125) }}" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) | Integer.IsGreater(Window.Property(restore.index),5)">Conditional</animation>
-    <animation effect="slide" time="200" end="0,{{ vscale(-200) }}" condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) + Integer.IsGreater(Container(101).Position,5)">Conditional</animation>
+    <animation effect="slide" time="200" end="0,{{ vscale(-125) }}" condition="Integer.IsGreater(Container(101).CurrentItem,6) | Integer.IsGreater(Window.Property(restore.item),6)">Conditional</animation>
+    <animation effect="slide" time="200" end="0,{{ vscale(-200) }}" condition="Integer.IsGreater(Container(101).CurrentItem,6) + Integer.IsGreater(Container(101).Position,5)">Conditional</animation>
     <animation effect="slide" end="220,0" time="200" tween="sine" easing="inout" condition="ControlGroup(9000).HasFocus(0)">Conditional</animation>
     <posx>60</posx>
     <posy>{{ vscale(125) }}</posy>
@@ -249,8 +249,8 @@
             <posy>0</posy>
             <width>1800</width>
             <height>1280</height>
-            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),3)">600</onup>
-            <onup condition="Integer.IsLess(Container(101).ListItem.Property(index),6) + Integer.IsGreaterOrEqual(Container(101).ListItem.Property(index),3)">300</onup>
+            <onup condition="Integer.IsLessOrEqual(Container(101).CurrentItem,3)">600</onup>
+            <onup condition="Integer.IsLessOrEqual(Container(101).CurrentItem,6) + Integer.IsGreater(Container(101).CurrentItem,3)">300</onup>
             <onleft>9000</onleft>
             <onright>151</onright>
             <scrolltime>200</scrolltime>
@@ -527,7 +527,7 @@
     <!-- -277.5 = -(posy 132.5 + height 145): lands the row's bottom edge at 0, the same
          "slide by your own extent" the poster grid and header(200) use, on the same condition
          group 50 uses, so it moves in lockstep with the grid. -->
-    <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),5)">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-277.5, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).CurrentItem,6) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.item),6)">Conditional</animation>
     <defaultcontrol>301</defaultcontrol>
     <!-- 132, by the poster grid's own formula, re-solved for this grid's wider cell: panel(101)
          left 60 + 5*282 (6 columns, this template's own itemlayout pitch) + the item's own 55 =
@@ -547,7 +547,7 @@
     <height>{{ vscale(145) }}</height>
     <align>right</align>
     <!-- Same up-route restoration as group 600's own onup above - the grid's own onup can land
-         here directly too (Container(101).ListItem.Property(index) >= 3), so this needs the
+         here directly too (Container(101).CurrentItem > 3), so this needs the
          same fallback independently, not just inherited from 600. -->
     <!-- Audio widget first, tab row second - Kodi takes the first onup whose condition holds, so
          the old order sent up to the tabs whenever they were on screen, which is always, and the
@@ -621,7 +621,7 @@
          End position centers the scrubber's full 27-key extent (26 letters + '#', 34px each =
          918) in the 1080-tall screen: (1080-918)/2 = 81 top margin, a 150-81=69px move up from
          the resting posy. -->
-    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),5)">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).CurrentItem,6) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.item),6)">Conditional</animation>
     <!-- 1836, not 1875: leaves a 15px gap to the scrollbar (152's left=1885), which now shows
          ALONGSIDE this rather than instead of it, exactly as on the poster grid. The scrubber's
          own list (151) is a flat 34px wide with no internal margin (key_scrubber_items.xml.tpl
@@ -636,8 +636,8 @@
         <posy>0</posy>
         <width>34</width>
         <height>1050</height>
-        <onleft condition="Integer.IsGreater(Container(101).ListItem.Property(index),5) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
-        <onleft condition="!Integer.IsGreater(Container(101).ListItem.Property(index),5) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">300</onleft>
+        <onleft condition="Integer.IsGreater(Container(101).CurrentItem,6) | !Integer.IsEqual(Container(151).ListItem.Property(index),0)">100</onleft>
+        <onleft condition="!Integer.IsGreater(Container(101).CurrentItem,6) + Integer.IsEqual(Container(151).ListItem.Property(index),0)">300</onleft>
         <!-- The scrollbar is now a real neighbour to the right, so it needs reaching. (The poster
              grid's own copy of this routes left to 331/View specifically; this one stays on the
              grouplist 300, because View is hidden outright in music sections and More can be
@@ -664,13 +664,13 @@
     <!-- Slide, not the old zoom-to-fill-the-vacated-header-space: the same -69 the scrubber
          beside it uses, so the two stay level now that they show together (they rest level, both
          at 150). Zooming this one instead left it growing past a scrubber that had merely moved. -->
-    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),5) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),5)">Conditional</animation>
+    <animation effect="slide" end="0,{{ vscale(-69, negpos=True) }}" time="200" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).CurrentItem,6) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.item),6)">Conditional</animation>
     {% include "includes/scrollbar_style.xml.tpl" %}
     <!-- Back to the scrubber when it's showing too (alpha orderings); otherwise mirror the
          scrubber's own two-tier routing - the grid once the header has scrolled away, the button
          row while it's still up - since the scrubber isn't there to make that hop. -->
     <onleft condition="!String.IsEmpty(Window(10000).Property(script.plex.sort.alpha))">151</onleft>
-    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).ListItem.Property(index),5)">100</onleft>
-    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).ListItem.Property(index),5)">300</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + Integer.IsGreater(Container(101).CurrentItem,6)">100</onleft>
+    <onleft condition="String.IsEmpty(Window(10000).Property(script.plex.sort.alpha)) + !Integer.IsGreater(Container(101).CurrentItem,6)">300</onleft>
 </control>
 {% endblock content %}

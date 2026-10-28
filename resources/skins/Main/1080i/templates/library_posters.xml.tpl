@@ -2,8 +2,8 @@
 {% block filteropts_grouplist %}
 <control type="grouplist" id="600">
     <visible>String.IsEmpty(Window.Property(hide.filteroptions))</visible>
-    <visible>!Integer.IsGreater(Container(101).ListItem.Property(index),{% block hide_filter_from_index %}5{% endblock %}) + !Integer.IsGreater(Window.Property(restore.index),{% block hide_filter_from_index %}5{% endblock %}) + String.IsEmpty(Window.Property(no.content)) + !String.IsEmpty(Window.Property(initialized))</visible>
-    <animation effect="slide" time="200" end="0,{{ vscale(-115) }}" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).ListItem.Property(index),{% block hide_filter_from_index %}5{% endblock %}) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.index),{% block hide_filter_from_index %}5{% endblock %})">Conditional</animation>
+    <visible>!Integer.IsGreater(Container(101).CurrentItem,{% block hide_filter_after_item %}6{% endblock %}) + !Integer.IsGreater(Window.Property(restore.item),{% block hide_filter_after_item %}6{% endblock %}) + String.IsEmpty(Window.Property(no.content)) + !String.IsEmpty(Window.Property(initialized))</visible>
+    <animation effect="slide" time="200" end="0,{{ vscale(-115) }}" tween="quadratic" easing="out" condition="[Integer.IsGreater(Container(101).CurrentItem,{% block hide_filter_after_item %}6{% endblock %}) + String.IsEmpty(Window.Property(content.filling))] | Integer.IsGreater(Window.Property(restore.item),{% block hide_filter_after_item %}6{% endblock %})">Conditional</animation>
     {% block filteropts_animation %}
         <animation effect="fade" start="0" end="100" time="200" reversible="true">VisibleChange</animation>
     {% endblock %}
