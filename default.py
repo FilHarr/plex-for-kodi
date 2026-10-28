@@ -55,17 +55,24 @@ try:
         else:
             sys.exit(0)
     else:
+        # we're waiting for the addon to start, immediate start was requested - checked before 'started', which
+        # the waiting copy has already claimed
+        if getGlobalProperty('waiting_for_start'):
+            setGlobalProperty('waiting_for_start', '', wait=True)
+            log('Main: script.plexmod: Currently waiting for start, immediate start was requested.')
+            sys.exit(0)
+
         # addon not started
         if not getGlobalProperty('started'):
-            # we're waiting for the addon to start, immediate start was requested
-            if getGlobalProperty('waiting_for_start'):
-                setGlobalProperty('waiting_for_start', '', wait=True)
-                log('Main: script.plexmod: Currently waiting for start, immediate start was requested.')
-                sys.exit(0)
+            # Claimed at once, not once started: the import below and the auto-start waits take seconds on a slow
+            # box, and a copy launched meanwhile (OK pressed as Kodi came up, with auto-start on) saw nothing set and
+            # ran as well - two copies, each with its own windows (the user's AM6B, 2026-10-28). SingleInstance's
+            # file lock can't tell: every add-on runs in Kodi's one process. finally clears it.
+            setGlobalProperty('started', '1', wait=True)
+            started = True
 
             # only allow a single instance
             with SingleInstance("pm4k"):
-                started = True
                 skip_ensure_home = False
                 from lib import main
 
@@ -115,7 +122,6 @@ try:
                             main.util.MONITOR.waitForAbort(0.5)
 
                 setGlobalProperty('waiting_for_start', '', wait=True)
-                setGlobalProperty('started', '1', wait=True)
 
                 main.main()
         else:
