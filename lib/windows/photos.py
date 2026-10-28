@@ -12,7 +12,7 @@ from kodi_six import xbmcgui
 from plexnet import plexapp, plexplayer, playqueue
 from plexnet import util as plexnetUtil
 
-from lib import util, colors
+from lib import util
 from . import busy
 from . import kodigui
 
@@ -332,27 +332,25 @@ class PhotoWindow(kodigui.BaseWindow):
 
                 meta = self.playerObject.build(item=item)
                 url = photo.server.getImageTranscodeURL(meta.get('url', ''), self.width, self.height)
-                bgURL = item.thumb.asTranscodedImageURL(self.width, self.height, blur=128, opacity=60,
-                                                        background=colors.noAlpha.Background)
 
                 isCurrent = currentFailed or item == photo
                 if isCurrent and not self.initialLoad:
                     self.setBoolProperty('is.updating', True)
 
-                path, background = self.getCachedPhotoData(url, bgURL)
-                if not (path and background):
+                path = self.getCachedPhotoData(url)
+                if not path:
                     currentFailed = True
                     continue
 
-                if (path, background) not in self.photoStack:
+                if path not in self.photoStack:
                     if item == next:
                         # move the next image to the top of the stack
-                        addToStack.insert(0, (path, background))
+                        addToStack.insert(0, path)
                     else:
-                        addToStack.append((path, background))
+                        addToStack.append(path)
 
                 if isCurrent:
-                    self._reallyShowPhoto(item, path, background)
+                    self._reallyShowPhoto(item, path)
                     self.setBoolProperty('is.updating', False)
                     self.initialLoad = False
 
@@ -361,44 +359,47 @@ class PhotoWindow(kodigui.BaseWindow):
             if len(self.photoStack) > self.PHOTO_STACK_SIZE:
                 clean = self.photoStack[self.PHOTO_STACK_SIZE:]
                 self.photoStack = self.photoStack[:self.PHOTO_STACK_SIZE]
-                for remList in clean:
-                    for rem in remList:
-                        try:
-                            os.remove(rem)
-                        except:
-                            pass
+                for rem in clean:
+                    try:
+                        os.remove(rem)
+                    except:
+                        pass
         finally:
             self.setBoolProperty('is.updating', False)
 
-    def getCachedPhotoData(self, url, bgURL):
+    def getCachedPhotoData(self, url):
+        """The photo's local copy, downloaded if it isn't here yet; None if it can't be had. Only the photo: a
+        blurred copy for a full-screen background came down beside it until 2026-10-28 - the screen shows the
+        neutral colour panel now (paintInitialBackground())."""
         if not url:
-            return
+            return None
 
-        basename = hashlib.sha1(url.encode('utf-8')).hexdigest()
-        tmpPath = os.path.join(self.tempFolder, basename)
-        tmpBgPath = os.path.join(self.tempFolder, "%s_bg" % basename)
-
-        for p, url in ((tmpPath, url), (tmpBgPath, bgURL)):
-            if not os.path.exists(p):# and not xbmc.getCacheThumbName(tmpFn):
+        tmpPath = os.path.join(self.tempFolder, hashlib.sha1(url.encode('utf-8')).hexdigest())
+        if not os.path.exists(tmpPath):# and not xbmc.getCacheThumbName(tmpFn):
+            try:
+                r = requests.get(url, allow_redirects=True, timeout=10.0)
+                r.raise_for_status()
+            except Exception as e:
+                util.ERROR("Couldn't load image: %s" % e, notify=True)
+                return None
+            else:
                 try:
-                    r = requests.get(url, allow_redirects=True, timeout=10.0)
-                    r.raise_for_status()
-                except Exception as e:
-                    util.ERROR("Couldn't load image: %s" % e, notify=True)
-                    return None, None
-                else:
-                    try:
-                        with open(p, 'wb') as f:
-                            f.write(r.content)
-                    except:
-                        return None, None
+                    with open(tmpPath, 'wb') as f:
+                        f.write(r.content)
+                except:
+                    return None
 
-        return tmpPath, tmpBgPath
+        return tmpPath
 
-    def _reallyShowPhoto(self, photo, path, background):
+    def paintInitialBackground(self):
+        """No art: the neutral colour panel (kodigui's setNeutralPanel()), as the person and search screens.
+        Its own background was the photo, blurred, full screen - not wanted (the user, 2026-10-28)."""
+        super(PhotoWindow, self).paintInitialBackground()
+        self.setNeutralPanel()
+
+    def _reallyShowPhoto(self, photo, path):
         self.setRotation(0)
         self.setProperty('photo', path)
-        self.setProperty('background', background)
 
         self.setProperty('photo.title', photo.title)
         self.setProperty('photo.date', util.cleanLeadingZeros(photo.originallyAvailableAt.asDatetime('%d %B %Y')))

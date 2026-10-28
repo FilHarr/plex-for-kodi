@@ -1,4 +1,6 @@
 {% extends "base.xml.tpl" %}
+{# the flat base under the photo: Kodi clears to it #}
+{% block backgroundcolor %}<backgroundcolor>0xff111111</backgroundcolor>{% endblock %}
 {% block headers %}
     <defaultcontrol>250</defaultcontrol>
     <zorder>100</zorder>
@@ -6,7 +8,10 @@
 
 {% block controls %}
 <control type="group">
-    {% include "includes/default_background.xml.tpl" %}
+    {# The neutral colour panel, as other screens with no art of their own (PhotoWindow.paintInitialBackground()), and
+       no hero box: it showed the blurred copy of the photo the screen used to fetch, in the top-right vignette (the
+       user, 2026-10-28). #}
+    {% include "includes/default_background.xml.tpl" with suppress_hero_art=True %}
     <control type="image" id="600">
         <!-- Doesn't work for all aspects -->
         <!-- <animation effect="zoom" start="56" end="100" time="200" center="960,540" reversible="false" condition="String.IsEqual(Window.Property(rotate),90) | String.IsEqual(Window.Property(rotate),270)">Conditional</animation>

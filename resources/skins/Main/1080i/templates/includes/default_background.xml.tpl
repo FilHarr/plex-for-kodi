@@ -1,12 +1,36 @@
+{# The flat #111111 under everything is the window's own clear colour (default.xml.tpl's backgroundcolor, the photo
+   viewer's), not a full-screen image: a clear costs next to nothing on a tiled GPU, a full-screen layer its whole fill,
+   and the panel drew two of them, this image and its base fill (2026-10-28: at a 4K interface on the AM6B, animations
+   stuttered). A literal colour, not $INFO[Window.Property(...)], which Kodi resolves against whatever dialog is on top
+   (no clear at all while one is open). Only the Recommended view's cover copy keeps a flat layer: it has to hide the
+   hub rows passing under it. The solid-background setting, which used to recolour the clear, gets a layer of its own. #}
+{% if not panel_cover %}
+<control type="image">
+    <visible>!String.IsEmpty(Window.Property(use_solid_background))</visible>
+    <posx>0</posx>
+    <posy>0</posy>
+    <width>1920</width>
+    <height>1080</height>
+    <texture>script.plex/white-square.png</texture>
+    <colordiffuse>$INFO[Window.Property(background_colour)]</colordiffuse>
+</control>
+{% endif %}
 <control type="group">
     <visible>String.IsEmpty(Window.Property(use_solid_background))</visible>
+    {% if panel_cover %}
+    <!-- The cover's own opaque base, which the rows passing under it need. The plain tinted square, not the
+         flat background image (background="true"): with the panel's base fill gone, the rows showed through
+         the cover, so its opacity had been the base fill's all along (the user, 2026-10-28). -->
     <control type="image">
         <posx>0</posx>
         <posy>0</posy>
         <width>1920</width>
         <height>1080</height>
-        <texture background="true">script.plex/home/background-fallback_black.png</texture>
+        <texture>script.plex/white-square.png</texture>
+        <!-- colors.Background (lib/colors.py) -->
+        <colordiffuse>FF111111</colordiffuse>
     </control>
+    {% endif %}
     {% include "includes/background_panel.xml.tpl" %}
     {# Whole top-right hero-art box (the art plus the scrim over it). Dropped at render
        time for the screens that never want it, rather than hidden at runtime via the no_hero_art
@@ -42,8 +66,8 @@
         <!-- no fallback="" texture here: Kodi shows a fallback for the entire time the real
              texture is downloading/transcoding, not just on genuine failure, and an opaque one
              would sit on top of the color panel above and hide it for however long the art takes
-             to fetch. The plain black base fallback control at the top of this file already
-             covers that spot regardless. -->
+             to fetch. The window's own clear colour (see the top of this file) already covers
+             that spot regardless. -->
         <!-- no_hero_art (LibraryWindow._setNoHeroArt, library.py): hides this box on the
              Recommended tab while nothing is bound yet (fresh entry before the hubs land, or a
              section with no hubs), rather than showing the previous section's art. Not a

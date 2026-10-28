@@ -1,4 +1,6 @@
 {% extends "base.xml.tpl" %}{# this extends base and adds background and default header blocks #}
+{# The background's flat base: Kodi clears to it, in place of a full-screen image (includes/default_background.xml.tpl). #}
+{% block backgroundcolor %}<backgroundcolor>0xff111111</backgroundcolor>{% endblock %}
 {% block controls %}
     {% block background %}
         {% include "includes/default_background.xml.tpl" %}

@@ -368,6 +368,67 @@ class ClearLogoTest(KodiTestCase):
                     self.assertEqual("keep", logo.findtext("aspectratio"))
 
 
+class BackgroundFillTest(KodiTestCase):
+    """At a 4K interface the AM6B is fill-bound (2026-10-28): the background's flat #111111 is the window's
+    clear colour, not two full-screen layers (a flat image and the panel's base fill), and each colour-panel
+    corner is only as wide as its mask reaches. Only the Recommended view's cover keeps a flat image - it hides
+    the hub rows under it - and only the music screens' static panel keeps its base fill."""
+
+    MAIN_WINDOWS = ("posters", "posters-small", "squares", "ar16x9", "pre_play", "episodes", "collection",
+                    "recommended", "photo", "see_more_poster")
+    CORNER_IDS = set(str(i) for i in list(range(2101, 2109)) + list(range(2111, 2119)))
+
+    def setUp(self):
+        super(BackgroundFillTest, self).setUp()
+        self.rendered = render_theme(make_engine(self.mktemp()), "modern-colored")
+
+    def flatLayers(self, root):
+        """Full-screen #111111 layers: the flat image, or white-square tinted FF111111."""
+        found = []
+        for c in root.iter("control"):
+            texture = c.findtext("texture") or ""
+            if c.get("type") == "image" and (c.findtext("width"), c.findtext("height")) == ("1920", "1080") and (
+                    "background-fallback_black" in texture or
+                    ("white-square" in texture and (c.findtext("colordiffuse") or "").upper() == "FF111111")):
+                found.append(c)
+        return found
+
+    def test_the_main_windows_clear_to_the_base_colour_instead_of_drawing_it(self):
+        for window in self.MAIN_WINDOWS:
+            root = ET.fromstring(self.rendered[window])
+            with self.subTest(window=window):
+                self.assertEqual("0xff111111", root.findtext("backgroundcolor"))
+                # the Recommended view's cover keeps exactly one, to hide the rows under it
+                self.assertEqual(1 if window == "recommended" else 0, len(self.flatLayers(root)))
+
+    def test_the_photo_viewer_has_the_panel_but_no_hero_box(self):
+        """The neutral panel (PhotoWindow.paintInitialBackground()); the hero box showed a blurred copy of the photo
+        in its top-right vignette (the user, 2026-10-28)."""
+        root = ET.fromstring(self.rendered["photo"])
+        self.assertFalse([c for c in root.iter("control") if "Window.Property(background)" in (c.findtext("texture") or "")])
+        self.assertTrue([c for c in root.iter("control") if c.get("id") == "2101"])
+
+    def test_the_music_screens_keep_their_static_base(self):
+        for window in ("music_player", "music_current_playlist"):
+            with self.subTest(window=window):
+                self.assertEqual(1, len(self.flatLayers(ET.fromstring(self.rendered[window]))))
+
+    def test_every_corner_is_only_as_wide_as_its_mask(self):
+        for window in self.MAIN_WINDOWS + ("music_player",):
+            root = ET.fromstring(self.rendered[window])
+            corners = [c for c in root.iter("control") if c.get("id") in self.CORNER_IDS]
+            with self.subTest(window=window):
+                self.assertTrue(corners)
+                for c in corners:
+                    flipped = c.find("texture").get("flipx") == "true"
+                    self.assertEqual(("476" if flipped else "0", "1444"), (c.findtext("posx"), c.findtext("width")))
+
+    def test_the_mask_is_cropped_to_its_reach(self):
+        from PIL import Image
+        mask = Image.open(os.path.join(MEDIA_DIR, "script.plex", "masks", "background-corner.png"))
+        self.assertEqual((1444, 1080), mask.size)
+
+
 class GridRestoreIndexTest(KodiTestCase):
     """Back to a library grid left below its first row: the header, the filter row and the grid's
     own slides read restore.item (LibraryWindow._setRestoreIndex(), set before the view shows) as
