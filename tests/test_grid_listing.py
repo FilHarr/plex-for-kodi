@@ -16,6 +16,7 @@ from kodienv import ENV
 
 ENV.abort_requested = True
 from plexnet import plexlibrary  # noqa: E402
+from plexnet import video  # noqa: E402
 from lib.windows import library_grid  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
@@ -43,6 +44,43 @@ class GridListingParamsTest(KodiTestCase):
     def test_collections_tracks_photos_and_folders_are_sent_whole(self):
         for kind in ('collection', 'track', 'photo', 'folder', '', None):
             self.assertIsNone(plexlibrary.gridListingParams(kind), kind)
+
+
+class BestMediaTest(KodiTestCase):
+    """The Resolution and Bitrate sorts' captions read Video.bestMedia: a film with two copies (4K and
+    1080p) raised there - videoResolution '4k' compared as an integer - and showed only its year
+    (the user, 2026-10-28)."""
+
+    class Media(object):
+        def __init__(self, **attrs):
+            self.attrs = attrs
+
+        def get(self, key, default=None):
+            return self.attrs.get(key, default)
+
+    class Film(object):
+        bestMedia = video.Video.bestMedia
+        meta_resolutionString = video.Video.meta_resolutionString
+        meta_mediaBitrate = video.Video.meta_mediaBitrate
+
+        def __init__(self, *media):
+            self._media = list(media)
+
+        def media(self):
+            return self._media
+
+    def test_two_copies_show_the_one_with_the_most_pixels(self):
+        film = self.Film(self.Media(videoResolution='1080', height='800', bitrate='9266'),
+                         self.Media(videoResolution='4k', height='2160', bitrate='92634'))
+        self.assertEqual('4k', film.bestMedia.get('videoResolution'))
+        self.assertEqual('92.6 Mbps', film.meta_mediaBitrate(''))
+
+    def test_equal_heights_the_higher_bitrate(self):
+        film = self.Film(self.Media(height='1080', bitrate='5000'), self.Media(height='1080', bitrate='8000'))
+        self.assertEqual('8000', film.bestMedia.get('bitrate'))
+
+    def test_no_media_no_caption(self):
+        self.assertEqual('', self.Film().meta_mediaBitrate(''))
 
 
 class FakeSection(object):

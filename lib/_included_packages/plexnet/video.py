@@ -456,7 +456,11 @@ class Video(media.MediaItem, AudioCodecMixin):
 
     @property
     def bestMedia(self):
-        return sorted(self.media(), key=lambda m: m.videoResolution)[0]
+        """The copy with the most pixels, the higher bitrate between equals: the one the Resolution and Bitrate
+        sorts' captions show. By height and bitrate as numbers: it was sorted by videoResolution ('4k', '1080',
+        'sd'), which PlexValue compares as integers, so every film with two copies raised here and lost its
+        caption (the user, 2026-10-28). Raises ValueError with no media, which the captions catch."""
+        return max(self.media(), key=lambda m: (int(m.get('height') or 0), int(m.get('bitrate') or 0)))
 
     def meta_resolutionString(self, *args, **kwargs):
         try:
