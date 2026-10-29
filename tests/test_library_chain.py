@@ -2279,6 +2279,7 @@ class ChunkCallbackStopsMidChunkTest(KodiTestCase):
         def __init__(self):
             self.lock = library.threading.RLock()
             self._listGeneration = 1
+            self._writtenPositions = set()
             self.section = type('S', (), {'type': 'artist', 'TYPE': 'artist'})()
 
         def setBackground(self, *a, **k):
@@ -2370,6 +2371,13 @@ class ChunkWriteOrderTest(KodiTestCase):
         host, written = self._host(10, 8)
         host._chunkCallback([ChunkCallbackStopsMidChunkTest.Album() for _ in range(5)], 0, generation=1)
         self.assertEqual([4, 3, 2, 1, 0], written)
+
+    def test_tiles_written_already_are_skipped(self):
+        """The ones around a restored tile, fetched before its chunk (_requestFocus())."""
+        host, written = self._host(10, 0)
+        host._chunkCallback([ChunkCallbackStopsMidChunkTest.Album() for _ in range(3)], 2, generation=1)
+        host._chunkCallback([ChunkCallbackStopsMidChunkTest.Album() for _ in range(10)], 0, generation=1)
+        self.assertEqual([2, 3, 4, 0, 1, 5, 6, 7, 8, 9], written)
 
 
 class ChunkBatchTest(KodiTestCase):
@@ -2486,6 +2494,142 @@ class TileValuesTest(KodiTestCase):
         album = self.Video('album', title='Low', parentTitle='Bowie')
         self.assertEqual(('Low', 'thumb', [('album.artist', 'Bowie')]),
                          self.values(self.Host('artist', 'album'), album))
+
+
+class QueueChunksTest(KodiTestCase):
+    """GridMixin._queueChunks(), _requestFocus() and _requestAround(): the tiles around a restored
+    or jumped-to position first, whichever chunks they're in, then its chunk, then the ones either
+    side, each once the one before is written. Back to a film in its chunk's last row got its own
+    chunk, and the row below waited for the next one's fetch (the user, 2026-10-29)."""
+
+    class Task(object):
+        def setup(self, section, start, size, callback, **kwargs):
+            self.span = (start, size)
+            self.written = callback
+            return self
+
+    class Host(object):
+        _queueChunks = library.LibraryWindow._queueChunks
+        _requestFocus = library.LibraryWindow._requestFocus
+        _requestAround = library.LibraryWindow._requestAround
+        _chunkTask = library.LibraryWindow._chunkTask
+        requestChunk = library.LibraryWindow.requestChunk
+        CHUNK_SIZE = 240
+        _current = None
+        subDir = False
+        boolFilters = None
+        itemType = None
+
+        def __init__(self):
+            self._listGeneration = 1
+            self.section = type('S', (), {'TYPE': 'movie'})()
+            self.finalChunkPosition = 0
+            self.alreadyFetchedChunkList = set()
+            self.tasks = mock.Mock()
+
+        # the task's callback: then(), run here as its items being written
+        def _chunkCallbackFor(self, generation, then=None):
+            return then
+
+        def getFilterOpts(self):
+            return None
+
+        def getSortOpts(self):
+            return None
+
+        def _listingParams(self):
+            return None
+
+    def setUp(self):
+        super(QueueChunksTest, self).setUp()
+        self.queued = []
+
+        def addTasksToFront(tasks):
+            self.queued[0:0] = tasks
+        for patch in (mock.patch.object(library_grid, 'ChunkRequestTask', self.Task),
+                      mock.patch.object(library_grid.backgroundthread.BGThreader, 'addTasksToFront',
+                                        addTasksToFront),
+                      mock.patch.object(library_grid.util.addonSettings, 'retrieveAllMediaUpFront', False)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def spans(self):
+        """(start, size) of each request, the queue's front first."""
+        return [task.span for task in self.queued]
+
+    def write(self, start, size=240):
+        """The items asked for at start, written: their then(), if any."""
+        task = [t for t in self.queued if t.span == (start, size)][0]
+        if task.written:
+            task.written()
+
+    def test_the_first_chunk_with_nothing_restored(self):
+        self.Host()._queueChunks(0, 330)
+        self.assertEqual([(0, 240)], self.spans())
+
+    def test_the_last_row_of_the_first_chunk(self):
+        """The tiles around it, across both chunks, then its chunk, then the next."""
+        self.Host()._queueChunks(236, 330)
+        self.assertEqual([(206, 61)], self.spans())
+        self.write(206, 61)
+        self.assertEqual([(0, 240), (206, 61)], self.spans())
+        self.write(0)
+        self.assertEqual([(240, 240), (0, 240), (206, 61)], self.spans())
+
+    def test_the_last_row_of_a_later_chunk(self):
+        self.Host()._queueChunks(476, 7141)
+        self.assertEqual([(446, 61)], self.spans())
+        self.write(446, 61)
+        self.write(240)
+        self.assertEqual([(480, 240), (240, 240), (446, 61)], self.spans())
+
+    def test_near_a_later_chunks_start_the_one_before(self):
+        self.Host()._queueChunks(245, 7141)
+        self.write(215, 61)
+        self.write(240)
+        self.assertEqual([(0, 240), (240, 240), (215, 61)], self.spans())
+
+    def test_mid_chunk_neither_side(self):
+        self.Host()._queueChunks(360, 7141)
+        self.write(330, 61)
+        self.write(240)
+        self.assertEqual([(240, 240), (330, 61)], self.spans())
+
+    def test_the_window_stops_at_the_last_item(self):
+        self.Host()._queueChunks(325, 330)
+        self.assertEqual([(295, 35)], self.spans())
+
+    def test_tiles_already_fetched_have_no_window(self):
+        """A letter jump to tiles whose chunks are asked for: just the ones either side."""
+        host = self.Host()
+        host._gridTotal = 7141
+        host.finalChunkPosition = 7080
+        host.alreadyFetchedChunkList = {240}
+        host._requestFocus(300)
+        self.assertEqual([], self.spans())
+
+    def test_photos_have_no_window(self):
+        """fillPhotos() fetches them whole and marks it (finalChunkPosition -1)."""
+        host = self.Host()
+        host._gridTotal = 300
+        host.finalChunkPosition = -1
+        host._requestFocus(250)
+        self.assertEqual([], self.spans())
+
+    def test_a_move_asks_ahead_once_its_own_chunk_is_asked_for(self):
+        host = self.Host()
+        host.finalChunkPosition = 7080
+        host.alreadyFetchedChunkList = {0}
+        host._requestAround(200)
+        self.assertEqual([(240, 240)], self.spans())
+        host._requestAround(150)
+        self.assertEqual([(240, 240)], self.spans())
+
+    def test_request_chunk_says_whether_it_asked(self):
+        host = self.Host()
+        host.finalChunkPosition = 480
+        self.assertTrue(host.requestChunk(250))
+        self.assertFalse(host.requestChunk(260))
 
 
 class SearchDestinationTest(KodiTestCase):

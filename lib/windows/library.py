@@ -677,6 +677,8 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self.sortDesc = self.librarySettings.getSetting('sort.desc', self.section.DEFAULT_SORT_DESC)
 
         self.alreadyFetchedChunkList = set()
+        # the positions _chunkCallback() has written since the last fill
+        self._writtenPositions = set()
         self.finalChunkPosition = 0
 
         if self.section.TYPE == 'movies_shows':

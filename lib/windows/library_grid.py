@@ -290,6 +290,12 @@ def getQueryItemType(section, item_type, fallback_to_section_type=False, force_i
 
 # Roughly a screenful of grid items: the first chunk's timing line says when this many were written.
 CHUNK_SCREENFUL = 30
+# How far either side of a restored or jumped-to tile is fetched first, whichever chunks that
+# crosses (GridMixin._requestFocus()): a screenful, wherever the tile is on the screen.
+FOCUS_REACH = CHUNK_SCREENFUL
+# How far ahead of a move the next chunk is asked for (GridMixin._requestAround()): two
+# screenfuls, so it's fetched before the rows below it show.
+CHUNK_LOOKAHEAD = 2 * CHUNK_SCREENFUL
 
 
 def _writeOrder(count, anchor):
@@ -392,8 +398,10 @@ class GridMixin(object):
             # position (step 12 stage B in the navigation review).
             mli, pos = self.showPanelControl.getSelectedItemAndPos()
             timing.mark('lookup')
-            if mli:
-                self.requestChunk(pos)
+            # pos's chunk, or once that's asked for, the ones CHUNK_LOOKAHEAD either side - not
+            # both at once, or the one ahead goes to the front of the queue and is written first
+            if mli and not self.requestChunk(pos):
+                self._requestAround(pos)
             timing.mark('chunk')
 
             if util.addonSettings.dynamicBackgrounds:
@@ -635,18 +643,12 @@ class GridMixin(object):
         pos = mli.pos()
 
         # This code is a little goofy but what it's trying to do is move the selected item from the
-        # jumplist up to the top of the panel and then it requests the chunk for the current position
-        # and the chunk for the current position + CHUNK_OVERCOMMIT.  The reason we need to potentially
-        # request a different chunk is if the items on the panel are in two different chunks this code
-        # will request both chunks so that we don't have blank items.  The requestChunk will only request
-        # chunks that haven't already been fetched so if the current position and current position
-        # plus the CHUNK_OVERCOMMIT are in the same chunk then the second requestChunk call doesn't
-        # do anything.
+        # jumplist up to the top of the panel (selecting CHUNK_OVERCOMMIT past it first).
         chunkOC = getattr(self._current, "CHUNK_OVERCOMMIT", self.CHUNK_OVERCOMMIT)
         self.showPanelControl.selectItem(pos+chunkOC)
         self.showPanelControl.selectItem(pos)
-        self.requestChunk(pos)
-        self.requestChunk(pos+chunkOC)
+        # the tiles around it first, whichever chunks they're in, then its chunks
+        self._requestFocus(pos)
 
         self.setFocusId(self.POSTERS_PANEL_ID)
         util.setGlobalProperty('key', li.dataSource)
@@ -1723,6 +1725,7 @@ class GridMixin(object):
         self._keyNames = []
         totalSize = 0
         self.alreadyFetchedChunkList = set()
+        self._writtenPositions = set()
         self.finalChunkPosition = 0
 
         type_ = getQueryItemType(self.section, self.itemType)
@@ -1874,59 +1877,67 @@ class GridMixin(object):
         if not keep_focus:
             self.setFocusId(self.POSTERS_PANEL_ID)
 
-        generation = self._listGeneration
-        # Back to a tile past the first chunk: that chunk first (requestChunk() below), and the
-        # first only once it's reached. Fetched alongside, whichever answered first was written
-        # first - the first chunk's 240 items took 3 s on the AM6B while the restored tiles waited
-        # (the user's log, 2026-10-27).
-        restoreChunk = (restorePos // self.CHUNK_SIZE) * self.CHUNK_SIZE
-        skipFirst = bool(restoreChunk) and not util.addonSettings.retrieveAllMediaUpFront
-        tasks = []
-        for startChunkPosition in range(0, totalSize, self.CHUNK_SIZE):
-            if not skipFirst:
-                tasks.append(
-                    ChunkRequestTask().setup(
-                        self.section, startChunkPosition, self.CHUNK_SIZE, self._chunkCallbackFor(generation),
-                        filter_=self.getFilterOpts(), sort=self.getSortOpts(), subDir=self.subDir,
-                        bool_filters=bool_filters, item_type=self.itemType, params=self._listingParams()
-                    )
-                )
-
-            # If we're retrieving media as we navigate then we just want to request the first
-            # chunk of media and stop.  We'll fetch the rest as the user navigates to those items
-            if not util.addonSettings.retrieveAllMediaUpFront:
-                # Calculate the end chunk's starting position based on the totalSize of items
-                self.finalChunkPosition = (totalSize // self.CHUNK_SIZE) * self.CHUNK_SIZE
-                # Keep track of the chunks we've already fetched by storing the chunk's starting position
-                if not skipFirst:
-                    self.alreadyFetchedChunkList.add(startChunkPosition)
-                break
-
-        self.tasks.add(tasks)
-        backgroundthread.BGThreader.addTasksToFront(tasks)
+        self._queueChunks(restorePos, totalSize)
         kodigui.markStep(timing, 'select + queue chunks')
 
+    def _queueChunks(self, restorePos, totalSize):
+        """_fillShows()'s chunk requests: the first chunk, or the tiles around a restored position
+        and then its chunks (_requestFocus())."""
+        self._gridTotal = totalSize
+        if util.addonSettings.retrieveAllMediaUpFront:
+            tasks = [self._chunkTask(start, self.CHUNK_SIZE) for start in range(0, totalSize, self.CHUNK_SIZE)]
+            self.tasks.add(tasks)
+            backgroundthread.BGThreader.addTasksToFront(tasks)
+            return
+
+        # Fetched as they're reached (requestChunk()), up to the last.
+        self.finalChunkPosition = (totalSize // self.CHUNK_SIZE) * self.CHUNK_SIZE
         if restorePos:
-            # Real art/metadata only exists for whichever chunk(s) have actually been fetched -
-            # by default (retrieveAllMediaUpFront off) chunks are otherwise only ever requested by
-            # MOVE_SET arrow-key navigation (routeAction()) or keyClicked()'s identical
-            # jump-and-request pattern, which this mirrors. selectItem() above is a plain
-            # Python-side position set - it never generates that arrow-key navigation, so a
-            # restored position would otherwise sit on placeholders until the user nudges focus.
-            # Deliberately placed after the loop above, not alongside selectItem() -
-            # requestChunk() reads self.finalChunkPosition/self.alreadyFetchedChunkList, both only
-            # just set to their real values by that loop. Requests the position's own chunk plus
-            # CHUNK_OVERCOMMIT ahead of it, same as keyClicked(), so the row(s) around it don't
-            # show placeholders either.
-            # A position within a screenful of its chunk's start has the chunk before it in the
-            # rows above: that one once the restored chunk is written, not alongside it.
-            then = None
-            if skipFirst and restorePos - restoreChunk < CHUNK_SCREENFUL:
-                def then():
-                    self.requestChunk(restoreChunk - self.CHUNK_SIZE)
-            chunkOC = getattr(self._current, "CHUNK_OVERCOMMIT", self.CHUNK_OVERCOMMIT)
-            self.requestChunk(restorePos, then=then)
-            self.requestChunk(restorePos + chunkOC)
+            # _fillShows()'s selectItem() is a plain Python-side position set - it never generates
+            # the arrow-key navigation that asks for chunks (gridAction()), so a restored position
+            # would otherwise sit on placeholders until the user nudges focus.
+            self._requestFocus(restorePos)
+        else:
+            self.requestChunk(0)
+
+    def _chunkTask(self, start, size, then=None):
+        """A ChunkRequestTask for size items from start, for this list as it is now. then: run once
+        they're written (_chunkCallbackFor())."""
+        return ChunkRequestTask().setup(self.section, start, size, self._chunkCallbackFor(self._listGeneration, then=then),
+                                        filter_=self.getFilterOpts(), sort=self.getSortOpts(), subDir=self.subDir,
+                                        bool_filters=self.boolFilters, item_type=self.itemType,
+                                        params=self._listingParams())
+
+    def _requestFocus(self, pos):
+        """The tiles around pos first, whichever chunks they're in, then pos's chunk and the ones
+        CHUNK_LOOKAHEAD either side (_requestAround()), each once the one before is written: a
+        Back or a letter jump to a tile in its chunk's last row got its own chunk, and the row
+        below waited for the next one's fetch (the user, 2026-10-29). _chunkCallback() skips the
+        tiles already written. Nothing to fetch around pos: just its chunk and the ones either side."""
+        # fetched whole: everything, the playlists, Photos (fillPhotos()'s finalChunkPosition -1)
+        if util.addonSettings.retrieveAllMediaUpFront or self.section.TYPE == 'playlists' \
+                or self.finalChunkPosition < 0:
+            return
+        total = self.__dict__.get('_gridTotal') or 0
+        first = max(pos - FOCUS_REACH, 0)
+        last = min(pos + FOCUS_REACH, total - 1)
+        chunks = {(p // self.CHUNK_SIZE) * self.CHUNK_SIZE for p in (first, pos, last)}
+        if last < first or chunks <= self.alreadyFetchedChunkList:
+            if not self.requestChunk(pos, then=lambda: self._requestAround(pos)):
+                self._requestAround(pos)
+            return
+        util.DEBUG_LOG('Position {0} so requesting {1}-{2} first', pos, first, last)
+        task = self._chunkTask(first, last - first + 1,
+                               then=lambda: self.requestChunk(pos, then=lambda: self._requestAround(pos)))
+        self.tasks.add(task)
+        backgroundthread.BGThreader.addTasksToFront([task])
+
+    def _requestAround(self, pos):
+        """The chunks CHUNK_LOOKAHEAD either side of pos, unless asked for already: a move into a
+        chunk's last row had the row below on placeholders until a move into the next chunk asked
+        for it (the user, 2026-10-29)."""
+        self.requestChunk(pos + CHUNK_LOOKAHEAD)
+        self.requestChunk(max(pos - CHUNK_LOOKAHEAD, 0))
 
     def showPhotoItemProperties(self, photo):
         if photo.isFullObject():
@@ -2133,7 +2144,7 @@ class GridMixin(object):
 
     def _chunkCallbackFor(self, generation, then=None):
         """then: run once the chunk is written, while the list is still the one it was fetched for
-        (_fillShows()'s chunk above a restored position).
+        (_requestFocus()'s chunks, each after the one before).
 
         Wraps _chunkCallback() with the _listGeneration snapshot taken when the chunk fetch
         was scheduled, so a chunk that finishes after an openSection()/switchTab() in-place swap
@@ -2297,7 +2308,10 @@ class GridMixin(object):
             if not self.showPanelControl:
                 return
 
-            order = _writeOrder(len(items), anchor)
+            # not the tiles written already: the ones around a restored or jumped-to tile, fetched
+            # before their chunks (_requestFocus())
+            written = self._writtenPositions
+            order = [offset for offset in _writeOrder(len(items), anchor) if start + offset not in written]
             values = self._tileValues(thumbDim, wide)
             # A batch's values are worked out before any of it is written. Kodi lets a writer's
             # calls through for about 2 ms a frame (FrameMove's window), and each call outside it
@@ -2315,6 +2329,7 @@ class GridMixin(object):
                     except RuntimeError:
                         util.LOG("Library/ChunkCallback: {} not found", pos)
                         continue
+                    written.add(pos)
                     if tile is None:
                         mli.clear()
                         continue
@@ -2332,7 +2347,7 @@ class GridMixin(object):
 
     def requestChunk(self, start, then=None):
         """Fetches the chunk holding position start unless it's been asked for already. then: run
-        once it's written (_chunkCallbackFor())."""
+        once it's written (_chunkCallbackFor()). True when it was asked for here."""
         if util.addonSettings.retrieveAllMediaUpFront or self.section.TYPE == 'playlists':
             # fillPlaylists() always fetches the whole (small, unpaginated) list synchronously up
             # front - there's never a further chunk to request, and PlaylistsSection has no all()
@@ -2352,11 +2367,8 @@ class GridMixin(object):
             util.DEBUG_LOG('Position {0} so requesting chunk {1}', start, startChunkPosition)
             # Keep track of the chunks we've already fetched by storing the chunk's starting position
             self.alreadyFetchedChunkList.add(startChunkPosition)
-            task = ChunkRequestTask().setup(self.section, startChunkPosition, self.CHUNK_SIZE,
-                                            self._chunkCallbackFor(self._listGeneration, then=then),
-                                            filter_=self.getFilterOpts(),
-                                            sort=self.getSortOpts(), subDir=self.subDir, bool_filters=self.boolFilters,
-                                            item_type=self.itemType, params=self._listingParams())
-
+            task = self._chunkTask(startChunkPosition, self.CHUNK_SIZE, then=then)
             self.tasks.add(task)
             backgroundthread.BGThreader.addTasksToFront([task])
+            return True
+        return False
