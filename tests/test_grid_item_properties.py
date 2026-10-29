@@ -39,6 +39,7 @@ NOT_WRITTEN = ('summary', 'art', 'initialized', 'unwatched')
 # The Collection and folder screens: collection.BoundedGridWindow's own item writers.
 BOUNDED_VIEWS = (collection.CollectionWindow, collection.SubDirWindow, collection.SubDirAr16x9Window)
 READ_RE = re.compile(r'ListItem\.Property\(([^)$]+)\)')
+LABEL2_RE = re.compile(r'ListItem\.Label2\b')
 
 
 class GridItemPropertiesTest(KodiTestCase):
@@ -46,13 +47,28 @@ class GridItemPropertiesTest(KodiTestCase):
     def setUpClass(cls):
         super(GridItemPropertiesTest, cls).setUpClass()
         cls.reads = {}
+        cls.readsLabel2 = {}
         for style in sorted(TEMPLATE_CONTEXTS['indicators']):
             context = copy.deepcopy(TEMPLATE_CONTEXTS)
             context['indicators']['START'] = {'INHERIT': style, 'style': style, 'hide_aw_bg': False}
             rendered = render_theme(make_engine(tempfile.mkdtemp(), context=context), 'modern-colored')
-            for view in CHUNK_VIEWS + BOUNDED_VIEWS:
+            for view in CHUNK_VIEWS + BOUNDED_VIEWS + (library.ListViewSquareWindow,):
                 name = view.xmlFile[len('script-plex-'):-len('.xml')]
-                cls.reads[(style, view)] = set(READ_RE.findall(rendered[name]))
+                if view in CHUNK_VIEWS + BOUNDED_VIEWS:
+                    cls.reads[(style, view)] = set(READ_RE.findall(rendered[name]))
+                cls.readsLabel2[(style, view)] = bool(LABEL2_RE.search(rendered[name]))
+
+    def test_no_chunk_filled_view_reads_label2(self):
+        # Each write waits for Kodi's GUI lock, so the chunk writer leaves Label2 out
+        for style in TEMPLATE_CONTEXTS['indicators']:
+            for view in CHUNK_VIEWS:
+                with self.subTest(indicators=style, view=view.__name__):
+                    self.assertFalse(self.readsLabel2[(style, view)])
+        # the probe finds a reader: the Photos list, which fillPhotos() writes
+        self.assertTrue(self.readsLabel2[('modern', library.ListViewSquareWindow)])
+
+    def test_the_writer_leaves_label2_out(self):
+        self.assertNotIn('setLabel2(', inspect.getsource(library_grid.GridMixin._chunkCallback))
 
     def test_no_chunk_filled_view_reads_what_the_writer_leaves_out(self):
         for (style, view), reads in self.reads.items():

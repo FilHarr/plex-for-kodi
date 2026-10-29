@@ -2272,6 +2272,7 @@ class ChunkCallbackStopsMidChunkTest(KodiTestCase):
 
     class Host(object):
         _chunkCallback = library.LibraryWindow._chunkCallback
+        _tileValues = library.LibraryWindow._tileValues
         _retireListItems = library.LibraryWindow._retireListItems
         closing = False
 
@@ -2369,6 +2370,122 @@ class ChunkWriteOrderTest(KodiTestCase):
         host, written = self._host(10, 8)
         host._chunkCallback([ChunkCallbackStopsMidChunkTest.Album() for _ in range(5)], 0, generation=1)
         self.assertEqual([4, 3, 2, 1, 0], written)
+
+
+class ChunkBatchTest(KodiTestCase):
+    """_chunkCallback() works a batch's values out before writing any of it: Kodi lets a writer's
+    calls through for about 2 ms a frame, and with each tile's Python between its calls, 3 tiles got
+    through one on the AM6B (the call times, 2026-10-29)."""
+
+    def test_a_batchs_values_come_before_its_writes(self):
+        test = ChunkCallbackStopsMidChunkTest
+        events = []
+
+        class Album(test.Album):
+            @property
+            def parentTitle(self):
+                events.append('values')
+                return 'x'
+
+        host = test.Host()
+        panel = test.Panel()
+        for _ in range(3):
+            panel.append(test.Item(onWrite=lambda: events.append('write')))
+        host.showPanelControl = panel
+        host.itemType = 'album'
+        host._chunkCallback([Album() for _ in range(3)], 0, generation=1)
+        self.assertEqual(['values'] * 3 + ['write'] * 3, events)
+
+    def test_batches_are_a_screenful(self):
+        test = ChunkCallbackStopsMidChunkTest
+        events = []
+        count = library_grid.CHUNK_SCREENFUL + 2
+
+        class Album(test.Album):
+            @property
+            def parentTitle(self):
+                events.append('values')
+                return 'x'
+
+        host = test.Host()
+        panel = test.Panel()
+        for _ in range(count):
+            panel.append(test.Item(onWrite=lambda: events.append('write')))
+        host.showPanelControl = panel
+        host.itemType = 'album'
+        host._chunkCallback([Album() for _ in range(count)], 0, generation=1)
+        screenful = library_grid.CHUNK_SCREENFUL
+        self.assertEqual(['values'] * screenful + ['write'] * screenful + ['values', 'values', 'write', 'write'],
+                         events)
+
+
+class TileValuesTest(KodiTestCase):
+    """GridMixin._tileValues(): what _chunkCallback() writes for each kind of tile."""
+
+    class Thumb(object):
+        def __init__(self, url):
+            self.url = url
+
+        def asTranscodedImageURL(self, *dim):
+            return self.url
+
+    class Video(object):
+        def __init__(self, TYPE, **attrs):
+            self.TYPE = TYPE
+            self.defaultThumb = TileValuesTest.Thumb('thumb')
+            self.defaultArt = None
+            self.isPlayed = False
+            self.unViewedLeafCount = 0
+            self.attrs = attrs
+            for k, v in attrs.items():
+                setattr(self, k, v)
+
+        def get(self, name):
+            return self.attrs.get(name, '')
+
+    class Host(object):
+        _tileValues = library.LibraryWindow._tileValues
+        sort = 'titleSort'
+
+        def __init__(self, section_type, item_type=None):
+            self.section = type('S', (), {'TYPE': section_type, 'type': section_type})()
+            self.itemType = item_type
+
+    def values(self, host, obj):
+        return host._tileValues((10, 15), False)(obj)
+
+    def test_a_watched_film(self):
+        film = self.Video('movie', title='Blade Runner', defaultTitle='other', year='1982',
+                          editionTitle='The Final Cut')
+        film.isPlayed = True
+        self.assertEqual(('Blade Runner', 'thumb', [('year', u'The Final Cut • 1982'), ('watched', '1'),
+                                                     ('progress', '')]),
+                         self.values(self.Host('movie'), film))
+
+    def test_an_unwatched_film_has_no_played_marker(self):
+        film = self.Video('movie', title='Alien', year='1979')
+        self.assertEqual(('Alien', 'thumb', [('year', '1979'), ('progress', '')]),
+                         self.values(self.Host('movie'), film))
+
+    def test_a_show_has_its_unwatched_count(self):
+        show = self.Video('show', defaultTitle='Severance', year='2022')
+        show.unViewedLeafCount = 1200
+        self.assertEqual(('Severance', 'thumb', [('year', '2022'), ('unwatched.count', '1200'),
+                                                 ('unwatched.count.large', '1'), ('progress', '')]),
+                         self.values(self.Host('show'), show))
+
+    def test_an_episode(self):
+        episode = self.Video('episode', defaultTitle='Pilot', index=2, parentIndex=1)
+        episode.isPlayed = True
+        label, thumb, props = self.values(self.Host('show', 'episode'), episode)
+        self.assertEqual(('Pilot', 'thumb'), (label, thumb))
+        self.assertEqual(['subtitle', 'watched'], [key for key, value in props])
+        self.assertEqual('1', dict(props)['watched'])
+
+    def test_an_album(self):
+        album = self.Video('album', title='Low', parentTitle='Bowie')
+        self.assertEqual(('Low', 'thumb', [('album.artist', 'Bowie')]),
+                         self.values(self.Host('artist', 'album'), album))
 
 
 class SearchDestinationTest(KodiTestCase):

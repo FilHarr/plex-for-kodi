@@ -2160,18 +2160,110 @@ class GridMixin(object):
             # after a Back's restored page) wrote its background and anchor marks in too.
             marks = {}
             started = time.time()
+            # This thread's CPU time: a wait on Kodi's GUI lock takes none, so the rest of the
+            # bind time is the GUI calls' waiting, not their Python.
+            startedCpu = time.thread_time()
             self._chunkCallback(items, start, generation, marks=marks)
+            cpu = time.thread_time() - startedCpu
             requested = firstChunk[2]
 
             def since(key):
                 return int((marks[key] - started) * 1000) if key in marks else '-'
             util.DEBUG_LOG("Library: first chunk ({0} items from {1}, written outward from {2}) bound in {3} ms"
-                           " (background {4}, nearest {5} items {6}), {7} ms after the placeholders,"
-                           " {8} ms after the request", len(items), start, marks.get('anchor', '-'),
-                           int((time.time() - started) * 1000), since('background'), CHUNK_SCREENFUL,
-                           since('screenful'), int((started - firstChunk[1]) * 1000),
+                           " ({4} ms CPU; background {5}, nearest {6} items {7}), {8} ms after the placeholders,"
+                           " {9} ms after the request", len(items), start, marks.get('anchor', '-'),
+                           int((time.time() - started) * 1000), int(cpu * 1000), since('background'),
+                           CHUNK_SCREENFUL, since('screenful'), int((started - firstChunk[1]) * 1000),
                            int((time.time() - requested) * 1000) if requested else '?')
         return callback
+
+    def _tileValues(self, thumbDim, wide):
+        """A function giving a chunk item's (label, thumb, [(property, value), ...]) for
+        _chunkCallback() to write, by this grid's item type."""
+        if self.itemType == 'episode':
+            def episode(obj):
+                props = []
+                if obj.index:
+                    props.append(('subtitle', u'{0} • {1}'.format(
+                        T(32310, 'S').format(obj.parentIndex), T(32311, 'E').format(obj.index))))
+                props.append(('watched', obj.isPlayed and '1' or ''))
+                return obj.defaultTitle or '', obj.defaultThumb.asTranscodedImageURL(*thumbDim), props
+            return episode
+
+        if self.itemType == 'album':
+            def album(obj):
+                return (obj.title, obj.defaultThumb.asTranscodedImageURL(*thumbDim),
+                        [('album.artist', obj.parentTitle)])
+            return album
+
+        # the secondary sort's caption (subDisplay), the same for every item
+        sk_data = SORT_KEYS[self.section.TYPE].get(self.sort, {'subDisplay': None})
+        sub_display = sk_data.get('subDisplay', None)
+        exclusive = sk_data.get('subDisplayExclusive', False)
+        counted = self.section.TYPE == 'show'
+
+        def other(obj):
+            props = []
+            if obj.TYPE == 'track':
+                label = "{} - {}: {}".format(obj.grandparentTitle, obj.parentTitle, obj.title)
+                # The music section's list view renders a track as three separate fields rather
+                # than that one composite label (which stays as it is, for every other consumer of
+                # a track row) - see includes/track_row_text.xml.tpl. Label is deliberately left
+                # alone, and the duration is "2:23" here, not durationToText()'s "2m 23s".
+                props.append(('track.title', obj.title or ''))
+                props.append(('track.artist', obj.grandparentTitle or ''))
+                props.append(('track.duration', util.simplifiedTimeDisplay(obj.duration.asInt())))
+                # Keyed off the same window property ArtistWindow's Popular Tracks row uses for
+                # its now-playing tint (subitems.py).
+                props.append(('track.ID', obj.ratingKey))
+            else:
+                # a film's bare title: its edition is on the line under it (sub_title below)
+                label = (obj.title if obj.TYPE == 'movie' else obj.defaultTitle) or ''
+
+            if obj.TYPE == 'collection':
+                if obj.hasNoPicture():
+                    # empty, with no poster: no composite to ask for (Collection.hasNoPicture())
+                    thumb = util.standInThumb(self.thumb_fallback)
+                else:
+                    thumb = obj.server.getImageTranscodeURL(
+                        obj.artCompositeURL(*tuple(2*dim for dim in thumbDim)), *thumbDim)
+            elif obj.TYPE == 'photodirectory' and obj.composite:
+                thumb = obj.composite.asTranscodedImageURL(*thumbDim)
+            elif wide and obj.TYPE == 'movie':
+                # its art, as the Recommended 16:9 row shows it (LibraryWindow.
+                # createMovieListItem(), wide) - or its thumb, a frame too, without: an empty path
+                # never falls back (util.standInThumb())
+                thumb = (obj.defaultArt or obj.defaultThumb).asTranscodedImageURL(*thumbDim)
+            else:
+                thumb = obj.defaultThumb.asTranscodedImageURL(*thumbDim)
+
+            # get secondary sort based info
+            sub_title = obj.get('year')
+            if sub_display:
+                if hasattr(obj, "meta_{}".format(sub_display)):
+                    res = getattr(obj, "meta_{}".format(sub_display))('')
+                    if res:
+                        sub_title = res
+                        if not exclusive:
+                            sub_title = "{} ({})".format(res, obj.get('year'))
+            if obj.TYPE == 'collection' and obj.get('childCount') != '':
+                sub_title = util.collectionCountText(obj.get('childCount').asInt(), self.section.TYPE)
+            elif sub_title == obj.get('year'):
+                # just the year: the edition before it, if any (grid_labels.editionLine())
+                sub_title = grid_labels.editionLine(obj)
+            props.append(('year', sub_title))
+
+            if obj.TYPE != 'collection':
+                if not obj.isPlayed and obj.TYPE != "Directory":
+                    if counted or obj.TYPE == 'show' or obj.TYPE == 'season':
+                        props.append(('unwatched.count', str(obj.unViewedLeafCount)))
+                        props.append(('unwatched.count.large', obj.unViewedLeafCount > 999 and '1' or ''))
+                elif obj.isPlayed and obj.TYPE != "Directory":
+                    props.append(('watched', '1'))
+
+            props.append(('progress', util.getProgressImage(obj)))
+            return label, thumb, props
+        return other
 
     def _chunkCallback(self, items, start, generation=None, marks=None):
         if not self.showPanelControl or not items or self.closing:
@@ -2198,153 +2290,43 @@ class GridMixin(object):
             thumbDim = THUMB_AR16X9_DIM if wide else TYPE_KEYS.get(self.section.type, TYPE_KEYS['movie'])['thumb_dim']
             # Only what the grid templates read (step 12 stage F in the navigation review, checked
             # by tests/test_grid_item_properties.py): no summary or art, which only the 16:9 list
-            # view read, and no per-item initialized or unwatched, which nothing read. Each write is
-            # a GUI call that can wait for Kodi's lock while it loads the visible artwork.
+            # view read, no per-item initialized or unwatched, which nothing read, and no Label2,
+            # which only the Photos list reads (fillPhotos()). Each write is a GUI call, and waiting
+            # for Kodi's lock was ~95% of a chunk's write on the AM6B (2026-10-28).
 
             if not self.showPanelControl:
                 return
 
             order = _writeOrder(len(items), anchor)
-            if self.itemType == 'episode':
-                for written, offset in enumerate(order):
+            values = self._tileValues(thumbDim, wide)
+            # A batch's values are worked out before any of it is written. Kodi lets a writer's
+            # calls through for about 2 ms a frame (FrameMove's window), and each call outside it
+            # waits a frame, 30-50 ms at a 4K interface on the AM6B: with each tile's Python
+            # between its calls, 3 tiles got through a window (the call times, 2026-10-29).
+            for first in range(0, len(order), CHUNK_SCREENFUL):
+                batch = [(start + offset, items[offset], values(items[offset]) if items[offset] else None)
+                         for offset in order[first:first + CHUNK_SCREENFUL]]
+                for pos, obj, tile in batch:
                     if generation is not None and generation != self._listGeneration:
                         util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
                         return
-                    obj = items[offset]
-                    pos = start + offset
-                    mli = self.showPanelControl[pos]
-                    if obj:
-                        mli.dataSource = obj
-                        if obj.index:
-                            subtitle = u'{0} \u2022 {1}'.format(T(32310, 'S').format(obj.parentIndex),
-                                                                T(32311, 'E').format(obj.index))
-                            mli.setProperty('subtitle', subtitle)
-                            subtitle = "\n" + subtitle
-                        else:
-                            subtitle = ' - ' + obj.originallyAvailableAt.asDatetime('%m/%d/%y')
-                        mli.setLabel((obj.defaultTitle or ''))# + subtitle)
-
-                        mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
-
-                        #mli.setLabel2(util.durationToText(obj.fixedDuration()))
-                        mli.setLabel2(subtitle)
-                        mli.setBoolProperty('watched', obj.isPlayed)
-                    else:
-                        mli.clear()
-
-                    if marks is not None and written + 1 == CHUNK_SCREENFUL:
-                        marks['screenful'] = time.time()
-
-            elif self.itemType == 'album':
-                for written, offset in enumerate(order):
-                    if generation is not None and generation != self._listGeneration:
-                        util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
-                        return
-                    obj = items[offset]
-                    pos = start + offset
-                    mli = self.showPanelControl[pos]
-                    if obj:
-                        mli.dataSource = obj
-                        mli.setLabel(obj.title)
-                        mli.setProperty('album.artist', obj.parentTitle)
-
-                        mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
-
-                        mli.setLabel2(obj.year)
-                    else:
-                        mli.clear()
-
-                    if marks is not None and written + 1 == CHUNK_SCREENFUL:
-                        marks['screenful'] = time.time()
-            else:
-                for written, offset in enumerate(order):
-                    if generation is not None and generation != self._listGeneration:
-                        util.DEBUG_LOG("Library: _chunkCallback() stopped - the list moved on")
-                        return
-                    obj = items[offset]
-                    pos = start + offset
-
                     try:
                         mli = self.showPanelControl[pos]
                     except RuntimeError:
                         util.LOG("Library/ChunkCallback: {} not found", pos)
                         continue
-
-                    if obj:
-                        if obj.TYPE == 'track':
-                            mli.setLabel("{} - {}: {}".format(obj.grandparentTitle, obj.parentTitle, obj.title))
-                            # The music section's list view renders a track as three separate
-                            # fields rather than that one composite label (which stays as it is,
-                            # for every other consumer of a track row) - see
-                            # includes/track_row_text.xml.tpl. Label/Label2 are deliberately left
-                            # alone: Label2 below is set to the duration for every type, in
-                            # durationToText()'s "2m 23s" form, where a track wants "2:23".
-                            mli.setProperty('track.title', obj.title or '')
-                            mli.setProperty('track.artist', obj.grandparentTitle or '')
-                            mli.setProperty('track.duration',
-                                            util.simplifiedTimeDisplay(obj.duration.asInt()))
-                            # Keyed off the same window property ArtistWindow's Popular Tracks row
-                            # uses for its now-playing tint (subitems.py).
-                            mli.setProperty('track.ID', obj.ratingKey)
-                        else:
-                            # a film's bare title: its edition is on the line under it (sub_title below)
-                            mli.setLabel((obj.title if obj.TYPE == 'movie' else obj.defaultTitle) or '')
-
-                        if obj.TYPE == 'collection':
-                            if obj.hasNoPicture():
-                                # empty, with no poster: no composite to ask for (Collection.hasNoPicture())
-                                mli.setThumbnailImage(util.standInThumb(self.thumb_fallback))
-                            else:
-                                mli.setThumbnailImage(obj.server.getImageTranscodeURL(
-                                    obj.artCompositeURL(*tuple(2*dim for dim in thumbDim)), *thumbDim)
-                                )
-                        else:
-                            if obj.TYPE == 'photodirectory' and obj.composite:
-                                mli.setThumbnailImage(obj.composite.asTranscodedImageURL(*thumbDim))
-                            elif wide and obj.TYPE == 'movie':
-                                # its art, as the Recommended 16:9 row shows it (LibraryWindow.
-                                # createMovieListItem(), wide) - or its thumb, a frame too, without:
-                                # an empty path never falls back (util.standInThumb())
-                                mli.setThumbnailImage((obj.defaultArt or obj.defaultThumb).asTranscodedImageURL(*thumbDim))
-                            else:
-                                mli.setThumbnailImage(obj.defaultThumb.asTranscodedImageURL(*thumbDim))
-                        mli.dataSource = obj
-
-                        # get secondary sort based info
-                        sk_data = SORT_KEYS[self.section.TYPE].get(self.sort, {'subDisplay': None})
-                        sub_display = sk_data.get('subDisplay', None)
-                        sub_title = obj.get('year')
-                        if sub_display:
-                            if hasattr(obj, "meta_{}".format(sub_display)):
-                                res = getattr(obj, "meta_{}".format(sub_display))('')
-                                if res:
-                                    exclusive = sk_data.get('subDisplayExclusive', False)
-                                    sub_title = res
-                                    if not exclusive:
-                                        sub_title = "{} ({})".format(res, obj.get('year'))
-                        if obj.TYPE == 'collection' and obj.get('childCount') != '':
-                            sub_title = util.collectionCountText(obj.get('childCount').asInt(), self.section.TYPE)
-                        elif sub_title == obj.get('year'):
-                            # just the year: the edition before it, if any (grid_labels.editionLine())
-                            sub_title = grid_labels.editionLine(obj)
-                        mli.setProperty('year', sub_title)
-
-                        if obj.TYPE != 'collection':
-                            if not obj.isDirectory() and obj.get('duration').asInt():
-                                mli.setLabel2(util.durationToText(obj.fixedDuration()))
-                            if not obj.isPlayed and obj.TYPE != "Directory":
-                                if self.section.TYPE == 'show' or obj.TYPE == 'show' or obj.TYPE == 'season':
-                                    mli.setProperty('unwatched.count', str(obj.unViewedLeafCount))
-                                    mli.setBoolProperty('unwatched.count.large', obj.unViewedLeafCount > 999)
-                            elif obj.isPlayed and obj.TYPE != "Directory":
-                                mli.setBoolProperty('watched', '1')
-
-                        mli.setProperty('progress', util.getProgressImage(obj))
-                    else:
+                    if tile is None:
                         mli.clear()
+                        continue
+                    label, thumb, props = tile
+                    mli.dataSource = obj
+                    mli.setLabel(label)
+                    mli.setThumbnailImage(thumb)
+                    for key, value in props:
+                        mli.setProperty(key, value)
 
-                    if marks is not None and written + 1 == CHUNK_SCREENFUL:
-                        marks['screenful'] = time.time()
+                if marks is not None and first == 0 and len(batch) == CHUNK_SCREENFUL:
+                    marks['screenful'] = time.time()
 
         self._setFilling(False)
 
