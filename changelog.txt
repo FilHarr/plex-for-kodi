@@ -1,3 +1,16 @@
+[-0.4.2-]
+- Library grids: the tiles you're on load first, opening a grid too. Back to a tile loads the screen around it first, even across two pages, and scrolling loads the next page before you reach it
+- Library grids: pages load in about half the time, and big libraries such as Episodes open faster
+- Library grids: the server sends only what the tiles show
+- Library grids: Back to a tile shows its letter in the A-Z list
+- Library grids: changing the view no longer leaves the tabs and buttons missing for seconds
+- Settings: "Always request all library media items at once" and "Library item-request chunk size" are gone - grids no longer wait for a whole page, so neither helped. "Slow connection" now also has library grids ask for their next page further ahead
+- Photos: moving no longer fetches the photos again, and a sort builds the grid as opening it does
+- Backgrounds take less drawing: smoother scrolling and animations with a 4K interface
+- Photo viewer: the plain background used on other screens, instead of a blurred copy of the photo, which no longer has to download first
+- Fixed: Resolution and Bitrate sorts showed the year under films with more than one copy
+- Fixed: launching Plex Uno while it was still starting (OK pressed during auto-start) ran it twice
+
 [-0.4.1-]
 - Fixed: on CoreELEC p3i builds (the AM6B), a pop-up closed with Back stayed on screen until something else on the screen changed. Pop-ups now fade out as they close
 - Sidebar menu: Manage recommended rows, a folder's Map path and Empty Trash's confirm open over the menu, and Back comes back to it
