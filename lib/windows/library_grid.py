@@ -1881,24 +1881,19 @@ class GridMixin(object):
         kodigui.markStep(timing, 'select + queue chunks')
 
     def _queueChunks(self, restorePos, totalSize):
-        """_fillShows()'s chunk requests: the first chunk, or the tiles around a restored position
-        and then its chunks (_requestFocus())."""
+        """_fillShows()'s chunk requests, each fetched as it's reached up to the last: the tiles
+        around restorePos (0 on a fresh grid) first, then its chunks (_requestFocus()).
+        _fillShows()'s selectItem() is a plain Python-side position set - it never generates the
+        arrow-key navigation that asks for chunks (gridAction()), so a restored position would
+        otherwise sit on placeholders until the user nudges focus."""
         self._gridTotal = totalSize
-        if util.addonSettings.retrieveAllMediaUpFront:
-            tasks = [self._chunkTask(start, self.CHUNK_SIZE) for start in range(0, totalSize, self.CHUNK_SIZE)]
-            self.tasks.add(tasks)
-            backgroundthread.BGThreader.addTasksToFront(tasks)
-            return
-
-        # Fetched as they're reached (requestChunk()), up to the last.
         self.finalChunkPosition = (totalSize // self.CHUNK_SIZE) * self.CHUNK_SIZE
-        if restorePos:
-            # _fillShows()'s selectItem() is a plain Python-side position set - it never generates
-            # the arrow-key navigation that asks for chunks (gridAction()), so a restored position
-            # would otherwise sit on placeholders until the user nudges focus.
-            self._requestFocus(restorePos)
-        else:
-            self.requestChunk(0)
+        # Slow connection: the next chunk asked for twice as far ahead, so a slow server has twice
+        # as long to answer before its rows show
+        self._lookahead = CHUNK_LOOKAHEAD * (2 if util.getSetting('slow_connection') else 1)
+        util.DEBUG_LOG('Library: {0} items, chunks of {1}, the next asked for {2} ahead', totalSize,
+                       self.CHUNK_SIZE, self._lookahead)
+        self._requestFocus(restorePos)
 
     def _chunkTask(self, start, size, then=None):
         """A ChunkRequestTask for size items from start, for this list as it is now. then: run once
@@ -1912,17 +1907,19 @@ class GridMixin(object):
         """The tiles around pos first, whichever chunks they're in, then pos's chunk and the ones
         CHUNK_LOOKAHEAD either side (_requestAround()), each once the one before is written: a
         Back or a letter jump to a tile in its chunk's last row got its own chunk, and the row
-        below waited for the next one's fetch (the user, 2026-10-29). _chunkCallback() skips the
-        tiles already written. Nothing to fetch around pos: just its chunk and the ones either side."""
-        # fetched whole: everything, the playlists, Photos (fillPhotos()'s finalChunkPosition -1)
-        if util.addonSettings.retrieveAllMediaUpFront or self.section.TYPE == 'playlists' \
-                or self.finalChunkPosition < 0:
+        below waited for the next one's fetch (the user, 2026-10-29); a fresh grid's first tiles
+        waited for the whole first chunk. _chunkCallback() skips the tiles already written.
+        Nothing to fetch around pos, or tiles more than half as many as their chunk's (a short
+        list): just pos's chunk, then the ones either side."""
+        # fetched whole: the playlists, Photos (fillPhotos()'s finalChunkPosition -1)
+        if self.section.TYPE == 'playlists' or self.finalChunkPosition < 0:
             return
         total = self.__dict__.get('_gridTotal') or 0
         first = max(pos - FOCUS_REACH, 0)
         last = min(pos + FOCUS_REACH, total - 1)
         chunks = {(p // self.CHUNK_SIZE) * self.CHUNK_SIZE for p in (first, pos, last)}
-        if last < first or chunks <= self.alreadyFetchedChunkList:
+        short = (last - first + 1) * 2 > min(total, self.CHUNK_SIZE)
+        if last < first or chunks <= self.alreadyFetchedChunkList or short:
             if not self.requestChunk(pos, then=lambda: self._requestAround(pos)):
                 self._requestAround(pos)
             return
@@ -1933,11 +1930,12 @@ class GridMixin(object):
         backgroundthread.BGThreader.addTasksToFront([task])
 
     def _requestAround(self, pos):
-        """The chunks CHUNK_LOOKAHEAD either side of pos, unless asked for already: a move into a
-        chunk's last row had the row below on placeholders until a move into the next chunk asked
-        for it (the user, 2026-10-29)."""
-        self.requestChunk(pos + CHUNK_LOOKAHEAD)
-        self.requestChunk(max(pos - CHUNK_LOOKAHEAD, 0))
+        """The chunks CHUNK_LOOKAHEAD either side of pos (twice that with Slow connection),
+        unless asked for already: a move into a chunk's last row had the row below on placeholders
+        until a move into the next chunk asked for it (the user, 2026-10-29)."""
+        lookahead = getattr(self, '_lookahead', CHUNK_LOOKAHEAD)
+        self.requestChunk(pos + lookahead)
+        self.requestChunk(max(pos - lookahead, 0))
 
     def showPhotoItemProperties(self, photo):
         if photo.isFullObject():
@@ -2348,7 +2346,7 @@ class GridMixin(object):
     def requestChunk(self, start, then=None):
         """Fetches the chunk holding position start unless it's been asked for already. then: run
         once it's written (_chunkCallbackFor()). True when it was asked for here."""
-        if util.addonSettings.retrieveAllMediaUpFront or self.section.TYPE == 'playlists':
+        if self.section.TYPE == 'playlists':
             # fillPlaylists() always fetches the whole (small, unpaginated) list synchronously up
             # front - there's never a further chunk to request, and PlaylistsSection has no all()
             # for ChunkRequestTask to call (confirmed by the Sidebar-Tab-Unification branch's own

@@ -1699,7 +1699,7 @@ msgstr "Conexión lenta"
 
 #: 
 msgctxt "#32916"
-msgid "Use with a wonky/slow connection, e.g. in a hotel room. Adjusts the UI to visually wait for item refreshes and waits for the buffer to fill when starting playback. Automatically sets readfactor=20, requires Kodi restart."
+msgid "Use with a wonky/slow connection, e.g. in a hotel room. Adjusts the UI to visually wait for item refreshes, asks for library grids' next page further ahead, and waits for the buffer to fill when starting playback. Automatically sets readfactor=20, requires Kodi restart."
 msgstr "Utilícelo con una conexión lenta o inestable, por ejemplo, en una habitación de hotel. Ajusta la interfaz de usuario para esperar visualmente a que se actualicen los elementos y espera a que se llene el búfer al iniciar la reproducción. Establece automáticamente readfactor=20, requiere reiniciar Kodi."
 
 #: 

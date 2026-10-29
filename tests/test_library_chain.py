@@ -2546,10 +2546,12 @@ class QueueChunksTest(KodiTestCase):
 
         def addTasksToFront(tasks):
             self.queued[0:0] = tasks
+        self.settings = {'slow_connection': False}
         for patch in (mock.patch.object(library_grid, 'ChunkRequestTask', self.Task),
                       mock.patch.object(library_grid.backgroundthread.BGThreader, 'addTasksToFront',
                                         addTasksToFront),
-                      mock.patch.object(library_grid.util.addonSettings, 'retrieveAllMediaUpFront', False)):
+                      mock.patch.object(library_grid.util, 'getSetting',
+                                        lambda key, *default: self.settings[key])):
             patch.start()
             self.addCleanup(patch.stop)
 
@@ -2563,9 +2565,26 @@ class QueueChunksTest(KodiTestCase):
         if task.written:
             task.written()
 
-    def test_the_first_chunk_with_nothing_restored(self):
+    def test_a_fresh_grid_has_its_first_tiles_first(self):
+        """Not after the whole first chunk, whatever its size."""
         self.Host()._queueChunks(0, 330)
+        self.assertEqual([(0, 31)], self.spans())
+        self.write(0, 31)
+        self.assertEqual([(0, 240), (0, 31)], self.spans())
+
+    def test_a_short_list_is_one_chunk(self):
+        """Tiles more than half as many as their chunk's: just the chunk."""
+        self.Host()._queueChunks(0, 50)
         self.assertEqual([(0, 240)], self.spans())
+
+    def test_slow_connection_asks_twice_as_far_ahead(self):
+        self.settings['slow_connection'] = True
+        host = self.Host()
+        host._queueChunks(0, 7141)
+        self.write(0, 31)
+        self.write(0)
+        host._requestAround(150)
+        self.assertEqual([(240, 240), (0, 240), (0, 31)], self.spans())
 
     def test_the_last_row_of_the_first_chunk(self):
         """The tiles around it, across both chunks, then its chunk, then the next."""

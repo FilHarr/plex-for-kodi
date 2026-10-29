@@ -1127,7 +1127,8 @@ class Settings(object):
                     'slow_connection', T(32915, 'Slow connection'), False
                 ).description(T(32916, "Use with a wonky/slow connection, "
                                        "e.g. in a hotel room. Adjusts the UI to visually "
-                                       "wait for item refreshes and waits for the buffer to fill when starting "
+                                       "wait for item refreshes, asks for library grids' next page further "
+                                       "ahead, and waits for the buffer to fill when starting "
                                        "playback.")),
                 BoolSetting(
                     'onss_library_back_home', T(34064, 'Return to Home on Screensaver'), util.CE_NEEDS_HOME_ON_SCREENSAVER

@@ -681,10 +681,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._writtenPositions = set()
         self.finalChunkPosition = 0
 
-        if self.section.TYPE == 'movies_shows':
-            self.CHUNK_SIZE = min(100, util.addonSettings.libraryChunkSize)
-        else:
-            self.CHUNK_SIZE = util.addonSettings.libraryChunkSize
+        # Movies & Shows' mixed list in pages of 100. The page size was a setting, which only
+        # mattered when a grid waited for a whole page: the tiles around the focus come first now,
+        # whatever the page's size (GridMixin._requestFocus()).
+        self.CHUNK_SIZE = 100 if self.section.TYPE == 'movies_shows' else type(self).CHUNK_SIZE
 
         key = self.section.key
         if not key or not key.isdigit():
