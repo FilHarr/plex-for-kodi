@@ -425,8 +425,8 @@ class BackgroundFillTest(KodiTestCase):
 
     def test_the_mask_is_cropped_to_its_reach(self):
         from PIL import Image
-        mask = Image.open(os.path.join(MEDIA_DIR, "script.plex", "masks", "background-corner.png"))
-        self.assertEqual((1444, 1080), mask.size)
+        with Image.open(os.path.join(MEDIA_DIR, "script.plex", "masks", "background-corner.png")) as mask:
+            self.assertEqual((1444, 1080), mask.size)
 
 
 class GridRestoreIndexTest(KodiTestCase):
