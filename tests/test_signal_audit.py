@@ -80,15 +80,28 @@ class PropertyTimerTest(KodiTestCase):
         self.addCleanup(patcher.stop)
         self.fired = []
 
-    def _timer(self):
-        return kodigui.PropertyTimer(13001, 0.05, 'OSD', '', init_value=False,
+    def _timer(self, timeout=0.05):
+        return kodigui.PropertyTimer(13001, timeout, 'OSD', '', init_value=False,
                                      callback=lambda: self.fired.append(1))
 
     def test_several_resets_fire_once(self):
-        timer = self._timer()
+        # Only the newest reset's thread may fire: the earlier ones stand down at once, unfired.
+        # Before the fix they all waited on the one end time, and whichever saw it pass first fired
+        # - two of them when two saw it together. A long timeout, run out on demand
+        # (stop(trigger=True)), so nothing hangs on how quickly the resets land: with 50 ms, a stall
+        # between two (the stub's sleep() doesn't, so each timer thread spins) let the earlier timer
+        # run out and fire, as it should, and the test failed now and then either way.
+        timer = self._timer(timeout=5)
+        before = set(threading.enumerate())
         for _ in range(4):
             timer.reset(init=False)
-        timer._thread.join()
+        earlier = [thread for thread in threading.enumerate()
+                   if thread not in before and thread is not timer._thread]
+        for thread in earlier:
+            thread.join(2)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual([], self.fired)
+        timer.stop(trigger=True)
         self.assertEqual([1], self.fired)
 
     def test_close_drops_the_callback(self):
