@@ -80,7 +80,7 @@ def addedText(value):
 
 
 def seasonEpisode(item):
-    """"S1 • E2", as the rows show it (LibraryWindow.createEpisodeListItem())."""
+    """"S1 • E2", as the rows show it (HubsMixin.episodeTile())."""
     if not item.get('index'):
         return ''
     return u'{0} • {1}'.format(T(32310, 'S').format(item.get('parentIndex')),

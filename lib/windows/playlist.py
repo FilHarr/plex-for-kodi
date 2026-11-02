@@ -365,7 +365,7 @@ class PlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
         fallback = self.thumbFallback()
         self.setProperty('playlist.thumb.fallback', fallback)
         # An empty playlist has no composite: its stand-in by another path than the fallback's, or
-        # the cover stays blank (util.standInThumb(), as createPlaylistListItem() does for its tile).
+        # the cover stays blank (util.standInThumb(), as HubsMixin.playlistTile() does for its tile).
         if self.playlist.composite:
             thumb = self.playlist.composite.asTranscodedImageURL(*self.ALBUM_THUMB_DIM)
         else:

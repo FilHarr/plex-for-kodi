@@ -16,6 +16,7 @@ Importing lib.windows.* starts lib.player's monitor thread unless abort_requeste
 
 from __future__ import absolute_import
 
+import threading
 import xml.etree.ElementTree as ET
 from unittest import mock
 
@@ -24,6 +25,7 @@ from kodienv import ENV
 ENV.abort_requested = True
 from lib import util  # noqa: E402
 from lib.windows import home, hub_config, library, library_hubs, section_ids  # noqa: E402
+import plexnet  # noqa: E402
 from plexnet import plexserver  # noqa: E402
 
 from .base import KodiTestCase  # noqa: E402
@@ -400,13 +402,45 @@ class HomeRequestTest(KodiTestCase):
             return ET.fromstring('<MediaContainer size="0"/>')
         srv.query = query
         srv.hubs(None, count=20, section_ids=['22', '2', 'playlists'])
-        (promoted, home_params), (cw, cw_params) = asked
-        self.assertEqual('/hubs/promoted', promoted)
+        # asked together, so in either order
+        asked = dict(asked)
+        self.assertEqual(['/hubs/continueWatching', '/hubs/promoted'], sorted(asked))
+        home_params, cw_params = asked['/hubs/promoted'], asked['/hubs/continueWatching']
         self.assertEqual('22,2,playlists', home_params['contentDirectoryID'])
         self.assertEqual('22,2', home_params['pinnedContentDirectoryID'])
-        self.assertEqual('/hubs/continueWatching', cw)
         self.assertNotIn('pinnedContentDirectoryID', cw_params)
         self.assertEqual('22,2,playlists', cw_params['contentDirectoryID'])
+
+    def _server(self, query):
+        srv = plexserver.PlexServer.__new__(plexserver.PlexServer)
+        srv.currentHubs = None
+        srv.query = query
+        return srv
+
+    def test_continue_watching_is_asked_while_the_rows_are(self):
+        cwAsked = threading.Event()
+
+        def query(path, params=None, **kw):
+            if path.startswith('/hubs/continueWatching'):
+                cwAsked.set()
+                return ET.fromstring('<MediaContainer size="1"><Hub hubIdentifier="continueWatching"'
+                                     ' key="/hubs/continueWatching" title="Continue Watching" size="0"/>'
+                                     '</MediaContainer>')
+            # the rows' answer waits until Continue Watching has been asked: in turn, it never is
+            self.assertTrue(cwAsked.wait(5))
+            return ET.fromstring('<MediaContainer size="1"><Hub hubIdentifier="movie.recentlyadded.22"'
+                                 ' key="/hubs/promoted/22" title="Recently Added" size="0"/></MediaContainer>')
+        hubs = self._server(query).hubs(None, count=20, section_ids=['22'])
+        # Continue Watching first, as before
+        self.assertEqual(['continueWatching', 'movie.recentlyadded.22'], [h.hubIdentifier for h in hubs])
+
+    def test_a_continue_watching_failure_is_raised(self):
+        def query(path, params=None, **kw):
+            if path.startswith('/hubs/continueWatching'):
+                raise plexnet.exceptions.BadRequest('429')
+            return ET.fromstring('<MediaContainer size="0"/>')
+        with self.assertRaises(plexnet.exceptions.BadRequest):
+            self._server(query).hubs(None, count=20, section_ids=['22'])
 
     def test_a_merged_rows_library_is_not_named(self):
         self.assertIsNone(library_hubs.HubsMixin.promotedHubSourceKey('home.movies.recent.22'))
@@ -603,13 +637,13 @@ class EmptyPlaylistArtTest(KodiTestCase):
         # PC) - Kodi only falls back to a different file (util.standInThumb())
         host = mock.Mock(THUMB_SQUARE_DIM=(240, 240))
         for playlistType, image in (('audio', 'music'), ('video', 'movie')):
-            mli = library_hubs.HubsMixin.createPlaylistListItem(host, self.empty_playlist(playlistType))
+            label, label2, thumb, props = library_hubs.HubsMixin.playlistTile(host, self.empty_playlist(playlistType))
             fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(image)
-            self.assertEqual(fallback, mli.properties['thumb.fallback'])
-            self.assertNotEqual(fallback, mli.thumbnailImage)
-            self.assertEqual(util.standInThumb(fallback), mli.thumbnailImage)
-            self.assertTrue(mli.thumbnailImage.replace('\\', '/').endswith(
-                'resources/skins/Main/media/' + fallback), mli.thumbnailImage)
+            self.assertEqual(fallback, props['thumb.fallback'])
+            self.assertNotEqual(fallback, thumb)
+            self.assertEqual(util.standInThumb(fallback), thumb)
+            self.assertTrue(thumb.replace('\\', '/').endswith(
+                'resources/skins/Main/media/' + fallback), thumb)
 
     def test_and_in_the_grid(self):
         playlist = self.empty_playlist('audio')

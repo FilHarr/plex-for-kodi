@@ -1468,6 +1468,78 @@ class ManagedControlList(object):
 
         return self._updateItems(0, self.size())
 
+    def replaceWithValues(self, values):
+        """Replace the items with new ones from values, (label, label2, thumb, {property: value},
+        data_source) each, and return them. Into an empty list they're added as they are. Over
+        items already there, only what differs from the item in each place is written - each write
+        takes Kodi's GUI lock, and replaceItems() rewrites every item's label, label2, art, path and
+        every property the list has ever had, after the new items' own writes it then discards.
+        The items written over keep their place, so the list never shows empty."""
+        if not self.items:
+            items = [ManagedListItem(label, label2, thumbnailImage=thumb, data_source=data_source,
+                                     properties=properties)
+                     for label, label2, thumb, properties, data_source in values]
+            self.addItems(items)
+            return items
+
+        old = self.items
+        oldSize = len(old)
+        size = len(values)
+        if size != oldSize:
+            pos = self.getSelectedPosition()
+            if size > oldSize:
+                self.control.addItems([xbmcgui.ListItem() for i in range(size - oldSize)])
+            else:
+                for idx in range(oldSize - 1, size - 1, -1):
+                    self.control.removeItem(idx)
+
+        items = []
+        for idx, (label, label2, thumb, properties, data_source) in enumerate(values):
+            # its own list item, made with no lock, is never used: _listItem below is the native one
+            mli = ManagedListItem(label, label2, data_source=data_source)
+            mli.thumbnailImage = thumb
+            mli.properties = dict(properties)
+            mli._manager = self
+            mli._ID = self._nextID()
+            mli._listItem = None
+            prev = old[idx] if idx < oldSize else None
+            if prev is None:
+                was = ('', '', '', '', '', {})
+            else:
+                was = (prev.label, prev.label2, prev.thumbnailImage, prev.iconImage, prev.path, prev.properties)
+            li = None
+            if label != was[0] or label2 != was[1] or thumb != was[2] or was[3] or was[4]:
+                li = self.control.getListItem(idx)
+                if label != was[0]:
+                    li.setLabel(label)
+                if label2 != was[1]:
+                    li.setLabel2(label2)
+                if thumb != was[2] or was[3]:
+                    li.setArt({"thumb": thumb, "icon": ""})
+                if was[4]:
+                    li.setPath('')
+            for key in set(was[5]) | set(properties):
+                value = properties.get(key, '')
+                if was[5].get(key, '') != value:
+                    if li is None:
+                        li = self.control.getListItem(idx)
+                    li.setProperty(key, value)
+            mli._listItem = li
+            self._properties.update(properties)
+            items.append(mli)
+
+        for i in old:
+            i.onDestroy()
+            i.invalidate()
+        self.items = items
+
+        if size != oldSize:
+            if self.positionIsValid(pos):
+                self.selectItem(pos)
+            elif pos >= size and size:
+                self.selectItem(size - 1)
+        return items
+
     def getListItem(self, pos):
         li = self.control.getListItem(pos)
         mli = self.items[pos]

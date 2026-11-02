@@ -1987,19 +1987,19 @@ class GridMixin(object):
         # screen shows, not the old 'art' backdrop-style video rendering), total runtime under the
         # title. Ported from the Sidebar-Tab-Unification branch's identical method (commit
         # f0e6340f), which itself mirrors HomeWindow.createPlaylistListItem() (home.py, f69b1e7e).
-        # Named distinctly from the pre-existing createPlaylistListItem() (below,
-        # CREATE_LI_MAP/createListItem()'s hub-tile dispatch, a different rendering context - hub
+        # Named distinctly from the hub rows' playlist tile (HubsMixin.playlistTile(), library_hubs.py,
+        # TILE_MAP/hubTile()'s hub-tile dispatch, a different rendering context - hub
         # rows use self.THUMB_SQUARE_DIM at 220x220, this grid view uses the module-level
         # THUMB_SQUARE_DIM at 355x355, same dimension every other grid-view create*ListItem() uses)
         # - same method name on the same class would have silently shadowed one or the other.
         w, h = THUMB_SQUARE_DIM
         fallback = 'script.plex/thumb_fallbacks/{0}.png'.format(obj.playlistType == 'audio' and 'music' or 'movie')
         # no composite (an empty playlist): the stand-in as the thumb itself - see
-        # HubsMixin.createPlaylistListItem() (library_hubs.py)
+        # HubsMixin.playlistTile() (library_hubs.py)
         thumb = obj.buildComposite(width=w, height=h, media='thumb') or util.standInThumb(fallback)
 
         # Second line is the total runtime, as the Recommended rows' playlist tiles show it
-        # (HubsMixin.createPlaylistListItem(), library_hubs.py - on request, 2026-10-07: was the
+        # (HubsMixin.playlistTile(), library_hubs.py - on request, 2026-10-07: was the
         # item count); '' for an empty playlist, which leaves the tile with just its title.
         runtime = util.durationToHoursMinutes(obj.get('duration') and obj.duration.asInt())
         mli = kodigui.ManagedListItem(
@@ -2239,8 +2239,8 @@ class GridMixin(object):
             elif obj.TYPE == 'photodirectory' and obj.composite:
                 thumb = obj.composite.asTranscodedImageURL(*thumbDim)
             elif wide and obj.TYPE == 'movie':
-                # its art, as the Recommended 16:9 row shows it (LibraryWindow.
-                # createMovieListItem(), wide) - or its thumb, a frame too, without: an empty path
+                # its art, as the Recommended 16:9 row shows it (HubsMixin.
+                # movieTile(), wide) - or its thumb, a frame too, without: an empty path
                 # never falls back (util.standInThumb())
                 thumb = (obj.defaultArt or obj.defaultThumb).asTranscodedImageURL(*thumbDim)
             else:

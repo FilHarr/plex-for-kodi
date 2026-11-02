@@ -395,8 +395,8 @@ class SquareGridWindow(HubGridWindow):
 
 
 class Ar16x9GridWindow(HubGridWindow):
-    """The 16:9 row's card, three to a row. A film shows its art, as in the row (LibraryWindow.
-    createMovieListItem(), wide) - its thumb without one; episodes and clips their own thumb,
+    """The 16:9 row's card, three to a row. A film shows its art, as in the row (HubsMixin.
+    movieTile(), wide) - its thumb without one; episodes and clips their own thumb,
     which is 16:9 already."""
     xmlFile = 'script-plex-see_more_ar16x9.xml'
     # The row's own (LibraryWindow.THUMB_AR16X9_DIM)

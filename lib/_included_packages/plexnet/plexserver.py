@@ -262,11 +262,6 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
             if count is not None:
                 params['count'] = count
 
-        data = self.query(q, params=params)
-        container = plexobjects.PlexContainer(data, initpath=q, server=self, address=q)
-
-        self.currentHubs = {} if self.currentHubs is None else self.currentHubs
-
         # Home always gets the combined Continue Watching hub (/hubs/continueWatching, what the
         # modern Plex clients show) in place of the server's old separate home.continue/home.ondeck
         # pair, which are dropped below. Used to be the hubs_use_new_continue_watching preference;
@@ -280,8 +275,17 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                 cparams['count'] = continue_watching_count
             if section_ids:
                 cq += util.joinArgs(cparams)
+            # asked alongside the rows, not after them: it was 100-130 ms more on Home's every
+            # fetch (AM6B, 2026-10-29)
+            continueWatching = self._queryAside(cq, cparams)
 
-            cdata = self.query(cq, params=cparams)
+        data = self.query(q, params=params)
+        container = plexobjects.PlexContainer(data, initpath=q, server=self, address=q)
+
+        self.currentHubs = {} if self.currentHubs is None else self.currentHubs
+
+        if newCW:
+            cdata = continueWatching()
             if cdata is not None and len(cdata) > 0:
                 ccontainer = plexobjects.PlexContainer(cdata, initpath=cq, server=self, address=cq)
                 self.currentHubs[cdata[0].attrib.get('hubIdentifier')] = cdata[0].attrib.get('title')
@@ -308,6 +312,28 @@ class PlexServer(plexresource.PlexResource, signalsmixin.SignalsMixin):
                     hub.key += util.joinArgs(paging, '?' not in hub.key)
 
         return hubs
+
+    def _queryAside(self, path, params):
+        """query(path, params=params) on a thread of its own, started now: the function returned
+        waits for it and gives its answer, or raises what it raised."""
+        outcome = {}
+
+        def run():
+            try:
+                outcome['data'] = self.query(path, params=params)
+            except BaseException as e:
+                outcome['error'] = e
+
+        thread = threading.Thread(target=run, name='query-aside')
+        thread.daemon = True
+        thread.start()
+
+        def result():
+            thread.join()
+            if 'error' in outcome:
+                raise outcome['error']
+            return outcome.get('data')
+        return result
 
     def playlists(self, start=0, size=10, hub=None):
         try:

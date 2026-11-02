@@ -971,120 +971,110 @@ class HubsMixin(object):
     # 240 since the square hub tile grew to 240 art (hub_itemlayout_square.xml.tpl) - was 220.
     THUMB_SQUARE_DIM = util.scaleResolution(240, 240)
 
-    def createGrandparentedListItem(self, obj, thumb_w, thumb_h, with_grandparent_title=False):
+    # What each row layout reads of a tile (hub_itemlayout_*/hub_focusedlayout_*.xml.tpl and the
+    # includes they pull in, watched_indicator and hub_see_more_pill): a tile is given only what its
+    # row's layout reads, as each write takes Kodi's GUI lock - 'unwatched' and 'episode.number' are
+    # 16:9 only, and square tiles have no ticks. Label and Label2 go in with the item, which takes
+    # none. test_hub_tiles.py holds this to the templates.
+    HUB_TILE_READS = {
+        'poster': frozenset(('thumb.fallback', 'progress', 'watched', 'unwatched.count',
+                             'unwatched.count.large', 'is.more')),
+        'square': frozenset(('thumb.fallback', 'progress', 'is.photo', 'is.more')),
+        'ar16x9': frozenset(('thumb.fallback', 'progress', 'watched', 'unwatched', 'unwatched.count',
+                             'unwatched.count.large', 'episode.number', 'is.photo', 'is.more')),
+    }
+
+    # The tile builders: an item's (label, label2, thumb, {property: value}), worked out before any
+    # of its row is written (_bindHubToControl()), so the row's writes follow one another - Python
+    # between them used up Kodi's per-frame window for GUI calls (the library grid's chunks,
+    # 2026-10-28).
+    @staticmethod
+    def _grandparentedLabel(obj, with_grandparent_title=False):
         if with_grandparent_title and obj.get('grandparentTitle') and obj.title:
-            title = u'{0} - {1}'.format(obj.grandparentTitle, obj.title)
-        else:
-            title = obj.get('grandparentTitle') or obj.get('parentTitle') or obj.title or ''
-        mli = kodigui.ManagedListItem(title, thumbnailImage=obj.defaultThumb.asTranscodedImageURL(thumb_w, thumb_h), data_source=obj)
-        return mli
+            return u'{0} - {1}'.format(obj.grandparentTitle, obj.title)
+        return obj.get('grandparentTitle') or obj.get('parentTitle') or obj.title or ''
 
-    def createParentedListItem(self, obj, thumb_w, thumb_h, with_parent_title=False):
-        if with_parent_title and obj.parentTitle and obj.title:
-            title = u'{0} - {1}'.format(obj.parentTitle, obj.title)
-        else:
-            title = obj.parentTitle or obj.title or ''
+    @staticmethod
+    def _parentedLabel(obj):
+        return obj.parentTitle or obj.title or ''
 
-        mli = kodigui.ManagedListItem(title, thumbnailImage=obj.defaultThumb.asTranscodedImageURL(thumb_w, thumb_h), data_source=obj)
+    @staticmethod
+    def _unwatchedCount(obj, props):
+        if not obj.isPlayed:
+            props['unwatched.count'] = str(obj.unViewedLeafCount)
+            props['unwatched.count.large'] = obj.unViewedLeafCount > 999 and '1' or ''
+        props['watched'] = obj.isPlayed and '1' or ''
+        return props
 
-        return mli
-
-    def createSimpleListItem(self, obj, thumb_w, thumb_h):
-        mli = kodigui.ManagedListItem(obj.title or '', thumbnailImage=obj.defaultThumb.asTranscodedImageURL(thumb_w, thumb_h), data_source=obj)
-        return mli
-
-    def createEpisodeListItem(self, obj, wide=False):
-        mli = self.createGrandparentedListItem(obj, *(self.THUMB_AR16X9_DIM if wide else self.THUMB_POSTER_DIM))
+    def episodeTile(self, obj, wide=False):
         if obj.index:
             subtitle = u'{0} • {1}'.format(T(32310, 'S').format(obj.parentIndex), T(32311, 'E').format(obj.index))
         else:
             subtitle = obj.originallyAvailableAt.asDatetime('%m/%d/%y')
+        return (self._grandparentedLabel(obj),
+                u'{0} - {1}'.format(util.shortenText(obj.title, 35), subtitle) if wide else subtitle,
+                obj.defaultThumb.asTranscodedImageURL(*(self.THUMB_AR16X9_DIM if wide else self.THUMB_POSTER_DIM)),
+                {'thumb.fallback': 'script.plex/thumb_fallbacks/show.png',
+                 # Top-right "E3" badge on the 16:9 hub tile (hub_itemlayout_ar16x9.xml.tpl) - same
+                 # property/format EpisodesWindow.createListItem() sets for the episode screen's own row.
+                 'episode.number': obj.index and T(32311, 'E').format(obj.index) or '',
+                 'unwatched': not obj.isWatched and '1' or '',
+                 'watched': obj.isPlayed and '1' or ''})
 
-        if wide:
-            mli.setLabel2(u'{0} - {1}'.format(util.shortenText(obj.title, 35), subtitle))
-        else:
-            mli.setLabel2(subtitle)
+    def seasonTile(self, obj, wide=False):
+        return (self._parentedLabel(obj), obj.title,
+                obj.defaultThumb.asTranscodedImageURL(*self.THUMB_POSTER_DIM),
+                self._unwatchedCount(obj, {'thumb.fallback': 'script.plex/thumb_fallbacks/show.png'}))
 
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/show.png')
-        # Top-right "E3" badge on the 16:9 hub tile (hub_itemlayout_ar16x9.xml.tpl) - same
-        # property/format EpisodesWindow.createListItem() sets for the episode screen's own row.
-        mli.setProperty('episode.number', obj.index and T(32311, 'E').format(obj.index) or '')
-        if not obj.isWatched:
-            mli.setProperty('unwatched', '1')
-        mli.setBoolProperty('watched', obj.isPlayed)
-        return mli
-
-    def createSeasonListItem(self, obj, wide=False):
-        mli = self.createParentedListItem(obj, *self.THUMB_POSTER_DIM)
-        # mli.setLabel2('Season {0}'.format(obj.index))
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/show.png')
-        mli.setLabel2(obj.title)
-
-        if not obj.isPlayed:
-            mli.setProperty('unwatched.count', str(obj.unViewedLeafCount))
-            mli.setBoolProperty('unwatched.count.large', obj.unViewedLeafCount > 999)
-        mli.setBoolProperty('watched', obj.isPlayed)
-        return mli
-
-    def createMovieListItem(self, obj, wide=False):
+    def movieTile(self, obj, wide=False):
         if wide:
             thumb = obj.defaultArt.asTranscodedImageURL(*self.THUMB_AR16X9_DIM)
         else:
             thumb = obj.defaultThumb.asTranscodedImageURL(*self.THUMB_POSTER_DIM)
-        mli = kodigui.ManagedListItem(obj.defaultTitle, obj.year, thumbnailImage=thumb, data_source=obj)
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/movie.png')
-        if not obj.isWatched:
-            mli.setProperty('unwatched', '1')
-        mli.setBoolProperty('watched', obj.isPlayed)
-        return mli
+        return (obj.defaultTitle, obj.year, thumb,
+                {'thumb.fallback': 'script.plex/thumb_fallbacks/movie.png',
+                 'unwatched': not obj.isWatched and '1' or '',
+                 'watched': obj.isPlayed and '1' or ''})
 
-    def createShowListItem(self, obj, wide=False):
-        mli = self.createSimpleListItem(obj, *self.THUMB_POSTER_DIM)
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/show.png')
-        if not obj.isPlayed:
-            mli.setProperty('unwatched.count', str(obj.unViewedLeafCount))
-            mli.setBoolProperty('unwatched.count.large', obj.unViewedLeafCount > 999)
-        mli.setBoolProperty('watched', obj.isPlayed)
-        return mli
+    def showTile(self, obj, wide=False):
+        return (obj.title or '', '', obj.defaultThumb.asTranscodedImageURL(*self.THUMB_POSTER_DIM),
+                self._unwatchedCount(obj, {'thumb.fallback': 'script.plex/thumb_fallbacks/show.png'}))
 
-    def createAlbumListItem(self, obj, wide=False):
-        mli = self.createParentedListItem(obj, *self.THUMB_SQUARE_DIM)
-        mli.setLabel2(obj.title)
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/music.png')
-        return mli
+    def albumTile(self, obj, wide=False):
+        return (self._parentedLabel(obj), obj.title,
+                obj.defaultThumb.asTranscodedImageURL(*self.THUMB_SQUARE_DIM),
+                {'thumb.fallback': 'script.plex/thumb_fallbacks/music.png'})
 
-    def createTrackListItem(self, obj, wide=False):
-        # Hub tiles only (CREATE_LI_MAP/createListItem()) - the library grid and list views build
-        # their own items in _chunkCallback() instead, which is where the track-row properties
+    def trackTile(self, obj, wide=False):
+        # Hub tiles only (TILE_MAP/hubTile()) - the library grid and list views build their own
+        # items in _chunkCallback() instead, which is where the track-row properties
         # script-plex-listview-tracks.xml.tpl reads are set.
-        mli = self.createGrandparentedListItem(obj, *self.THUMB_SQUARE_DIM)
-        mli.setLabel2(obj.title)
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/music.png')
-        return mli
+        return (self._grandparentedLabel(obj), obj.title,
+                obj.defaultThumb.asTranscodedImageURL(*self.THUMB_SQUARE_DIM),
+                {'thumb.fallback': 'script.plex/thumb_fallbacks/music.png'})
 
-    def createPhotoListItem(self, obj, wide=False):
-        mli = self.createSimpleListItem(obj, *self.THUMB_SQUARE_DIM)
+    def photoTile(self, obj, wide=False):
+        props = {'thumb.fallback': 'script.plex/thumb_fallbacks/photo.png'}
+        label2 = ''
         if obj.type == 'photo':
-            mli.setLabel2(obj.originallyAvailableAt.asDatetime('%d %B %Y'))
+            label2 = obj.originallyAvailableAt.asDatetime('%d %B %Y')
             # Real photos vary wildly in aspect ratio and shouldn't be cropped like posters/art -
             # the template shows the whole image letterboxed instead when this is set (matches Plex's
             # own photo hub behavior). Folders (photodirectory) keep the normal cropped-fill look
             # since their thumb is a composite grid, not a single photo.
-            mli.setProperty('is.photo', '1')
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/photo.png')
-        return mli
+            props['is.photo'] = '1'
+        return obj.title or '', label2, obj.defaultThumb.asTranscodedImageURL(*self.THUMB_SQUARE_DIM), props
 
-    def createClipListItem(self, obj, wide=False):
-        mli = self.createGrandparentedListItem(obj, *self.THUMB_AR16X9_DIM, with_grandparent_title=True)
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/movie16x9.png')
-        return mli
+    def clipTile(self, obj, wide=False):
+        return (self._grandparentedLabel(obj, with_grandparent_title=True), '',
+                obj.defaultThumb.asTranscodedImageURL(*self.THUMB_AR16X9_DIM),
+                {'thumb.fallback': 'script.plex/thumb_fallbacks/movie16x9.png'})
 
-    def createArtistListItem(self, obj, wide=False):
-        mli = self.createSimpleListItem(obj, *self.THUMB_SQUARE_DIM)
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/music.png')
-        return mli
+    def artistTile(self, obj, wide=False):
+        return (obj.title or '', '', obj.defaultThumb.asTranscodedImageURL(*self.THUMB_SQUARE_DIM),
+                {'thumb.fallback': 'script.plex/thumb_fallbacks/music.png'})
 
-    def createPlaylistListItem(self, obj, wide=False):
+    def playlistTile(self, obj, wide=False):
         w, h = self.THUMB_SQUARE_DIM
         # 'thumb' matches what the playlist detail screen shows (playlist.py's playlist.thumb
         # property uses composite.asTranscodedImageURL() with no media= param, i.e. PMS's default
@@ -1100,17 +1090,11 @@ class HubsMixin(object):
         # Second line is the total runtime (on request, 2026-09-20 - was the item count; the
         # hero's own line still carries both), in the hero's own hours/minutes format; '' for an
         # empty playlist, which leaves the tile with just its title.
-        mli = kodigui.ManagedListItem(
-            util.colorizeEmoji(obj.title) or '',
-            util.durationToHoursMinutes(obj.get('duration') and obj.duration.asInt()),
-            # thumbnailImage=obj.composite.asTranscodedImageURL(*self.THUMB_DIMS[obj.playlistType]['item.thumb']),
-            thumbnailImage=thumb,
-            data_source=obj
-        )
-        mli.setProperty('thumb.fallback', fallback)
-        return mli
+        return (util.colorizeEmoji(obj.title) or '',
+                util.durationToHoursMinutes(obj.get('duration') and obj.duration.asInt()),
+                thumb, {'thumb.fallback': fallback})
 
-    def createCollectionListItem(self, obj, wide=False):
+    def collectionTile(self, obj, wide=False):
         w, h = self.THUMB_POSTER_DIM
         # a collection often has no poster of its own; the library grid falls back to the
         # composite of its members, so match that here - an empty one with no poster has none
@@ -1121,31 +1105,31 @@ class HubsMixin(object):
             thumb = obj.defaultThumb.asTranscodedImageURL(w, h)
         else:
             thumb = obj.server.getImageTranscodeURL(obj.artCompositeURL(w * 2, h * 2), w, h)
+        return obj.title or '', '', thumb, {'thumb.fallback': 'script.plex/thumb_fallbacks/movie.png'}
 
-        mli = kodigui.ManagedListItem(obj.title or '', thumbnailImage=thumb, data_source=obj)
-        mli.setProperty('thumb.fallback', 'script.plex/thumb_fallbacks/movie.png')
-        return mli
-
-    def unhandledHub(self, self2, obj, wide=False):
-        util.DEBUG_LOG('Unhandled Hub item: {0}', obj.type)
-
-    CREATE_LI_MAP = {
-        'episode': createEpisodeListItem,
-        'season': createSeasonListItem,
-        'movie': createMovieListItem,
-        'show': createShowListItem,
-        'album': createAlbumListItem,
-        'track': createTrackListItem,
-        'photo': createPhotoListItem,
-        'photodirectory': createPhotoListItem,
-        'clip': createClipListItem,
-        'artist': createArtistListItem,
-        'playlist': createPlaylistListItem,
-        'collection': createCollectionListItem
+    TILE_MAP = {
+        'episode': episodeTile,
+        'season': seasonTile,
+        'movie': movieTile,
+        'show': showTile,
+        'album': albumTile,
+        'track': trackTile,
+        'photo': photoTile,
+        'photodirectory': photoTile,
+        'clip': clipTile,
+        'artist': artistTile,
+        'playlist': playlistTile,
+        'collection': collectionTile
     }
 
-    def createListItem(self, obj, wide=False):
-        return self.CREATE_LI_MAP.get(obj.type, self.unhandledHub)(self, obj, wide)
+    def hubTile(self, obj, wide=False):
+        """A hub tile's (label, label2, thumb, {property: value}), or None for an item type the
+        rows don't show."""
+        build = self.TILE_MAP.get(obj.type)
+        if build is None:
+            util.DEBUG_LOG('Unhandled Hub item: {0}', obj.type)
+            return None
+        return build(self, obj, wide)
 
     # ------------------------------------------------------------------------------------------
     # Stage D2 (quiet-orbiting-heron.md): the rotation-ring/anchor positioning engine, ported
@@ -2065,7 +2049,8 @@ class HubsMixin(object):
         play, marks, places = [], [], []
 
         if ds.TYPE in ('episode', 'season', 'movie', 'show'):
-            if not mli.getProperty('watched'):
+            # the item, not the tile: a square row's tiles have no 'watched' (HUB_TILE_READS)
+            if not ds.isPlayed:
                 marks.append(('mark_watched', T(32319, "Mark Played")))
 
             if ds.isFullyWatched or ds.isWatched or ds.viewedLeafCount.asInt() > 0:
@@ -2258,7 +2243,7 @@ class HubsMixin(object):
             return ''
         return server.name
 
-    def _bindHubToControl(self, hub, control_index):
+    def _bindHubToControl(self, hub, control_index, offscreen=False):
         """Populate physical hub-row control HUB_CONTROL_ID + control_index with hub's content -
         the properties/dataSource/items population D1's flat _recommendedHubsCallback() did
         inline for every control unconditionally, factored out here since both the initial full
@@ -2267,7 +2252,8 @@ class HubsMixin(object):
         spoiler/cache-clearing, out of scope for D2 (see this block's own header comment).
         Reselect-position restoration (plan item 10, Group A) and the row's trailing "See more"
         item (is.more - hubItemClicked() is what acts on it) are handled here though; the former
-        ported from that same HomeWindow.showHub()."""
+        ported from that same HomeWindow.showHub(). offscreen: the row is never on screen in its
+        role (-1 or +2)."""
         is_home = self.section.key is None
         identifier = hub.getCleanHubIdentifier(is_home=is_home)
 
@@ -2291,31 +2277,31 @@ class HubsMixin(object):
         self.setProperty('hub.nolabels.4{0:02d}'.format(control_index), flags['no_labels'] and '1' or '')
 
         control = self.hubControls[control_index]
+        # A row off screen is emptied and its new items added as they are; one on screen (an
+        # in-place rebind) has only what changed written over its items, so it never shows empty
+        # (replaceWithValues()). Writing over every item, as replaceItems() does, rewrote each
+        # one's label, art and every property the row had ever had. Emptied before its hub is
+        # set: reset() clears the list's dataSource too.
+        if offscreen:
+            control.reset()
         control.dataSource = hub
+        # Every tile's values first, then the writes (hubTile()): only what this row's layout
+        # reads, and nothing empty - an item starts with nothing set. The progress bar is the
+        # row's to decide (with_progress: not on the Watchlist's and discovery rows).
         # [:HUB_ROW_MAX_ITEMS]: SectionHubsTask already fetches exactly that many, so this is a
         # no-op for a server hub; it's for anything that builds hub.items some other way
         # (PlaylistHub's own fixed fetch, plexlibrary.py) - the cap is the row's, not the fetch's.
-        items = [mli for mli in
-                (self.createListItem(obj, wide=flags['with_art'])
-                 for obj in hub.items[:home.HUB_ROW_MAX_ITEMS]) if mli]
-
-        # getHubRenderFlags() above already computes with_progress (hub-identifier-based - e.g.
-        # False for watchlist/discovery hubs via HUBS_NO_PROGRESS), but nothing ever acted on it -
-        # createListItem()'s own create*ListItem() family (createMovieListItem()/
-        # createEpisodeListItem()/etc.) never sets the 'progress' property at all, matching
-        # HomeWindow's own identical methods (home.py) byte-for-byte - HomeWindow's progress bar
-        # comes entirely from this post-processing step instead (its own showHub(), home.py:5359-
-        # 5362), which was one of the pieces this method's own docstring already calls out as
-        # deliberately out of scope for the D2 port ("reselect-position restoration and hero-art/
-        # spoiler/cache-clearing") - with_progress itself just wasn't named there explicitly and
-        # ended up silently dropped along with them. Live-confirmed regression: the Continue
-        # Watching/On Deck progress bar (present in the old HomeWindow UI) never appeared on this
-        # window's Recommended tab at all. Fixed here rather than in createListItem() itself, same
-        # division of responsibility HomeWindow's own code uses (per-item-type builders vs.
-        # per-hub-context binding).
-        if flags['with_progress']:
-            for mli in items:
-                mli.setProperty('progress', util.getProgressImage(mli.dataSource))
+        reads = self.HUB_TILE_READS[display_type]
+        tiles = []
+        for obj in hub.items[:home.HUB_ROW_MAX_ITEMS]:
+            tile = self.hubTile(obj, wide=flags['with_art'])
+            if tile is None:
+                continue
+            label, label2, thumb, props = tile
+            if flags['with_progress']:
+                props['progress'] = util.getProgressImage(obj)
+            tiles.append((label, label2, thumb,
+                          dict((k, v) for k, v in props.items() if v and k in reads), obj))
 
         # Trailing "See more" item, when the row's cap cut the hub short (hub.more: the server
         # had more than the HUB_ROW_MAX_ITEMS asked for; the len() check covers items built some
@@ -2338,14 +2324,12 @@ class HubsMixin(object):
         # the last slots when the tail fits), not "scrolled the minimum to bring it on-screen".
         if (hub_limits.hasSeeMore(hub, home.HUB_ROW_MAX_ITEMS)
                 and identifier not in self.HUBS_NO_SEE_MORE):
-            more = kodigui.ManagedListItem(T(35093, 'See more'))
-            more.setBoolProperty('is.more', True)
-            items.append(more)
+            tiles.append((T(35093, 'See more'), '', '', {'is.more': '1'}, None))
 
-        control.replaceItems(items)
+        items = control.replaceWithValues(tiles)
 
         # Item 0 unless there's a remembered position: the native control keeps whatever it had
-        # selected across replaceItems()/reset(), which may belong to a different hub (a slide's
+        # selected across replaceWithValues()/reset(), which may belong to a different hub (a slide's
         # wrap rebind) or to before an in-place Home reset (_resetHubsToTop()).
         # (See more, last, has no dataSource: never landed on.)
         if items:
@@ -2399,10 +2383,13 @@ class HubsMixin(object):
 
     def _bindFetchedHubs(self, section, hubs, generation):
         started = time.time()
+        # This thread's CPU time: a wait on Kodi's GUI lock takes none, so the rest of the bind
+        # time is the GUI calls' waiting, not their Python.
+        startedCpu = time.thread_time()
         self._recommendedHubsCallback(section, hubs, generation)
         swapStarted = self.__dict__.get('_lastSwapStarted')
-        util.DEBUG_LOG("Library: hub rows bound in {0} ms (fetched on a worker), {1} ms after the request",
-                       int((time.time() - started) * 1000),
+        util.DEBUG_LOG("Library: hub rows bound in {0} ms ({1} ms CPU; fetched on a worker), {2} ms after the request",
+                       int((time.time() - started) * 1000), int((time.thread_time() - startedCpu) * 1000),
                        int((time.time() - swapStarted) * 1000) if swapStarted else '?')
         if (generation == self._listGeneration and not self.closing
                 and self.contentMode == 'recommended'):
@@ -2695,12 +2682,15 @@ class HubsMixin(object):
             self.sectionHubs[section_ids.hubSettingsId(section)] = new
             self.visibleHubs = new
             self.focusedHubIndex = index
+            started = time.time()
+            startedCpu = time.thread_time()
             self._bindAllHubSlots()
+            bound = (int((time.time() - started) * 1000), int((time.thread_time() - startedCpu) * 1000))
             if section.key is not None:
                 self._showNoRowsState(section, hubs)
             self.updateServerUnavailable()
-            util.DEBUG_LOG('Library: hub rows rebound in place ({0}): {1} rows, anchor {2}',
-                           reason, len(new), self.hubMemoryKey(new[index]) if new else None)
+            util.DEBUG_LOG('Library: hub rows rebound in place ({0}): {1} rows, anchor {2}, in {3} ms ({4} ms CPU)',
+                           reason, len(new), self.hubMemoryKey(new[index]) if new else None, *bound)
             if hadFocus and not new:
                 # nothing left to be on: the sidebar, as for an empty view
                 self.setFocusId(self.SECTION_LIST_ID)
@@ -2757,7 +2747,10 @@ class HubsMixin(object):
         # shown (the template's NumItems condition), so a row appears already in place.
         self._placeStack(self.focusedHubIndex)
 
-        for control_id in sorted(self.HUB_ROTATION_RING, key=lambda cid: abs(self._ringRoleOffset(cid))):
+        # The anchor first, then the row peeking in below it, then the two off screen: with abs()
+        # alone, the row above (-1) came before the one below on a Back to a row past the first.
+        for control_id in sorted(self.HUB_ROTATION_RING,
+                                 key=lambda cid: (abs(self._ringRoleOffset(cid)), self._ringRoleOffset(cid) < 0)):
             role = self._ringRoleOffset(control_id)
             index = control_id - self.HUB_CONTROL_ID
             wrapper = self.getControl(self.HUB_WRAPPER_FOR_CONTROL[control_id])
@@ -2775,7 +2768,7 @@ class HubsMixin(object):
                 self.setProperty('hub.display.4{0:02d}'.format(index), '')
                 continue
 
-            self._bindHubToControl(self.visibleHubs[hub_index], index)
+            self._bindHubToControl(self.visibleHubs[hub_index], index, offscreen=role not in (0, 1))
 
     def _startHubSlide(self, delta):
         """Move the logical focus delta positions (+1 down / -1 up) and animate the transition.
@@ -2855,7 +2848,7 @@ class HubsMixin(object):
 
         def bindWrap():
             if wrap_hub is not None:
-                self._bindHubToControl(wrap_hub, wrap_index)
+                self._bindHubToControl(wrap_hub, wrap_index, offscreen=True)
             else:
                 self.hubControls[wrap_index].reset()
                 self.setProperty('hub.display.4{0:02d}'.format(wrap_index), '')

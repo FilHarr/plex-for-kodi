@@ -304,8 +304,8 @@ class BoundedGridWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowu
     def thumbFor(self, data):
         if data.TYPE == 'collection':
             # Collections often have no own poster - fall back to a composite of member posters,
-            # same as library.py's _chunkCallback() (library.py:4071-4076) and the dead-code
-            # createCollectionListItem() (library.py:5291-5294) both already do. An empty one with no
+            # same as the library grid's _chunkCallback() (library_grid.py) and the hub rows'
+            # HubsMixin.collectionTile() (library_hubs.py) both already do. An empty one with no
             # poster has no composite either (Collection.hasNoPicture()).
             if data.hasNoPicture():
                 return util.standInThumb('script.plex/thumb_fallbacks/movie.png')
