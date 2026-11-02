@@ -559,8 +559,10 @@
                             <animation effect="zoom" start="104" end="100" time="100" center="123,{{ vscale(183) }}" reversible="false">UnFocus</animation>
                             <posx>0</posx>
                             <posy>0</posy>
+                            <!-- Not gated on Control.HasFocus(400), as the itemlayout's isn't: this layout
+                                 draws the row's selected card with the focus elsewhere too, and the gate -
+                                 left from when only the focused card had a shadow - took it off then. -->
                             <control type="image">
-                                <visible>Control.HasFocus(400)</visible>
                                 <posx>0</posx>
                                 <posy>0</posy>
                                 <width>264</width>

@@ -15,8 +15,11 @@
             <animation effect="zoom" start="104" end="100" time="100" center="120,{{ vscale(180) }}" reversible="false">UnFocus</animation>
             <posx>0</posx>
             <posy>0</posy>
+            <!-- Not gated on Control.HasFocus, as the square and 16:9 layouts' aren't: this layout
+                 draws the selected tile of every row, focused or not, and a gate left from when only
+                 the focused tile had a shadow (72f5cc1a) took it off the first tile of the row below
+                 and of every row while the sidebar had focus. The ring (below) stays gated. -->
             <control type="image">
-                <visible>Control.HasFocus({{ hub_id }})</visible>
                 <posx>0</posx>
                 <posy>0</posy>
                 <width>264</width>

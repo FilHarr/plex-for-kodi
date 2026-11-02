@@ -818,8 +818,12 @@
                             <animation effect="zoom" start="104" end="100" time="100" center="259,{{ vscale(147) }}" reversible="false">UnFocus</animation>
                             <posx>0</posx>
                             <posy>0</posy>
+                            <!-- Neither shadow is gated on Control.HasFocus(400), as the itemlayout's
+                                 aren't: this layout draws the row's selected card with the focus elsewhere
+                                 too, and the gate - left from when only the focused card had a shadow -
+                                 took the shadow off it then. The focus rings (below) stay gated. -->
                             <control type="image">
-                                <visible>Control.HasFocus(400) + String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                <visible>String.IsEmpty(ListItem.Property(is.season.card))</visible>
                                 <posx>0</posx>
                                 <posy>0</posy>
                                 <width>536</width>
@@ -829,7 +833,7 @@
                             <!-- Season card's own shadow - see itemlayout's own copy of this control/comment
                                  above for the full reasoning. -->
                             <control type="image">
-                                <visible>Control.HasFocus(400) + !String.IsEmpty(ListItem.Property(is.season.card))</visible>
+                                <visible>!String.IsEmpty(ListItem.Property(is.season.card))</visible>
                                 <posx>0</posx>
                                 <posy>0</posy>
                                 <width>536</width>
