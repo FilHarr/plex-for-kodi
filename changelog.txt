@@ -1,3 +1,10 @@
+[-0.4.3-]
+- Kodi updating Plex Uno in the background no longer ends the session: it carries on as it was and asks when to restart - now, the next time you're away, or later. Settings > System > "After a background update" can have it restart by itself instead, never during playback
+- Recommended rows (Home and libraries) appear in about half the time, and a row moving into view is ready sooner
+- Home: Continue Watching is fetched alongside the other rows, not after them
+- Fixed: the first tile of a row had no shadow when the row wasn't focused - the row below, or every row with the sidebar open - on Home, libraries' Recommended, Episodes and Seasons
+- Fixed: OK to end a seek into the credits skipped them, ending the episode
+
 [-0.4.2-]
 - Library grids: the tiles you're on load first, opening a grid too. Back to a tile loads the screen around it first, even across two pages, and scrolling loads the next page before you reach it
 - Library grids: pages load in about half the time, and big libraries such as Episodes open faster
