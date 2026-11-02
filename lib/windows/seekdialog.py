@@ -202,6 +202,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
         self._barCaps = {}  # SEEKBAR fill -> its rounded end cap (setBarPercent())
         self._playPauseInputAt = None  # when play/pause was last pressed (onPlayBackResumed() closes the OSD on it)
         self._focusArrived = None  # the control onFocus() last moved to, until the next action (onAction())
+        self._clickAppliedSeekAt = None  # when an OK's onClick() last applied a seek: onAction() drops that OK
         # Playback paused for seeking (seekByOffset()): None, or 'seeking' (in seek mode), 'trickplay' (as 'seeking',
         # but Kodi's FF/RW speed being undone first - its resume to 1x isn't one, endTrickPlay()), 'applying' (the
         # seek's been made; the handler resumes once it lands) or 'resuming' (abandoned, play sent) - with when it got
@@ -743,6 +744,15 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             # user input means someone's actually watching
             util.MONITOR.tv_standby = False
 
+            # An OK that onClick() used to apply a seek: Kodi runs that first, and this after it, for the same key
+            # (CGUIPythonWindowXML::OnAction()). Hiding the OSD there moves focus to the skip button when one's
+            # showing, and this would then press it - skipping the credits it had just seeked into, and ending the
+            # episode (live on the PC, 2026-11-02); a skip countdown's "OK skips at once" would fire the same way.
+            if action == xbmcgui.ACTION_SELECT_ITEM and self._clickAppliedSeekAt is not None:
+                appliedAt, self._clickAppliedSeekAt = self._clickAppliedSeekAt, None
+                if time.time() - appliedAt < 1:
+                    return
+
             cancelActions = (xbmcgui.ACTION_PREVIOUS_MENU, xbmcgui.ACTION_NAV_BACK, xbmcgui.ACTION_STOP)
 
 
@@ -1081,6 +1091,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
             if self.getProperty('mouse.mode') != '1':
                 if controlID == self.MAIN_BUTTON_ID:
                     if self._seeking:
+                        self._clickAppliedSeekAt = time.time()
                         self.resetAutoSeekTimer(None)
                         self.doSeek()
                         self.hideOSD()
@@ -1105,6 +1116,7 @@ class SeekDialog(kodigui.BaseDialog, windowutils.GoHomeMixin, PlexSubtitleDownlo
                                 self.showOSD()
                     else:
                         # currently seeking without the OSD, apply the seek
+                        self._clickAppliedSeekAt = time.time()
                         self.doSeek()
         elif controlID == self.SETTINGS_BUTTON_ID:
             self.handleDialog(self.showSettings)
