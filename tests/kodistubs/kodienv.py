@@ -184,6 +184,8 @@ class KodiEnv(object):
             "datelong": "%A, %d %B %Y",
         }
         self.cond_visibility = {}
+        # xbmc.getGlobalIdleTime(): seconds since the last input
+        self.idle_time = 0
         self.skin_dir = "skin.estuary"
         self.user_agent = "Kodi/21.2 (X11; Linux x86_64)"
 
@@ -256,6 +258,8 @@ class KodiEnv(object):
         "filecache.memorysize": 20,       # MB
         "filecache.readfactor": 400,      # percent; lib.cache divides by 100
         "services.devicename": "Kodi",
+        "screensaver.mode": "screensaver.xbmc.builtin.dim",
+        "screensaver.time": 3,            # minutes
     }
 
     def _default_setting_value(self, params):

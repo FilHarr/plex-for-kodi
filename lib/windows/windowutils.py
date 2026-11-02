@@ -13,7 +13,7 @@ from . import opener
 from . import sidebar_model
 
 HOME = None
-_restartingForSkinReload = False
+_restarting = False
 
 
 class _SearchEntry(object):
@@ -28,20 +28,35 @@ class _SearchEntry(object):
 SEARCH_ENTRY = _SearchEntry()
 
 
-def restartAfterSkinReload(reason):
+def restartAddon(reason):
     """
     Closes Home with its closeOption at "restart": _main() returns, and main.realExit() runs the
-    addon again from a clean state. For a skin reload with us open, noticed either by the monitor
-    (GUI.OnSkinLoaded: Kodi 22, and the p3i CoreELEC builds) or by a window finding its controls
-    rebuilt (kodigui.XMLBase.onInit(), stock Kodi 21). Only the first one to notice restarts.
+    addon again from a clean state. Only the first caller restarts. False if there's no Home yet.
     """
-    global _restartingForSkinReload
-    if _restartingForSkinReload or HOME is None:
-        return
-    _restartingForSkinReload = True
-    util.LOG("Skin reload: restarting the addon ({0})", reason)
+    global _restarting
+    if HOME is None:
+        return False
+    if _restarting:
+        return True
+    _restarting = True
+    util.LOG("Restarting the addon ({0})", reason)
     HOME.closeOption = "restart"
-    HOME.doClose()
+    try:
+        HOME.doClose()
+    except Exception:
+        # not restarting after all: a later caller may try again
+        _restarting = False
+        raise
+    return True
+
+
+def restartAfterSkinReload(reason):
+    """
+    For a skin reload with us open, noticed either by the monitor (GUI.OnSkinLoaded: Kodi 22, and
+    the p3i CoreELEC builds) or by a window finding its controls rebuilt (kodigui.XMLBase.onInit(),
+    stock Kodi 21).
+    """
+    restartAddon('skin reload: {0}'.format(reason))
 
 # Confirmed upstream Kodi core bug (xbmc/xbmc#27552, consolidated into #27239, fix proposed in
 # xbmc/xbmc#28928, not yet merged/released as of this writing): CGUIWindow::OnAction() walks the

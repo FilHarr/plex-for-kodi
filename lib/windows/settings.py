@@ -19,6 +19,7 @@ from lib import util
 from lib import genres
 from lib import actions
 from lib import skin_check
+from lib import update_restart
 from lib.util import T
 from . import dialog
 from .optionsdialog import messageLines
@@ -1062,6 +1063,29 @@ class Settings(object):
         ),
         'system': (
             T(33600, 'System'), (
+                # Kodi updating the addon while it runs (update_restart.py, LibraryWindow._tickUpdate())
+                OptionsSetting(
+                    'update_restart_mode', T(35225, 'After a background update'), 'ask',
+                    (('ask', T(35226, 'Ask me')), ('auto', T(35227, 'Restart automatically')))
+                ).description(T(35228, "What happens when Kodi updates the addon while it's running.\nAsk me: "
+                                       "choose to restart now, the next time you're away, or later.\nRestart "
+                                       "automatically: a short notice, then the addon restarts by itself - at once if "
+                                       "you're away.\nAutomatic restarts will never occur during playback.")),
+                OptionsSetting(
+                    'update_restart_away', T(35229, "Update while I'm away"), 'restart',
+                    (('restart', T(35230, 'Restart without asking')), ('ask', T(35231, "Ask when I'm back"))),
+                    show_cb=lambda: util.getSetting('update_restart_mode', 'ask') != 'auto'
+                # with Kodi's screensaver wait time in it, read as the row's shown
+                ).description(update_restart.awayDescription),
+                OptionsSetting(
+                    'update_restart_reask', T(35233, 'After "Remind me later", ask again'), '60',
+                    (('30', T(35234, 'After 30 minutes')), ('60', T(35235, 'After 1 hour')),
+                     ('240', T(35236, 'After 4 hours')), ('never', T(35237, 'Not until next start'))),
+                    show_cb=lambda: util.getSetting('update_restart_mode', 'ask') != 'auto'
+                ).description(T(35238, 'How long to wait before asking again after "Remind me later" - and then '
+                                       'only at a natural break: on Home or a library, when playback ends, or when '
+                                       'you\'re back from being away.\nNot until next start: the update completes the '
+                                       'next time the addon starts.')),
                 BoolSetting('auto_update_check', T(33672, 'Check for updates'), True)
                 .description(T(33673, "Automatically check for updates periodically. If installed from a "
                                       "Kodi repository and the Update Source setting is set to Repository, Kodi "
@@ -1404,7 +1428,8 @@ class SettingsPickers(object):
 
     def settingRow(self, setting):
         props = {}
-        desc = setting.desc or ''
+        # a function: worked out as the row's shown (update_restart.awayDescription())
+        desc = (setting.desc() if callable(setting.desc) else setting.desc) or ''
         if setting.userAware and self.userNote:
             # the note first, on its own line, in bold white over the description's grey
             note = u'[B][COLOR FFFFFFFF]{0}[/COLOR][/B]'.format(self.userNote)

@@ -32,6 +32,7 @@ from .windows import background, userselect, home, library, windowutils, kodigui
 from . import player
 from . import backgroundthread
 from . import skin_check
+from . import update_restart
 from . import util
 from .util import T
 from .logging import KodiLogProxyHandler
@@ -114,6 +115,17 @@ def realExit():
         xbmc.executebuiltin('Quit')
 
     elif restart:
+        # Kodi lists the add-on again: a restart can land while it's installing an update (about a second unlisted
+        # on the AM6B), when RunScript() would find no add-on and we'd never come back
+        monitor = xbmc.Monitor()
+        waited = 0
+        while not xbmc.getCondVisibility('System.HasAddon({})'.format(util.ADDON_ID)) and waited < 30 \
+                and not monitor.abortRequested():
+            monitor.waitForAbort(0.5)
+            waited += 0.5
+        if waited:
+            xbmc.log('Main: script.plexmod: waited {}s for Kodi to list the add-on again'.format(waited),
+                     xbmc.LOGINFO)
         xbmc.executebuiltin('RunScript({})'.format(util.ADDON_ID))
     else:
         if not skipEnsureLastUsed and not hadReauth and util.getSetting('ensure_lastused'):
@@ -221,6 +233,10 @@ def stopPlaybackOnExit():
 def main(force_render=False):
     global BACKGROUND, skipEnsureLastUsed
 
+    # Kodi replacing our folder with an update's while we run (update_restart.py)
+    update_restart.writeMarker()
+    update_restart.watchImports()
+
     try:
         # A second attempt only when the background window's XML was broken, with the templates
         # recompiled; a third would render the same files, so a second failure ends the addon.
@@ -228,6 +244,7 @@ def main(force_render=False):
         for attempt in range(2):
             with kodigui.GlobalProperty('rendering'):
                 render_templates(force=force_render)
+            update_restart.takeSnapshot()
 
             if not attempt:
                 # cleanup cache folder
@@ -451,8 +468,14 @@ def _main():
                                 except Exception:
                                     util.ERROR('Fast user switch failed')
 
+                        elif closeOption == 'recompile' and update_restart.filesReplaced():
+                            # the templates there now are the new version's: it renders them itself
+                            util.LOG("Restarting Addon (recompile after our files were replaced)")
+                            restart = True
+                            return
                         elif closeOption == 'recompile':
                             render_templates(force=True)
+                            update_restart.takeSnapshot()
                             util.LOG("Restarting Home")
                             continue
                         elif closeOption == 'restart':

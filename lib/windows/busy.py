@@ -4,7 +4,7 @@ import threading
 
 from kodi_six import xbmcgui
 
-from lib import util
+from lib import update_restart, util
 from . import kodigui
 
 
@@ -42,7 +42,17 @@ def dialog(msg='LOADING', condition=None, delay=True, delay_time=1.5):
     def methodWrap(func):
         def inner(*args, **kwargs):
             timer = None
-            w = BusyWindow.create(show=not delay)
+            try:
+                w = BusyWindow.create(show=not delay)
+            except RuntimeError:
+                # an update has replaced our folder, and its busy XML isn't compiled until the
+                # restart: LibraryWindow.doClose(), which that restart runs, is one of these (live
+                # on the AM6B, 2026-11-02). It goes ahead without the busy window.
+                if not update_restart.filesReplaced():
+                    raise
+                util.LOG('Busy: no busy window, our files were replaced ({0})',
+                         getattr(func, '__name__', func))
+                return func(*args, **kwargs)
 
             if delay:
                 timer = threading.Timer(delay_time, w.show)

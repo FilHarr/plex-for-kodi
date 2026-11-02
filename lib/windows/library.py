@@ -20,6 +20,7 @@ from six.moves import range
 
 from lib import backgroundthread
 from lib import player
+from lib import update_restart
 from lib import util
 from lib.util import T
 from . import background
@@ -794,7 +795,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         # opened from that grid wrote into its freed list items - a segfault in
         # CGUIListItem::SetProperty on the worker. See _retireListItems().
         self._retireListItems()
-        self._current = cls(cls.xmlFile, cls.path, cls.theme, cls.res, **self._nextKwargs)
+        self._current = cls(cls.xmlFile, update_restart.skinPath(cls.path), cls.theme, cls.res, **self._nextKwargs)
         self._currentKwargs = self._nextKwargs
         self._setRestoreIndex(None)
         # Both weak (see the top of this method): _hostRef routes the shell's routeAction() through
@@ -1869,6 +1870,10 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         self._lastReachabilityCheck = self._lastAliveCheck = self._lastHubsRefresh = time.time()
         self._updateSourceChanged = None
         self._updatePromptPosted = False
+        # _tickUpdate(): this run is the restart after an update, if there's a record of one
+        self._updateRestartPosted = False
+        self._updateNotice = update_restart.takeNotice()
+        self._updateNoticeIdle = None
         if util.CRON:
             util.CRON.registerReceiver(self)
 
@@ -1910,6 +1915,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         if xbmc.Player().isPlayingVideo():
             return
 
+        if self._tickUpdate():
+            return
+
         now = time.time()
         # path-mapped shares, so one that comes back loses its red dot (mapping_probe.py)
         mapping_probe.tick(now)
@@ -1925,6 +1933,187 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         elif now - self.__dict__.get('_lastAliveCheck', now) > self.SERVER_ALIVE_INTERVAL:
             self._lastAliveCheck = now
             plexapp.SERVERMANAGER.checkServersAlive()
+
+    def _tickUpdate(self):
+        """Kodi updating us while we run (update_restart.py). Once our folder has been replaced: restart into the
+        new version - never while something plays or the player's open (post-play), nor while we're minimised - and
+        skip the rest of the tick, whose rows and checks the restart replaces. How it comes about is the user's
+        setting (update_restart.asks()): a question, or a notice and RESTART_DELAY seconds - at once for a user
+        who's away (_tickUpdateAsk()). In the run that restart starts: a pop-up saying why it's back on Home - at
+        once, or, if the user was away when it happened, once they're back, which Kodi's idle time dropping tells
+        (a key, or the one that ends the screensaver, which Kodi keeps for itself)."""
+        if update_restart.filesReplaced():
+            if self.__dict__.get('_updateRestartPosted'):
+                return True
+            prompt = self.__dict__.get('_updatePrompt')
+            if prompt is not None:
+                # the question's up: the screensaver over it, it gets the away setting
+                if update_restart.restartsWhileAway() and update_restart.userAway():
+                    util.LOG('Library: the update restart question went unanswered; restarting')
+                    self._updatePromptAbandoned = True
+                    prompt.doClose()
+                return True
+            if self.__dict__.get('_updatePromptPosted'):
+                return True
+            if util.getGlobalProperty('is_active') != '1':
+                # Minimised: nothing of ours is on screen to break, and closing our windows would
+                # take the user's own Kodi screen back a step for each - Window::close() sends
+                # TMSG_GUI_PREVIOUS_WINDOW, which CGUIWindowManager::PreviousWindow() applies to
+                # whatever is active. Restart once they bring us back.
+                self._updateWhileMinimised = True
+                self._updateRestartDue = None
+                return True
+            if not update_restart.readyToRestart():
+                self._updateRestartDue = None
+                self._updatePlaybackBreak = True
+                return True
+            if update_restart.asks():
+                return self._tickUpdateAsk()
+            if self.__dict__.get('_updateWhileMinimised'):
+                # just brought back: no countdown to sit through; restart() tells them it's now
+                self._updateRestartPosted = True
+                self.postUI('restart for update', update_restart.restart,
+                            args=('brought back after being minimised',), kwargs={'minimised': True})
+                return True
+            now = time.time()
+            due = self.__dict__.get('_updateRestartDue')
+            if due is None:
+                due = self._updateRestartDue = now
+                if not update_restart.userAway():
+                    update_restart.announce()
+                    due = self._updateRestartDue = now + update_restart.RESTART_DELAY
+            if now >= due:
+                self._updateRestartPosted = True
+                self.postUI('restart for update', update_restart.restart, args=('noticed by the tick',))
+            return True
+
+        notice = self.__dict__.get('_updateNotice')
+        if not notice:
+            return False
+        if notice.get('chosen'):
+            # "Now" in the question: they know
+            self._updateNotice = None
+            return False
+        if notice.get('away'):
+            idle = xbmc.getGlobalIdleTime()
+            last = self.__dict__.get('_updateNoticeIdle')
+            self._updateNoticeIdle = idle
+            if last is None:
+                util.DEBUG_LOG('Library: update notice waits for the user; Kodi idle for {0}s', idle)
+            # the first look only counts a press during the restart itself
+            if idle >= (last if last is not None else self.UPDATE_NOTICE_RECENT_INPUT):
+                if last is None and notice.get('screensaver') and \
+                        not xbmc.getCondVisibility('System.ScreenSaverActive'):
+                    # our start's windows ended it (update_restart.restart()). Kodi's idle time
+                    # survives, so the press that ends this one still tells the user's back.
+                    util.LOG('Library: starting the screensaver again after the update restart')
+                    xbmc.executebuiltin('ActivateScreensaver')
+                return False
+        self._updateNotice = None
+        self.postUI('update notice', self._showUpdateNotice, args=(notice,))
+        return False
+
+    # _tickUpdate(): input this recent at its first look came during the restart
+    UPDATE_NOTICE_RECENT_INPUT = 5
+
+    def _tickUpdateAsk(self):
+        """_tickUpdate(), the user's asked (update_restart.asks()), with our folder replaced and nothing in the
+        way: the question at once for a user who's there, and after "Remind me later" again once
+        update_restart.askAgainAfter() has passed, at a natural break - on a top-level screen (Home, a library,
+        nothing opened from it), playback just over, or back from being away on any screen (a season or film page
+        left for an hour). An update that arrives while they're away restarts without asking, or waits for them
+        (restartsWhileAway()); "Next time I'm away" restarts when they next are."""
+        choice = self.__dict__.get('_updateChoice')
+        playbackBreak = self.__dict__.get('_updatePlaybackBreak')
+        self._updatePlaybackBreak = False
+        laterDue = False
+        if choice == 'later':
+            after = update_restart.askAgainAfter()
+            laterDue = after is not None and time.time() - self.__dict__.get('_updateAskedAt', 0) >= after
+        if update_restart.userAway():
+            if choice == 'away' or (choice is None and update_restart.restartsWhileAway()):
+                self._updateRestartPosted = True
+                self.postUI('restart for update', update_restart.restart,
+                            args=('the user chose the next time they were away' if choice == 'away'
+                                  else 'noticed by the tick',))
+            elif laterDue:
+                # asked again once they're back, wherever that is
+                self._updateAwayBreak = True
+            return True
+        if choice is None:
+            self._postUpdateQuestion()
+        elif laterDue:
+            topLevel = not self.__dict__.get('_isHostedShell') and not self._backStack
+            if topLevel or playbackBreak or self.__dict__.get('_updateAwayBreak'):
+                self._updateAwayBreak = False
+                self._postUpdateQuestion()
+        return True
+
+    def _postUpdateQuestion(self):
+        self._updatePromptPosted = True
+        self.postUI('update restart question', self._askUpdateRestart)
+
+    def _askUpdateRestart(self):
+        """Main thread: when to restart for the update - "Now", "Next time I'm away" or "Remind me later" (Back's
+        the same). The tick closes it if it's left unanswered and the user's away setting says so
+        (_tickUpdate())."""
+        try:
+            if self._shuttingDown or not update_restart.filesReplaced():
+                return
+            name = util.ADDON.getAddonInfo('name')
+            version = update_restart.installedVersion()
+            util.LOG('Library: asking the user when to restart for the update (to {0})', version)
+            w = optionsdialog.OptionsDialog.create(
+                show=False, header=T(35215, '{name} updated').format(name=name),
+                info=T(35221, '{name} was updated to {version} in the background. A restart is required to '
+                              'complete the update. Please select when to restart:').format(name=name,
+                                                                                         version=version),
+                button0=T(35222, 'Now'), button1=T(35223, "Next time I'm away"),
+                button2=T(35224, 'Remind me later'))
+            self._updatePrompt = w
+            try:
+                w.modal()
+            finally:
+                self._updatePrompt = None
+            choice = w.buttonChoice
+            ref = util.windowRef(w)
+            del w
+            util.collectIfAlive(ref)
+        finally:
+            self._updatePromptPosted = False
+
+        self._updateAskedAt = time.time()
+        if self.__dict__.get('_updatePromptAbandoned'):
+            self._updatePromptAbandoned = False
+            self._updateRestartPosted = True
+            update_restart.restart('the restart question went unanswered')
+        elif choice == 0:
+            util.LOG('Library: the user chose to restart for the update now')
+            self._updateRestartPosted = True
+            update_restart.restart('the user chose now', chosen=True)
+        elif choice == 1:
+            util.LOG('Library: the user chose to restart for the update the next time they\'re away')
+            self._updateChoice = 'away'
+        else:
+            util.LOG('Library: the user chose to be reminded about the update restart later')
+            self._updateChoice = 'later'
+
+    def _showUpdateNotice(self, notice):
+        name = util.ADDON.getAddonInfo('name')
+        version = util.ADDON.getAddonInfo('version')
+        util.LOG('Library: telling the user about the update restart ({0} -> {1}, {2})', notice.get('from'), version,
+                 'after being minimised' if notice.get('minimised') else
+                 'user away' if notice.get('away') else 'user present')
+        if notice.get('minimised'):
+            text = T(35220, '{name} was updated to {version} while it was minimised. '
+                            'A restart was required to complete the update.')
+        elif notice.get('away'):
+            text = T(35216, '{name} was updated to {version} while you were away. '
+                            'The addon was restarted during the update.')
+        else:
+            text = T(35217, '{name} was updated to {version} in the background.')
+        optionsdialog.show(T(35215, '{name} updated').format(name=name),
+                           text.format(name=name, version=version), T(32997, 'OK'))
 
     def _onUpdateSourceChanged(self, value=None, **kwargs):
         self._updateSourceChanged = value

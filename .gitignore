@@ -11,3 +11,4 @@ __pycache__
 
 # Local work-tracking notes (session status, scoping docs) - not project docs, never pushed
 /docs/notes/
+/.uno_session

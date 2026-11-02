@@ -16,6 +16,7 @@ from six.moves import range
 from six.moves import zip
 
 from .. import util
+from .. import update_restart
 from . import navintent
 from . import panel_colors
 
@@ -67,7 +68,7 @@ class BaseFunctions(object):
         aggressive = kwargs.pop('aggressive', False)
         if os.getenv("INSTALLATION_DIR_AVOID_WRITE"):
             path = util.PROFILE
-        window = cls(cls.xmlFile, path, cls.theme, cls.res, **kwargs)
+        window = cls(cls.xmlFile, update_restart.skinPath(path), cls.theme, cls.res, **kwargs)
         window.modal(aggressive=aggressive)
         return window
 
@@ -77,7 +78,7 @@ class BaseFunctions(object):
         path = cls.path
         if os.getenv("INSTALLATION_DIR_AVOID_WRITE"):
             path = util.PROFILE
-        window = cls(cls.xmlFile, path, cls.theme, cls.res, **kwargs)
+        window = cls(cls.xmlFile, update_restart.skinPath(path), cls.theme, cls.res, **kwargs)
 
         if show:
             window.show()
@@ -2160,7 +2161,7 @@ class MultiWindow(object):
 
     def _setupCurrent(self, cls):
         # cls is a MultiWindowView: its own class methods forward every callback here.
-        self._current = cls(cls.xmlFile, cls.path, cls.theme, cls.res)
+        self._current = cls(cls.xmlFile, update_restart.skinPath(cls.path), cls.theme, cls.res)
         self._current._hostRef = weakref.ref(self)
 
     @classmethod
@@ -2183,7 +2184,7 @@ class MultiWindow(object):
             # __init__ instead would have every incidental in-session LibraryWindow construction
             # stomp the real singleton.
             mw.onColdStart()
-        b = _MWBackground(mw.bgXML, mw.path, mw.theme, mw.res, multi_window=mw)
+        b = _MWBackground(mw.bgXML, update_restart.skinPath(mw.path), mw.theme, mw.res, multi_window=mw)
         # kept on mw (not just local) so forceDismiss() can still reach it later, including from
         # within a nested call while b.modal() below is still on the stack (sidebar-focus-driven
         # navigation force-dismisses mw before opening the next window) - see MultiWindow.forceDismiss().
@@ -2208,6 +2209,14 @@ class MultiWindow(object):
                 if self.viewFailed(e):
                     continue
                 raise
+            except RuntimeError:
+                # Kodi replaced our folder with an update's under us, and this screen's XML went with
+                # it - before the tick noticed (update_restart.py): restart into the new version
+                # rather than end the session
+                if not update_restart.filesReplaced() or not update_restart.restart(
+                        'opening {0}'.format(getattr(self._next, '__name__', self._next))):
+                    raise
+                break
 
             if firstOpen:
                 firstOpen = False

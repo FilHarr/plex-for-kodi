@@ -11,6 +11,7 @@ from kodi_six import xbmcgui
 
 from lib import kodijsonrpc
 from lib import player
+from lib import update_restart
 from lib import util
 from lib.util import T
 from plexnet.serverdecision import DecisionFailure
@@ -718,11 +719,14 @@ def play(video=None, play_queue=None, resume=False, bgm=False, context=None, **k
     """context: the calling window, which opens anything picked from post-play's rows once the
     player has closed (see opener.open()'s own context)."""
     w = None
+    # an update's restart waits for the player window, post-play included (update_restart.readyToRestart())
+    update_restart.playerOpened()
     try:
         w = VideoPlayerWindow.open(video=video, play_queue=play_queue, resume=resume, bgm=bgm, aggressive=True)
     except util.NoDataException:
         raise
     finally:
+        update_restart.playerClosed()
         # codec teardown might show a spinner, wait a short while - not when post-play is closing
         # to open an item: playback ended long before, and the wait only kept the screen that
         # started playback on show before the item replaced it

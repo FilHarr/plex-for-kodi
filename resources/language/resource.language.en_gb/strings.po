@@ -3980,3 +3980,115 @@ msgstr ""
 msgctxt "#35214"
 msgid "Descending"
 msgstr ""
+
+msgctxt "#35215"
+msgid "{name} updated"
+msgstr ""
+
+msgctxt "#35216"
+msgid "{name} was updated to {version} while you were away. The addon was restarted during the update."
+msgstr ""
+
+msgctxt "#35217"
+msgid "{name} was updated to {version} in the background."
+msgstr ""
+
+msgctxt "#35218"
+msgid "The addon was updated in the background. Restarting in {seconds} seconds"
+msgstr ""
+
+msgctxt "#35219"
+msgid "The addon was updated in the background. Restarting now"
+msgstr ""
+
+msgctxt "#35220"
+msgid "{name} was updated to {version} while it was minimised. A restart was required to complete the update."
+msgstr ""
+
+msgctxt "#35221"
+msgid "{name} was updated to {version} in the background. A restart is required to complete the update. Please select when to restart:"
+msgstr ""
+
+msgctxt "#35222"
+msgid "Now"
+msgstr ""
+
+msgctxt "#35223"
+msgid "Next time I'm away"
+msgstr ""
+
+msgctxt "#35224"
+msgid "Remind me later"
+msgstr ""
+
+msgctxt "#35225"
+msgid "After a background update"
+msgstr ""
+
+msgctxt "#35226"
+msgid "Ask me"
+msgstr ""
+
+msgctxt "#35227"
+msgid "Restart automatically"
+msgstr ""
+
+msgctxt "#35228"
+msgid "What happens when Kodi updates the addon while it's running.\nAsk me: choose to restart now, the next time you're away, or later.\nRestart automatically: a short notice, then the addon restarts by itself - at once if you're away.\nAutomatic restarts will never occur during playback."
+msgstr ""
+
+msgctxt "#35229"
+msgid "Update while I'm away"
+msgstr ""
+
+msgctxt "#35230"
+msgid "Restart without asking"
+msgstr ""
+
+msgctxt "#35231"
+msgid "Ask when I'm back"
+msgstr ""
+
+msgctxt "#35232"
+msgid "What happens if an update arrives while you're away, or you leave the restart question unanswered. {away}\nRestart without asking: the addon restarts, and tells you why when you're back.\nAsk when I'm back: the question waits for you."
+msgstr ""
+
+msgctxt "#35233"
+msgid "After \"Remind me later\", ask again"
+msgstr ""
+
+msgctxt "#35234"
+msgid "After 30 minutes"
+msgstr ""
+
+msgctxt "#35235"
+msgid "After 1 hour"
+msgstr ""
+
+msgctxt "#35236"
+msgid "After 4 hours"
+msgstr ""
+
+msgctxt "#35237"
+msgid "Not until next start"
+msgstr ""
+
+msgctxt "#35238"
+msgid "How long to wait before asking again after \"Remind me later\" - and then only at a natural break: on Home or a library, when playback ends, or when you're back from being away.\nNot until next start: the update completes the next time the addon starts."
+msgstr ""
+
+msgctxt "#35239"
+msgid "1 minute"
+msgstr ""
+
+msgctxt "#35240"
+msgid "{minutes} minutes"
+msgstr ""
+
+msgctxt "#35241"
+msgid "You're away once the screensaver starts."
+msgstr ""
+
+msgctxt "#35242"
+msgid "You're away after {time} with no user input (Note: playback never counts as being away)."
+msgstr ""

@@ -48,6 +48,10 @@ def getCondVisibility(condition):
     return bool(value(condition)) if callable(value) else bool(value)
 
 
+def getGlobalIdleTime():
+    return ENV.idle_time
+
+
 def getRegion(id):
     return ENV.regions.get(id, "")
 
