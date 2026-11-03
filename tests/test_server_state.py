@@ -766,8 +766,10 @@ class TickTest(KodiTestCase):
         KodiTestCase.setUp(self)
         ensure_plex_interface()
         self.servers = mock.Mock()
+        self.account = mock.Mock()
         self.posted = []
         for patcher in (mock.patch.object(library.plexapp, "SERVERMANAGER", self.servers),
+                        mock.patch.object(library.plexapp, "ACCOUNT", self.account),
                         mock.patch.object(library.time, "time", return_value=10000.0)):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -860,6 +862,8 @@ class TickTest(KodiTestCase):
         self.win._onSleep()
         self.assertTrue(self.win._ignoreTick)
         self.servers.cancelOfflineRetry.assert_called_once_with()
+        # and plex.tv's, the account offline (MyPlexAccount.scheduleOfflineRetry())
+        self.account.cancelOfflineRetry.assert_called_once_with()
 
     def test_waking_checks_the_server_then_refreshes(self):
         self.win._ignoreTick = True
@@ -870,6 +874,7 @@ class TickTest(KodiTestCase):
         animal.dropIdleConnections.assert_called_once_with()
         self.servers.periodicReachabilityCheck.assert_called_once_with()
         self.servers.resumeOfflineRetry.assert_called_once_with()
+        self.account.resumeOfflineRetry.assert_called_once_with()
         self.assertEqual(['refresh after wake'], [p[0] for p in self.posted])
 
     def test_waking_can_restart_instead(self):

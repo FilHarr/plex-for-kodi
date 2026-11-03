@@ -283,6 +283,8 @@ class PrePlayWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils
             # the stop's timeline report first: the server decides what was watched from it
             plexapp.util.APP.nowplayingmanager.waitForTimelines(2.0)
         self.video.reload(checkFiles=1, fromMediaChoice=self.video.mediaChoice is not None, skip_cache=True, **VIDEO_RELOAD_KW)
+        # its watchlisted state is asked for below
+        self.watchlist_reinit(self.video)
         removed_from_wl = False
         if self.fromPlayback:
             removed_from_wl = self.wl_auto_remove(self.video)

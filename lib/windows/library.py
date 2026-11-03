@@ -1858,6 +1858,9 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             (plexapp.util.APP, 'change:update_source', self._onUpdateSourceChanged),
             # the servers from plex.tv, on plexnet's thread: their plex.direct names (plexdirect.check())
             (plexapp.util.APP, 'loaded:server_connections', self._onServerConnectionsLoaded),
+            # plex.tv answering after the account went offline (MyPlexAccount.scheduleOfflineRetry(), or
+            # Offline Mode in the user menu): the Watchlist back in the sidebar
+            (plexapp.util.APP, 'account:online', self._postedHandler('onAccountOnline', self.onAccountOnline)),
         )
         for emitter, signal, handler in self._serverSignalHandlers:
             emitter.on(signal, handler)
@@ -2190,6 +2193,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
         util.LOG("Library: system sleep, pausing updates")
         self._ignoreTick = True
         plexapp.SERVERMANAGER.cancelOfflineRetry()
+        plexapp.ACCOUNT.cancelOfflineRetry()
 
     def _onWake(self, *args, **kwargs):
         """System wake: wait as action_on_wake says - the network takes a moment to come back, and
@@ -2224,6 +2228,7 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             server.dropIdleConnections()
         plexapp.SERVERMANAGER.periodicReachabilityCheck()
         plexapp.SERVERMANAGER.resumeOfflineRetry()
+        plexapp.ACCOUNT.resumeOfflineRetry()
         self.postUI('refresh after wake', self.refreshLastSection)
 
     def refreshLastSection(self, *args, **kwargs):
@@ -2452,6 +2457,15 @@ class LibraryWindow(GridMixin, HubsMixin, PlaybackBtnMixin, kodigui.MultiWindow,
             util.showNotification(
                 T(35139, '{0} is no longer available to this account. Its libraries were removed from the sidebar.')
                 .format(server.name), time_ms=8000)
+
+    def onAccountOnline(self, *args, **kwargs):
+        """plex.tv answers after the account went offline: the Watchlist entry back in the sidebar, as when
+        its setting comes on (doUserOption()). The item screens show its buttons when next shown
+        (WatchlistUtilsMixin.watchlist_setup())."""
+        if self._shuttingDown:
+            return
+        sidebar_model.refreshWatchlistSection()
+        self._rebuildSidebar()
 
     def onServerOnline(self, server=None, **kwargs):
         """A server answers again: its sidebar entries light up (and its libraries are asked for,

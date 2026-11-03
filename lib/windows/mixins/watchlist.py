@@ -275,10 +275,23 @@ class WatchlistUtilsMixin(object):
         self.wl_item_children = []
 
     def watchlist_setup(self, item):
-        self.wl_enabled = util.getUserSetting("use_watchlist", True) and not pnUtil.ACCOUNT.isOffline \
-            and item.guid and item.guid.startswith("plex://")
+        """The watchlist on or off for this screen. Returns whether it has just come on - the item's
+        watchlisted state not asked for yet."""
+        wasEnabled = self.wl_enabled
+        self.wl_enabled = bool(util.getUserSetting("use_watchlist", True) and not pnUtil.ACCOUNT.isOffline
+                               and item.guid and item.guid.startswith("plex://"))
         self.wl_ref = GUIDToRatingKey(item.guid)
         self.setBoolProperty("watchlist_enabled", self.wl_enabled)
+        return self.wl_enabled and not wasEnabled
+
+    def watchlist_reinit(self, item):
+        """Shown again (onReInit()): watchlist_setup() again, as the account may have come back online
+        meanwhile (MyPlexAccount.scheduleOfflineRetry()) or gone offline - set up once, a screen opened
+        offline never showed the buttons. Only on a screen that set it up: an artist's (ShowWindow's
+        onReInit()) never does."""
+        if self.wl_ref is None:
+            return False
+        return self.watchlist_setup(item)
 
     @wl_wrap
     def wl_item_verbose(self, meta):

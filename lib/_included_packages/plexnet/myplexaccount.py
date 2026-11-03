@@ -24,6 +24,10 @@ class HomeUser(util.AttributeDict):
 
 
 class MyPlexAccount(object):
+    # plex.tv asked again, in seconds, while an unexpected answer keeps the account offline
+    # (scheduleOfflineRetry()); the last repeats
+    OFFLINE_RETRY_DELAYS = (30, 60, 300)
+
     def __init__(self):
         # Strings
         self.ID = None
@@ -52,6 +56,10 @@ class MyPlexAccount(object):
         self.isProtected = False
         self.switchUser = False
         self.forceResourceRefresh = False
+
+        # the offline retry: its timer and how many times plex.tv has been asked (scheduleOfflineRetry())
+        self.offlineRetry = None
+        self.offlineRetryStep = 0
 
         # local mode: the current user's per-server access tokens ({machineIdentifier: token}),
         # loaded from the LocalUsers registry on setLocal()/local user switches
@@ -82,6 +90,7 @@ class MyPlexAccount(object):
     def setLocal(self):
         # Explicit local-only mode; keeps cached account/server state but never contacts plex.tv.
         # Reuses the isOffline plumbing (feature gates, home user handling).
+        self.cancelOfflineRetry()
         self.isOffline = True
         self.isSignedIn = False
         self.isAuthenticated = False
@@ -318,14 +327,52 @@ class MyPlexAccount(object):
             if user.id == self.ID:
                 self.isAdmin = user.isAdmin
 
-    def verifyAccount(self):
+    def verifyAccount(self, background=False):
+        """background: the offline retry's (onOfflineRetryTimer()) - its answer never signs out."""
         if self.authToken:
             request = myplexrequest.MyPlexRequest("/users/account")
             context = request.createRequestContext("account", callback.Callable(self.onAccountResponse),
                                                    timeout=util.PLEXTV_TIMEOUT)
+            context.background = background
             util.APP.startRequest(request, context)
         else:
             util.APP.clearInitializer("myplex")
+
+    def scheduleOfflineRetry(self):
+        """plex.tv asked again later: an unexpected answer (a 5xx, a rate limit, none at all) left the
+        account offline, and nothing else asks before the next start or sign-in - the Watchlist stayed
+        off for the session. Not in local mode, offline on purpose; one retry at a time."""
+        if util.LOCAL_MODE or not self.authToken or self.offlineRetry:
+            return
+        delay = self.OFFLINE_RETRY_DELAYS[min(self.offlineRetryStep, len(self.OFFLINE_RETRY_DELAYS) - 1)]
+        util.DEBUG_LOG("Account: offline, asking plex.tv again in {0}s", delay)
+        self.offlineRetry = plexapp.createTimer(delay * 1000, callback.Callable(self.onOfflineRetryTimer))
+        self.offlineRetryStep += 1
+        util.APP.addTimer(self.offlineRetry)
+
+    def cancelOfflineRetry(self):
+        """Stops asking (back online, signed out, or the device going to sleep); the delays start from
+        the beginning next time."""
+        timer, self.offlineRetry = self.offlineRetry, None
+        self.offlineRetryStep = 0
+        if timer:
+            timer.cancel()
+
+    def resumeOfflineRetry(self):
+        """Back from sleep, which cancelled it: asking again, if still offline."""
+        if self.isOffline:
+            self.scheduleOfflineRetry()
+
+    def onOfflineRetryTimer(self):
+        self.offlineRetry = None
+        if not self.isOffline or util.LOCAL_MODE:
+            return
+        util.LOG("Account: offline, asking plex.tv again")
+        # a switch made while offline leaves switchUser set for its caller to read (switchHomeUser());
+        # read long since, it would make this answer a change of user
+        self.switchUser = False
+        self.forceResourceRefresh = False
+        self.verifyAccount(background=True)
 
     def logState(self):
         util.LOG("Authenticated as {0}:{1}", self.ID, repr(self.title))
@@ -365,6 +412,8 @@ class MyPlexAccount(object):
 
     def onAccountResponse(self, request, response, context):
         oldId = self.ID
+        wasOffline = self.isOffline
+        status = response.getStatus()
 
         if response.isSuccess():
             data = response.getBodyXml()
@@ -445,18 +494,26 @@ class MyPlexAccount(object):
                 plexapp.refreshResources()
                 self.forceResourceRefresh = False
 
-        elif response.getStatus() >= 400 and response.getStatus() < 500:
-            # The user is specifically unauthorized, clear everything
+        elif status in (401, 403) and context.background:
+            # the token refused while offline, found by the retry: no sign-out under a screen in use - the
+            # next start's check signs out, at a point it can
+            util.WARN_LOG("Account: plex.tv refused the token ({0}), staying offline".format(status))
+            self.cancelOfflineRetry()
+        elif status in (401, 403):
+            # The user is specifically unauthorized, clear everything. Only these: any 4xx did, a 429 or a
+            # 408 too, which say nothing about the token.
             util.WARN_LOG("Sign Out: User is unauthorized")
             self.signOut(True)
         else:
             # Unexpected error, keep using whatever we read from the registry
-            util.WARN_LOG("Unexpected response from plex.tv ({0}), switching to OFFLINE mode".format(response.getStatus()))
-            self.logState()
+            util.WARN_LOG("Unexpected response from plex.tv ({0}), switching to OFFLINE mode".format(status))
             self.isOffline = True
             # consider a single, unprotected user authenticated
             if not self.isAuthenticated and not self.isProtected:
                 self.isAuthenticated = True
+            # after the state's set: logged first, the first switch said "Offline: False"
+            self.logState()
+            self.scheduleOfflineRetry()
 
         util.APP.clearInitializer("myplex")
         # Logger().UpdateSyslogHeader()  # TODO: ------------------------------------------------------------------------------------------------------IMPLEMENT
@@ -465,9 +522,17 @@ class MyPlexAccount(object):
             self.switchUser = None
             util.APP.trigger("change:user", account=self, reallyChanged=oldId != self.ID)
 
+        if wasOffline and not self.isOffline:
+            # what offline mode turned off (the Watchlist) comes back: the sidebar's rebuilt on this
+            util.LOG("Account: plex.tv answered, back online")
+            self.cancelOfflineRetry()
+            util.APP.trigger("account:online", account=self)
+
         util.APP.trigger("account:response")
 
     def signOut(self, expired=False):
+        self.cancelOfflineRetry()
+
         # Strings
         self.ID = None
         self.title = None

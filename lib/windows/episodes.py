@@ -1019,6 +1019,10 @@ class EpisodesWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutil
             self.updateSeasonCardPlayState(selected)
 
         self.themeMusicReinit(self.show_)
+        # here, ahead of the returns below: asked for now if it has just come on (checkIsWatchlisted()
+        # further down isn't always reached)
+        if self.watchlist_reinit(self.show_):
+            self.checkIsWatchlisted(self.show_)
         if not self.tasks:
             self.tasks = backgroundthread.Tasks()
 

@@ -305,7 +305,7 @@ class ServerSignalsTest(KodiTestCase):
             for name in ('displayServerAndUser', 'onServerReachable',
                          'onServerSuspect', 'onServerRecovered', 'onServerOffline',
                          'onServerOnline', 'onServerGone', '_onSleep', '_onWake',
-                         '_onUpdateSourceChanged', '_onServerConnectionsLoaded'):
+                         '_onUpdateSourceChanged', '_onServerConnectionsLoaded', 'onAccountOnline'):
                 setattr(host, name, (lambda n: lambda **kw: calls.append((n, kw)))(name))
             host._postedHandler = library.LibraryWindow._postedHandler.__get__(host)
             library.LibraryWindow.hookSignals(host)
@@ -346,6 +346,13 @@ class ServerSignalsTest(KodiTestCase):
             app.trigger('loaded:server_connections', servers=['oscar'], source='myplex')
             self.assertEqual(('_onServerConnectionsLoaded', {'servers': ['oscar'], 'source': 'myplex'}),
                              calls[-1])
+
+            # the account back online (MyPlexAccount.onAccountResponse(), on plexnet's thread): posted
+            app.trigger('account:online', account='me')
+            self.assertEqual('_onServerConnectionsLoaded', calls[-1][0])
+            self.assertEqual('onAccountOnline', host._uiPending[-1][0])
+            host.runPendingNav(View())
+            self.assertEqual(('onAccountOnline', {'account': 'me'}), calls[-1])
 
             library.LibraryWindow.unhookSignals(host)
             self.assertEqual([], [h for hs in manager.handlers.values() for h in hs])

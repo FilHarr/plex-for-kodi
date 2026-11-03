@@ -253,6 +253,8 @@ class ShowWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.Si
         PlaybackBtnMixin.onReInit(self)
         # Shown again - back from playing the show, mostly: its seasons, counts and Play/Resume moved on
         self._refreshShow('shown again')
+        # its watchlisted state is asked for below
+        self.watchlist_reinit(self.mediaItem)
         self.wl_auto_remove(self.mediaItem)
         self.checkIsWatchlisted(self.mediaItem)
         self.themeMusicReinit(self.mediaItem)
