@@ -15,6 +15,9 @@ first lets it exit immediately.
 
 from __future__ import absolute_import
 
+import threading
+import time
+
 from kodienv import ENV
 
 ENV.abort_requested = True
@@ -167,3 +170,80 @@ class BGMFadeOwnershipTest(KodiTestCase):
                         "the theme that replaced ours is still playing")
         self.assertEqual(h.volumes, [],
                          "restoring the pre-BGM volume here would drop the live theme mid-playback")
+
+
+class BGMStopMidFadeTest(KodiTestCase):
+    """
+    Kodi runs its callbacks inside MONITOR waits, so the player's stop callback can arrive in the wait between a
+    fade's steps - on the fade's own thread. onPlayBackStopped() waited for every fade to end, including that one,
+    which can't take its next step until the callback returns: a deadlock that left a pre-play screen open with no
+    navigation running (2026-11-03). A fade on another thread is still waited for.
+
+    The stub's waits return at once, so a wait that never ends would spin rather than block: these count them and
+    fail instead.
+    """
+
+    def setUp(self):
+        KodiTestCase.setUp(self)
+        ENV.abort_requested = False
+        self.player = FakePlayer()
+        self.waits = 0
+        monitor = player.util.MONITOR
+        original = monitor.waitFor
+        self.addCleanup(setattr, monitor, 'waitFor', original)
+        monitor.waitFor = self.countedWait
+
+    def countedWait(self, interval=None):
+        self.waits += 1
+        if self.waits > 500:
+            raise AssertionError('waited for good')
+        if self.sleep:
+            time.sleep(self.sleep)
+        return False
+
+    sleep = 0
+
+    def handler(self):
+        return RecordingHandler(self.player, [None, 20, "1"], old_volume=55)
+
+    def test_a_stop_inside_the_fades_own_wait_doesnt_wait_for_it(self):
+        h = self.handler()
+
+        def stopArrives(n):
+            if n == 1:
+                h.onPlayBackStopped(rm=False)
+        h.onWrite = stopArrives
+        h.fade(0, fast=True, stop=True)
+
+        self.assertFalse(h.fading)
+        self.assertFalse(self.player.bgmPlaying)
+        # the fade stops at its next step, and leaves the volume where the stop put it back to - not at the fade's
+        # target of 1
+        self.assertEqual(55, h.volumes[-1])
+        self.assertLess(self.waits, 20)
+
+    def test_a_stop_still_waits_for_a_fade_on_another_thread(self):
+        self.sleep = 0.01
+        h = self.handler()
+        started, release = threading.Event(), threading.Event()
+
+        def holdFirstStep(n):
+            if n == 1:
+                started.set()
+                release.wait(5)
+        h.onWrite = holdFirstStep
+        fader = threading.Thread(target=h.fade, args=(0,), kwargs={'fast': True})
+        fader.start()
+        self.assertTrue(started.wait(5))
+
+        stopper = threading.Thread(target=h.onPlayBackStopped, kwargs={'rm': False})
+        stopper.start()
+        stopper.join(0.2)
+        self.assertTrue(stopper.is_alive(), "the stop returned while another thread's fade was still going")
+
+        release.set()
+        fader.join(5)
+        stopper.join(5)
+        self.assertFalse(fader.is_alive() or stopper.is_alive())
+        self.assertFalse(self.player.bgmPlaying)
+        self.assertEqual(55, h.volumes[-1])

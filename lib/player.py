@@ -2168,6 +2168,8 @@ class BGMPlayerHandler(BasePlayerHandler):
         self.generation = player.bgmGeneration
         self.fadeSeq = 0
         self._fadesActive = 0
+        # the fades running now, per thread (its ident -> how many): see _fadingElsewhere()
+        self._fadeThreads = {}
         self._fadeLock = threading.Lock()
         util.setGlobalProperty('track.ID', '')
 
@@ -2213,13 +2215,16 @@ class BGMPlayerHandler(BasePlayerHandler):
         self.setVolume(reset=True)
 
     def fade(self, to, fast=False, stop=False, fade_time=1.0):
+        me = threading.current_thread().ident
         with self._fadeLock:
             self.fadeSeq += 1
             my_seq = self.fadeSeq
             self._fadesActive += 1
+            self._fadeThreads[me] = self._fadeThreads.get(me, 0) + 1
             self.fading = True
 
         superseded = False
+        aborted = False
         try:
             cur_vol = float(self._getVolume())
             is_out = to < cur_vol
@@ -2248,6 +2253,7 @@ class BGMPlayerHandler(BasePlayerHandler):
                     util.LOG("BGM: Abort requested, cancelling fade {}",
                              "out" if is_out else "in")
                     self.resetVolume()
+                    aborted = True
                     break
 
                 # Compute new volume
@@ -2262,12 +2268,18 @@ class BGMPlayerHandler(BasePlayerHandler):
                 util.MONITOR.waitFor(step_delay)
 
             # Guarantee final target (but still not below 1). Skipped when superseded: this write lands after
-            # the new owner's, so it would undo them.
-            if not superseded:
+            # the new owner's, so it would undo them. And when aborted: the volume was just put back, and a stop
+            # that arrived mid-fade on this thread (_fadingElsewhere()) has finished by now, so nothing would put
+            # it back after this.
+            if not superseded and not aborted:
                 self._setVolume(max(1, int(to)))
         finally:
             with self._fadeLock:
                 self._fadesActive -= 1
+                if self._fadeThreads.get(me, 0) > 1:
+                    self._fadeThreads[me] -= 1
+                else:
+                    self._fadeThreads.pop(me, None)
                 self.fading = self._fadesActive > 0
 
         # stop() acts on the player, not on us. A superseded fade reaching it would stop the theme that
@@ -2297,11 +2309,23 @@ class BGMPlayerHandler(BasePlayerHandler):
             return
         return self.fade(0, fast=fast, stop=stop, fade_time=fade_time)
 
+    def _fadingElsewhere(self):
+        """Whether a fade is running on another thread than this one - the ones onPlayBackStopped() waits for.
+
+        Not one further up this thread's own stack: Kodi runs its callbacks inside MONITOR waits, so the player's
+        stop callback can arrive in the wait between a fade's steps, on the fade's own thread. Waiting there for that
+        fade to end waited for good - the fade can't take its next step until the callback returns - and the screen
+        whose theme music started it never finished opening, so no navigation ran again (a pre-play screen that
+        Back and the sidebar couldn't leave, 2026-11-03). That fade sees abort at its next step and stops by itself."""
+        me = threading.current_thread().ident
+        with self._fadeLock:
+            return self._fadesActive > self._fadeThreads.get(me, 0)
+
     def onPlayBackStopped(self, rm=True):
         util.DEBUG_LOG("BGM: stopped theme for {}", self.currentlyPlaying)
         util.setGlobalProperty('theme_playing', '')
         self.abort = True
-        while self.fading:
+        while self._fadingElsewhere():
             util.MONITOR.waitFor()
 
         if self.owns():
