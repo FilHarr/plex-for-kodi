@@ -288,19 +288,18 @@ class HubRowLookupTest(KodiTestCase):
 
 
 class HeroArtSizeTest(KodiTestCase):
-    """kodigui.HERO_ART_SIZE follows the hero art box in includes/default_background.xml.tpl: a
-    16:9 image that covers the box's width (1229 plus the zoom pad) and so its height too."""
+    """kodigui.HERO_ART_SIZE follows the hero art box in includes/default_background.xml.tpl: the
+    box's own size, 16:9 like the art."""
 
-    def test_the_size_covers_the_template_box(self):
+    def test_the_size_is_the_template_box(self):
         import os
         import re
         from .base import TEMPLATE_DIR
         with open(os.path.join(TEMPLATE_DIR, 'includes', 'default_background.xml.tpl'), encoding='utf-8') as fp:
             tpl = fp.read()
-        pad = int(re.search(r'hero_zoom_pad = (\d+)', tpl).group(1))
-        box = re.search(r'<width>\{\{ (\d+) \+ hero_zoom_pad \}\}</width>\s*<height>(\d+)</height>', tpl)
-        width, height = int(box.group(1)) + pad, int(box.group(2))
-        art_w, art_h = kodigui.HERO_ART_SIZE
-        self.assertEqual(width, art_w)
-        self.assertEqual(round(width * 9 / 16.0), art_h)
-        self.assertGreaterEqual(art_h, height)
+        # the width and height of the control drawn through the hero art's cut-out
+        box = re.search(r'<width>(\d+)</width>\s*<height>(\d+)</height>(?:(?!</control>).)*?hero-art-cutout\.png',
+                        tpl, re.DOTALL)
+        width, height = int(box.group(1)), int(box.group(2))
+        self.assertEqual((width, height), kodigui.HERO_ART_SIZE)
+        self.assertEqual(round(width * 9 / 16.0), height)

@@ -1066,24 +1066,15 @@ def _fakeBackgroundPanelCorners(seed, maxValue=0.3, saturation=0.4):
 
 def backgroundPanelCorners(ultraBlurColors, seed=None, maxValue=0.3):
     """
-    Phase 1 approximation of official Plex's native per-corner art-color extraction (see
-    docs/notes/hero-art-background-status.md, "Resolved: official Plex Android decompile"). Sources
-    colors from the item's own ultraBlurColors PMS metadata rather than real pixel extraction from
-    the art (Phase 2, not yet implemented - Kodi's Python has no PIL/Pillow and this addon has never
-    done local pixel decoding).
+    The colour panel's 4 corner colours (lib/panel_texture.py), from the item's ultraBlurColors - the server's
+    per-corner colours for its art - rather than pixels of the art itself (Kodi's Python has no image library).
 
-    Clamps HSV *value* (not HSL lightness) to maxValue - confirmed against live screenshots of the
-    official client's own full-background view (no hero-art box occluding it): capped corners land
-    on an exact max-channel value of ~77/255 across multiple titles (Deadpool 2, Wakanda Forever,
-    LOTR), consistent with a hard max(R,G,B) cap at 0.3, not a lightness ((max+min)/2) cap - an HSL
-    clamp on the same swatches overshoots that ceiling substantially (e.g. Supergirl's raw
-    bottomRight af1308 HSL-clamped to ~146 max channel vs officially observed ~77).
+    Each corner's HSV *value* (not HSL lightness) goes through softPanelValue(): dark colours as they are, bright
+    ones rolled off, so the panel never glares while a bright corner still reads brighter than a middling one.
 
-    Returns a dict of up to 4 ARGB colordiffuse-ready hex strings keyed 'topLeft'/'topRight'/
-    'bottomLeft'/'bottomRight'. When the item has no ultraBlurColors data at all: falls back to
-    _fakeBackgroundPanelCorners(seed) if a seed was given, otherwise returns {} (the original
-    behavior - callers can leave the skin's corner-tint layers hidden and fall back to the flat
-    base color only, for whatever caller doesn't have/want a seed-based fake).
+    Returns a dict of up to 4 ARGB hex strings keyed 'topLeft'/'topRight'/'bottomLeft'/'bottomRight'. When the item
+    has no ultraBlurColors data at all: falls back to _fakeBackgroundPanelCorners(seed) if a seed was given (value
+    maxValue), otherwise returns {} - no panel, the window's own colour.
     """
     if not ultraBlurColors:
         if seed is not None:
@@ -1100,11 +1091,24 @@ def backgroundPanelCorners(ultraBlurColors, seed=None, maxValue=0.3):
         except (ValueError, TypeError):
             continue
         h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
-        if v > maxValue:
-            v = maxValue
+        v = softPanelValue(v)
         r, g, b = colorsys.hsv_to_rgb(h, s, v)
         result[corner] = 'FF{:02X}{:02X}{:02X}'.format(round(r * 255), round(g * 255), round(b * 255))
     return result
+
+
+# The colour panel's brightness curve for the server's corner colours: HSV value unchanged up to the knee, then
+# rolled off towards knee + rolloff. Chosen on 2026-11-03 against Animal's 715 films and shows: their median panel
+# lands halfway between the old hard 0.3 cap's and Plex's own current apps' (which apply no limit at all), while
+# unlike a raised hard cap a bright corner still reads brighter than a middling one.
+SOFT_PANEL_KNEE = 0.15
+SOFT_PANEL_ROLLOFF = 0.342
+
+
+def softPanelValue(v):
+    if v <= SOFT_PANEL_KNEE:
+        return v
+    return SOFT_PANEL_KNEE + SOFT_PANEL_ROLLOFF * math.tanh((v - SOFT_PANEL_KNEE) / SOFT_PANEL_ROLLOFF)
 
 
 def clearLogoFrom(item, width, height):

@@ -32,7 +32,7 @@
     </control>
     {% endif %}
     {% include "includes/background_panel.xml.tpl" %}
-    {# Whole top-right hero-art box (the art plus the scrim over it). Dropped at render
+    {# The hero art, top right. Dropped at render
        time for the screens that never want it, rather than hidden at runtime via the no_hero_art
        window property below: library grids, list views and Genres are structurally incapable of
        wanting it, and driving that from Python proved unreliable - the property is only ever
@@ -43,31 +43,16 @@
        whole chain. Negative flag deliberately: an undefined variable is falsy here, so every
        other caller of this include keeps the box with no change. #}
     {% if not suppress_hero_art %}
-    {# Zoom of the item art inside the hero box, done purely in the skin and anchored at the
-       screen's top-right corner: the art control below is made hero_zoom_pad wider than the
-       1229x691 box, all of it added on the *left*, so the art's right edge stays on the screen's
-       right edge; under <aspectratio>scale</aspectratio> the 16:9 texture then overflows the
-       control's height, Kodi clips that overflow to the control rect (GUITexture.cpp sets a clip
-       region whenever the scaled texture exceeds it), and aligny="top" keeps the art's top edge on
-       the screen's top edge so only the bottom is cut. Zoom = (1229 + pad) / 1229, so 61 -> 1.05x, 122 ->
-       1.10x, 406 -> 1.33x. The vignette mask has to be padded on the left by exactly the same
-       amount (masks/background-vignette-zoom.png, generated from background-vignette.png by
-       docs/notes/vignette-zoom-pad.py - re-run it after changing this) because scalediffuse="false"
-       maps the mask onto the whole control rect. Not done via the transcode request: PMS's
-       minSize=1 does NOT crop to a non-16:9 size, it returns the whole image scaled up (verified
-       live), so there is nothing server-side that can zoom. #}
-    {% with hero_zoom_pad = 61 %}
-    <!-- shrunk to ~64% and anchored top-right, matching official Plex's own pre_play framing.
-         The vignette mask below is a rounded-rectangle falloff (flat sides, curved corners only),
-         not a smooth ellipse - fit against real pixel measurements off official Plex renders. An
-         ellipse forces curvature into the middle of each edge, which faded too early and smeared
-         the transition wider than the real, sharper corner-only curve. -->
+    <!-- The hero art over the colour panel, as Plex's own apps place it: the right two thirds of the top two thirds,
+         unzoomed, at full strength, through a cut-out (masks/hero-art-cutout.png, docs/notes/hero-art-cutout.py) - the
+         art in full at the screen's top right corner, the panel fully over it at the box's left and bottom edges.
+         Wherever there's no art (none, loading, mid-fade) the panel under it shows. Not a slice of the panel drawn
+         back over the art: Kodi fades each image on its own, so two fading layers inside the box and one outside drew
+         the box's edges as lines on every item change. -->
     <control type="image">
         <!-- no fallback="" texture here: Kodi shows a fallback for the entire time the real
              texture is downloading/transcoding, not just on genuine failure, and an opaque one
-             would sit on top of the color panel above and hide it for however long the art takes
-             to fetch. The window's own clear colour (see the top of this file) already covers
-             that spot regardless. -->
+             would hide the colour panel for however long the art takes to fetch. -->
         <!-- no_hero_art (LibraryWindow._setNoHeroArt, library.py): hides this box on the
              Recommended tab while nothing is bound yet (fresh entry before the hubs land, or a
              section with no hubs), rather than showing the previous section's art. Not a
@@ -80,54 +65,20 @@
              the left but not this art box.
              nav_hidden (global): post-play's hand-over to an item it opens - see default.xml.tpl. -->
         <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art)) + String.IsEmpty(Window.Property(hero.no_art)) + String.IsEmpty(Window(10000).Property(script.plex.nav_hidden))</visible>
-        <posx>{{ 691 - hero_zoom_pad }}</posx>
+        <posx>640</posx>
         <posy>0</posy>
-        <width>{{ 1229 + hero_zoom_pad }}</width>
-        <height>691</height>
+        <width>1280</width>
+        <height>720</height>
         <!-- One layer: Kodi's own <fadetime> crossfade fades the old art out and the new in, the colour
              panel showing through the shared transparent moments. Upstream held the previous art solid
              on a second layer (background_static) under this one; the previous item's art should be gone
              the instant focus moves off it (on request), which left that layer drawing the same art twice
              (2026-10-26). 250ms: shorter reads as less of the previous item's art lingering. -->
         <fadetime>250</fadetime>
-        <texture background="true" diffuse="script.plex/masks/background-vignette-zoom.png">{{ background_source|default("$INFO[Window.Property(background)]") }}</texture>
-        <!-- lets the 4-corner tinted panel bleed through the art uniformly, not just at the
-             vignette's own edge falloff - same sibling-<colordiffuse>-plus-diffuse-mask pattern
-             as the scrim control below (colordiffuse as an attribute on <texture> alongside
-             diffuse= silently does nothing, this sibling-element form is the one that works).
-             White RGB, alpha only, so this is a pure opacity trim - no colour shift of its own.
-             85 (52%): between the two stacked 40% layers' 64% and one's 40%, chosen side by side
-             (2026-10-26). -->
-        <colordiffuse>85FFFFFF</colordiffuse>
-        <!-- unconditional (not the needs_scaling-gated scale_background include): "scale" is
-             what makes the 16:9 texture cover this deliberately wider-than-16:9 control and overflow
-             vertically for the zoom (the default "stretch" would just squash it wider), aligny="top"
-             keeps the art's top edge on the screen's top edge (the overflow is cut off the bottom),
-             and scalediffuse="false" pins the (padded) vignette mask to this control's rect - the
-             default true maps it onto the enlarged texture rect instead, so it would be clipped
-             along with the art. -->
-        <aspectratio align="center" aligny="top" scalediffuse="false">scale</aspectratio>
-    </control>
-    {% endwith %}
-    <!-- a flat, neutral scrim directly over the art box - official Plex's own key art plateaus
-         well short of full brightness even on its palest art (measured ~40% dimmed toward black),
-         but stays achromatic doing it. An earlier version tinted this with the item's own
-         ultrablur color instead of black, which measured out as a visible pink/hue cast against
-         real Plex screenshots that isn't actually there. Uses the same vignette mask as the art
-         layers above so it fades out at the box edges instead of ending in a hard rectangle where
-         the art has already faded to reveal the panel underneath. -->
-    <control type="image">
-        <!-- temporarily disabled for testing (hardcoded false) - re-enable by restoring the
-             condition below. -->
-        <visible>false</visible>
-        <!-- <visible>!String.IsEmpty(Window.Property(dynamic_backgrounds)) + String.IsEmpty(Window.Property(no_hero_art))</visible> -->
-        <fadetime>1000</fadetime>
-        <posx>691</posx>
-        <posy>0</posy>
-        <width>1229</width>
-        <height>691</height>
-        <texture diffuse="script.plex/masks/background-vignette.png">script.plex/white-square.png</texture>
-        <colordiffuse>33000000</colordiffuse>
+        <texture background="true" diffuse="script.plex/masks/hero-art-cutout.png">{{ background_source|default("$INFO[Window.Property(background)]") }}</texture>
+        <!-- cover: non-16:9 art is cropped to the box (Kodi clips the overflow to the control); scalediffuse="false"
+             keeps the cut-out on the box rather than on the overflowing art -->
+        <aspectratio align="center" aligny="center" scalediffuse="false">scale</aspectratio>
     </control>
     {% endif %}
     <!-- Full-canvas dim while focus is down in the row content (Roles/Reviews/Extras/Related/etc.)

@@ -248,9 +248,6 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
 
     COVER_FALLBACK = 'script.plex/thumb_fallbacks/music.png'
 
-    # the colour panel's static form (includes/background_panel.xml.tpl): here it's the whole background
-    PANEL_CROSSFADE = False
-
     def updateFromTrack(self, track=None):
         """The cover and the background panel, from the track. Called with the track about to
         play from MusicPlayerWindow.onFirstInit(); otherwise with the one the handler extracted
@@ -269,14 +266,14 @@ class CurrentPlaylistWindow(kodigui.ControlledWindow, windowutils.UtilMixin):
         fallback for a track with no art is chosen here for the same reason - a fallback layer
         in the template would flash on during the gap.
 
-        Panel: the 4-corner panel (includes/background_panel.xml.tpl) from the track's album -
+        Panel: the colour panel (includes/background_panel.xml.tpl) from the track's album -
         its cover's colours, else its own ultraBlurColors (panel_colors.coloursFor()), the same
         source the Album screen's panel uses, so the two agree - falling back to the track's own
         when it has no album (or the album carries none), and
         then to the seeded stand-in every other screen ends up with (util.backgroundPanelCorners),
         seeded on the album so a whole album shares it. updateBackgroundFrom() (kodigui.py) isn't
         used because these windows show the cover itself and never want the hero-art box that
-        also drives; no crossfade (PANEL_CROSSFADE) because on these two screens the panel is the
+        also drives. Its static form, with no fade, because on these two screens the panel is the
         whole background - see the include."""
         track = track or player.PLAYER.currentTrack()
         if not track:

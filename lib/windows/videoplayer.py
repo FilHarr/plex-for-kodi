@@ -501,8 +501,8 @@ class VideoPlayerWindow(kodigui.ControlledWindow, windowutils.UtilMixin, Spoiler
         self.postPlayInitialized = True
 
     def setPostPlayBackground(self):
-        # Post-play's background is only the shared 4-corner colour panel
-        # (includes/default_background.xml.tpl), tinted from the item that just played; the
+        # Post-play's background is only the shared colour panel
+        # (includes/background_panel.xml.tpl), from the item that just played; the
         # hero-art box is hidden on this screen throughout (paintInitialBackground()).
         # hidePostPlay() clears the panel for the next item's start-up.
         if util.addonSettings.dynamicBackgrounds:

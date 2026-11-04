@@ -359,7 +359,7 @@ class AlbumWindow(kodigui.ControlledWindow, windowutils.UtilMixin, windowutils.S
 
     def updateProperties(self):
         # The shared background path (kodigui.BaseWindow), same as Movies/Shows/Seasons/Artist:
-        # it drives the 4-corner tinted panel from the item's own ultraBlurColors - which Audio
+        # it drives the colour panel from the item's own ultraBlurColors - which Audio
         # items do carry (Audio._setData(), plexnet/audio.py) - crossfades between items, and sets
         # the hero art at opacity=100. Was a bare setProperty('background', ...) here, which got the
         # art but never the colour panel, so this screen sat on the flat default tint while every

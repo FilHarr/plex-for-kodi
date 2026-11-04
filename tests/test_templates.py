@@ -370,14 +370,12 @@ class ClearLogoTest(KodiTestCase):
 
 class BackgroundFillTest(KodiTestCase):
     """At a 4K interface the AM6B is fill-bound (2026-10-28): the background's flat #111111 is the window's
-    clear colour, not two full-screen layers (a flat image and the panel's base fill), and each colour-panel
-    corner is only as wide as its mask reaches. Only the Recommended view's cover keeps a flat image - it hides
-    the hub rows under it - and only the music screens' static panel keeps its base fill."""
+    clear colour, not two full-screen layers (a flat image and the panel's base fill). Only the Recommended
+    view's cover keeps a flat image - it hides the hub rows under it - and only the music screens' static panel
+    keeps its base fill."""
 
     MAIN_WINDOWS = ("posters", "posters-small", "squares", "ar16x9", "pre_play", "episodes", "collection",
                     "recommended", "photo", "see_more_poster")
-    CORNER_IDS = set(str(i) for i in list(range(2101, 2109)) + list(range(2111, 2119)))
-
     def setUp(self):
         super(BackgroundFillTest, self).setUp()
         self.rendered = render_theme(make_engine(self.mktemp()), "modern-colored")
@@ -406,27 +404,13 @@ class BackgroundFillTest(KodiTestCase):
         in its top-right vignette (the user, 2026-10-28)."""
         root = ET.fromstring(self.rendered["photo"])
         self.assertFalse([c for c in root.iter("control") if "Window.Property(background)" in (c.findtext("texture") or "")])
-        self.assertTrue([c for c in root.iter("control") if c.get("id") == "2101"])
+        self.assertTrue([c for c in root.iter("control") if c.get("id") == "2109"])
 
     def test_the_music_screens_keep_their_static_base(self):
         for window in ("music_player", "music_current_playlist"):
             with self.subTest(window=window):
                 self.assertEqual(1, len(self.flatLayers(ET.fromstring(self.rendered[window]))))
 
-    def test_every_corner_is_only_as_wide_as_its_mask(self):
-        for window in self.MAIN_WINDOWS + ("music_player",):
-            root = ET.fromstring(self.rendered[window])
-            corners = [c for c in root.iter("control") if c.get("id") in self.CORNER_IDS]
-            with self.subTest(window=window):
-                self.assertTrue(corners)
-                for c in corners:
-                    flipped = c.find("texture").get("flipx") == "true"
-                    self.assertEqual(("476" if flipped else "0", "1444"), (c.findtext("posx"), c.findtext("width")))
-
-    def test_the_mask_is_cropped_to_its_reach(self):
-        from PIL import Image
-        with Image.open(os.path.join(MEDIA_DIR, "script.plex", "masks", "background-corner.png")) as mask:
-            self.assertEqual((1444, 1080), mask.size)
 
 
 class GridRestoreIndexTest(KodiTestCase):

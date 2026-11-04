@@ -16,6 +16,7 @@ from six.moves import range
 from six.moves import zip
 
 from .. import util
+from .. import panel_texture
 from .. import update_restart
 from . import navintent
 from . import panel_colors
@@ -151,10 +152,10 @@ class BaseFunctions(object):
 
 # The size background art is requested at: the hero art box's, which is the only place any screen
 # draws it (the full-screen copies behind search results and Person are going). The box
-# (includes/default_background.xml.tpl) is 1229 wide plus its 61-pixel zoom pad, and a 16:9 image
-# covers that at 1290x726; the window's 1920x1080 was about 2.2 times the pixels (step 12 in the
-# navigation review). tests/test_move_lookups.py checks it against the template.
-HERO_ART_SIZE = (1290, 726)
+# (includes/default_background.xml.tpl) is 1280x720, 16:9 like the art; the window's 1920x1080 was
+# 2.25 times the pixels (step 12 in the navigation review). tests/test_move_lookups.py checks it
+# against the template.
+HERO_ART_SIZE = (1280, 720)
 NAV_HIDDEN = False
 
 
@@ -329,7 +330,7 @@ class XMLBase(object, metaclass=_WindowType):
                     return
                 raise
             self._markControls()
-            # the colour panel's corners, now there are controls to paint (BaseWindow._paintPanelLayer())
+            # the colour panel, now there's a control to paint (BaseWindow._paintPanelTexture())
             repaint = getattr(self, 'repaintPanel', None)
             if repaint:
                 repaint()
@@ -373,8 +374,7 @@ class XMLBase(object, metaclass=_WindowType):
 
 class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
     __slots__ = ("_closing", "_winID", "started", "finishedInit", "dialogProps", "isOpen", "_errored",
-                 "_closeSignalled", "_bgURL", "_panelLayer", "_panelColors", "_panelLayerColors",
-                 "_absentPanelCopies")
+                 "_closeSignalled", "_bgURL", "_panelColors", "_absentPanelCopies", "_panelTexture")
     supportsAutoPlay = False
 
     def __init__(self, *args, **kwargs):
@@ -387,11 +387,10 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         self.finishedInit = False
         # The art URL windowSetBackground() last wrote to this window, None before the first.
         self._bgURL = None
-        self._panelLayer = 'a'
         self._panelColors = ('', '', '', '')
-        # each colour-panel layer's 4 corner colours as painted (_paintPanelLayer()), repainted at first init
-        self._panelLayerColors = {'a': ('', '', '', ''), 'b': ('', '', '', '')}
-        # the panel copies (PANEL_CORNER_CONTROLS) this window's template hasn't got, found once it's loaded:
+        # the colour panel's texture as painted (_paintPanelTexture()), repainted at first init
+        self._panelTexture = ''
+        # the panel copies (PANEL_TEXTURE_CONTROLS) this window's template hasn't got, found once it's loaded:
         # never asked for again, as Kodi logs every miss
         self._absentPanelCopies = set()
         self.dialogProps = kwargs.get("dialog_props", None)
@@ -717,8 +716,7 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
         """The colour panel half of updateBackgroundFrom(), on its own for a screen that shows no
         art: the library grids."""
         if util.addonSettings.dynamicBackgrounds and ds is not None:
-            # 4-corner tinted-panel colors, Phase 1 approximation of official Plex's native
-            # per-corner art color extraction - see docs/notes/hero-art-background-status.md.
+            # The panel's 4 corner colours, from the server's per-corner colours for the item's art.
             # getattr, not ds.get(): ultraBlurColors is a plain instance attribute only present on
             # Video subclasses (Movie/Show/Season/Episode/Clip), absent entirely on e.g. Photo, and
             # PlexObject.get() would wrap a missing key in a truthy PlexValue instead of None.
@@ -747,79 +745,49 @@ class BaseWindow(XMLBase, xbmcgui.WindowXML, BaseFunctions):
             self._setPanelCorners(self.NEUTRAL_PANEL_CORNERS)
 
     PANEL_CORNERS = ('topLeft', 'topRight', 'bottomLeft', 'bottomRight')
-    # False: the panel's static form (includes/background_panel.xml.tpl), layer a alone and always shown - the music
-    # screens', where it's the whole background
-    PANEL_CROSSFADE = True
-    # each layer's 4 corner controls (includes/background_panel.xml.tpl), in PANEL_CORNERS order: the panel's
-    # own. The Recommended view adds its cover copy over its hub rows (PANEL_COVER_CONTROLS) - only there: Kodi logs
-    # an error for every getControl() of a control a window hasn't got, once per screen opened.
-    PANEL_CORNER_CONTROLS = {'a': ((2101, 2102, 2103, 2104),),
-                             'b': ((2105, 2106, 2107, 2108),)}
-    # the Recommended view's cover copy (panel_cover, script-plex-recommended), 10 on
-    PANEL_COVER_CONTROLS = {'a': ((2101, 2102, 2103, 2104), (2111, 2112, 2113, 2114)),
-                            'b': ((2105, 2106, 2107, 2108), (2115, 2116, 2117, 2118))}
+    # the colour panel's image (includes/background_panel.xml.tpl). The Recommended view adds its cover copy over its
+    # hub rows (PANEL_COVER_TEXTURE_CONTROLS) - only there: Kodi logs an error for every getControl() of a control a
+    # window hasn't got, once per screen opened.
+    PANEL_TEXTURE_CONTROLS = (2109,)
+    # with the Recommended view's cover copy (panel_cover, script-plex-recommended)
+    PANEL_COVER_TEXTURE_CONTROLS = (2109, 2119)
 
     def _setPanelCorners(self, corners):
-        """Cross-fades the 4-corner background color panel (default_background.xml.tpl) between
-        items instead of popping instantly. A control's <colordiffuse> has no fade of its own in
-        Kodi - unlike the hero art windowSetBackground drives, which crossfades because its
-        *texture* changes, only a control's own <visible> transition can be animated (via an
-        explicit <animation effect="fade">VisibleChange</animation>). So default_background.xml.tpl
-        duplicates the 4 corners into two layers (a/b, each a group gated on
-        background_panel_layer); this paints the new colors onto whichever layer is currently
-        hidden, then flips background_panel_layer so the now-hidden old layer fades out while the
-        newly-shown one fades in.
-        """
+        """The colour panel (includes/background_panel.xml.tpl) for these corner colours: one texture drawn from them
+        (lib/panel_texture.py), which crossfades from the last item's by itself (its <fadetime>)."""
         values = tuple(corners.get(corner, '') for corner in self.PANEL_CORNERS)
         if values == self._panelColors:
             return
         self._panelColors = values
+        self._paintPanelTexture(panel_texture.textureFor(values))
 
-        if not self.PANEL_CROSSFADE:
-            # the static panel: no layer to show, nothing that reads background_panel_layer
-            self._paintPanelLayer('a', values)
+    def _paintPanelTexture(self, path=None):
+        """The colour panel's texture (lib/panel_texture.py) straight onto its image with setImage(), not through
+        $INFO[Window.Property(...)]: Kodi resolves that against the topmost modal dialog while one is open, so every
+        picker or dialog would lose the panel. '' clears it, showing the window's own colour. Not through Kodi's
+        texture cache: each item's colours are their own file. path: None repaints the remembered one."""
+        if path is not None:
+            self._panelTexture = path
+        elif not self._panelTexture:
+            # a repaint of nothing: the template's image starts empty. Not asked for either - a window without the
+            # panel (user select) would log an error
             return
-
-        if not util.addonSettings.dbgCrossfade:
-            self._paintPanelLayer('a', values)
-            self.setProperty('background_panel_layer', 'a')
-            return
-
-        target = 'b' if self._panelLayer == 'a' else 'a'
-        self._paintPanelLayer(target, values)
-        self.setProperty('background_panel_layer', target)
-        self._panelLayer = target
-
-    def _paintPanelLayer(self, layer, values=None):
-        """A colour-panel layer's 4 corners, straight onto its controls with setColorDiffuse(): a constant
-        colour, where $INFO[Window.Property(...)] is resolved against the topmost modal dialog while one is
-        open (Kodi's CGUIInfoColor) - every picker or dialog turned the panel dark. A corner with no colour
-        goes fully transparent, showing the base fill. values: the layer's colours, remembered for the
-        repaint at first init (repaintPanel()); None repaints the remembered ones."""
-        if values is not None:
-            self._panelLayerColors[layer] = values
-        elif not any(self._panelLayerColors[layer]):
-            # a repaint of nothing: the template's corners start transparent. Not asked for either - a window
-            # without the panel (user select) logged an error for each layer
-            return
-        for copy in self.PANEL_CORNER_CONTROLS[layer]:
-            if copy[0] in self._absentPanelCopies:
+        for cid in self.PANEL_TEXTURE_CONTROLS:
+            if cid in self._absentPanelCopies:
                 continue
             try:
-                for cid, colour in zip(copy, self._panelLayerColors[layer]):
-                    self.getControl(cid).setColorDiffuse(colour or '00000000')
+                self.getControl(cid).setImage(self._panelTexture, False)
             except (RuntimeError, TypeError):
                 # Not loaded yet (painted again at first init), or a window without the panel or this copy of it -
                 # which, once it's loaded, it never will have
                 if self.started:
-                    self._absentPanelCopies.add(copy[0])
+                    self._absentPanelCopies.add(cid)
                 return
 
     def repaintPanel(self):
-        """Both colour-panel layers again, once the window's controls exist: colours set before its first
-        init (a clicked item's painted early) couldn't reach them."""
-        for layer in ('a', 'b'):
-            self._paintPanelLayer(layer)
+        """The colour panel's texture again, once the window's controls exist: one set before its first init (a
+        clicked item's, painted early) couldn't reach them."""
+        self._paintPanelTexture()
 
     def windowSetBackground(self, value):
         """Writes the hero art, or clears it when value is empty (an item with no art shows none,

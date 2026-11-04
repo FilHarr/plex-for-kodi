@@ -4218,8 +4218,8 @@ class RecommendedWindow(kodigui.MultiWindowView, kodigui.ControlledWindow, windo
 
     MULTI_WINDOW_ID = 0
 
-    # the colour panel's corners, and its cover copy over the hub rows (kodigui.BaseWindow)
-    PANEL_CORNER_CONTROLS = kodigui.BaseWindow.PANEL_COVER_CONTROLS
+    # the colour panel, and its cover copy over the hub rows (kodigui.BaseWindow)
+    PANEL_TEXTURE_CONTROLS = kodigui.BaseWindow.PANEL_COVER_TEXTURE_CONTROLS
 
     # This view's own input, after the host's shared routing (kodigui.MultiWindowView): the hub
     # engine's handlers (library_hubs.py). Its Back steps are in hubAction(), which runs after

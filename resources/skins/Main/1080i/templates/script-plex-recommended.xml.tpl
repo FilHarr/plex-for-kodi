@@ -242,10 +242,9 @@
 <!-- The cover: the same background again (the window's own solid colour when that setting is
      on, else default_background.xml.tpl), clipped to the band above y=518 and drawn over the rows,
      so they pass under it there - the clip group 50 can't have (see its comment). This clip
-     works because nothing inside it moves. Both copies switch layers on the same window property and
-     have their corner colours painted together (panel_cover gives this copy its own ids, 2111-2118 -
-     BaseWindow._paintPanelLayer(), kodigui.py), so their crossfades start on the same frame (no seam at
-     518 on the PC or the AM6B, 2026-10-19). The
+     works because nothing inside it moves. Both copies of the colour panel get the same texture,
+     set together (panel_cover gives this copy its own id, 2119 - BaseWindow._paintPanelTexture(),
+     kodigui.py), so their crossfades start on the same frame (no seam at 518). The
      hero text, tabs and sidebar are in the header block, drawn after this, so they stay on top.
      Anything new drawn behind the rows above y=518 has to go in here too. -->
 <control type="grouplist">
