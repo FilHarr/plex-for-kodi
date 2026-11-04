@@ -1,3 +1,10 @@
+[-0.4.4-]
+- A new background, in the style of Plex's own apps: the colour panel is one smooth gradient from the item's colours, and the art sits larger and at full strength at the top right, fading into it. Less work for the graphics chip
+- The colour panel follows the item's colours more closely: bright artwork gives a brighter panel, without glaring
+- Offline at start-up (plex.tv not answering): Plex Uno asks again after 30 seconds, a minute, then every 5 minutes, and the Watchlist comes back when it answers. "Offline Mode" in the user menu brings it back too
+- Only a refused sign-in signs you out of plex.tv: other errors from it no longer do
+- Fixed: theme music stopping as a screen opened could leave it stuck, with Back and the sidebar not responding
+
 [-0.4.3-]
 - Kodi updating Plex Uno in the background no longer ends the session: it carries on as it was and asks when to restart - now, the next time you're away, or later. Settings > System > "After a background update" can have it restart by itself instead, never during playback
 - Recommended rows (Home and libraries) appear in about half the time, and a row moving into view is ready sooner
